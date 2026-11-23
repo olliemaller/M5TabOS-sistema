@@ -6,10 +6,10 @@
 #include "tab5_unicode.hpp"
 #include "fontes/fontes_suaves.hpp"
 
-// BUSCA BINARIA, nao varredura - ver o aviso em tab5_emoji_dados.cpp. Com
-// 1357 entradas, varredura custaria ate 1357 comparacoes por emoji
-// desconhecido; busca binaria custa no maximo 11. A tabela PRECISA estar
-// ordenada por codigo para isto funcionar - o gerador ja garante isso.
+// BINARY SEARCH, not a scan - see the warning in tab5_emoji_dados.cpp. With
+// 1357 entries, a scan would cost up to 1357 comparisons per unknown
+// emoji; binary search costs at most 11. The table MUST be
+// sorted by code point for this to work - the generator already guarantees it.
 static const tab5_emoji_t* achar_emoji(uint32_t code)
 {
   int ini = 0, fim = TAB5_EMOJI_N - 1;
@@ -22,110 +22,110 @@ static const tab5_emoji_t* achar_emoji(uint32_t code)
   return nullptr;
 }
 
-// O CALLBACK QUE O LOVYANGFX JA SABE CHAMAR.
+// THE CALLBACK LOVYANGFX ALREADY KNOWS HOW TO CALL.
 //
-// Assinatura fixada pela biblioteca (LGFXBase.hpp: emoji_draw_cb_t) - nao da
-// para mudar um parametro sem quebrar o registro. 'altura' vem em pixels JA
-// escalados pelo tamanho de texto corrente (ver o calculo em
-// LGFXBase.cpp: "metrics.height * sy >> 16") - e por isso este callback nao
-// precisa saber que tamanho de fonte estava em uso.
+// Signature fixed by the library (LGFXBase.hpp: emoji_draw_cb_t) - a
+// parameter cannot change without breaking registration. 'altura' comes in pixels ALREADY
+// scaled by the current text size (see the calculation in
+// LGFXBase.cpp: "metrics.height * sy >> 16") - which is why this callback does
+// not need to know which font size was in use.
 //
-// Devolver <=0 diz "nao conheco este codigo": a biblioteca cai sozinha para
-// o comportamento de sempre (o codepoint 0, que nao desenha nada). Por isso a
-// tabela so precisa saber dos que reconhece - o resto continua invisivel em
-// vez de virar lixo na tela, exatamente como era antes deste arquivo existir.
+// Returning <=0 says "I do not know this code point": the library falls back by itself to
+// the usual behaviour (code point 0, which draws nothing). That is why the
+// table only needs to know the ones it recognises - the rest stays invisible
+// instead of becoming garbage on screen, exactly as before this file existed.
 static int32_t emoji_cb(lgfx::LGFXBase* gfx, int32_t x, int32_t y, uint32_t code, int32_t altura)
 {
   const tab5_emoji_t* e = achar_emoji(code);
   if (!e) { return 0; }
 
-  // ESCALADO PARA A CELULA, nao desenhado no tamanho nativo.
+  // SCALED TO THE CELL, not drawn at native size.
   //
-  // Isto usava pushImage() puro, no tamanho FIXO do bitmap
-  // (TAB5_EMOJI_LADO, 24px) - e nunca foi testado contra o caso mais comum:
-  // texto de mensagem usa tamanho 2, e a celula que a biblioteca reserva para
-  // um emoji ali mede 16px de lado, nao 24. O emoji saia 8px MAIOR que a
-  // celula em cada eixo, vazando por cima do texto vizinho.
+  // This used plain pushImage(), at the bitmap's FIXED size
+  // (TAB5_EMOJI_LADO, 24px) - and was never tested against the most common case:
+  // message text uses size 2, and the cell the library reserves for
+  // an emoji there is 16px square, not 24. The emoji came out 8px BIGGER than the
+  // cell on each axis, spilling over the neighbouring text.
   //
-  // pushImageRotateZoom() resolve isso escalando o bitmap de 24x24 para
-  // QUALQUER 'altura' pedida, sempre centralizado - o mesmo bitmap serve para
-  // o texto pequeno de uma mensagem (16px) e para um eventual tamanho 4 em
-  // outro lugar (32px), sem precisar guardar mais de uma resolucao.
+  // pushImageRotateZoom() fixes this by scaling the 24x24 bitmap to
+  // ANY requested 'altura', always centred - the same bitmap serves for
+  // a message's small text (16px) and for a possible size 4 elsewhere
+  // (32px), without having to store more than one resolution.
   //
-  // SEM SUAVIZACAO (a versao "WithAA" foi tirada). O motivo:
-  // antialiasing MISTURA a cor dos pixels vizinhos na borda do desenho - e
-  // perto da borda de qualquer emoji, um dos vizinhos costuma ser o fundo
-  // transparente (na epoca, uma cor-sentinela magenta). A mistura produzia
-  // uma cor que NAO ERA mais a sentinela, e virava um pixel de verdade, na
-  // cor errada - foi visto ao vivo: um ponto magenta solto no fundo preto.
-  // Hoje o fundo e o INDICE 0 da paleta, e com paleta a biblioteca nem tem
-  // como misturar - mas sem AA continua sendo o certo: cada pixel de origem
-  // ou E fundo (pula) ou nao e (desenha), sem meio-termo.
+  // NO SMOOTHING (the "WithAA" version was removed). The reason:
+  // antialiasing BLENDS the colour of neighbouring pixels at the edge of the drawing - and
+  // near the edge of any emoji, one of the neighbours is usually the transparent
+  // background (at the time, a magenta sentinel colour). The blend produced
+  // a colour that WAS NO LONGER the sentinel, and became a real pixel, in the
+  // wrong colour - it was seen live: a stray magenta dot on the black background.
+  // Today the background is palette INDEX 0, and with a palette the library cannot
+  // even blend - but without AA is still right: each source pixel
+  // either IS background (skip) or is not (draw), no in-between.
   //
-  // GEOMETRIA: (src_x,src_y) no bitmap mapeia para (dst_x,dst_y) na tela.
+  // GEOMETRY: (src_x,src_y) in the bitmap maps to (dst_x,dst_y) on screen.
   //
-  // A CONTA QUE SE CANCELA PARA LETRA E NAO PARA EMOJI - achado em
-  // rastreando o fonte da biblioteca (LGFXBase::write() +
-  // GFXfont::drawChar(), ambos em lgfx_fonts.cpp/LGFXBase.cpp), depois que
-  // um teste real ("📡 Teste Ok.") mostrou a antena claramente mais baixa
-  // que o texto do MESMO balao, na MESMA linha.
+  // THE SUM THAT CANCELS OUT FOR A LETTER BUT NOT FOR AN EMOJI - found by
+  // tracing the library source (LGFXBase::write() +
+  // GFXfont::drawChar(), both in lgfx_fonts.cpp/LGFXBase.cpp), after
+  // a real test ("📡 Teste Ok.") showed the antenna clearly lower
+  // than the text in the SAME bubble, on the SAME line.
   //
-  // write() desloca o 'y' da linha INTEIRA por "-(metrics.y_offset)*sy" ANTES
-  // do loop de caracteres (y_offset e o unico valor DA FONTE, nao do glifo -
-  // GFXfont::updateFontMetric() nunca escreve nele; so getDefaultMetric()
-  // escreve, uma vez, quando setFont() roda). Cada caractere NORMAL passa por
-  // GFXfont::drawChar(), que aplica "y += metrics.y_offset*sy" de novo -
-  // CANCELANDO o deslocamento da linha antes de desenhar o glifo. O EMOJI,
-  // por nao passar por drawChar(), recebe o 'y' da linha SEM o cancelamento -
-  // e fica deslocado para baixo em exatamente "-y_offset * sy" pixels.
+  // write() shifts the WHOLE line's 'y' by "-(metrics.y_offset)*sy" BEFORE
+  // the character loop (y_offset is the only value FROM THE FONT, not from the glyph -
+  // GFXfont::updateFontMetric() never writes to it; only getDefaultMetric()
+  // writes it, once, when setFont() runs). Each NORMAL character goes through
+  // GFXfont::drawChar(), which applies "y += metrics.y_offset*sy" again -
+  // CANCELLING the line shift before drawing the glyph. The EMOJI,
+  // since it does not go through drawChar(), gets the line's 'y' WITHOUT the cancellation -
+  // and ends up shifted down by exactly "-y_offset * sy" pixels.
   //
-  // PARA A FREESANS12PT7B (a fonte de corpo - ver
-  // TAB5_FONTE_CORPO em tab5_ui.hpp): varri a tabela de glifos (grep+awk sobre
-  // FreeSans12pt7b.h buscando o menor yOffset, MESMO METODO validado contra a
-  // DejaVu24 antes de trocar - deu -18, batendo com o "18" ja documentado
-  // aqui antes) e cheguei em glyph_ab=17 (o ascendente MAIS ALTO de toda a
-  // fonte) - y_offset = -17, height (yAdvance) = 29 = TAB5_FONTE_CORPO_ALT_PX.
+  // FOR FREESANS12PT7B (the body font - see
+  // TAB5_FONTE_CORPO in tab5_ui.hpp): I scanned the glyph table (grep+awk over
+  // FreeSans12pt7b.h looking for the smallest yOffset, the SAME METHOD validated against
+  // DejaVu24 before switching - it gave -18, matching the "18" already documented
+  // here before) and arrived at glyph_ab=17 (the TALLEST ascender in the whole
+  // font) - y_offset = -17, height (yAdvance) = 29 = TAB5_FONTE_CORPO_ALT_PX.
   //
-  // Corrigir e desfazer esse deslocamento (subtrair 17/29 de 'altura' do 'y'
-  // recebido) e so ENTAO centralizar o emoji no proprio corpo da fonte (a
-  // metade de cima da altura, onde as letras realmente desenham) - as duas
-  // contas viram UMA fracao so, aplicada ao centro.
+  // The fix is to undo that shift (subtract 17/29 of 'altura' from the 'y'
+  // received) and only THEN centre the emoji on the font's own body (the
+  // upper half of the height, where the letters actually draw) - the two
+  // sums become a SINGLE fraction, applied to the centre.
   //
-  // ESTE NUMERO E ESPECIFICO DA FREESANS12PT7B - se TAB5_FONTE_CORPO trocar de
-  // novo, recalcule glyph_ab/height da fonte nova (mesmo metodo: menor yOffset
-  // da tabela de glifos) e troque a conta abaixo junto.
-  // a fracao e LIDA da fonte em uso (a de corpo virou a
-  // Roboto suavizada, em varias alturas) - o 17/29 fixo era so da FreeSans12.
+  // THIS NUMBER IS SPECIFIC TO FREESANS12PT7B - if TAB5_FONTE_CORPO changes
+  // again, recalculate glyph_ab/height for the new font (same method: smallest yOffset
+  // in the glyph table) and change the sum below with it.
+  // the fraction is READ from the font in use (the body font became the
+  // smoothed Roboto, in several heights) - the fixed 17/29 was only for FreeSans12.
   lgfx::FontMetrics fm;
   gfx->getFont()->getDefaultMetric(&fm);
   const float Y_OFFSET_FRACAO = (fm.height > 0) ? (float)(-fm.y_offset) / (float)fm.height : 17.0f / 29.0f;
-  const float FRACAO_VERTICAL = 0.5f - Y_OFFSET_FRACAO; // = -0.22: centro do emoji, corrigido e centralizado
-  // ESCALA INTEIRA: o bitmap tem 24 px, e ampliar por fracao (24 -> 29 px)
-  // duplica umas linhas de pixel e outras nao - o mesmo serrilhado que as
-  // fontes tinham. Ate 2x a altura do texto ele sai no tamanho nativo,
-  // centrado no espaco do caractere; acima disso, no maior multiplo inteiro.
+  const float FRACAO_VERTICAL = 0.5f - Y_OFFSET_FRACAO; // = -0.22: emoji centre, corrected and centred
+  // INTEGER SCALE: the bitmap is 24 px, and enlarging by a fraction (24 -> 29 px)
+  // duplicates some pixel rows and not others - the same jaggedness the
+  // fonts used to have. Up to 2x the text height it comes out at native size,
+  // centred in the character space; above that, at the largest integer multiple.
   //
-  // ABAIXO DE 24 px ele ENCOLHE para a altura da linha: as fontes suaves vao
-  // ate 12 px (gerar_fontes.py), e ali um emoji de 24 px invadia a linha de
-  // cima e a de baixo. Encolher pula linhas de pixel em vez de duplicar - a
-  // perda de detalhe num desenho deste tamanho nao se nota; a invasao, sim.
+  // BELOW 24 px it SHRINKS to the line height: the smooth fonts go
+  // down to 12 px (gerar_fontes.py), and there a 24 px emoji intruded on the line
+  // above and the one below. Shrinking skips pixel rows instead of duplicating - the
+  // loss of detail in a drawing this size goes unnoticed; the intrusion does not.
   const float lado = (float)TAB5_EMOJI_LADO;
   const int   mult = (altura >= 2 * TAB5_EMOJI_LADO) ? altura / TAB5_EMOJI_LADO : 1;
   const float zoom = (altura < TAB5_EMOJI_LADO) ? (float)altura / lado : (float)mult;
   gfx->pushImageRotateZoom(
       (float)x + (float)altura / 2.0f, (float)y + (float)altura * FRACAO_VERTICAL,
       lado / 2.0f, lado / 2.0f,
-      0.0f,                 // sem rotacao
+      0.0f,                 // no rotation
       zoom, zoom,
       TAB5_EMOJI_LADO, TAB5_EMOJI_LADO,
       e->indices, TAB5_EMOJI_TRANSPARENTE, lgfx::color_depth_t::palette_8bit,
-      // swap565_t: a mesma leitura (bytes trocados) que a biblioteca fazia do
-      // uint16_t cru antes - a paleta foi gravada assim pelo gerador.
+      // swap565_t: the same reading (swapped bytes) the library used to do of the
+      // raw uint16_t before - the palette was written that way by the generator.
       reinterpret_cast<const lgfx::swap565_t*>(e->paleta));
 
-  // Avanca o cursor pela CELULA inteira (altura), nao so pelo bitmap - e o
-  // mesmo espacamento que um caractere normal deixaria, e o que faz o
-  // proximo caractere nao colar no emoji.
+  // Advances the cursor by the whole CELL (altura), not just the bitmap - it is
+  // the same spacing a normal character would leave, and what keeps the
+  // next character from sticking to the emoji.
   return altura;
 }
 
@@ -134,9 +134,9 @@ void tab5_emoji_iniciar(void)
   M5.Display.setEmojiCallback(emoji_cb);
 }
 
-// O QUE TEM DESENHO: a fonte (lida do proprio VLW - a lista de glifos e a
-// que gerar_fontes.py gravou, sem copia a manter em sincronia) ou o emoji.
-// A de corpo e a negrito saem do mesmo CARACTERES; basta uma.
+// WHAT HAS A DRAWING: the font (read from the VLW itself - the glyph list is the
+// one gerar_fontes.py wrote, no copy to keep in sync) or the emoji.
+// The body and bold fonts come from the same CARACTERES; one is enough.
 static bool fonte_tem(uint32_t code)
 {
   static uint32_t* s_cods = nullptr;
@@ -164,7 +164,7 @@ static bool desenhavel(uint32_t code)
 
 void tab5_emoji_preparar(const char* in, char* out, size_t out_tam)
 {
-  // A limpeza toda (ZWJ, corte, e o que nao tem desenho) mora em
-  // tab5_unicode - pura, testada no Mac (testes/rodar_unicode.sh).
+  // The whole cleanup (ZWJ, truncation, and anything with no drawing) lives in
+  // tab5_unicode - pure, tested on the Mac (testes/rodar_unicode.sh).
   tab5_unicode_preparar(in, out, out_tam, desenhavel);
 }

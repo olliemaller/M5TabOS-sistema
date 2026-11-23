@@ -1,13 +1,13 @@
-// APP: Notas - textos curtos guardados no cartao (services/notas).
+// APP: Notas (Notes) - short texts saved on the SD card (services/notas).
 //
-// Duas telas:
-//   LISTA   as notas, a mais nova primeiro; "+ Nova" no topo. Tocar abre;
-//           segurar escolhe a nota e mostra Copiar / Apagar.
-//   EDITOR  o texto (kernel/editor; segurar o dedo abre Copiar tudo / Colar).
-//           Volta e grava; fechar o app e o repouso tambem gravam. O titulo da nota e a primeira linha.
+// Two screens:
+//   LIST    the notes, newest first; "+ Nova" (new) at the top. Tap opens;
+//           hold selects the note and shows Copiar / Apagar (copy / delete).
+//   EDITOR  the text (kernel/editor; holding a finger opens Copiar tudo / Colar - copy all / paste).
+//           Back saves; closing the app and idle also save. The note's title is the first line.
 //
-// O app e so interface: o cartao e do servico (services/notas, pelas portas
-// do tab5_sd), e so e tocado no worker do sistema.
+// The app is only the interface: the SD card belongs to the service (services/notas, through the
+// tab5_sd ports), and is only touched on the system worker.
 
 #include "app.h"
 #include "lista.hpp"
@@ -29,7 +29,7 @@
 #include <string.h>
 #include <time.h>
 
-static const int TOPO_A = 96;    // faixa dos botoes no alto
+static const int TOPO_A = 96;    // strip of buttons at the top
 static const int ITEM_A = 96;
 static const int BT_A   = 72;
 static const int NOTAS_MAX = 200;
@@ -40,27 +40,27 @@ typedef enum { FEZ_NADA, FEZ_LISTA, FEZ_ABRIR, FEZ_COPIAR } fez_t;
 
 static tela_t        s_tela = TELA_LISTA;
 static dlg_t         s_dlg  = DLG_NADA;
-static nota_t*       s_itens = nullptr;      // PSRAM, NOTAS_MAX, so com o app aberto
-static int           s_n = 0;                // -1 = sem cartao
-static int           s_sel = -1;             // a escolhida pelo toque longo
-static char          s_prox[NOTA_ARQ_MAX];   // o arquivo da proxima nota nova
+static nota_t*       s_itens = nullptr;      // PSRAM, NOTAS_MAX, only with the app open
+static int           s_n = 0;                // -1 = no SD card
+static int           s_sel = -1;             // the one chosen by the long press
+static char          s_prox[NOTA_ARQ_MAX];   // the file for the next new note
 static lista_t       s_lista;
 static toque_longo_t s_lp;
 static bool          s_forcar = false;
 
-static char*    s_txt = nullptr;             // PSRAM, NOTA_MAX, o texto aberto
-static char     s_arq[NOTA_ARQ_MAX];         // o arquivo da nota aberta
+static char*    s_txt = nullptr;             // PSRAM, NOTA_MAX, the open text
+static char     s_arq[NOTA_ARQ_MAX];         // the file of the open note
 static editor_t s_ed;
 
 // ---------------------------------------------------------------------------
-// O CARTAO, SO NO WORKER (kernel/trabalho.hpp). Um trabalho por vez: enquanto
-// 's_ocupado', a interface nao le s_itens nem s_txt. O resultado volta por
-// AVISO_TRABALHO, com 's_fez' dizendo o que terminou.
+// THE SD CARD, ONLY ON THE WORKER (kernel/trabalho.hpp). One job at a time: while
+// 's_ocupado', the UI reads neither s_itens nor s_txt. The result comes back via
+// AVISO_TRABALHO, with 's_fez' saying what finished.
 // ---------------------------------------------------------------------------
-static bool             s_ocupado = false;   // so a interface mexe
+static bool             s_ocupado = false;   // only the UI touches it
 static std::atomic<int> s_fez{FEZ_NADA};
-static int              s_n_res = 0;         // escrito pelo trabalho, lido no aviso
-static int              s_alvo = -1;         // a nota do trabalho (indice em s_itens)
+static int              s_n_res = 0;         // written by the job, read on the notice
+static int              s_alvo = -1;         // the job's note (index in s_itens)
 static bool             s_res_ok = false;
 
 static void trab_listar(void*)  { s_n_res = notas_listar(s_itens, NOTAS_MAX, s_prox); s_fez = FEZ_LISTA; }
@@ -84,8 +84,8 @@ static void pedir(trabalho_t fn, int alvo)
   if (sistema_trabalho(fn, nullptr)) { s_ocupado = true; }
 }
 
-// GRAVAR AO FECHAR / NO REPOUSO: o servico grava em fundo com uma copia do
-// texto - o app pode fechar (e liberar s_txt) antes de o cartao terminar.
+// SAVE ON CLOSE / ON IDLE: the service writes in the background with a copy of the
+// text - the app may close (and free s_txt) before the SD card finishes.
 static void gravar_solto(void)
 {
   if (s_tela != TELA_EDITOR || !s_ed.mudou) { return; }
@@ -103,7 +103,7 @@ static void trocar_tela(tela_t t)
 }
 
 // ---------------------------------------------------------------------------
-// LISTA
+// LIST
 // ---------------------------------------------------------------------------
 static int item_altura(int, void*) { return ITEM_A; }
 
@@ -112,8 +112,8 @@ static void item_desenhar(lgfx::LovyanGFX& d, int i, int x, int y, int larg, voi
   if (i >= s_n || s_ocupado) { return; }
   const uint16_t fundo = (i == s_sel) ? TEMA_DESTAQUE_SUAVE : TEMA_FUNDO;
   d.fillRect(x, y, larg, ITEM_A, fundo);
-  // Como nos apps de notas do celular: o titulo em negrito; embaixo, a data
-  // e o comeco do texto.
+  // As in phone notes apps: the title in bold; below it, the date
+  // and the start of the text.
   char titulo[NOTA_TITULO_MAX];
   snprintf(titulo, sizeof(titulo), "%s", s_itens[i].titulo[0] ? s_itens[i].titulo : tr("(vazia)"));
   tab5_fonte_corpo_negrito(d);
@@ -164,11 +164,11 @@ static void voltar_a_lista(void)
   pedir(s_ed.mudou ? trab_gravar_e_listar : trab_listar, -1);
 }
 
-// Os botoes do alto e os da caixa de confirmacao, num lugar so: o desenho e o
-// toque usam a mesma conta.
+// The top buttons and those of the confirmation box, in one place: drawing and
+// touch use the same sum.
 typedef struct { int x, y, l, a; } ret_t;
 static bool dentro(const ret_t& r, int x, int y) { return x >= r.x && x < r.x + r.l && y >= r.y && y < r.y + r.a; }
-static ret_t bt_topo(const area_t& a, int de_direita, int l)   // 0 = o mais a direita
+static ret_t bt_topo(const area_t& a, int de_direita, int l)   // 0 = the rightmost
 {
   int x = a.largura - 16;
   for (int k = 0; k <= de_direita; ++k) { x -= l + (k ? 12 : 0); }
@@ -199,7 +199,7 @@ static void desenhar_lista(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
       tab5_botao(d, a.x + nv.x, a.y + nv.y, nv.l, nv.a, tr("+ Nova"), TEMA_SUCESSO);
     }
   }
-  if (s_ocupado) { return; }   // o trabalho esta escrevendo s_itens
+  if (s_ocupado) { return; }   // the job is writing s_itens
   const area_t janela = { a.x, a.y + TOPO_A, a.largura, a.altura - TOPO_A };
   lista_desenhar(&s_lista, d, janela, TEMA_FUNDO, tudo);
   if (tudo && s_n == 0) {
@@ -257,8 +257,8 @@ static void tocar_lista(int x, int y)
 // ---------------------------------------------------------------------------
 // EDITOR
 // ---------------------------------------------------------------------------
-// O titulo da nota aberta no alto: a primeira linha com texto, enquanto se
-// digita ("Nova nota" enquanto esta vazia).
+// The open note's title at the top: the first line with text, while
+// typing ("Nova nota" - new note - while it is empty).
 static void titulo_do_texto(const char* t, char* out, size_t n)
 {
   while (*t == '\n' || *t == ' ' || *t == '\t') { ++t; }
@@ -308,7 +308,7 @@ static void tocar_editor(int x, int y)
 }
 
 // ---------------------------------------------------------------------------
-// CICLO DE VIDA E ENTRADAS
+// LIFE CYCLE AND INPUTS
 // ---------------------------------------------------------------------------
 static bool ao_abrir(void)
 {
@@ -325,7 +325,7 @@ static bool ao_abrir(void)
   return true;
 }
 
-// O sistema ja esperou o trabalho em andamento: s_txt e s_itens sao livres.
+// The system has already waited for the job in progress: s_txt and s_itens are free.
 static void ao_fechar(void)
 {
   gravar_solto();
@@ -396,7 +396,7 @@ static void ao_teclar(const char* texto, uint8_t codigo, uint8_t mod)
   editor_teclar(&s_ed, texto, codigo, mod);
 }
 
-// O icone: uma folha com linhas e o canto dobrado.
+// The icon: a sheet with lines and a folded corner.
 static void icone_notas(lgfx::LovyanGFX& d, int x, int y, int lado)
 {
   d.fillRoundRect(x, y, lado, lado, lado / 6, d.color565(70, 60, 20));
@@ -424,5 +424,5 @@ extern const app_t APP_NOTAS = {
   .avisos = AVISO_TRABALHO,
   .ao_aviso = ao_aviso,
   .icone = icone_notas,
-  .fundo_tema = true,   // o sistema limpa a area com TEMA_FUNDO
+  .fundo_tema = true,   // the system clears the area with TEMA_FUNDO
 };

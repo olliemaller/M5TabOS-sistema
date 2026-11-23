@@ -1,26 +1,26 @@
-// O WORKER DO SISTEMA - trabalho lento fora da tarefa de interface.
+// THE SYSTEM WORKER - slow work off the UI task.
 //
-// A tarefa de interface desenha e atende o toque. Tudo que pode demorar -
-// ler o cartao, varrer um arquivo, montar uma lista grande - tem que sair
-// dela, senao a tela congela enquanto o cartao responde (era o caso do Mesh,
-// que relia o historico do SD NA INTERFACE a cada mensagem nova).
+// The UI task draws and handles touch. Anything that may take a while -
+// reading the SD card, scanning a file, building a big list - has to leave
+// it, otherwise the screen freezes while the card responds (that was the case with Mesh,
+// which reread the history from SD IN THE UI on every new message).
 //
-// Como so um app fica em primeiro plano por vez, UM worker de sistema
-// basta para todos: o app pede, o worker executa na propria tarefa
-// (prioridade 2, abaixo da interface e dos servicos de radio), e quando
-// termina o app recebe AVISO_TRABALHO (declare-o em app_t.avisos) e pega o
-// resultado na tarefa de interface.
+// Since only one app is in the foreground at a time, ONE system worker
+// is enough for all of them: the app asks, the worker runs it on its own task
+// (priority 2, below the UI and the radio services), and when it
+// finishes the app receives AVISO_TRABALHO (declare it in app_t.avisos) and picks up the
+// result on the UI task.
 //
-// O PADRAO DO RESULTADO: o trabalho escreve num buffer que a interface NAO
-// esta lendo, e so no ao_aviso a interface troca para ele. Nunca escrever no
-// que a interface desenha.
+// THE RESULT PATTERN: the job writes into a buffer the UI is NOT
+// reading, and only in ao_aviso does the UI switch to it. Never write into
+// what the UI is drawing.
 //
-// FECHAR O APP E SEGURO: o sistema espera o trabalho em andamento terminar e
-// descarta os que ainda estavam na queue ANTES de chamar ao_fechar() - entao o
-// app pode liberar seus buffers ali sem medo. Por isso um trabalho deve durar
-// no maximo algumas centenas de ms (uma leitura, nao um loop eterno) - a
-// interface fica parada enquanto o fechamento espera. O que demora mais e
-// trabalho SOLTO (abaixo); loop permanente e tarefa propria (tarefa_app).
+// CLOSING THE APP IS SAFE: the system waits for the job in progress to finish and
+// discards those still in the queue BEFORE calling ao_fechar() - so the
+// app can free its buffers there without worry. That is why a job should last
+// a few hundred ms at most (one read, not an endless loop) - the
+// UI stands still while closing waits. Anything that takes longer is a
+// DETACHED job (below); a permanent loop is its own task (tarefa_app).
 
 #pragma once
 
@@ -28,33 +28,33 @@
 
 typedef void (*trabalho_t)(void* arg);
 
-// Chamar uma vez no boot, pela tarefa de interface.
+// Call once at boot, from the UI task.
 void trabalho_iniciar(void);
 
-// Pede um trabalho para o app atual. Nao bloqueia. false = queue cheia.
+// Requests a job for the current app. Does not block. false = queue full.
 bool sistema_trabalho(trabalho_t fn, void* arg);
 
-// O APP FECHOU - pare. Para o trabalho (nao solto) que pode demorar: varrer um
-// arquivo grande, por exemplo. Fechar o app ESPERA o trabalho em andamento
-// terminar (e o que deixa o ao_fechar() liberar buffers sem medo), e a
-// interface fica parada nessa espera - um loop que pergunta isto a cada bloco
-// devolve a interface na hora, em vez de no fim do arquivo. Sair no meio e
-// seguro: o resultado ja nao vai ser usado (o app fechou).
+// THE APP HAS CLOSED - stop. For a (non-detached) job that may take a while: scanning a
+// large file, for example. Closing the app WAITS for the job in progress to
+// finish (that is what lets ao_fechar() free buffers without worry), and the
+// UI stands still during that wait - a loop that asks this on every block
+// gives the UI back at once, instead of at the end of the file. Bailing out midway is
+// safe: the result will not be used any more (the app has closed).
 bool sistema_trabalho_cancelado(void);
 
-// PARA O SISTEMA: descarta a queue e espera o trabalho em andamento terminar.
-// Chamado por fechar_app() antes do ao_fechar().
+// FOR THE SYSTEM: discards the queue and waits for the job in progress to finish.
+// Called by fechar_app() before ao_fechar().
 void trabalho_encerrar_do_app(void);
 
-// TRABALHO SOLTO - para o que demora SEGUNDOS e nao pode segurar o fechamento
-// do app (gravar uma foto de 1,8 MB no cartao,: fechar a Camera
-// esperava a gravacao inteira e a interface congelava ate ela acabar).
+// DETACHED JOB (TRABALHO SOLTO) - for what takes SECONDS and must not hold up closing
+// the app (writing a 1.8 MB photo to the SD card: closing the Camera
+// waited for the whole write and the UI froze until it was done).
 //
-// A diferenca: o sistema NAO espera um trabalho solto ao fechar o app, e ele
-// roda mesmo que o app ja tenha fechado. O preco e o CONTRATO:
-//   - 'arg' e do trabalho: memoria alocada so para ele, que ele mesmo libera
-//     no fim. Nada de buffer do app (o app pode ja te-lo liberado).
-//   - o resultado volta por AVISO_TRABALHO so se o MESMO app ainda estiver
-//     aberto; o trabalho pode deixar um resultado em estatica do app (a
-//     estatica existe sempre - o app e compilado no firmware).
+// The difference: the system does NOT wait for a detached job when closing the app, and it
+// runs even if the app has already closed. The price is the CONTRACT:
+//   - 'arg' belongs to the job: memory allocated just for it, which it frees itself
+//     at the end. No app buffers (the app may already have freed them).
+//   - the result comes back via AVISO_TRABALHO only if the SAME app is still
+//     open; the job may leave a result in an app static (the
+//     static always exists - the app is compiled into the firmware).
 bool sistema_trabalho_solto(trabalho_t fn, void* arg);

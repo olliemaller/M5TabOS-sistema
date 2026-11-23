@@ -1,5 +1,5 @@
-// HASH FNV-1a de 32 bits - a unica copia do sistema. Serve para chave de cache,
-// assinatura de "mudou?" e conferencia de dados; nao e criptografia.
+// 32-bit FNV-1a HASH - the system's only copy. Used for cache keys,
+// "has it changed?" signatures and data checks; it is not cryptography.
 #pragma once
 
 #include <stdint.h>
@@ -7,7 +7,7 @@
 
 #define TAB5_FNV1A_INICIO 2166136261u
 
-// Bytes quaisquer. 'h' encadeia: o hash de uma parte pode ser o inicio da outra.
+// Arbitrary bytes. 'h' chains: the hash of one part can be the start of the next.
 static inline uint32_t tab5_fnv1a(const void* dados, size_t n, uint32_t h = TAB5_FNV1A_INICIO)
 {
   const uint8_t* p = (const uint8_t*)dados;
@@ -15,8 +15,8 @@ static inline uint32_t tab5_fnv1a(const void* dados, size_t n, uint32_t h = TAB5
   return h;
 }
 
-// Texto terminado em 0. 'sem_caixa' = A-Z contam como a-z ("Queen" e "queen"
-// dao o mesmo hash).
+// Zero-terminated text. 'sem_caixa' = A-Z count as a-z ("Queen" and "queen"
+// give the same hash).
 static inline uint32_t tab5_fnv1a_txt(const char* s, uint32_t h = TAB5_FNV1A_INICIO, bool sem_caixa = false)
 {
   for (; *s; ++s) {

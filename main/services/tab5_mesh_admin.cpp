@@ -1,7 +1,7 @@
-// Configuracao do no Meshtastic - ver o aviso grande em tab5_mesh_admin.hpp.
+// Meshtastic node configuration - see the big notice in tab5_mesh_admin.hpp.
 #include "tab5_mesh_admin.hpp"
 #include "idioma.h"
-#include "mesh_pb.hpp"   // o codec do servico, um so para leitura e escrita
+#include "mesh_pb.hpp"   // the service's codec, a single one for reading and writing
 
 #include <string.h>
 #include <stdio.h>
@@ -18,13 +18,13 @@
 static const char* TAG = "mesh_admin";
 
 // ---------------------------------------------------------------------------
-// Fornecidos pelo servico (tab5_mesh.cpp) - nao fazem parte da API publica.
+// Provided by the service (tab5_mesh.cpp) - not part of the public API.
 // ---------------------------------------------------------------------------
-bool tab5_mesh_interno_admin(const uint8_t* adm, size_t n);   // AdminMessage para o nosso no
-bool tab5_mesh_interno_pode_admin(void);                      // no do outro lado, dump completo
-void tab5_mesh_interno_reapresentar_em(uint32_t ms, bool reiniciou);   // pedir a configuracao daqui a pouco
+bool tab5_mesh_interno_admin(const uint8_t* adm, size_t n);   // AdminMessage to our node
+bool tab5_mesh_interno_pode_admin(void);                      // node on the other end, full dump
+void tab5_mesh_interno_reapresentar_em(uint32_t ms, bool reiniciou);   // request the configuration shortly
 
-// AdminMessage - numeros de campo conferidos no admin.pb.h (2.5 a atual).
+// AdminMessage - field numbers checked against admin.pb.h (2.5 to current).
 #define ADM_SET_OWNER          32
 #define ADM_SET_CHANNEL        33
 #define ADM_SET_CONFIG         34
@@ -36,18 +36,18 @@ void tab5_mesh_interno_reapresentar_em(uint32_t ms, bool reiniciou);   // pedir 
 #define ADM_COMMIT_EDIT        65
 #define ADM_REBOOT_SECONDS     97
 
-// Data.payload max_size (mesh.pb.h): o AdminMessage inteiro tem que caber.
+// Data.payload max_size (mesh.pb.h): the whole AdminMessage has to fit.
 #define ADM_MAX 233
 
-// Secoes: Config 1..10 (device, position, power, network, display, lora,
-// bluetooth, security, sessionkey, device_ui) e ModuleConfig 1..17.
+// Sections: Config 1..10 (device, position, power, network, display, lora,
+// bluetooth, security, sessionkey, device_ui) and ModuleConfig 1..17.
 #define CFG_SECOES 11
 #define MOD_SECOES 18
 #define BRUTO_MAX  256
 
 typedef struct { bool tem; uint16_t n; uint8_t b[BRUTO_MAX]; } bruto_t;
 
-// O que cada campo editavel e no protobuf. Todos varint.
+// What each editable field is in the protobuf. All varint.
 typedef struct { bool modulo; uint8_t secao; uint8_t num; } campo_def_t;
 static const campo_def_t CAMPOS[MESH_CFG_N] = {
   /* PAPEL       */ { false, 1,  1 },   // DeviceConfig.role
@@ -65,39 +65,39 @@ static const campo_def_t CAMPOS[MESH_CFG_N] = {
   /* OK_MQTT     */ { false, 6, 105 },  // LoRaConfig.config_ok_to_mqtt
 };
 
-// Secoes que NUNCA sao reenviadas (ver o .hpp): power 3, network 4,
-// security 8, sessionkey 9; modulo serial 2.
+// Sections that are NEVER resent (see the .hpp): power 3, network 4,
+// security 8, sessionkey 9; serial module 2.
 static bool secao_proibida(bool modulo, int secao)
 {
   return modulo ? (secao == 2) : (secao == 3 || secao == 4 || secao == 8 || secao == 9);
 }
 
-// Escrito pela tarefa do servico, lido pela interface: spinlock, porque as
-// secoes criticas sao copias e varreduras de algumas centenas de bytes.
+// Written by the service task, read by the interface: a spinlock, because the
+// critical sections are copies and scans of a few hundred bytes.
 static portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
 EXT_RAM_BSS_ATTR static bruto_t s_cfg[CFG_SECOES];
 EXT_RAM_BSS_ATTR static bruto_t s_mod[MOD_SECOES];
 EXT_RAM_BSS_ATTR static bruto_t s_user, s_meta, s_myinfo;
-EXT_RAM_BSS_ATTR static bruto_t s_canal0;   // o Channel PRIMARIO inteiro (indice 0)
+EXT_RAM_BSS_ATTR static bruto_t s_canal0;   // the whole PRIMARY Channel (index 0)
 static char     s_aviso[96];
 static uint32_t s_aviso_ms = 0;
 static bool     s_dump_ok = false;
 static bool     s_gravando = false;
 static uint32_t s_gravando_ms = 0;
-static char     s_motivo[72];   // por que o ultimo mesh_cfg_gravar nao mandou nada (para a tela)
+static char     s_motivo[72];   // why the last mesh_cfg_gravar sent nothing (for the screen)
 
-#define GRAVANDO_PRAZO_MS 90000   // o no reinicia em ~5 s; 90 s cobre um boot lento
+#define GRAVANDO_PRAZO_MS 90000   // the node restarts in ~5 s; 90 s covers a slow boot
 
 
 // ---------------------------------------------------------------------------
-// Ganchos do servico
+// Service hooks
 // ---------------------------------------------------------------------------
 static void guardar(bruto_t* d, const uint8_t* b, size_t n)
 {
   if (n > BRUTO_MAX) {
-    // Maior que o buffer: guardar truncado e reenviar depois perderia campos
-    // no no. Marca como desconhecida - a edicao dela fica bloqueada.
-    ESP_LOGD(TAG, "secao de %u bytes nao cabe - edicao dela desligada", (unsigned)n);
+    // Larger than the buffer: storing it truncated and resending later would lose fields
+    // on the node. Mark it unknown - editing it is blocked.
+    ESP_LOGD(TAG, "section of %u bytes does not fit - editing it disabled", (unsigned)n);
     taskENTER_CRITICAL(&s_mux); d->tem = false; d->n = 0; taskEXIT_CRITICAL(&s_mux);
     return;
   }
@@ -127,8 +127,8 @@ static void despejar_um(const char* nome, int secao, const bruto_t& b)
 
 void mesh_admin_despejar(void)
 {
-  // Copia antes de imprimir: printf com o spinlock tomado seria longo demais.
-  // Na PSRAM: ~7,5 KB que so este comando de console usa.
+  // Copy before printing: printf with the spinlock held would take too long.
+  // In PSRAM: ~7.5 KB that only this console command uses.
   EXT_RAM_BSS_ATTR static bruto_t cfg[CFG_SECOES], mod[MOD_SECOES], c0;
   taskENTER_CRITICAL(&s_mux);
   memcpy(cfg, s_cfg, sizeof(cfg)); memcpy(mod, s_mod, sizeof(mod)); c0 = s_canal0;
@@ -149,7 +149,7 @@ void mesh_admin_guardar_aviso(const uint8_t* b, size_t n)
 {
   char msg[sizeof(s_aviso)] = "";
   if (!pb_achar_texto(b, n, 4, msg, sizeof(msg)) || !msg[0]) { return; }   // ClientNotification.message
-  ESP_LOGW(TAG, "aviso do no: %s", msg);
+  ESP_LOGW(TAG, "notice from the node: %s", msg);
   taskENTER_CRITICAL(&s_mux);
   memcpy(s_aviso, msg, sizeof(s_aviso));
   s_aviso_ms = tab5_agora_ms() | 1u;
@@ -162,42 +162,42 @@ void mesh_admin_inicio_dump(void) { s_dump_ok = false; }
 void mesh_admin_fim_dump(void)
 {
   s_dump_ok = true;
-  if (s_gravando) { ESP_LOGI(TAG, "no se reapresentou - valores novos confirmados"); }
+  if (s_gravando) { ESP_LOGI(TAG, "node reappeared - new values confirmed"); }
   s_gravando = false;
   sistema_avisar(AVISO_MESH_NOS);
 }
 
-// INSISTE enquanto o no nao volta. O primeiro pedido de configuracao sai 15 s
-// depois de gravar (tab5_mesh_interno_reapresentar_em); um boot mais lento
-// perde esse pedido, e sem isto o proximo so sairia no ritmo de silencio do
-// servico (minutos). De 20 em 20 s ate o dump chegar ou o prazo acabar.
+// KEEPS TRYING while the node is not back. The first configuration request goes out 15 s
+// after writing (tab5_mesh_interno_reapresentar_em); a slower boot
+// misses that request, and without this the next one would only go out at the service's
+// silence rhythm (minutes). Every 20 s until the dump arrives or the timeout ends.
 void mesh_admin_tique(uint32_t t)
 {
   static uint32_t ultimo = 0;
   if (!s_gravando) { ultimo = 0; return; }
-  // O PRAZO VALE AQUI TAMBEM, e nao so quando a tela pergunta (estado()):
-  // com a pagina fechada, um no que nunca volta seria pedido de 20 em 20 s
-  // para sempre.
+  // THE TIMEOUT APPLIES HERE TOO, and not only when the screen asks (estado()):
+  // with the page closed, a node that never comes back would be asked every 20 s
+  // forever.
   if (t - s_gravando_ms > GRAVANDO_PRAZO_MS) {
-    ESP_LOGW(TAG, "o no nao se reapresentou em %d s depois de gravar", GRAVANDO_PRAZO_MS / 1000);
+    ESP_LOGW(TAG, "the node did not reappear within %d s of writing", GRAVANDO_PRAZO_MS / 1000);
     s_gravando = false;
     return;
   }
   if (t - s_gravando_ms < 35000) { return; }
   if (ultimo == 0 || t - ultimo >= 20000) {
     ultimo = t;
-    ESP_LOGI(TAG, "o no ainda nao voltou - pedindo a configuracao de novo");
+    ESP_LOGI(TAG, "the node is not back yet - requesting the configuration again");
     tab5_mesh_interno_reapresentar_em(0, true);
   }
 }
 
 // ---------------------------------------------------------------------------
-// Leitura
+// Reading
 // ---------------------------------------------------------------------------
-// PRECISAO DA POSICAO NO CANAL: Channel{ 2: settings{ 7: module_settings{
-// 1: position_precision } } }. Sem module_settings o firmware trata o
-// primario como os canais de antes do campo existir: 13 bits (~3 km) - ver
-// PositionModule::allocPositionPacket. Com trava tomada.
+// POSITION PRECISION ON THE CHANNEL: Channel{ 2: settings{ 7: module_settings{
+// 1: position_precision } } }. Without module_settings the firmware treats the
+// primary like channels from before the field existed: 13 bits (~3 km) - see
+// PositionModule::allocPositionPacket. With the lock held.
 static int32_t precisao_de(const bruto_t& c)
 {
   if (!c.tem) { return -1; }
@@ -208,8 +208,8 @@ static int32_t precisao_de(const bruto_t& c)
   return pb_achar_varint(mod.val, mod.n_val, 1, &v) ? (int32_t)v : 0;
 }
 
-// UPLINK DO CANAL: Channel{ 2: settings{ 5: uplink_enabled } }. Desligado, o
-// no nao leva ao MQTT o que recebe pelo radio nesse canal. Com trava tomada.
+// CHANNEL UPLINK: Channel{ 2: settings{ 5: uplink_enabled } }. Off, the
+// node does not take to MQTT what it receives over the radio on this channel. With the lock held.
 static int8_t uplink_de(const bruto_t& c)
 {
   if (!c.tem) { return -1; }
@@ -222,14 +222,14 @@ static int8_t uplink_de(const bruto_t& c)
 static mesh_cfg_estado_t estado(void)
 {
   if (s_gravando && (tab5_agora_ms() - s_gravando_ms) > GRAVANDO_PRAZO_MS) {
-    ESP_LOGW(TAG, "o no nao se reapresentou em %d s depois de gravar", GRAVANDO_PRAZO_MS / 1000);
+    ESP_LOGW(TAG, "the node did not reappear within %d s of writing", GRAVANDO_PRAZO_MS / 1000);
     s_gravando = false;
   }
   if (s_gravando) { return MESH_CFG_GRAVANDO; }
   return (s_dump_ok && tab5_mesh_interno_pode_admin()) ? MESH_CFG_PRONTO : MESH_CFG_SEM_NO;
 }
 
-// O valor do campo como a pessoa o ve: o pendente, se mexeu; senao o do no.
+// The field's value as the person sees it: the pending one, if touched; otherwise the node's.
 static int32_t valor_pendente(const mesh_cfg_mudanca_t* m, const mesh_cfg_t* c, int campo)
 {
   return m->muda[campo] ? m->v[campo] : c->v[campo];
@@ -288,8 +288,8 @@ void mesh_cfg_ler(mesh_cfg_t* o)
   }
   if (s_myinfo.tem) {
     if (pb_achar_varint(s_myinfo.b, s_myinfo.n, 8, &v))  { o->reinicios = (uint32_t)v; }
-    // nodedb_count (15) so existe no firmware novo: ausente fica -1, e a tela
-    // nao inventa um numero.
+    // nodedb_count (15) only exists in newer firmware: if absent it stays -1, and the screen
+    // does not make up a number.
     if (pb_achar_varint(s_myinfo.b, s_myinfo.n, 15, &v)) { o->nos_no_radio = (int32_t)v; }
   }
   memcpy(o->aviso, s_aviso, sizeof(o->aviso));
@@ -318,9 +318,9 @@ int32_t mesh_admin_precisao_primario(void)
 }
 
 // ---------------------------------------------------------------------------
-// Escrita
+// Writing
 // ---------------------------------------------------------------------------
-// AdminMessage{ campo: valor varint }
+// AdminMessage{ field: varint value }
 static bool admin_varint(int campo, uint64_t valor)
 {
   uint8_t a[16];
@@ -329,9 +329,9 @@ static bool admin_varint(int campo, uint64_t valor)
   return tab5_mesh_interno_admin(a, pb_tamanho(&w));
 }
 
-// AdminMessage{ campo: <submensagem ja montada> } em 'out'. 0 = nao cabe
-// no buffer OU passa do que um pacote leva (ADM_MAX) - nos dois casos a
-// secao nao pode ir, e quem chama recusa a gravacao inteira.
+// AdminMessage{ field: <already-built submessage> } into 'out'. 0 = does not fit
+// in the buffer OR exceeds what a packet carries (ADM_MAX) - in both cases the
+// section cannot go, and the caller refuses the whole write.
 static size_t admin_msg(uint8_t* out, size_t tam, int campo, const pb_escritor_t* corpo)
 {
   pb_escritor_t w = pb_escritor(out, tam);
@@ -340,10 +340,10 @@ static size_t admin_msg(uint8_t* out, size_t tam, int campo, const pb_escritor_t
   return n <= ADM_MAX ? n : 0;
 }
 
-// O BRUTO GUARDADO NO DUMP, como inicio de uma secao a reenviar. Os campos
-// mudados vao DEPOIS dele: o nanopb fica com a ultima ocorrencia de cada
-// campo, entao o valor novo vence o antigo sem precisar reescrever a secao.
-// nullptr = pronto para receber os campos; senao, POR QUE nao (para o log).
+// THE RAW BYTES STORED FROM THE DUMP, as the start of a section to resend. The changed
+// fields go AFTER it: nanopb keeps the last occurrence of each
+// field, so the new value beats the old without rewriting the section.
+// nullptr = ready to receive the fields; otherwise, WHY not (for the log).
 static const char* comecar_do_bruto(pb_escritor_t* w, const bruto_t& b)
 {
   taskENTER_CRITICAL(&s_mux);
@@ -355,14 +355,14 @@ static const char* comecar_do_bruto(pb_escritor_t* w, const bruto_t& b)
   return nullptr;
 }
 
-// O CANAL PRIMARIO com outra precisao e/ou outro uplink (-1 = mantem): o
-// Channel guardado campo a campo, cru, menos o que muda. A precisao mora em
-// settings.module_settings, SUBMENSAGEM - duas ocorrencias dela nao garantem a
-// ultima vencendo campo a campo, entao ela e remontada (o is_muted segue
-// igual). O uplink (settings.uplink_enabled) e escalar: sai o velho, entra o novo.
+// THE PRIMARY CHANNEL with another precision and/or another uplink (-1 = keep): the
+// stored Channel field by field, raw, except what changes. The precision lives in
+// settings.module_settings, a SUBMESSAGE - two occurrences of it do not guarantee the
+// last winning field by field, so it is rebuilt (is_muted stays
+// the same). The uplink (settings.uplink_enabled) is scalar: the old goes out, the new goes in.
 static bool montar_canal(pb_escritor_t* w, int32_t precisao, int uplink)
 {
-  EXT_RAM_BSS_ATTR static bruto_t c;   // so a interface grava
+  EXT_RAM_BSS_ATTR static bruto_t c;   // only the interface writes
   taskENTER_CRITICAL(&s_mux);
   c = s_canal0;
   taskEXIT_CRITICAL(&s_mux);
@@ -381,12 +381,12 @@ static bool montar_canal(pb_escritor_t* w, int32_t precisao, int uplink)
     pb_escritor_t wm = pb_escritor(mb, sizeof(mb));
     if (precisao >= 0) { pb_w_num(&wm, 1, (uint64_t)precisao); }   // position_precision
     while (pb_campo(&ls, &g)) {
-      if (precisao >= 0 && g.num == 7 && g.tipo == PB_LEN) {    // module_settings: o resto dela
+      if (precisao >= 0 && g.num == 7 && g.tipo == PB_LEN) {    // module_settings: the rest of it
         pb_leitor_t lm = pb_leitor(g.val, g.n_val);
         pb_campo_t h;
         while (pb_campo(&lm, &h)) { if (h.num != 1) { pb_w_cru(&wm, h.ini, h.n_total); } }
       } else if (uplink >= 0 && g.num == 5) {
-        continue;                                               // uplink_enabled: vai o novo
+        continue;                                               // uplink_enabled: the new one goes
       } else {
         pb_w_cru(&ws, g.ini, g.n_total);
       }
@@ -405,33 +405,33 @@ bool mesh_cfg_gravar(const mesh_cfg_mudanca_t* m)
 {
   s_motivo[0] = 0;
   if (estado() != MESH_CFG_PRONTO) {
-    ESP_LOGW(TAG, "gravar recusado: sem no ou dump incompleto");
+    ESP_LOGW(TAG, "write refused: no node or incomplete dump");
     snprintf(s_motivo, sizeof(s_motivo), tr("sem o nó, ou a configuração ainda chegando"));
     return false;
   }
 
-  // MONTA TUDO ANTES DE MANDAR QUALQUER COISA. Se uma secao nao puder ir
-  // (desconhecida, proibida, grande demais), nada sai - meia transacao
-  // gravada seria uma configuracao que ninguem pediu.
-  // device, position, lora, bluetooth, mqtt, telemetry + network + o canal
-  // primario + o dono = 9.
+  // BUILD EVERYTHING BEFORE SENDING ANYTHING. If a section cannot go
+  // (unknown, forbidden, too big), nothing goes out - half a transaction
+  // written would be a configuration nobody asked for.
+  // device, position, lora, bluetooth, mqtt, telemetry + network + the primary
+  // channel + the owner = 9.
   enum { MAX_MSGS = 10 };
-  EXT_RAM_BSS_ATTR static uint8_t msgs[MAX_MSGS][ADM_MAX + 16];   // so a interface grava
+  EXT_RAM_BSS_ATTR static uint8_t msgs[MAX_MSGS][ADM_MAX + 16];   // only the interface writes
   size_t tam[MAX_MSGS];
   int n_msgs = 0;
 
   bool feito[MESH_CFG_N] = { };
-  int msg_mqtt = -1;   // indice, em msgs[], da secao MQTT (ver a regra do Bluetooth abaixo)
+  int msg_mqtt = -1;   // index, in msgs[], of the MQTT section (see the Bluetooth rule below)
   for (int i = 0; i < MESH_CFG_N; ++i) {
     if (!m->muda[i] || feito[i]) { continue; }
     const campo_def_t& c = CAMPOS[i];
-    if (secao_proibida(c.modulo, c.secao)) { ESP_LOGE(TAG, "secao proibida"); return false; }
+    if (secao_proibida(c.modulo, c.secao)) { ESP_LOGE(TAG, "forbidden section"); return false; }
 
-    // A secao guardada + TODOS os campos alterados dela, no fim.
+    // The stored section + ALL its changed fields, at the end.
     EXT_RAM_BSS_ATTR static uint8_t corpo[ADM_MAX];
     pb_escritor_t wc = pb_escritor(corpo, sizeof(corpo));
     if (const char* porque = comecar_do_bruto(&wc, c.modulo ? s_mod[c.secao] : s_cfg[c.secao])) {
-      ESP_LOGW(TAG, "secao %s %d %s - nao da para gravar", c.modulo ? "modulo" : "config", c.secao, porque);
+      ESP_LOGW(TAG, "section %s %d %s - cannot write", c.modulo ? "module" : "config", c.secao, porque);
       return false;
     }
     for (int k = i; k < MESH_CFG_N; ++k) {
@@ -440,7 +440,7 @@ bool mesh_cfg_gravar(const mesh_cfg_mudanca_t* m)
       feito[k] = true;
     }
 
-    // Config{ secao: corpo } ou ModuleConfig{ secao: corpo }, dentro do
+    // Config{ section: body } or ModuleConfig{ section: body }, inside the
     // AdminMessage{ set_config | set_module_config }.
     EXT_RAM_BSS_ATTR static uint8_t sec[ADM_MAX];
     pb_escritor_t ws = pb_escritor(sec, sizeof(sec));
@@ -448,7 +448,7 @@ bool mesh_cfg_gravar(const mesh_cfg_mudanca_t* m)
     if (n_msgs >= MAX_MSGS) { return false; }
     tam[n_msgs] = admin_msg(msgs[n_msgs], sizeof(msgs[0]), c.modulo ? ADM_SET_MODULE_CONFIG : ADM_SET_CONFIG, &ws);
     if (!tam[n_msgs]) {
-      ESP_LOGE(TAG, "secao grande demais para um pacote");
+      ESP_LOGE(TAG, "section too big for one packet");
       snprintf(s_motivo, sizeof(s_motivo), tr("configuração grande demais para um pacote"));
       return false;
     }
@@ -456,14 +456,14 @@ bool mesh_cfg_gravar(const mesh_cfg_mudanca_t* m)
     ++n_msgs;
   }
 
-  // WI-FI DO NO: Config.network = secao guardada + wifi_enabled(1) + ssid(3)
-  // + psk(4) no fim. A senha nao volta do no, entao so vai com nome E senha.
+  // NODE WI-FI: Config.network = stored section + wifi_enabled(1) + ssid(3)
+  // + psk(4) at the end. The password does not come back from the node, so it only goes with name AND password.
   if (m->wifi_ssid[0] || m->wifi_psk[0] || m->wifi_muda) {
     const bool tem_rede = m->wifi_ssid[0] || m->wifi_psk[0];
-    if (tem_rede && (!m->wifi_ssid[0] || (!m->wifi_psk[0] && !m->wifi_aberta))) { ESP_LOGW(TAG, "wifi: precisa de nome e senha juntos"); return false; }
+    if (tem_rede && (!m->wifi_ssid[0] || (!m->wifi_psk[0] && !m->wifi_aberta))) { ESP_LOGW(TAG, "wifi: needs name and password together"); return false; }
     EXT_RAM_BSS_ATTR static uint8_t corpo[ADM_MAX];
     pb_escritor_t wc = pb_escritor(corpo, sizeof(corpo));
-    if (const char* porque = comecar_do_bruto(&wc, s_cfg[4])) { ESP_LOGW(TAG, "wifi: a secao network %s - nada enviado", porque); return false; }
+    if (const char* porque = comecar_do_bruto(&wc, s_cfg[4])) { ESP_LOGW(TAG, "wifi: the network section %s - nothing sent", porque); return false; }
     pb_w_num(&wc, 1, m->wifi_liga ? 1 : 0);                    // wifi_enabled
     if (tem_rede) {
       pb_w_texto(&wc, 3, m->wifi_ssid, 32);                    // wifi_ssid
@@ -474,58 +474,58 @@ bool mesh_cfg_gravar(const mesh_cfg_mudanca_t* m)
     pb_w_sub(&ws, 4, &wc);                                     // Config.network = 4
     if (n_msgs >= MAX_MSGS) { return false; }
     tam[n_msgs] = admin_msg(msgs[n_msgs], sizeof(msgs[0]), ADM_SET_CONFIG, &ws);
-    if (!tam[n_msgs]) { ESP_LOGE(TAG, "wifi: secao grande demais para um pacote"); return false; }
+    if (!tam[n_msgs]) { ESP_LOGE(TAG, "wifi: section too big for one packet"); return false; }
     ++n_msgs;
   }
 
-  // O CANAL PRIMARIO: set_channel com a precisao e/ou o uplink novos.
+  // THE PRIMARY CHANNEL: set_channel with the new precision and/or uplink.
   if (m->precisao_muda || m->uplink_muda) {
     EXT_RAM_BSS_ATTR static uint8_t corpo[ADM_MAX];
     pb_escritor_t wc = pb_escritor(corpo, sizeof(corpo));
     if (!montar_canal(&wc, m->precisao_muda ? m->precisao : -1, m->uplink_muda ? (m->uplink ? 1 : 0) : -1)) {
-      ESP_LOGW(TAG, "canal primario: nao veio no dump ou nao cabe - nada enviado");
+      ESP_LOGW(TAG, "primary channel: not in the dump or does not fit - nothing sent");
       snprintf(s_motivo, sizeof(s_motivo), "o canal principal do nó ainda não chegou");
       return false;
     }
     if (n_msgs >= MAX_MSGS) { return false; }
     tam[n_msgs] = admin_msg(msgs[n_msgs], sizeof(msgs[0]), ADM_SET_CHANNEL, &wc);
-    if (!tam[n_msgs]) { ESP_LOGE(TAG, "canal grande demais para um pacote"); return false; }
+    if (!tam[n_msgs]) { ESP_LOGE(TAG, "channel too big for one packet"); return false; }
     ++n_msgs;
   }
 
-  // NOMES: o User guardado do nosso no + os nomes no fim. Reenviar o User
-  // inteiro preserva o que o set_owner tambem le (is_licensed,
-  // is_unmessagable) - so com os nomes, um no radioamador perderia a licenca.
+  // NAMES: our node's stored User + the names at the end. Resending the whole
+  // User preserves what set_owner also reads (is_licensed,
+  // is_unmessagable) - with only the names, a ham radio node would lose its licence.
   if (m->longo[0] || m->curto[0]) {
     EXT_RAM_BSS_ATTR static uint8_t u[ADM_MAX];
     pb_escritor_t wu = pb_escritor(u, sizeof(u));
-    // Sem o User do no nao vai: so com os nomes, o set_owner desligaria o
-    // is_licensed de um no radioamador (ele compara o campo, ausente = false).
-    if (const char* porque = comecar_do_bruto(&wu, s_user)) { ESP_LOGW(TAG, "nomes: o User do nosso no %s - nada enviado", porque); return false; }
+    // Without the node's User it does not go: with only the names, set_owner would turn off
+    // is_licensed on a ham radio node (it compares the field, absent = false).
+    if (const char* porque = comecar_do_bruto(&wu, s_user)) { ESP_LOGW(TAG, "names: our node's User %s - nothing sent", porque); return false; }
     if (m->longo[0]) { pb_w_texto(&wu, 2, m->longo, MESH_NOME_LONGO - 1); }   // long_name
     if (m->curto[0]) { pb_w_texto(&wu, 3, m->curto, MESH_NOME_CURTO - 1); }   // short_name
     if (n_msgs >= MAX_MSGS) { return false; }
     tam[n_msgs] = admin_msg(msgs[n_msgs], sizeof(msgs[0]), ADM_SET_OWNER, &wu);
-    if (!tam[n_msgs]) { ESP_LOGE(TAG, "nome grande demais para um pacote"); return false; }
+    if (!tam[n_msgs]) { ESP_LOGE(TAG, "name too big for one packet"); return false; }
     ++n_msgs;
   }
 
   if (n_msgs == 0) { return false; }
 
-  // A SECAO MQTT PELO BLUETOOTH VAI SOZINHA, SEM TRANSACAO. O firmware
-  // (AdminModule::handleSetModuleConfig, caso mqtt) chama disableBluetooth()
-  // ASSIM QUE recebe a secao MQTT - mesmo com a transacao aberta. Dentro de
-  // begin/commit, o BLE caia antes do commit: a transacao ficava aberta (o
-  // firmware nao a expira), nada era gravado e o no nao reiniciava, agora sem
-  // Bluetooth ate alguem desliga-lo da tomada.
-  // Fora da transacao o mesmo set_module_config valida, grava no disco e
-  // reinicia o no sozinho (saveChanges com shouldReboot) - o BLE cair logo
-  // em seguida nao atrapalha mais nada. Por isso pelo Bluetooth a secao MQTT
-  // precisa ser a UNICA mudanca: qualquer outra, depois dela, nao chegaria.
-  // Pelo cabo nao ha Bluetooth a cair, e vale a transacao normal.
+  // OVER BLUETOOTH THE MQTT SECTION GOES ALONE, WITHOUT A TRANSACTION. The firmware
+  // (AdminModule::handleSetModuleConfig, mqtt case) calls disableBluetooth()
+  // AS SOON AS it receives the MQTT section - even with the transaction open. Inside
+  // begin/commit, BLE dropped before the commit: the transaction stayed open (the
+  // firmware does not expire it), nothing was written and the node did not restart, now without
+  // Bluetooth until someone unplugged it.
+  // Outside the transaction the same set_module_config validates, writes to disk and
+  // restarts the node by itself (saveChanges with shouldReboot) - BLE dropping straight
+  // after no longer gets in the way. That is why over Bluetooth the MQTT section
+  // must be the ONLY change: any other, after it, would not arrive.
+  // Over the cable there is no Bluetooth to drop, and the normal transaction applies.
   if (msg_mqtt >= 0 && tab5_mesh_via() == AJUSTES_MESH_BLUETOOTH) {
     if (n_msgs > 1) {
-      ESP_LOGW(TAG, "pelo Bluetooth a secao MQTT grava sozinha - outras mudancas pendentes junto");
+      ESP_LOGW(TAG, "over Bluetooth the MQTT section is written alone - other changes pending with it");
       snprintf(s_motivo, sizeof(s_motivo), "pelo Bluetooth, MQTT/proxy grava sozinho: grave o resto antes");
       return false;
     }
@@ -533,29 +533,29 @@ bool mesh_cfg_gravar(const mesh_cfg_mudanca_t* m)
       snprintf(s_motivo, sizeof(s_motivo), tr("o enlace com o nó recusou o envio"));
       return false;
     }
-    ESP_LOGI(TAG, "secao MQTT enviada sem transacao (Bluetooth) - o no grava, desliga o BLE e reinicia");
+    ESP_LOGI(TAG, "MQTT section sent without a transaction (Bluetooth) - the node writes, turns BLE off and restarts");
     s_gravando = true;
     s_gravando_ms = tab5_agora_ms();
     tab5_mesh_interno_reapresentar_em(15000, true);
     return true;
   }
 
-  // begin -> secoes -> commit. O commit grava e reinicia o no.
+  // begin -> sections -> commit. The commit writes and restarts the node.
   bool ok = admin_varint(ADM_BEGIN_EDIT, 1);
   for (int i = 0; ok && i < n_msgs; ++i) { ok = tab5_mesh_interno_admin(msgs[i], tam[i]); }
   if (ok) { ok = admin_varint(ADM_COMMIT_EDIT, 1); }
   if (!ok) {
-    // Transacao aberta sem commit. O firmware NAO a expira: as mudancas ficam
-    // so na RAM do no, sem gravar, ate ele reiniciar.
-    ESP_LOGE(TAG, "enlace recusou no meio da transacao - o no fica sem gravar ate reiniciar");
+    // Transaction open without commit. The firmware does NOT expire it: the changes stay
+    // only in the node's RAM, unwritten, until it restarts.
+    ESP_LOGE(TAG, "link refused mid-transaction - the node stays unwritten until it restarts");
     snprintf(s_motivo, sizeof(s_motivo), tr("o enlace caiu no meio da gravação - reinicie o nó"));
     return false;
   }
-  ESP_LOGI(TAG, "transacao enviada (%d mensagem(ns)) - o no grava e reinicia", n_msgs);
+  ESP_LOGI(TAG, "transaction sent (%d message(s)) - the node writes and restarts", n_msgs);
   s_gravando = true;
   s_gravando_ms = tab5_agora_ms();
-  // Pela serial o no reiniciado nao fala sozinho: pedir a configuracao depois
-  // do boot (o BLE reconecta e pede sozinho; pedir de novo nao faz mal).
+  // Over serial the restarted node does not speak by itself: request the configuration after
+  // boot (BLE reconnects and asks by itself; asking again does no harm).
   tab5_mesh_interno_reapresentar_em(15000, true);
   return true;
 }
@@ -564,8 +564,8 @@ bool mesh_cfg_posicao_fixa_do_gps(void)
 {
   if (estado() != MESH_CFG_PRONTO) { return false; }
   const nmea_posicao_t g = tab5_gps_posicao();
-  if (!g.valida || g.qualidade == 0) { ESP_LOGW(TAG, "posicao fixa: GPS do Tab5 sem fix"); return false; }
-  // A mesma Position que o servico manda para a malha (mesh_pb_posicao).
+  if (!g.valida || g.qualidade == 0) { ESP_LOGW(TAG, "fixed position: Tab5 GPS has no fix"); return false; }
+  // The same Position the service sends to the mesh (mesh_pb_posicao).
   uint8_t pos[32];
   pb_escritor_t wp = pb_escritor(pos, sizeof(pos));
   mesh_pb_posicao(&wp, (int32_t)(g.lat * 1e7), (int32_t)(g.lon * 1e7), (int32_t)g.altitude_m,
@@ -573,8 +573,8 @@ bool mesh_cfg_posicao_fixa_do_gps(void)
   uint8_t a[48];
   const size_t n = admin_msg(a, sizeof(a), ADM_SET_FIXED_POSITION, &wp);
   const bool ok = n && tab5_mesh_interno_admin(a, n);
-  // A secao position no dump guardado ainda diz "nao fixa": pede de novo.
-  if (ok) { ESP_LOGI(TAG, "posicao fixa enviada (%.5f, %.5f)", g.lat, g.lon); tab5_mesh_interno_reapresentar_em(3000, false); }
+  // The position section in the stored dump still says "not fixed": ask again.
+  if (ok) { ESP_LOGI(TAG, "fixed position sent (%.5f, %.5f)", g.lat, g.lon); tab5_mesh_interno_reapresentar_em(3000, false); }
   return ok;
 }
 
@@ -590,7 +590,7 @@ bool mesh_cfg_acertar_hora(void)
 {
   if (estado() != MESH_CFG_PRONTO) { return false; }
   const uint32_t agora = tab5_hora_epoch();
-  if (!agora) { ESP_LOGW(TAG, "hora do Tab5 ainda nao acertada"); return false; }
+  if (!agora) { ESP_LOGW(TAG, "Tab5 time not set yet"); return false; }
   uint8_t a[8];
   pb_escritor_t w = pb_escritor(a, sizeof(a));
   pb_w_fixo32(&w, ADM_SET_TIME_ONLY, agora);
@@ -602,7 +602,7 @@ bool mesh_cfg_reiniciar(void)
   if (estado() != MESH_CFG_PRONTO) { return false; }
   const bool ok = admin_varint(ADM_REBOOT_SECONDS, 5);
   if (ok) {
-    s_gravando = true;   // mesma espera: o no some e volta
+    s_gravando = true;   // same wait: the node vanishes and comes back
     s_gravando_ms = tab5_agora_ms();
     tab5_mesh_interno_reapresentar_em(15000, true);
   }

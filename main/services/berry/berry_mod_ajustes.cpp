@@ -1,14 +1,14 @@
-// Modulo Berry 'ajustes' - as preferencias da pessoa (services/ajustes.h).
-// Brilho e volume o script pode mudar (e o que a barra de cima faz); o resto e
-// so leitura: tempo da tela, casa e fuso sao decisoes de quem segura o
-// aparelho. Ver berry_apps.cpp (o motor) e berry_interno.hpp.
+// Berry module 'ajustes' - the person's preferences (services/ajustes.h).
+// The script may change brightness and volume (it is what the top bar does); the rest is
+// read-only: screen timeout, home position and time zone are decisions for whoever holds the
+// device. See berry_apps.cpp (the engine) and berry_interno.hpp.
 
 #include "ajustes.h"
 #include "tab5_hora.hpp"
 #include "berry_interno.hpp"
 
-// brilho([pct]) - o brilho da tela, 0..100 (o minimo do sistema segue valendo:
-// 0 nao apaga a tela). Com argumento aplica na hora e grava; devolve como ficou.
+// brilho([pct]) - the screen brightness, 0..100 (the system minimum still applies:
+// 0 does not turn the screen off). With an argument it applies at once and saves; returns the result.
 static int aj_brilho(bvm* vm)
 {
   if (be_top(vm) >= 1 && be_isnumber(vm, 1)) {
@@ -20,8 +20,8 @@ static int aj_brilho(bvm* vm)
   be_return(vm);
 }
 
-// volume([v]) - o volume do sistema, 0..100 (o mesmo de Ajustes). E o mesmo
-// do musica.volume: uma conta so para os dois.
+// volume([v]) - the system volume, 0..100 (the same as Settings). It is the same
+// as musica.volume: one calculation for both.
 int berry_volume(bvm* vm)
 {
   if (be_top(vm) >= 1 && be_isnumber(vm, 1)) {
@@ -33,14 +33,14 @@ int berry_volume(bvm* vm)
   be_return(vm);
 }
 
-// tela_segundos() - quantos segundos sem toque ate a tela apagar (so leitura).
+// tela_segundos() - how many seconds without touch until the screen goes off (read-only).
 static int aj_tela_segundos(bvm* vm)
 {
   be_pushint(vm, ajustes_tela_s());
   be_return(vm);
 }
 
-// casa() - [lat, lon] da casa, ou nil se a pessoa nao configurou (so leitura).
+// casa() - [lat, lon] of the home position, or nil if the person has not set it (read-only).
 static int aj_casa(bvm* vm)
 {
   float lat, lon;

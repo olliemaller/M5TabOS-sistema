@@ -1,6 +1,6 @@
-// TOCADOR DE MUSICA - a capa: a da etiqueta ID3, a da pasta, o cache no cartao
-// e a tarefa propria que resolve o pedido. A busca na internet esta em
-// tab5_musica_rede.cpp. Ver tab5_musica_interno.hpp.
+// MUSIC PLAYER - the cover: the one in the ID3 tag, the folder's, the cache on the
+// card and the dedicated task that handles the request. The internet search is in
+// tab5_musica_rede.cpp. See tab5_musica_interno.hpp.
 #include "tab5_musica_interno.hpp"
 #include "ajustes.h"
 #include "app.h"
@@ -24,13 +24,13 @@
 static const char* TAG = "musica";
 
 // ---------------------------------------------------------------------------
-// A CAPA (ver tab5_musica.hpp)
+// THE COVER (see tab5_musica.hpp)
 // ---------------------------------------------------------------------------
-// Numa tarefa propria (pilha na PSRAM, nasce no primeiro pedido e fica
-// esperando o proximo): a busca pela internet leva segundos e nao pode
-// segurar nem o som nem a interface. O laco do som so deixa o pedido.
-static capa_ped_t          s_capa_ped = { };     // o ultimo pedido (= a musica que toca)
-static bool                s_capa_novo = false;  // ha pedido que a tarefa ainda nao pegou
+// On its own task (stack in PSRAM, created on the first request and left
+// waiting for the next): the internet search takes seconds and must not
+// hold up either the sound or the interface. The sound loop only drops off the request.
+static capa_ped_t          s_capa_ped = { };     // the last request (= the track playing)
+static bool                s_capa_novo = false;  // there is a request the task has not picked up yet
 static tab5_musica_capa_t  s_capa_estado = TAB5_MUSICA_CAPA_NENHUMA;
 static char                s_capa_arq[200] = "";
 static uint32_t            s_capa_versao = 0;
@@ -48,15 +48,15 @@ tab5_musica_capa_t tab5_musica_capa(char* arquivo, size_t tam, uint32_t* versao)
   return e;
 }
 
-// A leitura da capa para a interface: pelas portas do servico de volumes
-// (segura o disco e grava o pendente antes), o app nao abre arquivo.
+// Reading the cover for the interface: through the volume service's gates
+// (holds the disk and writes pending data first), the app does not open files.
 uint8_t* tab5_musica_capa_ler(const char* arquivo, size_t* n)
 {
   return tab5_volume_ler_tudo(arquivo, 3 * 1024 * 1024, n);
 }
 
-// JPEG que o decodificador da tela (TJpgDec) abre: so o "baseline". Uma capa
-// progressiva (comum dentro do MP3) sairia em branco - melhor procurar outra.
+// JPEG that the screen's decoder (TJpgDec) opens: "baseline" only. A progressive
+// cover (common inside MP3) would come out blank - better to look for another.
 static bool jpeg_baseline(const uint8_t* b, size_t n)
 {
   if (n < 4 || b[0] != 0xFF || b[1] != 0xD8) { return false; }
@@ -65,7 +65,7 @@ static bool jpeg_baseline(const uint8_t* b, size_t n)
     if (b[i] != 0xFF) { return false; }
     const uint8_t m = b[i + 1];
     if (m == 0xC0 || m == 0xC1) { return true; }
-    if (m >= 0xC2 && m <= 0xCF && m != 0xC4 && m != 0xC8 && m != 0xCC) { return false; }   // progressivo, aritmetico...
+    if (m >= 0xC2 && m <= 0xCF && m != 0xC4 && m != 0xC8 && m != 0xCC) { return false; }   // progressive, arithmetic...
     if (m == 0xD9 || m == 0xDA) { return false; }
     i += 2 + ((size_t)b[i + 2] << 8 | b[i + 3]);
   }
@@ -74,7 +74,7 @@ static bool jpeg_baseline(const uint8_t* b, size_t n)
 
 static bool e_png(const uint8_t* b, size_t n) { return n > 8 && !memcmp(b, "\x89PNG", 4); }
 
-// Grava a imagem no cache: base + ".jpg"/".png". 'out' = o arquivo.
+// Writes the image to the cache: base + ".jpg"/".png". 'out' = the file.
 static bool capa_gravar(const char* base, const uint8_t* img, size_t n, char* out, size_t tam)
 {
   const bool png = e_png(img, n);
@@ -87,8 +87,8 @@ static bool capa_gravar(const char* base, const uint8_t* img, size_t n, char* ou
   return true;
 }
 
-// A imagem dentro da etiqueta ID3v2 (quadro APIC; a capa da frente se houver
-// mais de uma). Com o cartao montado.
+// The image inside the ID3v2 tag (APIC frame; the front cover if there is
+// more than one). With the card mounted.
 static bool capa_embutida(const char* abs, const char* base, char* out, size_t tam)
 {
   const int fd = open(abs, O_RDONLY);
@@ -104,8 +104,8 @@ static bool capa_embutida(const char* abs, const char* base, char* out, size_t t
       if (read(fd, q, 10) != 10 || !q[0]) { break; }
       const uint32_t n = (h[3] == 4) ? syncsafe(q + 4) : be32(q + 4);
       if (!n || n > tag) { break; }
-      // Compressao/cifra/unsync no quadro = nao da para usar cru. v2.4 com
-      // "tamanho dos dados" (0x01) tem 4 bytes a mais na frente.
+      // Compression/encryption/unsync on the frame = cannot be used raw. v2.4 with
+      // "data length" (0x01) has 4 extra bytes in front.
       const bool cru = (h[3] == 3) ? !(q[9] & 0xC0) : !(q[9] & 0x0E);
       const size_t extra = (h[3] == 4 && (q[9] & 0x01)) ? 4 : 0;
       if (!memcmp(q, "APIC", 4) && cru && n > 16 + extra && n <= CAPA_MAX_BYTES) {
@@ -113,10 +113,10 @@ static bool capa_embutida(const char* abs, const char* base, char* out, size_t t
         if (d && (uint32_t)read(fd, d, n) == n) {
           const uint8_t enc = d[extra];
           size_t i = extra + 1;
-          while (i < n && d[i]) { ++i; }   // tipo MIME (latin-1)
+          while (i < n && d[i]) { ++i; }   // MIME type (latin-1)
           ++i;
-          ++i;                              // tipo de imagem (3 = capa da frente)
-          if (enc == 1 || enc == 2) {       // descricao em UTF-16: termina em 00 00 alinhado
+          ++i;                              // picture type (3 = front cover)
+          if (enc == 1 || enc == 2) {       // description in UTF-16: ends in aligned 00 00
             while (i + 1 < n && (d[i] || d[i + 1])) { i += 2; }
             i += 2;
           } else {
@@ -134,7 +134,7 @@ static bool capa_embutida(const char* abs, const char* base, char* out, size_t t
   return ok;
 }
 
-// cover.jpg, folder.jpg, front.jpg, capa.jpg, albumart*.jpg na pasta da musica.
+// cover.jpg, folder.jpg, front.jpg, capa.jpg, albumart*.jpg in the track's folder.
 static bool capa_da_pasta(const char* abs, char* out, size_t tam)
 {
   char pasta[160 + TAB5_MUSICA_CAMINHO_MAX + 2];
@@ -165,15 +165,15 @@ static bool capa_da_pasta(const char* abs, char* out, size_t tam)
 static tab5_musica_capa_t capa_resolver(const capa_ped_t* p, char* out, size_t tam)
 {
   char raiz[160], base[200], abs[160 + TAB5_MUSICA_CAMINHO_MAX + 2];
-  // A chave do cache: o disco (artista + album) - as musicas do mesmo disco
-  // dividem a capa; sem album, artista + titulo; sem nada, o arquivo.
+  // The cache key: the album (artist + album) - tracks from the same album
+  // share the cover; without an album, artist + title; with nothing, the file.
   uint32_t chave;
   if (p->album[0] && p->artista[0]) { chave = fnv(p->album, fnv(p->artista, fnv("d:"))); }
   else if (p->titulo[0])            { chave = fnv(p->titulo, fnv(p->artista, fnv("t:"))); }
   else                              { chave = fnv(p->caminho); }
-  // O CACHE MORA NO CARTAO, a musica pode morar no pendrive: a capa de uma
-  // musica do pendrive tambem fica guardada (no cartao), e sem cartao ainda
-  // vale a imagem da pasta dela.
+  // THE CACHE LIVES ON THE CARD, the music may live on the USB drive: the cover of a
+  // track on the USB drive is also kept (on the card), and without a card the
+  // image in its folder still works.
   const bool sd = tab5_sd_montar();
   const bool abs_c = absoluto(p->caminho);
   const bool disco = abs_c ? tab5_volume_montar(p->caminho) : sd;
@@ -205,7 +205,7 @@ static tab5_musica_capa_t capa_resolver(const capa_ped_t* p, char* out, size_t t
   if (ok) { return TAB5_MUSICA_CAPA_PRONTA; }
   if (!sd || sem || !ajustes_capa_internet() || tab5_wifi_estado() != TAB5_WIFI_CONECTADO) { return TAB5_MUSICA_CAPA_NENHUMA; }
 
-  // A INTERNET, com o cartao solto (segundos de rede nao seguram o pendrive).
+  // THE INTERNET, with the card released (seconds of network do not hold the USB drive).
   uint8_t* img = nullptr;
   size_t n = 0;
   const net_t r = musica_capa_internet(p, &img, &n);
@@ -213,11 +213,11 @@ static tab5_musica_capa_t capa_resolver(const capa_ped_t* p, char* out, size_t t
   if (!tab5_sd_montar()) { heap_caps_free(img); return TAB5_MUSICA_CAPA_NENHUMA; }
   if (r == NET_ACHOU) {
     ok = capa_gravar(base, img, n, out, tam);
-    if (ok) { ESP_LOGI(TAG, "capa da internet: %s (%u bytes)", out, (unsigned)n); }
+    if (ok) { ESP_LOGI(TAG, "cover from the internet: %s (%u bytes)", out, (unsigned)n); }
   }
   if (!ok) {
-    // Nao tem (ou veio uma que a tela nao abre): marca, para nao perguntar
-    // de novo a cada vez que esta musica tocar. Apagar .capas/ refaz a busca.
+    // None (or one came that the screen cannot open): mark it, so as not to ask
+    // again every time this track plays. Deleting .capas/ redoes the search.
     char marca[220];
     snprintf(marca, sizeof(marca), "%s.sem", base);
     FILE* f = fopen(marca, "w");
@@ -242,7 +242,7 @@ static void capa_tarefa(void*)
       char arq[200] = "";
       const tab5_musica_capa_t r = capa_resolver(&p, arq, sizeof(arq));
       g_musica_trava.travar();
-      if (!s_capa_novo && !strcmp(s_capa_ped.caminho, p.caminho)) {   // ainda e a que toca
+      if (!s_capa_novo && !strcmp(s_capa_ped.caminho, p.caminho)) {   // still the one playing
         s_capa_estado = r;
         snprintf(s_capa_arq, sizeof(s_capa_arq), "%s", arq);
         ++s_capa_versao;
@@ -257,7 +257,7 @@ void musica_capa_pedir(const char* caminho, const char* titulo, const char* arti
 {
   g_musica_trava.travar();
   if (!strcmp(s_capa_ped.caminho, caminho) && s_capa_estado != TAB5_MUSICA_CAPA_NENHUMA) {
-    g_musica_trava.destravar();   // a mesma musica de novo (repetir uma): ja tem
+    g_musica_trava.destravar();   // the same track again (repeat one): already has it
     return;
   }
   snprintf(s_capa_ped.caminho, sizeof(s_capa_ped.caminho), "%s", caminho);
@@ -273,7 +273,7 @@ void musica_capa_pedir(const char* caminho, const char* titulo, const char* arti
   if (!t) {
     if (xTaskCreatePinnedToCoreWithCaps(capa_tarefa, "capa", CAPA_PILHA, nullptr, 1, &t,
                                         tskNO_AFFINITY, MALLOC_CAP_SPIRAM) != pdPASS) {
-      ESP_LOGW(TAG, "capa: a tarefa nao subiu");
+      ESP_LOGW(TAG, "cover: the task did not start");
       g_musica_trava.travar();
       s_capa_estado = TAB5_MUSICA_CAPA_NENHUMA;
       ++s_capa_versao;

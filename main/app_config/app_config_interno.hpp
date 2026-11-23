@@ -1,13 +1,13 @@
-// O que os arquivos do app Ajustes compartilham: as medidas e as funcoes
-// pequenas usadas por mais de um deles, o estado (declarado aqui, definido em
-// app_config.cpp ou no arquivo indicado) e as funcoes que cruzam arquivos. So
-// para eles: nenhum outro codigo inclui este header.
+// What the Ajustes (Settings) app's files share: the measurements and the
+// small functions used by more than one of them, the state (declared here,
+// defined in app_config.cpp or in the file indicated) and the cross-file
+// functions. For them only: no other code includes this header.
 //
-// O app foi partido por assunto (so mudou de arquivo, nada de logica):
-//   app_config.cpp          medidas, paginas, estado, textos e botoes, linha de estado, inicio, despacho, registro do app
-//   app_config_icones.cpp   icones da lista e o icone do app na tela inicial
-//   app_config_rede.cpp     paginas Wi-Fi, Bluetooth, ESP-NOW, Meshtastic e MQTT
-//   app_config_paginas.cpp  paginas Data e hora, Acesso pelo PC, Idioma, Tela, Teclado, Grove, Sobre e USB
+// The app was split by topic (it only moved between files, no logic changed):
+//   app_config.cpp          measurements, pages, state, texts and buttons, status line, start-up, dispatch, app registration
+//   app_config_icones.cpp   list icons and the app's icon on the home screen
+//   app_config_rede.cpp     Wi-Fi, Bluetooth, ESP-NOW, Meshtastic and MQTT pages
+//   app_config_paginas.cpp  Date and time, PC access, Language, Screen, Keyboard, Grove, About and USB pages
 #pragma once
 
 #include "app.h"
@@ -19,14 +19,14 @@
 #include "tab5_tema.hpp"
 
 // ---------------------------------------------------------------------------
-// Medidas usadas por mais de um arquivo (as demais moram em app_config.cpp)
+// Measurements used by more than one file (the rest live in app_config.cpp)
 // ---------------------------------------------------------------------------
 static const int MARGEM   = 24;
-static const int CONTEUDO_Y = 112;     // abaixo do VOLTAR/titulo
+static const int CONTEUDO_Y = 112;     // below the VOLTAR (back) button/title
 static const int BTN_A = 72;
 
 // ---------------------------------------------------------------------------
-// Estado usado por mais de um arquivo (cada um definido no arquivo indicado)
+// State used by more than one file (each defined in the file indicated)
 // ---------------------------------------------------------------------------
 // app_config.cpp:
 extern pintura_t s_cfg_p;
@@ -51,7 +51,7 @@ extern char s_mq_txt[64];
 extern mesh_mqtt_servidor_t s_mq_p;
 
 // ---------------------------------------------------------------------------
-// Funcoes que cruzam arquivos
+// Cross-file functions
 // ---------------------------------------------------------------------------
 // app_config.cpp:
 area_t janela_da_lista(const area_t& a, int y0, int n, int item_a);
@@ -124,7 +124,7 @@ void pag_usb(lgfx::LovyanGFX& d, const area_t& a, bool tudo);
 void toque_usb(int tx, int ty);
 
 // ---------------------------------------------------------------------------
-// Funcoes pequenas usadas por mais de um arquivo
+// Small functions used by more than one file
 // ---------------------------------------------------------------------------
 static inline uint16_t cor_linha(lgfx::LovyanGFX& d) { return TEMA_LINHA; }
 static inline uint16_t cor_sub(lgfx::LovyanGFX& d)   { return TEMA_TEXTO_2; }

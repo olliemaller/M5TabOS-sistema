@@ -1,6 +1,6 @@
-// TOCADOR DE MUSICA - o centro do servico: estado e fila, os controles, o laco
-// de reproducao, a parte de fundo e a troca da fila. O resto mora em
-// tab5_musica_*.cpp (ver tab5_musica_interno.hpp).
+// MUSIC PLAYER - the heart of the service: state and queue, the controls, the
+// playback loop, the background part and swapping the queue. The rest lives in
+// tab5_musica_*.cpp (see tab5_musica_interno.hpp).
 #include "tab5_musica_interno.hpp"
 #include "idioma.h"
 #include "app.h"
@@ -24,70 +24,70 @@
 
 static const char* TAG = "musica";
 
-// A parte de fundo que o servico usa (definida no fim do arquivo).
+// The background part the service uses (defined at the end of the file).
 extern const fundo_def_t g_fundo_musica;
-// Quem pediu a fila (o titulo no miniplayer abre este app). Copia: o nome de
-// um app Berry pode sumir quando os scripts sao relidos.
+// Who asked for the queue (the title in the miniplayer opens this app). A copy: the name of
+// a Berry app can vanish when the scripts are reloaded.
 static char s_app_dono[32] = "Música";
 
 // ---------------------------------------------------------------------------
-// MEMORIA - toda na PSRAM, alocada no ao_iniciar e solta no ao_parar.
+// MEMORY - all in PSRAM, allocated in ao_iniciar and released in ao_parar.
 // ---------------------------------------------------------------------------
-// TRES blocos em rodizio: o alto-falante guarda dois (o que toca e o
-// proximo), o terceiro e o que esta sendo decodificado. 16 quadros de MP3
-// (18432 amostras por canal) = 418 ms a 44,1 kHz: com a fila cheia, ~0,6 s
-// de folga para o laco - leitura do cartao parada atras de uma gravacao de
-// outro servico (ja medido: picos de centenas de ms) nao vira buraco no som.
-// (BLOCO_QUADROS fica em tab5_musica_interno.hpp.)
+// THREE blocks in rotation: the speaker holds two (the one playing and the
+// next), the third is the one being decoded. 16 MP3 frames
+// (18432 samples per channel) = 418 ms at 44.1 kHz: with the queue full, ~0.6 s
+// of slack for the loop - a card read stalled behind another service's write
+// (already measured: spikes of hundreds of ms) does not become a gap in the sound.
+// (BLOCO_QUADROS lives in tab5_musica_interno.hpp.)
 #define BLOCOS         3
 
-// LEITURA DO CARTAO - medido no aparelho: lendo direto para a PSRAM, num
-// endereco qualquer, 16 KB levavam ~250 ms (60 KB/s) e o som engasgava a
-// cada bloco. O driver do SD so faz DMA de varios setores de uma vez quando o
-// destino esta ALINHADO (e a posicao no arquivo comeca num setor); senao cai
-// num setor de 512 bytes por vez, copiando. Por isso: um buffer de leitura
-// alinhado para DMA, lido sempre em pedacos inteiros a partir de inicio de
-// setor, e copiado (memcpy, barato) para o buffer do decodificador.
-// (LER_PEDACO, ARQ_BUF e SETOR tambem ficam em tab5_musica_interno.hpp.)
+// SD CARD READING - measured on the device: reading straight into PSRAM, at
+// an arbitrary address, 16 KB took ~250 ms (60 KB/s) and the sound stuttered on
+// every block. The SD driver only DMAs several sectors at once when the
+// destination is ALIGNED (and the file position starts on a sector); otherwise it falls
+// back to one 512-byte sector at a time, copying. Hence: a DMA-aligned read
+// buffer, always read in whole chunks starting at a sector
+// boundary, and copied (memcpy, cheap) into the decoder's buffer.
+// (LER_PEDACO, ARQ_BUF and SETOR also live in tab5_musica_interno.hpp.)
 
 static int16_t*  s_bloco[BLOCOS] = { };
-// A fila: os caminhos (relativos a pasta de musica), copiados de quem pediu
-// (a janela pode fechar). Uma pasta ou uma playlist - numa playlist cada
-// faixa pode morar numa pasta diferente.
+// The queue: the paths (relative to the music folder), copied from the requester
+// (the window may close). A folder or a playlist - in a playlist each
+// track may live in a different folder.
 //
-// A ORDEM em que toca e g_musica_ordem (indices em g_musica_fila): a da pasta, ou
-// embaralhada (aleatorio). A posicao do laco e na ORDEM - a proxima e
-// sempre pos + 1, com ou sem aleatorio.
+// The play ORDER is g_musica_ordem (indices into g_musica_fila): the folder's, or
+// shuffled. The loop's position is in the ORDER - the next one is
+// always pos + 1, with or without shuffle.
 caminho_t* g_musica_fila = nullptr;
 int16_t*   g_musica_ordem = nullptr;
 int        g_musica_fila_n = 0;
-char       g_musica_fila_raiz[160] = "";   // a pasta de musica, caminho absoluto
-// A fila trocou (musica_fila_tocar): o laco confere de novo quais discos segurar.
+char       g_musica_fila_raiz[160] = "";   // the music folder, absolute path
+// The queue changed (musica_fila_tocar): the loop rechecks which disks to hold.
 static std::atomic<uint32_t> s_fila_gen{0};
 
 // ---------------------------------------------------------------------------
-// ESTADO - escrito pelo laco, lido pela janela (copia, sob a trava).
+// STATE - written by the loop, read by the window (a copy, under the lock).
 // ---------------------------------------------------------------------------
-Trava g_musica_trava;   // fila + estado
+Trava g_musica_trava;   // queue + state
 tab5_musica_estado_t   g_musica_est = { };
-static uint64_t s_dec_soma_us = 0;   // diagnostico (tab5_musica_estado_t)
+static uint64_t s_dec_soma_us = 0;   // diagnostics (tab5_musica_estado_t)
 
-// Pedidos da janela e do miniplayer: o laco atende entre dois blocos.
-static std::atomic<int>     s_ped_abrir{-1};     // indice na fila; -1 = nenhum
+// Requests from the window and the miniplayer: the loop serves them between two blocks.
+static std::atomic<int>     s_ped_abrir{-1};     // index in the queue; -1 = none
 static std::atomic<bool>    s_ped_alternar{false};
-static std::atomic<int>     s_ped_pular{0};      // +1 proxima, -1 anterior
-static std::atomic<int64_t> s_ped_ir{-1};        // ms; -1 = nenhum
-static std::atomic<bool>    s_ped_ordem{false};  // o aleatorio mudou: refazer a ordem
+static std::atomic<int>     s_ped_pular{0};      // +1 next, -1 previous
+static std::atomic<int64_t> s_ped_ir{-1};        // ms; -1 = none
+static std::atomic<bool>    s_ped_ordem{false};  // shuffle changed: rebuild the order
 
 // ---------------------------------------------------------------------------
-// OS CONTROLES - da janela e do miniplayer (tarefa de interface): so pedem.
+// THE CONTROLS - from the window and the miniplayer (interface task): they only ask.
 // ---------------------------------------------------------------------------
 void tab5_musica_tocar_pausar(void) { s_ped_alternar = true; }
 void tab5_musica_proxima(void)      { s_ped_pular = 1; }
 void tab5_musica_anterior(void)     { s_ped_pular = -1; }
 void tab5_musica_ir_para(uint32_t ms) { s_ped_ir = (int64_t)ms; }
-// Sem esperar (a interface, o Berry e o console chamam): o kernel para no laco
-// dele, e o servico sai em milissegundos.
+// Without waiting (the interface, Berry and the console call it): the kernel stops in its
+// loop, and the service exits within milliseconds.
 void tab5_musica_parar(void)        { sistema_fundo_parar_nome(g_fundo_musica.nome); }
 
 bool tab5_musica_aleatorio(void) { return ajustes_modo_tocador() & 1; }
@@ -101,7 +101,7 @@ void tab5_musica_definir_aleatorio(bool sim)
 {
   if (sim == tab5_musica_aleatorio()) { return; }
   ajustes_definir_modo_tocador((uint8_t)((ajustes_modo_tocador() & ~1u) | (sim ? 1u : 0u)));
-  s_ped_ordem = true;   // o laco refaz a ordem entre dois blocos, sem cortar o som
+  s_ped_ordem = true;   // the loop rebuilds the order between two blocks, without cutting the sound
   g_musica_trava.travar();
   g_musica_est.aleatorio = sim;
   g_musica_trava.destravar();
@@ -115,15 +115,15 @@ void tab5_musica_definir_repetir(tab5_musica_repetir_t r)
   g_musica_trava.destravar();
 }
 
-// Um numero aleatorio de verdade (o RNG do chip; o Wi-Fi nem precisa estar
-// ligado para ele servir a um embaralhamento).
+// A truly random number (the chip's RNG; Wi-Fi does not even need to be
+// on for it to serve a shuffle).
 static uint32_t sorteio(uint32_t n) { return n ? esp_random() % n : 0; }
 
-// A ORDEM DA FILA, sob a trava. 'fica' = indice em g_musica_fila que tem que ficar na
-// posicao 'pos_fica' (a musica que esta tocando nao muda de lugar no ouvido):
-// com aleatorio, ela vai para o comeco e o resto e embaralhado depois dela;
-// sem, a ordem e a da pasta e a posicao dela e a natural. Devolve a posicao
-// da 'fica' na ordem nova (-1 = sem 'fica').
+// THE QUEUE ORDER, under the lock. 'fica' = index in g_musica_fila that has to stay at
+// position 'pos_fica' (the track playing does not move as far as the ear is concerned):
+// with shuffle, it goes to the start and the rest is shuffled after it;
+// without, the order is the folder's and its position is the natural one. Returns the position
+// of 'fica' in the new order (-1 = no 'fica').
 static int montar_ordem(int fica, bool aleatorio)
 {
   if (!g_musica_ordem) { return -1; }
@@ -167,9 +167,9 @@ void tab5_musica_estado(tab5_musica_estado_t* out)
   out->repetir = (uint8_t)tab5_musica_repetir();
 }
 
-// ONDE O SOM ESTA DE VERDADE: g_musica_quadros e o que ja foi ENFILEIRADO, ate dois
-// blocos (~0,8 s) a frente do que sai no alto-falante. Para mostrar e para
-// pausar, desconta a fila (o bloco tocando conta pela metade).
+// WHERE THE SOUND REALLY IS: g_musica_quadros is what has been QUEUED, up to two
+// blocks (~0.8 s) ahead of what comes out of the speaker. For display and for
+// pausing, subtract the queue (the playing block counts as half).
 static uint64_t quadros_tocando(void)
 {
   const int f = sistema_som_fluxo_na_fila();
@@ -177,7 +177,7 @@ static uint64_t quadros_tocando(void)
   return g_musica_quadros > atras ? g_musica_quadros - atras : 0;
 }
 
-// O que a barra, o miniplayer e a pastilha da parte de fundo mostram.
+// What the status bar, the miniplayer and the background part's pill show.
 static void publicar(fundo_t* f, bool tocando, bool mudou_faixa)
 {
   char titulo[64 + 48 + 4];
@@ -187,7 +187,7 @@ static void publicar(fundo_t* f, bool tocando, bool mudou_faixa)
   g_musica_est.pos_ms = g_musica_hz ? (uint32_t)(quadros_tocando() * 1000u / g_musica_hz) : 0;
   if (g_musica_fmt == FMT_MP3 && g_musica_mp3_quadros > 20 && g_musica_hz) {
     g_musica_est.kbps = (uint16_t)(g_musica_mp3_kbps_soma / g_musica_mp3_quadros);
-    // VBR sem Xing: a duracao melhora com a media de bitrate de verdade.
+    // VBR without Xing: the duration improves with the real average bitrate.
     if (!g_musica_dur_exata && g_musica_est.kbps) {
       g_musica_total_quadros = (uint64_t)(g_musica_dados_fim - g_musica_dados_ini) * 8u * g_musica_hz / ((uint64_t)g_musica_est.kbps * 1000u);
       g_musica_est.dur_ms = (uint32_t)(g_musica_total_quadros * 1000u / g_musica_hz);
@@ -219,9 +219,9 @@ static void calar_fila(void)
 }
 
 // ---------------------------------------------------------------------------
-// OS DISCOS QUE A FILA USA - o laco segura cada um enquanto a fila tiver
-// musica nele, e so ele: tocando do pendrive, o cartao fica livre (pode ir
-// para o computador sem parar o som), e vice-versa.
+// THE DISKS THE QUEUE USES - the loop holds each one while the queue has
+// music on it, and only that: playing from the USB drive, the card stays free (it can go
+// to the computer without stopping the sound), and vice versa.
 // ---------------------------------------------------------------------------
 typedef struct { bool cartao, pendrive; } discos_t;
 
@@ -238,8 +238,8 @@ static discos_t discos_da_fila(void)
   return d;
 }
 
-// Segura o que a fila precisa e solta o que ela deixou de precisar. 'seg' =
-// o que o laco segura agora.
+// Holds what the queue needs and releases what it no longer needs. 'seg' =
+// what the loop holds now.
 static void segurar_discos(discos_t* seg)
 {
   const discos_t q = discos_da_fila();
@@ -263,7 +263,7 @@ static void erro_laco(const char* t)
 }
 
 // ---------------------------------------------------------------------------
-// O LACO
+// THE LOOP
 // ---------------------------------------------------------------------------
 static void laco_musica(fundo_t* f)
 {
@@ -277,31 +277,31 @@ static void laco_musica(fundo_t* f)
   midia_assumir(g_fundo_musica.nome, s_app_dono, &CONTROLES);
   midia_definir_cor(ajustes_cor_tocador());
   bool tocando = false, som = false;
-  bool acabou = false;   // a musica terminou sozinha (a proxima entra sem cortar a cauda)
+  bool acabou = false;   // the track ended by itself (the next one comes in without cutting the tail)
   int vez = 0;
   int idx = -1;
-  bool recomeco = true;   // o proximo bloco recomeca a fila (fila vazia e normal)
-  int64_t pausado_desde = 0;   // 0 = tocando
+  bool recomeco = true;   // the next block restarts the queue (an empty queue is normal)
+  int64_t pausado_desde = 0;   // 0 = playing
 
   while (fundo_rodando(f)) {
-    // A FILA TROCOU: talvez outro disco (do cartao para o pendrive...).
+    // THE QUEUE CHANGED: perhaps another disk (from the card to the USB drive...).
     if (s_fila_gen.load() != gen) { gen = s_fila_gen.load(); segurar_discos(&seg); }
-    // O CARTAO VAI PARA O COMPUTADOR (modo pendrive): solta tudo agora - quem
-    // empresta espera no maximo 3 s pelos donos do cartao. Tocando so do
-    // pendrive do USB-A, o cartao nem esta seguro: o som continua.
-    if (seg.cartao && tab5_sd_emprestado()) { ESP_LOGI(TAG, "cartao emprestado: parando"); break; }
-    // O PENDRIVE DO USB-A FOI ARRANCADO: quem o tira espera no maximo 3 s.
+    // THE CARD IS GOING TO THE COMPUTER (USB drive mode): release everything now - the
+    // lender waits at most 3 s for the card's owners. Playing only from the
+    // USB-A flash drive, the card is not even held: the sound carries on.
+    if (seg.cartao && tab5_sd_emprestado()) { ESP_LOGI(TAG, "card lent: stopping"); break; }
+    // THE USB-A FLASH DRIVE WAS PULLED OUT: whoever removes it waits at most 3 s.
     if (seg.pendrive && !tab5_usb_presente()) {
-      ESP_LOGI(TAG, "o pendrive saiu: parando");
+      ESP_LOGI(TAG, "the USB drive was removed: stopping");
       erro_laco("o pendrive foi retirado");
       break;
     }
 
-    // ---- pedidos ----
+    // ---- requests ----
     const int abrir = s_ped_abrir.exchange(-1);
     int pular = s_ped_pular.exchange(0);
-    // Fim natural: o que ja esta na fila do alto-falante e a cauda desta
-    // musica - toca ate o fim, e a proxima emenda sem silencio.
+    // Natural end: what is already in the speaker queue is the tail of this
+    // track - it plays to the end, and the next one joins without silence.
     const bool natural = acabou && !pular && abrir < 0;
     if (natural) { pular = 1; }
     acabou = false;
@@ -311,12 +311,12 @@ static void laco_musica(fundo_t* f)
       if (som) { calar_fila(); }
       idx = abrir;
       tocando = musica_abrir_item(idx);
-      if (!tocando) { pular = 1; }   // arquivo ruim: segue a fila
+      if (!tocando) { pular = 1; }   // bad file: move along the queue
       s_ped_ir = -1;
       publicar(f, tocando, true);
     }
     if (s_ped_ordem.exchange(false)) {
-      // O aleatorio mudou: a musica de agora fica, o resto se reorganiza.
+      // Shuffle changed: the current track stays, the rest is rearranged.
       g_musica_trava.travar();
       const int atual = (idx >= 0 && idx < g_musica_fila_n && g_musica_ordem) ? g_musica_ordem[idx] : -1;
       const int nova = montar_ordem(atual, tab5_musica_aleatorio());
@@ -327,8 +327,8 @@ static void laco_musica(fundo_t* f)
     if (s_ped_alternar.exchange(false) && musica_arquivo_aberto()) {
       tocando = !tocando;
       if (!tocando && som) {
-        // Pausa no ponto que se OUVIU: o que estava na fila e descartado, e
-        // a leitura volta para la (senao a retomada pularia ~0,8 s).
+        // Pause at the point that was HEARD: what was in the queue is discarded, and
+        // reading goes back there (otherwise resuming would skip ~0.8 s).
         const uint64_t ouvido = quadros_tocando();
         sistema_som_fluxo_fechar();
         musica_espectro_esquecer();
@@ -338,7 +338,7 @@ static void laco_musica(fundo_t* f)
       publicar(f, tocando, false);
     }
     if (pular) {
-      // "Anterior" depois de 3 s volta ao comeco da mesma, como todo tocador.
+      // "Previous" after 3 s goes back to the start of the same track, like every player.
       if (pular < 0 && g_musica_hz && g_musica_quadros > (uint64_t)g_musica_hz * 3) {
         musica_ir_para_ms(0);
         if (som) { calar_fila(); }
@@ -346,21 +346,21 @@ static void laco_musica(fundo_t* f)
         int n;
         g_musica_trava.travar(); n = g_musica_fila_n; g_musica_trava.destravar();
         const tab5_musica_repetir_t rep = tab5_musica_repetir();
-        // Repetir uma: no fim natural, a mesma de novo (sem silencio). Os
-        // botoes andam na fila do mesmo jeito.
+        // Repeat one: at the natural end, the same one again (no silence). The
+        // buttons move along the queue the same way.
         int novo = (natural && rep == TAB5_MUSICA_REPETIR_UMA) ? idx : idx + pular;
         const int passo = pular > 0 ? 1 : -1;
         bool achou = false;
-        // Pula arquivos que nao abrem, ate dar uma volta.
+        // Skip files that do not open, until going round once.
         if (som && !natural) { calar_fila(); }
         for (int k = 0; k < n; ++k, novo += passo) {
           if (novo < 0 || novo >= n) {
-            // Passou da ponta: so segue com repetir tudo.
+            // Went past the end: only continues with repeat all.
             if (rep != TAB5_MUSICA_REPETIR_TUDO) { break; }
             if (novo >= n) {
               novo = 0;
               if (tab5_musica_aleatorio() && n > 1) {
-                // Embaralha de novo, sem repetir logo de cara a que acabou.
+                // Reshuffle, without immediately repeating the one that ended.
                 g_musica_trava.travar();
                 const int ultima = (idx >= 0 && idx < n) ? g_musica_ordem[idx] : -1;
                 montar_ordem(-1, true);
@@ -374,7 +374,7 @@ static void laco_musica(fundo_t* f)
           if (musica_abrir_item(novo)) { achou = true; break; }
         }
         if (achou) { idx = novo; tocando = true; }
-        else if (pular > 0) { ESP_LOGI(TAG, "fim da fila"); break; }   // acabou: desliga
+        else if (pular > 0) { ESP_LOGI(TAG, "end of queue"); break; }   // finished: shut down
         else { musica_ir_para_ms(0); }
       }
       publicar(f, tocando, true);
@@ -386,17 +386,17 @@ static void laco_musica(fundo_t* f)
       publicar(f, tocando, false);
     }
 
-    // ---- pausado: espera o proximo pedido ----
-    // PAUSA LONGA ENCERRA (contrato em kernel/fundo.h): esquecido pausado, o
-    // tocador ocuparia uma vaga de fundo e a barra para sempre.
+    // ---- paused: wait for the next request ----
+    // A LONG PAUSE ENDS IT (contract in kernel/fundo.h): forgotten while paused, the
+    // player would occupy a background slot and the status bar forever.
     if (!tocando || !musica_arquivo_aberto()) {
       const int64_t agora = esp_timer_get_time();
-      // Sem nada para tocar (a lista acabou, parou) nao ha o que retomar:
-      // encerra logo e a pastilha sai da barra.
+      // With nothing to play (the list ended, stopped) there is nothing to resume:
+      // end straight away and the pill leaves the status bar.
       const int max_s = !musica_arquivo_aberto() ? TAB5_MUSICA_VAZIO_MAX_S : TAB5_MUSICA_PAUSA_MAX_S;
       if (!pausado_desde) { pausado_desde = agora; }
       else if (agora - pausado_desde > (int64_t)max_s * 1000000) {
-        ESP_LOGI(TAG, "%s ha %d s: encerrando", !musica_arquivo_aberto() ? "sem nada para tocar" : "pausado", max_s);
+        ESP_LOGI(TAG, "%s for %d s: shutting down", !musica_arquivo_aberto() ? "nothing to play" : "paused", max_s);
         break;
       }
       if (!fundo_esperar(f, 100)) { break; }
@@ -404,7 +404,7 @@ static void laco_musica(fundo_t* f)
     }
     pausado_desde = 0;
 
-    // ---- tocando ----
+    // ---- playing ----
     if (!som) {
       if (!sistema_som_fluxo_abrir(2000)) {
         g_musica_trava.travar();
@@ -427,13 +427,13 @@ static void laco_musica(fundo_t* f)
     const int64_t t0 = esp_timer_get_time();
     const size_t q = musica_decodificar_bloco(s_bloco[vez], &hz, &estereo);
     const uint32_t dec_us = (uint32_t)(esp_timer_get_time() - t0);
-    const int na_fila = sistema_som_fluxo_na_fila();   // DEPOIS: o buraco acontece enquanto decodifica
-    if (q == 0) { acabou = true; continue; }   // a proxima da fila, na volta de cima
+    const int na_fila = sistema_som_fluxo_na_fila();   // AFTER: the gap happens while decoding
+    if (q == 0) { acabou = true; continue; }   // the next in the queue, on the next round
     g_musica_trava.travar();
     ++g_musica_est.blocos;
     if (na_fila == 0 && !recomeco) {
       ++g_musica_est.secas;
-      ESP_LOGW(TAG, "a fila do alto-falante secou (bloco %lu: %lu us, %lu deles lendo o cartao)",
+      ESP_LOGW(TAG, "the speaker queue ran dry (block %lu: %lu us, %lu of them reading the card)",
                (unsigned long)g_musica_est.blocos, (unsigned long)dec_us, (unsigned long)g_musica_ler_us);
     }
     if (dec_us > g_musica_est.dec_max_us) { g_musica_est.dec_max_us = dec_us; g_musica_est.ler_no_pior_us = g_musica_ler_us; }
@@ -443,13 +443,13 @@ static void laco_musica(fundo_t* f)
     g_musica_est.bloco_ms = hz ? (uint32_t)(q * 1000u / hz) : 0;
     g_musica_trava.destravar();
     recomeco = false;
-    // QUANDO ESTE BLOCO SAI: logo (fila vazia) ou quando acabar o que ja esta
-    // na fila - e o relogio das barras do espectro.
+    // WHEN THIS BLOCK GOES OUT: straight away (empty queue) or when what is already
+    // queued finishes - it is the clock for the spectrum bars.
     const int64_t agora_us = esp_timer_get_time();
     const int64_t ini_us = (na_fila == 0 || g_musica_fim_prev_us < agora_us) ? agora_us + LATENCIA_US : g_musica_fim_prev_us;
     g_musica_fim_prev_us = ini_us + (int64_t)q * 1000000 / hz;
     if (!sistema_som_fluxo_tocar(s_bloco[vez], q, hz, estereo)) {
-      ESP_LOGI(TAG, "o alto-falante foi tomado (pendrive): parando");
+      ESP_LOGI(TAG, "the speaker was taken (USB drive): stopping");
       break;
     }
     {
@@ -483,8 +483,8 @@ static void liberar(void)
   heap_caps_free(minimp3_scratch); minimp3_scratch = nullptr;
 }
 
-// Na interface, antes de o kernel subir o laco: a memoria toda, na PSRAM.
-// Faltou: solta o que conseguiu e recusa (o kernel nao chama ao_parar).
+// On the interface, before the kernel starts the loop: all the memory, in PSRAM.
+// If short: release what it got and refuse (the kernel does not call ao_parar).
 static bool ao_iniciar(void)
 {
   bool ok = true;
@@ -496,13 +496,13 @@ static bool ao_iniciar(void)
   g_musica_ler_buf = (uint8_t*)heap_caps_aligned_alloc(128, LER_PEDACO, MALLOC_CAP_SPIRAM | MALLOC_CAP_DMA);
   g_musica_quadro = (int16_t*)heap_caps_malloc(MINIMP3_MAX_SAMPLES_PER_FRAME * sizeof(int16_t), MALLOC_CAP_SPIRAM);
   g_musica_mp3 = (mp3dec_t*)heap_caps_malloc(sizeof(mp3dec_t), MALLOC_CAP_SPIRAM);
-  // Na PSRAM: medido A/B contra a RAM interna, o tempo por bloco foi o
-  // mesmo (~15-20 ms para 156 ms de som) - nao vale gastar 23 KB internos.
+  // In PSRAM: measured A/B against internal RAM, the time per block was the
+  // same (~15-20 ms for 156 ms of sound) - not worth spending 23 KB of internal RAM.
   minimp3_scratch = heap_caps_malloc(minimp3_scratch_bytes(), MALLOC_CAP_SPIRAM);
   ok = ok && g_musica_arq_buf && g_musica_ler_buf && g_musica_quadro && g_musica_mp3 && minimp3_scratch && musica_espectro_alocar();
   if (ok) { sistema_recurso_usar(RECURSO_SOM, "Música"); }
   if (!ok) {
-    ESP_LOGE(TAG, "sem PSRAM para o tocador");
+    ESP_LOGE(TAG, "no PSRAM for the player");
     g_musica_trava.travar();
     snprintf(g_musica_est.erro, sizeof(g_musica_est.erro), "sem memória");
     g_musica_trava.destravar();
@@ -519,16 +519,16 @@ static void ao_parar(void)
   g_musica_est.tocando = false;
   g_musica_est.pos_ms = 0;
   g_musica_trava.destravar();
-  ESP_LOGI(TAG, "parado");
+  ESP_LOGI(TAG, "stopped");
 }
 
-static bool sem_bip(void) { return false; }   // musica nao "avisa" com bip
+static bool sem_bip(void) { return false; }   // music does not "notify" with a beep
 
-// Pilha 6 KB: a maior vaga do pool. O scratch do minimp3 (16 KB) e os
-// buffers estao na PSRAM; na pilha so ficam as variaveis do decodificador.
-// Tocando, declara RECURSO_SOM (ao_iniciar/ao_parar): a politica dele segura o
-// clock em 180 MHz com a tela apagada - no minimo (40) o MP3 nao decodifica a
-// tempo e o som falha.
+// 6 KB stack: the pool's biggest slot. The minimp3 scratch (16 KB) and the
+// buffers are in PSRAM; only the decoder's variables live on the stack.
+// While playing, it declares RECURSO_SOM (ao_iniciar/ao_parar): its policy holds the
+// clock at 180 MHz with the screen off - at the minimum (40) MP3 does not decode in
+// time and the sound fails.
 const fundo_def_t g_fundo_musica = {
   .nome       = "Música",
   .corpo      = laco_musica,
@@ -537,17 +537,17 @@ const fundo_def_t g_fundo_musica = {
   .ao_iniciar = ao_iniciar,
   .ao_parar   = ao_parar,
   .com_som    = sem_bip,
-  // Acima da interface (4) e da captura da camera (3): com as duas no ar o
-  // decodificador na 1 ficava sem vez e o som engasgava. Cabe porque o laco
-  // decodifica um bloco (~418 ms de som) em uma fracao disso e dorme ate a
-  // fila do alto-falante ter lugar - ver fundo_def_t.prioridade.
+  // Above the interface (4) and the camera capture (3): with both running the
+  // decoder at 1 never got a turn and the sound stuttered. It fits because the loop
+  // decodes a block (~418 ms of sound) in a fraction of that and sleeps until
+  // the speaker queue has room - see fundo_def_t.prioridade.
   .prioridade = 5,
 };
 
-// TROCA A FILA e liga o tocador (ou so troca, se ja tocava). 'itens' = 'n'
-// caminhos relativos a 'raiz'; 'inicio' = o indice em itens que toca
-// primeiro (-1 = o comeco da ordem). 'pasta_rel'/'playlist' dizem de onde a
-// fila veio (um dos dois).
+// SWAPS THE QUEUE and starts the player (or just swaps, if it was already playing). 'itens' = 'n'
+// paths relative to 'raiz'; 'inicio' = the index in itens that plays
+// first (-1 = the start of the order). 'pasta_rel'/'playlist' say where the
+// queue came from (one of the two).
 bool musica_fila_tocar(const caminho_t* itens, int n, int inicio, const char* raiz,
                        const char* pasta_rel, const char* playlist, const char* app)
 {
@@ -587,7 +587,7 @@ bool musica_fila_tocar(const caminho_t* itens, int n, int inicio, const char* ra
   s_ped_ordem = false;
   s_ped_abrir = pos;
   if (sistema_fundo_ativo(&g_fundo_musica)) {
-    // Ja tocando: a fila troca, e o miniplayer passa a abrir quem pediu agora.
+    // Already playing: the queue swaps, and the miniplayer now opens whoever asked now.
     midia_assumir(g_fundo_musica.nome, s_app_dono, &CONTROLES);
     midia_definir_cor(ajustes_cor_tocador());
   } else if (!sistema_fundo_iniciar(&g_fundo_musica)) {
@@ -603,7 +603,7 @@ bool tab5_musica_tocar_um(const char* caminho, const char* app)
   caminho_t* fila = (caminho_t*)heap_caps_malloc(sizeof(caminho_t), MALLOC_CAP_SPIRAM);
   if (!fila) { return false; }
   snprintf(*fila, sizeof(caminho_t), "%s", caminho);
-  // Caminho absoluto: a raiz da fila nao e usada; nao ha pasta de origem.
+  // Absolute path: the queue root is not used; there is no source folder.
   const bool ok = musica_fila_tocar(fila, 1, 0, "", nullptr, nullptr, app);
   heap_caps_free(fila);
   return ok;

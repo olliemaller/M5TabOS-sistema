@@ -1,13 +1,13 @@
-// Animacao do bloqueio: Neve: flocos de tres tamanhos e um vento que vai e volta.
-// (parte do bloqueio_anim; o que e comum a todas esta no bloqueio_anim_interno.hpp).
+// Lock screen animation: Snow: flakes of three sizes and a wind that comes and goes.
+// (part of bloqueio_anim; what is common to all of them is in bloqueio_anim_interno.hpp).
 
 #include "bloqueio_anim_interno.hpp"
 
 namespace bq_anim {
 
 // ---------------------------------------------------------------------------
-// 9. NEVE - flocos de tres tamanhos (os pequenos, longe, caem devagar) e um
-//    vento que vai e volta
+// 9. SNOW - flakes of three sizes (the small, distant ones fall slowly) and a
+//    wind that comes and goes
 // ---------------------------------------------------------------------------
 namespace {
 static const int N_FLOCO = 46;
@@ -18,7 +18,7 @@ struct Neve  { Floco f[N_FLOCO]; float tv; };
 static void floco_novo(Floco& f, bool espalhar)
 {
   const int r = irand(10);
-  f.tam  = (uint8_t)(r < 5 ? 1 : (r < 8 ? 2 : 3));   // muitos pequenos, poucos grandes
+  f.tam  = (uint8_t)(r < 5 ? 1 : (r < 8 ? 2 : 3));   // many small, few large
   f.vy   = frand(30, 50) * f.tam;
   f.x    = frand(s_ax, s_ax + s_W);
   f.y    = espalhar ? frand(s_ay, s_ay + s_H) : s_ay - frand(4, 60);

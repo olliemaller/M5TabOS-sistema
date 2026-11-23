@@ -1,20 +1,20 @@
-// Apps em Berry - ver berry_apps.hpp.
+// Berry apps - see berry_apps.hpp.
 //
-// ESTE ARQUIVO E O MOTOR: os trabalhos que rodam na tarefa do Berry, o app_t de
-// cada vaga, a leitura da pasta no boot, o app de exemplo e o registro dos
-// modulos (berry_modulos_registrar). Os MODULOS que o script chama moram em
-// services/berry/, um arquivo por assunto, com o que compartilham em
+// THIS FILE IS THE ENGINE: the jobs that run on the Berry task, the app_t of
+// each slot, reading the folder at boot, the example app and registering the
+// modules (berry_modulos_registrar). The MODULES the script calls live in
+// services/berry/, one file per subject, with what they share in
 // berry_interno.hpp:
-//   berry_mod_tela.cpp     tela, camadas e teclado
-//   berry_mod_sistema.cpp  sistema (tempo, energia, avisos, bip, fundo), idioma, transferencia
-//   berry_mod_cartao.cpp   cartao (a pasta do app) e arquivos (os discos)
-//   berry_mod_radio.cpp    espnow e mesh
+//   berry_mod_tela.cpp     tela, layers and teclado
+//   berry_mod_sistema.cpp  sistema (time, power, notices, beep, background), idioma, transferencia
+//   berry_mod_cartao.cpp   cartao (the app's folder) and arquivos (the disks)
+//   berry_mod_radio.cpp    espnow and mesh
 //   berry_mod_gnss.cpp     gnss
 //   berry_mod_camera.cpp   camera
 //   berry_mod_musica.cpp   musica
 //   berry_mod_ajustes.cpp  ajustes
 //   berry_mod_rede.cpp     rede
-//   berry_mod_tema.cpp     tema (as cores e medidas do tema central)
+//   berry_mod_tema.cpp     tema (the central theme's colours and measurements)
 
 #include "tab5_arquivos.hpp"
 #include "idioma.h"
@@ -22,7 +22,7 @@
 #include "berry_vm.hpp"
 #include "berry_mem.h"
 extern "C" {
-#include "be_gc.h"   // be_gc_collect / be_gc_memcount (fora da API publica)
+#include "be_gc.h"   // be_gc_collect / be_gc_memcount (outside the public API)
 }
 
 #include <dirent.h>
@@ -49,38 +49,38 @@ extern "C" {
 
 static const char* TAG = "berry.apps";
 
-// Prazos de cada chamada ao script (berry_rodar). Desenhar e tocar acontecem
-// com a interface parada esperando: mais que isso e tela congelada.
+// Deadlines for each call to the script (berry_rodar). Drawing and touch happen
+// with the UI stalled waiting: any longer than this is a frozen screen.
 static const uint32_t PRAZO_ABRIR_MS  = 5000;
 static const uint32_t PRAZO_EVENTO_MS = 2000;
 
 static berry_app_t s_apps[BERRY_APPS_MAX];
-static app_t       s_desc[BERRY_APPS_MAX];   // o app_t de cada um, montado no boot
+static app_t       s_desc[BERRY_APPS_MAX];   // each one's app_t, built at boot
 static int         s_n = 0;
 
-// As funcoes do script que o sistema chama. Sem a funcao, o evento nem vai a
-// tarefa do Berry: uma ida e volta a menos (o toque de um app sem tocar(), a
-// tecla de um app sem tecla()...).
+// The script functions the system calls. Without the function, the event does not even go to the
+// Berry task: one less round trip (the touch of an app without tocar(), the
+// key of an app without tecla()...).
 enum { F_DESENHAR = 1, F_TOCAR = 2, F_DEDO = 4, F_TECLA = 8, F_AVISO = 16, F_FUNDO = 32 };
 
-// OS AVISOS que um app Berry pode pedir no cabecalho (# avisos: espnow, mesh):
-// quando o servico publica, o app e redesenhado NA HORA - sem periodo, sem
-// perguntar de tempos em tempos - e o script recebe aviso(nome), se tiver.
+// THE NOTICES a Berry app can request in its header (# avisos: espnow, mesh):
+// when the service publishes, the app is redrawn AT ONCE - no period, no
+// polling every so often - and the script receives aviso(nome), if it has one.
 static const struct { const char* nome; uint32_t bits; } AVISOS[] = {
   { "espnow", AVISO_ESPNOW },
   { "mesh",   AVISO_MESH_MSG | AVISO_MESH_ENVIO | AVISO_MESH_NOS },
   { "gps",    AVISO_GPS | AVISO_TRILHA },
-  { "volumes", AVISO_VOLUMES },   // pendrive entrou ou saiu
-  { "arquivos", AVISO_ARQUIVOS }, // a copia (arquivos.copiar) andou ou terminou
+  { "volumes", AVISO_VOLUMES },   // flash drive plugged in or removed
+  { "arquivos", AVISO_ARQUIVOS }, // the copy (arquivos.copiar) progressed or finished
 };
 
 
-// O contexto do trabalho em curso (ver contexto_t em berry/berry_interno.hpp).
+// The context of the job in progress (see contexto_t in berry/berry_interno.hpp).
 static contexto_t  s_ctx_vazio = {};
 contexto_t* s_ctx = &s_ctx_vazio;
 
 // ---------------------------------------------------------------------------
-// REGISTRO DOS MODULOS
+// MODULE REGISTRATION
 // ---------------------------------------------------------------------------
 static void modulo(bvm* vm, const char* nome, const membro_t* m)
 {
@@ -115,14 +115,14 @@ void berry_modulos_registrar(bvm* vm)
 }
 
 // ---------------------------------------------------------------------------
-// OS TRABALHOS (rodam na tarefa do Berry)
+// THE JOBS (run on the Berry task)
 // ---------------------------------------------------------------------------
 typedef struct {
   berry_app_t* app;
   int          evento;      // EV_*
-  contexto_t*  ctx;         // o contexto deste trabalho (ver contexto_t)
+  contexto_t*  ctx;         // this job's context (see contexto_t)
   bool         tudo;        // desenhar
-  bool         manter;      // fechar: o fundo segue, a maquina fica
+  bool         manter;      // fechar: the background carries on, the machine stays
   int          x, y;        // tocar
   const char*  texto;       // tecla
   int          codigo;
@@ -131,18 +131,18 @@ typedef struct {
 enum { EV_ABRIR, EV_FECHAR, EV_DESENHAR, EV_TOCAR, EV_TECLA, EV_DEDO, EV_AVISO, EV_FUNDO, EV_APAGAR, EV_N };
 static const char* const EV_NOME[EV_N] = { "abrir", "fechar", "desenhar", "tocar", "tecla", "dedo", "aviso", "fundo", "apagar" };
 
-// O fundo() tem prazo CURTO: enquanto ele roda, a interface que quiser o
-// Berry espera (o prazo e o pior caso de um toque atrasado).
+// fundo() has a SHORT deadline: while it runs, a UI wanting
+// Berry waits (the deadline is the worst case for a delayed touch).
 static const uint32_t PRAZO_FUNDO_MS = 200;
 
-// Quanto o script leva em cada evento (so o Berry rodando) - 'berry tempos'.
+// How long the script takes for each event (Berry running only) - 'berry tempos'.
 static tempo_t s_tempo[EV_N];
 
 static void apagar_vm(berry_app_t* a)
 {
   if (a->vm) { be_vm_delete(a->vm); a->vm = nullptr; }
-  gnss_soltar(a);   // a assinatura do GPS era desta maquina
-  rede_soltar(a);   // e o pedido de rede (e a resposta que ninguem leu) tambem
+  gnss_soltar(a);   // the GPS subscription belonged to this machine
+  rede_soltar(a);   // and so did the network request (and the reply nobody read)
 }
 
 static void trabalho(void* arg)
@@ -150,7 +150,7 @@ static void trabalho(void* arg)
   pedido_t* p = (pedido_t*)arg;
   berry_app_t* a = p->app;
   s_ctx = p->ctx;
-  alvo_tela();   // todo evento comeca desenhando na tela (ou em lugar nenhum, fora do desenhar)
+  alvo_tela();   // every event starts by drawing on the screen (or nowhere, outside desenhar)
   const int64_t t0 = esp_timer_get_time();
   char* erro = a->erro;
   const size_t et = sizeof(a->erro);
@@ -163,9 +163,9 @@ static void trabalho(void* arg)
       a->periodo = a->periodo_cab;
       camadas_liberar(a);
       if (a->vm) {
-        // A MAQUINA SOBREVIVEU (o fundo estava rodando): o estado do script
-        // continua - so a janela volta. O codigo de fora das funcoes NAO roda
-        // de novo; abrir() sim.
+        // THE MACHINE SURVIVED (the background was running): the script's state
+        // carries on - only the window comes back. The code outside the functions does NOT run
+        // again; abrir() does.
         if (berry_funcao(a->vm, "abrir")) { berry_chamar(a->vm, 0, erro, et); }
         break;
       }
@@ -178,14 +178,14 @@ static void trabalho(void* arg)
                  (unsigned)(berry_mem_usada() / 1024), (unsigned)(BERRY_ORCAMENTO / 1024));
         break;
       }
-      // O codigo de fora das funcoes roda aqui (define as funcoes e o estado).
+      // The code outside the functions runs here (defines the functions and the state).
       if (berry_executar(a->vm, a->arquivo, true, false, erro, et)) {
         static const struct { const char* nome; uint8_t f; } FUNCS[] = {
           { "desenhar", F_DESENHAR }, { "tocar", F_TOCAR }, { "dedo", F_DEDO }, { "tecla", F_TECLA },
           { "aviso", F_AVISO }, { "fundo", F_FUNDO },
         };
         for (const auto& f : FUNCS) {
-          if (berry_funcao(a->vm, f.nome)) { a->funcs |= f.f; be_pop(a->vm, 1); }   // so queria saber se existe
+          if (berry_funcao(a->vm, f.nome)) { a->funcs |= f.f; be_pop(a->vm, 1); }   // only wanted to know whether it exists
         }
         if (berry_funcao(a->vm, "abrir")) { berry_chamar(a->vm, 0, erro, et); }
       }
@@ -194,14 +194,14 @@ static void trabalho(void* arg)
       if (a->vm) {
         if (berry_funcao(a->vm, "fechar")) { berry_chamar(a->vm, 0, nullptr, 0); }
         if (p->manter) {
-          // Vai para o segundo plano: a coleta AGORA. Com o steprate 350 uma
-          // maquina parada guardaria ate 4,5x o lixo do que esta vivo.
+          // Going into the background: collect NOW. With steprate 350 an
+          // idle machine would keep up to 4.5x as much garbage as what is alive.
           be_gc_collect(a->vm);
         } else {
           apagar_vm(a);
         }
       }
-      camadas_liberar(a);   // as camadas sao da janela: voltam ao fechar
+      camadas_liberar(a);   // the layers belong to the window: returned on closing
       break;
     case EV_APAGAR:
       apagar_vm(a);
@@ -245,7 +245,7 @@ static void trabalho(void* arg)
       }
       break;
   }
-  C->tela_d = nullptr;   // nenhum desenho na tela fora do desenhar()
+  C->tela_d = nullptr;   // no drawing on screen outside desenhar()
   alvo_tela();
   const uint32_t us = (uint32_t)(esp_timer_get_time() - t0);
   tempo_t& tm = s_tempo[p->evento];
@@ -255,11 +255,11 @@ static void trabalho(void* arg)
   s_ctx = &s_ctx_vazio;
 }
 
-// O contexto dos trabalhos da JANELA (so a interface pede estes).
+// The context for WINDOW jobs (only the UI requests these).
 static contexto_t s_ctx_janela;
 
-// O pedido de ligar/desligar o fundo, na interface (o kernel liga e para na
-// tarefa de quem pede - e ao_parar roda sempre aqui).
+// The request to turn the background on/off, in the UI (the kernel starts and stops it on the
+// requester's task - and ao_parar always runs here).
 static void fundo_aplicar(berry_app_t* a)
 {
   const int ped = a->fundo_pedido;
@@ -270,16 +270,16 @@ static void fundo_aplicar(berry_app_t* a)
       return;
     }
     a->fundo_sair = false;
-    if (!sistema_fundo_iniciar(&a->fundo_def)) { ESP_LOGW(TAG, "%s: o fundo nao ligou (sem vaga?)", a->nome); }
+    if (!sistema_fundo_iniciar(&a->fundo_def)) { ESP_LOGW(TAG, "%s: the background did not start (no slot?)", a->nome); }
   } else if (ped == FP_DESLIGAR && sistema_fundo_ativo(&a->fundo_def)) {
     a->fundo_sair = true;
     sistema_fundo_parar(&a->fundo_def);
   }
 }
 
-// Na tarefa de interface: entrega o pedido, espera, e faz o que so ela pode.
-// 'd' e 'area': a tela do desenhar() (sem eles, so a area - tela.largura e
-// tela.altura valem em todo evento; desenhar, so no desenhar()).
+// On the UI task: hands over the request, waits, and does what only it can.
+// 'd' and 'area': desenhar()'s screen (without them, only the area - tela.largura and
+// tela.altura work in every event; drawing, only in desenhar()).
 static void pedir(pedido_t& p, uint32_t prazo_ms, lgfx::LovyanGFX* d = nullptr, const area_t* area = nullptr)
 {
   const bool tinha_erro = p.app->erro[0] != 0;
@@ -290,26 +290,26 @@ static void pedir(pedido_t& p, uint32_t prazo_ms, lgfx::LovyanGFX* d = nullptr, 
   p.ctx = &s_ctx_janela;
   berry_rodar(trabalho, &p, prazo_ms);
   if (s_bip_hz > 0) { sistema_beep(s_bip_hz, s_bip_ms); s_bip_hz = 0; }
-  cam_aplicar();   // o que o script pediu da camera (sem pedido, nao faz nada)
+  cam_aplicar();   // what the script asked of the camera (no request, does nothing)
   if (s_acordado_pedido >= 0) {
-    sistema_manter_acordado(SISTEMA_ACORDADO_APP, s_acordado_pedido == 1);   // solto sozinho ao fechar
+    sistema_manter_acordado(SISTEMA_ACORDADO_APP, s_acordado_pedido == 1);   // released automatically on closing
     s_acordado_pedido = -1;
   }
   if (s_kb_pedido != KB_NADA) {
     const bool abrir = s_kb_pedido == KB_ABRIR;
     s_kb_pedido = KB_NADA;
-    if (abrir)                                { tecvirt_abrir(&s_kb, s_kb_tipo); }   // aberto: so troca o tipo
+    if (abrir)                                { tecvirt_abrir(&s_kb, s_kb_tipo); }   // open: only changes the type
     else if (!abrir && tecvirt_aberto(&s_kb)) { tecvirt_fechar(&s_kb); }
     sistema_pedir_redesenho_completo();
   }
   if (p.app->fundo_pedido != FP_NADA) { fundo_aplicar(p.app); }
   if (!tinha_erro && p.app->erro[0]) {
     ESP_LOGW(TAG, "%s: %s", p.app->nome, p.app->erro);
-    sistema_pedir_redesenho_completo();   // a tela de erro substitui o app
+    sistema_pedir_redesenho_completo();   // the error screen replaces the app
   }
 }
 
-// O erro, no lugar do app: o script parou, o aparelho nao.
+// The error, in place of the app: the script stopped, the device did not.
 static void desenhar_erro(lgfx::LovyanGFX& d, const area_t& a, const berry_app_t* app)
 {
   tab5_tela_limpar(a.x, a.y, a.largura, a.altura, TFT_BLACK);
@@ -322,7 +322,7 @@ static void desenhar_erro(lgfx::LovyanGFX& d, const area_t& a, const berry_app_t
   tab5_fonte_corpo(d);
   tab5_texto(d, 2.4f);
   d.setTextColor(TFT_WHITE);
-  // Quebra a mensagem em linhas que cabem na largura.
+  // Breaks the message into lines that fit the width.
   const char* p = app->erro;
   int y = a.y + 100;
   char linha[96];
@@ -341,21 +341,21 @@ static void desenhar_erro(lgfx::LovyanGFX& d, const area_t& a, const berry_app_t
 }
 
 // ---------------------------------------------------------------------------
-// OS app_t: um conjunto de funcoes por vaga (o app_t nao carrega contexto)
+// THE app_t: one set of functions per slot (the app_t carries no context)
 // ---------------------------------------------------------------------------
 template <int I> static bool abrir_i(void)
 {
   s_apps[I].janela = true;
   pedido_t p = { &s_apps[I], EV_ABRIR };
   pedir(p, PRAZO_ABRIR_MS);
-  return true;   // com erro abre assim mesmo: a tela mostra o que houve
+  return true;   // with an error it opens anyway: the screen shows what happened
 }
 
 template <int I> static void fechar_i(void)
 {
   berry_app_t* a = &s_apps[I];
   pedido_t p = { a, EV_FECHAR };
-  // O fundo rodando segura a maquina: a janela fecha, o script continua.
+  // A running background holds the machine: the window closes, the script carries on.
   p.manter = sistema_fundo_ativo(&a->fundo_def) && !a->fundo_sair && !a->erro[0];
   pedir(p, PRAZO_ABRIR_MS);
   a->janela = false;
@@ -371,18 +371,18 @@ template <int I> static void desenhar_i(lgfx::LovyanGFX& d, const area_t& a)
     if (sistema_area_foi_limpa()) { desenhar_erro(d, a, app); }
     return;
   }
-  // SEMPRE A TELA INTEIRA: um script redesenha tudo a cada vez (e o jeito
-  // simples de escrever). Na passada parcial (periodo, tocar, redesenhar) a
-  // limpeza e AQUI, na hora - tudo vai para a pagina de tras do compositor e o
-  // quadro sai inteiro, sem piscar. Antes ela virava pedido de passada
-  // completa: o quadro so saia na volta SEGUINTE da interface (ate ~20 ms a
-  // mais em cada toque e cada quadro de animacao) e ainda repintava as barras
-  // de status e de navegacao sem precisar.
-  // ACUMULANDO (sistema.acumular), a passada parcial NAO limpa: o script
-  // desenha so o que mudou por cima do que ja esta la (desenhar(false)).
-  // COM A CAMERA LIGADA a faixa do preview nao e apagada (o PPA escreve la)
-  // e o quadro novo entra ANTES do script - o que ele desenhar por cima (uma
-  // mira, um texto) sai junto, em cima do preview.
+  // ALWAYS THE WHOLE SCREEN: a script redraws everything every time (it is the
+  // simple way to write it). On a partial pass (period, touch, redraw) the
+  // clear happens HERE, there and then - everything goes to the compositor's back page and the
+  // frame comes out whole, without flicker. Before, it became a request for a full
+  // pass: the frame only came out on the UI's NEXT round (up to ~20 ms
+  // more on every touch and every animation frame) and it also repainted the status and
+  // navigation bars needlessly.
+  // WHEN ACCUMULATING (sistema.acumular), the partial pass does NOT clear: the script
+  // draws only what changed on top of what is already there (desenhar(false)).
+  // WITH THE CAMERA ON the preview band is not cleared (the PPA writes there)
+  // and the new frame goes in BEFORE the script - whatever it draws on top (a
+  // crosshair, some text) comes out with it, over the preview.
   bool tudo = sistema_area_foi_limpa();
   if (!tudo && !app->acumular) {
     if (cam_no_ar()) { cam_limpar_fora(a); } else { tab5_tela_limpar(a.x, a.y, a.largura, a.altura, TFT_BLACK); }
@@ -390,30 +390,30 @@ template <int I> static void desenhar_i(lgfx::LovyanGFX& d, const area_t& a)
   }
   cam_quadro(app);
   if (!(app->funcs & F_DESENHAR)) { return; }
-  // A IMU fala I2C: a leitura e aqui, na interface, nunca na tarefa do Berry.
-  // So se o quadro anterior usou; este remarca se usar de novo.
+  // The IMU talks I2C: reading happens here, in the UI, never on the Berry task.
+  // Only if the previous frame used it; this one re-marks it if it uses it again.
   if (app->usa_imu) { tab5_imu_medir(); }
   app->usa_imu = false;
   pedido_t p = { app, EV_DESENHAR };
   p.tudo = tudo;
   pedir(p, PRAZO_EVENTO_MS, &d, &a);
   if (app->erro[0]) { desenhar_erro(d, a, app); return; }
-  // O teclado por cima, na base da area (o script desenha so ate tela.altura()).
-  // Acumulando, so o que mudou nele; senao a area foi limpa e ele vai inteiro.
+  // The keyboard on top, at the bottom of the area (the script only draws up to tela.altura()).
+  // When accumulating, only what changed on it; otherwise the area was cleared and it goes in whole.
   if (tecvirt_aberto(&s_kb)) {
     tecvirt_posicionar(&s_kb, a);
     tecvirt_pintar(&s_kb, d, tudo);
   }
 }
 
-// Uma acao do teclado virtual vira o mesmo tecla(texto, codigo) do fisico.
+// A virtual keyboard action becomes the same tecla(texto, codigo) as the physical one.
 static void entregar_acao(berry_app_t* app, int ac)
 {
   char txt[5] = "";
   int codigo = TAB5_TECLA_NENHUMA;
   if (ac > 0)                    { txt[tecvirt_utf8(ac, txt)] = 0; }
   else if (ac == TECVIRT_APAGAR) { codigo = TAB5_TECLA_APAGAR; }
-  else if (ac == TECVIRT_ENVIAR || ac == TECVIRT_LINHA) { codigo = TAB5_TECLA_ENTER; }   // a tecla verde, em qualquer tipo
+  else if (ac == TECVIRT_ENVIAR || ac == TECVIRT_LINHA) { codigo = TAB5_TECLA_ENTER; }   // the green key, in any type
   else if (ac == TECVIRT_FECHAR) { tecvirt_fechar(&s_kb); sistema_pedir_redesenho_completo(); codigo = TAB5_TECLA_ESC; }
   else { return; }
   if (!(app->funcs & F_TECLA)) { sistema_pedir_redesenho(); return; }
@@ -447,8 +447,8 @@ template <int I> static void teclar_i(const char* texto, uint8_t codigo, uint8_t
   sistema_pedir_redesenho();
 }
 
-// O toque por nivel: alimenta o teclado aberto e, se o script tem dedo(x, y,
-// pressionado), entrega o dedo enquanto ele esta na tela e uma vez ao sair.
+// Touch by level: feeds the open keyboard and, if the script has dedo(x, y,
+// pressionado), delivers the finger while it is on the screen and once on lifting.
 template <int I> static void nivel_i(int x, int y, bool pressionado)
 {
   berry_app_t* app = &s_apps[I];
@@ -469,8 +469,8 @@ template <int I> static void nivel_i(int x, int y, bool pressionado)
 
 template <int I> static uint32_t periodo_i(void) { return s_apps[I].periodo; }
 
-// Um aviso do cabecalho chegou: aviso(nome) no script (um por grupo que
-// mudou) e redesenho. Sem aviso() no script, so o redesenho.
+// A header notice arrived: aviso(nome) in the script (one per group that
+// changed) and a redraw. Without aviso() in the script, just the redraw.
 template <int I> static void aviso_i(uint32_t bits)
 {
   berry_app_t* app = &s_apps[I];
@@ -486,14 +486,14 @@ template <int I> static void aviso_i(uint32_t bits)
 }
 
 // ---------------------------------------------------------------------------
-// A PARTE DE FUNDO DE UM APP BERRY (kernel/fundo.h)
+// A BERRY APP'S BACKGROUND PART (kernel/fundo.h)
 // ---------------------------------------------------------------------------
-// O MODELO COOPERATIVO: o laco e uma tarefa do pool do kernel (nenhuma pilha
-// nova), mas o fundo() do script roda na MESMA tarefa do Berry que a janela,
-// um trabalho curto de cada vez (PRAZO_FUNDO_MS). A janela e o fundo nunca
-// rodam juntos - por isso dividem a maquina (e as variaveis) sem trava. A
-// interface pede com prioridade 4 e o fundo com 1: na fila do Berry, o toque
-// passa na frente (berry_rodar).
+// THE COOPERATIVE MODEL: the loop is a task from the kernel pool (no new
+// stack), but the script's fundo() runs on the SAME Berry task as the window,
+// one short job at a time (PRAZO_FUNDO_MS). The window and the background never
+// run together - that is why they share the machine (and the variables) without a lock. The
+// UI requests with priority 4 and the background with 1: in Berry's queue, touch
+// jumps ahead (berry_rodar).
 template <int I> static void fundo_laco_i(fundo_t* f)
 {
   berry_app_t* a = &s_apps[I];
@@ -507,8 +507,8 @@ template <int I> static void fundo_laco_i(fundo_t* f)
     berry_rodar(trabalho, &p, PRAZO_FUNDO_MS);
     fundo_estado(f, a->fundo_n, a->fundo_txt[0] ? a->fundo_txt : "rodando");
     if (a->erro[0]) {
-      ESP_LOGW(TAG, "%s (fundo): %s", a->nome, a->erro);
-      if (a->janela) { sistema_pedir_redesenho_completo(); }   // a tela de erro
+      ESP_LOGW(TAG, "%s (background): %s", a->nome, a->erro);
+      if (a->janela) { sistema_pedir_redesenho_completo(); }   // the error screen
       break;
     }
     if (a->fundo_sair || !fundo_esperar(f, a->fundo_ms)) { break; }
@@ -524,8 +524,8 @@ template <int I> static bool fundo_iniciar_i(void)
   return a->vm != nullptr;
 }
 
-// Na interface, depois que o laco saiu: com a janela fechada, ninguem mais
-// precisa da maquina - toda a memoria volta.
+// In the UI, after the loop has exited: with the window closed, nobody needs
+// the machine any more - all the memory comes back.
 template <int I> static void fundo_parar_i(void)
 {
   berry_app_t* a = &s_apps[I];
@@ -535,10 +535,10 @@ template <int I> static void fundo_parar_i(void)
     p.ctx = &s_ctx_vazio;
     berry_rodar(trabalho, &p, PRAZO_EVENTO_MS);
   }
-  ESP_LOGI(TAG, "%s: fundo parado%s", a->nome, a->janela ? "" : " - maquina apagada");
+  ESP_LOGI(TAG, "%s: background stopped%s", a->nome, a->janela ? "" : " - machine deleted");
 }
 
-static bool fundo_sem_som(void) { return false; }   // a pastilha so mostra; nao bipa
+static bool fundo_sem_som(void) { return false; }   // the chip only shows; it does not beep
 
 typedef struct {
   bool (*abrir)(void);
@@ -559,9 +559,9 @@ static const vaga_t* const VAGAS = vagas_s<0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
 static_assert(BERRY_APPS_MAX == 16, "a lista de vagas acima tem 16 entradas");
 
 // ---------------------------------------------------------------------------
-// LEITURA DA PASTA NO BOOT
+// READING THE FOLDER AT BOOT
 // ---------------------------------------------------------------------------
-// Le o cabecalho (# nome: / # cor: / # periodo:) das primeiras linhas.
+// Reads the header (# nome: / # cor: / # periodo:) from the first lines.
 static void ler_cabecalho(const char* caminho, char* nome, size_t nome_tam,
                           uint16_t* cor, uint32_t* periodo, uint32_t* avisos, uint8_t* orientacao)
 {
@@ -589,7 +589,7 @@ static void ler_cabecalho(const char* caminho, char* nome, size_t nome_tam,
       else                                                                 { *orientacao = ORI_EM_PE; }
     }
     else if (!strcasecmp(p, "avisos")) {
-      // "espnow, mesh" - nomes separados por virgula ou espaco.
+      // "espnow, mesh" - names separated by commas or spaces.
       char* resto = nullptr;
       for (char* t = strtok_r(v, ", ", &resto); t; t = strtok_r(nullptr, ", ", &resto)) {
         for (const auto& av : AVISOS) { if (!strcasecmp(t, av.nome)) { *avisos |= av.bits; } }
@@ -599,14 +599,14 @@ static void ler_cabecalho(const char* caminho, char* nome, size_t nome_tam,
   fclose(f);
 }
 
-// O QUE A PASTA TEM: lido do cartao por quem pode esperar (o boot, o fim do
-// pendrive, o console) e registrado pela interface (berry_apps_atender).
+// WHAT THE FOLDER HOLDS: read from the card by whoever can wait (boot, the end of
+// flash-drive mode, the console) and registered by the UI (berry_apps_atender).
 typedef struct {
   char     arquivo[96];
   char     nome[24];
   uint16_t cor;
   uint32_t periodo;
-  uint32_t avisos;   // AVISO_* pedidos no cabecalho
+  uint32_t avisos;   // AVISO_* requested in the header
   uint8_t  orientacao;   // orientacao_t: '# orientacao: em_pe | deitado | girar | fixo'
 } lido_t;
 
@@ -615,9 +615,9 @@ typedef struct {
   lido_t v[BERRY_APPS_MAX];
 } lista_t;
 
-// O APP DE EXEMPLO (berry_exemplos/Ola.be, embutido pelo main/CMakeLists.txt).
-// Vai para o cartao SO quando a pasta apps/Berry ainda nao existe - o primeiro
-// boot com aquele cartao. Apagado depois, nao volta: a pasta ja existe.
+// THE EXAMPLE APP (berry_exemplos/Ola.be, embedded by main/CMakeLists.txt).
+// It goes onto the card ONLY when the apps/Berry folder does not exist yet - the first
+// boot with that card. If deleted afterwards, it does not come back: the folder already exists.
 extern const char OLA_BE_INICIO[] asm("_binary_Ola_be_start");
 extern const char OLA_BE_FIM[]    asm("_binary_Ola_be_end");
 
@@ -625,10 +625,10 @@ static void instalar_exemplo(void)
 {
   FILE* f = tab5_sd_abrir(BERRY_PASTA, "Ola.be", "wb");
   if (!f) { return; }
-  const size_t n = (size_t)(OLA_BE_FIM - OLA_BE_INICIO) - 1;   // TEXT: sem o '\0' do fim
+  const size_t n = (size_t)(OLA_BE_FIM - OLA_BE_INICIO) - 1;   // TEXT: without the trailing '\0'
   const bool ok = fwrite(OLA_BE_INICIO, 1, n, f) == n;
   fclose(f);
-  ESP_LOGI(TAG, "app de exemplo %s em apps/%s/Ola.be", ok ? "instalado" : "NAO instalado", BERRY_PASTA);
+  ESP_LOGI(TAG, "example app %s at apps/%s/Ola.be", ok ? "installed" : "NOT installed", BERRY_PASTA);
 }
 
 static lista_t* ler_pasta(void)
@@ -656,7 +656,7 @@ static lista_t* ler_pasta(void)
   return L;
 }
 
-static int s_base = -1;   // onde os apps Berry comecam em SISTEMA_APPS
+static int s_base = -1;   // where the Berry apps start in SISTEMA_APPS
 
 static void registrar(const lista_t* L)
 {
@@ -664,7 +664,7 @@ static void registrar(const lista_t* L)
   for (int i = 0; L && i < L->n; ++i) {
     const lido_t* l = &L->v[i];
     berry_app_t* a = &s_apps[s_n];
-    // O mesmo arquivo de antes guarda a fonte de aviso (nao registra outra).
+    // The same file as before keeps the notice source (does not register another).
     const int notif = strcmp(a->arquivo, l->arquivo) == 0 ? a->notif : -1;
     *a = berry_app_t{};
     snprintf(a->arquivo, sizeof(a->arquivo), "%s", l->arquivo);
@@ -673,9 +673,9 @@ static void registrar(const lista_t* L)
     a->periodo_cab = a->periodo = l->periodo;
     a->fundo_ms = 1000;
     fundo_def_t& fd = a->fundo_def;
-    fd.nome = a->nome;   // estavel: a lista so e trocada sem nenhuma maquina viva
+    fd.nome = a->nome;   // stable: the list is only swapped with no machine alive
     fd.corpo = VAGAS[s_n].fundo_laco;
-    fd.pilha = 4096;     // o laco so entrega trabalhos: cabe numa vaga de 4 KB do pool
+    fd.pilha = 4096;     // the loop only hands out jobs: fits in a 4 KB pool slot
     fd.ao_iniciar = VAGAS[s_n].fundo_iniciar;
     fd.ao_parar = VAGAS[s_n].fundo_parar;
     fd.com_som = fundo_sem_som;
@@ -685,9 +685,9 @@ static void registrar(const lista_t* L)
     ap = app_t{};
     ap.nome = a->nome;
     ap.cor = l->cor;
-    ap.perfil.imu = true;            // sistema.imu() e sistema.bip() valem para todo script
+    ap.perfil.imu = true;            // sistema.imu() and sistema.bip() work for every script
     ap.perfil.alto_falante = true;
-    ap.usa_sd = true;                // o .be e lido do cartao ao abrir
+    ap.usa_sd = true;                // the .be is read from the card on opening
     ap.exige_sd = true;
     ap.ao_abrir  = VAGAS[s_n].abrir;
     ap.ao_fechar = VAGAS[s_n].fechar;
@@ -696,37 +696,37 @@ static void registrar(const lista_t* L)
     ap.ao_teclar = VAGAS[s_n].teclar;
     ap.ao_tocar_nivel = VAGAS[s_n].nivel;
     ap.periodo_ms = l->periodo;
-    ap.periodo_agora = VAGAS[s_n].periodo;   // sistema.periodo() muda com o app aberto
+    ap.periodo_agora = VAGAS[s_n].periodo;   // sistema.periodo() changes it with the app open
     ap.avisos = l->avisos;
     ap.ao_aviso = l->avisos ? VAGAS[s_n].aviso : nullptr;
     ap.orientacao = (orientacao_t)l->orientacao;
     if (!sistema_apps_registrar(&ap)) { break; }
-    ESP_LOGI(TAG, "app Berry: %s (%s)", a->nome, l->arquivo);
+    ESP_LOGI(TAG, "Berry app: %s (%s)", a->nome, l->arquivo);
     ++s_n;
   }
   for (int i = s_n; i < BERRY_APPS_MAX; ++i) { s_apps[i].arquivo[0] = 0; }
-  ESP_LOGI(TAG, "%d app(s) Berry em /sdcard/apps/%s", s_n, BERRY_PASTA);
+  ESP_LOGI(TAG, "%d Berry app(s) in /sdcard/apps/%s", s_n, BERRY_PASTA);
 }
 
 void berry_apps_iniciar(void)
 {
   s_base = SISTEMA_NUM_APPS;
   lista_t* L = ler_pasta();
-  if (!L) { ESP_LOGI(TAG, "sem cartao: nenhum app Berry"); return; }
+  if (!L) { ESP_LOGI(TAG, "no card: no Berry apps"); return; }
   registrar(L);
   heap_caps_free(L);
 }
 
-// A lista lida, esperando a interface (nullptr = nada novo).
+// The list that was read, waiting for the UI (nullptr = nothing new).
 static lista_t* volatile s_pendente = nullptr;
 
 void berry_apps_reler(void)
 {
   lista_t* L = ler_pasta();
-  if (!L) { return; }   // sem cartao agora: fica a lista de antes
+  if (!L) { return; }   // no card right now: the previous list stays
   lista_t* velha = __atomic_exchange_n(&s_pendente, L, __ATOMIC_ACQ_REL);
   if (velha) { heap_caps_free(velha); }
-  sistema_pedir_redesenho();   // acorda a interface
+  sistema_pedir_redesenho();   // wakes the UI
 }
 
 static bool mesma_lista(const lista_t* L)
@@ -743,8 +743,8 @@ static bool mesma_lista(const lista_t* L)
 bool berry_apps_atender(void)
 {
   if (!s_pendente || s_base < 0) { return false; }
-  // Nenhum script aberto (a home nao tem app aberto, mas um .be com erro na
-  // tela de fechar ainda pode estar com a maquina): fica para a proxima volta.
+  // No script open (the home screen has no app open, but a .be with an error on the
+  // close screen may still hold its machine): left for the next round.
   for (int i = 0; i < s_n; ++i) { if (s_apps[i].vm) { return false; } }
   lista_t* L = __atomic_exchange_n(&s_pendente, (lista_t*)nullptr, __ATOMIC_ACQ_REL);
   if (!L) { return false; }
@@ -771,8 +771,8 @@ typedef struct {
 static void corpo_remover(void* arg)
 {
   remover_t* r = (remover_t*)arg;
-  // A parte de fundo para antes (e a maquina e apagada com ela): sem isto a
-  // releitura nao seria atendida - a lista so troca sem maquina viva.
+  // The background part stops first (and the machine is deleted with it): without this the
+  // reread would not be served - the list only swaps with no machine alive.
   if (sistema_fundo_ativo(r->fundo)) { sistema_fundo_parar(r->fundo); }
   const tab5_arq_erro_t e = tab5_arq_apagar(r->script);
   struct stat st;
@@ -781,7 +781,7 @@ static void corpo_remover(void* arg)
     tab5_sd_desmontar();
     if (tem) { tab5_arq_apagar(r->dados); }
   }
-  ESP_LOGI(TAG, "removido %s: %s", r->script, tab5_arq_erro_texto(e));
+  ESP_LOGI(TAG, "removed %s: %s", r->script, tab5_arq_erro_texto(e));
   heap_caps_free(r);
   berry_apps_reler();
 }
@@ -797,7 +797,7 @@ void berry_apps_remover(const app_t* app)
   char rel[48];
   pasta_rel(a->nome, rel, sizeof(rel));
   if (!tab5_sd_pasta_caminho(rel, r->dados, sizeof(r->dados))) { r->dados[0] = '\0'; }
-  // O cartao bloqueia: numa vaga do pool, nunca na interface.
+  // The card blocks: on a pool slot, never on the UI.
   if (!pool_criar(nullptr, corpo_remover, r, "berry_rem", 4096, 2)) { heap_caps_free(r); }
 }
 
@@ -816,7 +816,7 @@ void berry_apps_tempos(bool zerar)
     printf("%-9s %8lu %10lu %10lu\n", EV_NOME[i], (unsigned long)t.n,
            (unsigned long)(t.soma_us / t.n), (unsigned long)t.max_us);
   }
-  // O desenhar() por dentro: quanto foi desenho (C) e quanto foi o script.
+  // desenhar() from the inside: how much was drawing (C) and how much was the script.
   const tempo_t& d = s_tempo[EV_DESENHAR];
   if (d.n) {
     uint64_t prim_us = 0;
@@ -838,8 +838,8 @@ void berry_apps_tempos(bool zerar)
 
 void berry_apps_mem(bvm* console)
 {
-  // Leitura solta do contador de cada maquina (um size_t): pode estar no meio
-  // de um trabalho, e serve so para olhar.
+  // A loose read of each machine's counter (a size_t): it may be in the middle
+  // of a job, and is only for looking at.
   printf("%-16s %-14s %10s %10s\n", "maquina", "estado", "KB berry", "KB camadas");
   for (int i = 0; i < s_n; ++i) {
     const berry_app_t* a = &s_apps[i];

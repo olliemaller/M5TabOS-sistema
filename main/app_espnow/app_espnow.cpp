@@ -1,14 +1,14 @@
-// APP: ESP-NOW - a janela do servico services/tab5_espnow.
+// APP: ESP-NOW - the window for the services/tab5_espnow service.
 //
-// Uma barra fina de informacoes em cima (estado, canal, MAC, quem ja foi
-// ouvido) e a conversa embaixo - baloes, toque para escrever, teclado. A
-// conversa e o componente do sistema (kernel/conversa): este arquivo so diz
-// QUAIS mensagens existem e COMO enviar. O radio, o historico no cartao e o
-// aviso com o app fechado sao do servico.
+// A thin information bar at the top (state, channel, MAC, who has been
+// heard) and the conversation below - bubbles, tap to type, keyboard. The
+// conversation is the system component (kernel/conversa): this file only says
+// WHICH messages exist and HOW to send. The radio, the history on the SD card
+// and the notification while the app is closed belong to the service.
 //
-// Envio em DIFUSAO: todo aparelho no mesmo canal ouve (o Cardputer com o
-// firmware oficial de ESP-NOW, por exemplo). Em difusao nao existe ACK - o
-// visto verde diz "saiu pela antena", nao "alguem recebeu".
+// BROADCAST sending: every device on the same channel hears it (the Cardputer
+// with the official ESP-NOW firmware, for example). Broadcast has no ACK - the
+// green tick means "left through the antenna", not "someone received it".
 #include "app.h"
 #include "idioma.h"
 #include "conversa.hpp"
@@ -23,32 +23,32 @@
 #include <cstring>
 #include "esp_attr.h"   // EXT_RAM_BSS_ATTR
 
-// Na PSRAM: ~1 KB (rascunho, copia dele para o "mudou", teclado) que so a
-// tarefa de interface toca, e nao precisa morar na RAM interna com o app fechado.
+// In PSRAM: ~1 KB (draft, its copy for "changed", keyboard) that only the
+// UI task touches, and need not live in internal RAM while the app is closed.
 EXT_RAM_BSS_ATTR static conversa_t s_c;
 static pintura_t  s_p;
 static char       s_barra_txt[128];
 static int        s_barra_estado = -1;
 
-// 88 px, "ESP-NOW" em 3.6 e a pilula em 3.2 (era 56/2.2, depois 72/3.0 -
-// pequeno demais para ler a distancia de uso).
+// 88 px, "ESP-NOW" at 3.6 and the pill at 3.2 (was 56/2.2, then 72/3.0 -
+// too small to read at normal working distance).
 static const int BARRA_A = 88;
 
-// O SELETOR DE CANAL, na barra: cada toque passa para o proximo. 0 = o do
-// roteador; 1, 6 e 11 sao os canais que nao se sobrepoem em 2,4 GHz - e os
-// padroes da maioria dos aparelhos (um ESP32 sozinho fica no 1).
+// The CHANNEL SELECTOR, on the bar: each tap moves to the next one. 0 = the
+// router's; 1, 6 and 11 are the non-overlapping channels at 2.4 GHz - and the
+// defaults of most devices (a lone ESP32 sits on 1).
 static const uint8_t CANAIS[] = { 0, 1, 6, 11 };
-static int s_pilula_x0 = -1, s_pilula_x1 = -1;   // onde ela foi desenhada (x da area)
+static int s_pilula_x0 = -1, s_pilula_x1 = -1;   // where it was drawn (area x)
 
-// O TAMANHO DA LETRA DA CONVERSA: o botao "Aa" da barra passa ao proximo
-// (guardado nos ajustes). 1.0 e o calibrado no Mesh; o resto, para ler de
-// longe com o aparelho na mesa.
+// The CONVERSATION FONT SIZE: the "Aa" button on the bar steps to the next one
+// (saved in settings). 1.0 is the size calibrated in Mesh; the rest are for
+// reading from a distance with the device on the desk.
 static const float LETRA[AJUSTES_ESPNOW_LETRA_MAX + 1] = { 1.0f, 1.2f, 1.4f, 1.65f };
 static int s_aa_x0 = -1, s_aa_x1 = -1;
 
-// Cor estavel por aparelho: o mesmo MAC tem sempre a mesma cor no rotulo, e
-// numa mesa com tres Cardputers da para saber quem e quem de relance.
-// Sao cores de DADO (identificam o aparelho): ficam fora do tema.
+// Stable colour per device: the same MAC always gets the same label colour,
+// and on a desk with three Cardputers you can tell who is who at a glance.
+// These are DATA colours (they identify the device): they stay outside the theme.
 static uint16_t cor_do_mac(const uint8_t mac[6])
 {
   static const uint16_t CORES[] = { TFT_SKYBLUE, TFT_ORANGE, TFT_GREENYELLOW, TFT_PINK,
@@ -57,20 +57,20 @@ static uint16_t cor_do_mac(const uint8_t mac[6])
   return CORES[h % (sizeof(CORES) / sizeof(CORES[0]))];
 }
 
-// ---- o que o componente de conversa pergunta -------------------------------
+// ---- what the conversation component asks ----------------------------------
 static int contar(void*) { return tab5_espnow_n(); }
 
 static bool ler(int i, conversa_msg_t* out, void*)
 {
-  static espnow_msg_t m, ant;   // fora da stack da interface
+  static espnow_msg_t m, ant;   // off the UI task's stack
   if (!tab5_espnow_msg(i, &m)) { return false; }
   snprintf(out->texto, sizeof(out->texto), "%s", m.texto);
   out->minha  = m.minha;
   out->quando = m.quando;
-  out->envio  = m.envio;   // espnow_envio_t e conversa_envio_t tem a mesma ordem
+  out->envio  = m.envio;   // espnow_envio_t and conversa_envio_t have the same order
   out->nome[0] = 0;
-  // Rotulo so quando o remetente muda - uma sequencia do mesmo aparelho nao
-  // repete o nome em cada balao.
+  // Label only when the sender changes - a run from the same device does not
+  // repeat the name on every bubble.
   if (!m.minha) {
     const bool mesmo = (i > 0) && tab5_espnow_msg(i - 1, &ant) && !ant.minha
                     && memcmp(ant.mac, m.mac, 6) == 0;
@@ -79,8 +79,8 @@ static bool ler(int i, conversa_msg_t* out, void*)
       out->cor_nome = cor_do_mac(m.mac);
     }
   }
-  // O DIALETO de cada recebida, pequeno embaixo: com Cardputer, StickC e Basic
-  // na mesa, diz quem fala o formato do componente esp-now e quem manda texto puro.
+  // The DIALECT of each received message, small underneath: with Cardputer, StickC and
+  // Basic on the desk, it says who speaks the esp-now component format and who sends plain text.
   out->meta[0] = 0;
   if (!m.minha) {
     snprintf(out->meta, sizeof(out->meta), "%s", m.espressif ? tr("esp-now Espressif") : tr("texto puro"));
@@ -91,14 +91,14 @@ static bool ler(int i, conversa_msg_t* out, void*)
 
 static bool enviar(const char* texto, void*) { return tab5_espnow_enviar(texto); }
 
-// ---- barra de informacoes ---------------------------------------------------
-// 0 = sem o firmware nosso no C6, 1 = C6 sem enlace (WiFi nunca ligado neste
-// boot), 2 = ligando, 3 = no ar, 4 = radio parado (WiFi desligado em Ajustes,
-// ou a desistencia fora do alcance do roteador) - o enlace segue de pe, o radio nao.
+// ---- information bar --------------------------------------------------------
+// 0 = our firmware not on the C6, 1 = C6 without link (WiFi never turned on this
+// boot), 2 = starting, 3 = on air, 4 = radio stopped (WiFi off in Settings,
+// or gave up out of router range) - the link stays up, the radio does not.
 static int estado_agora(void)
 {
   if (!tab5_espnow_c6_compativel()) {
-    return tab5_wifi_c6_enlace() ? 0 : 1;   // sem enlace ainda nao da para saber o firmware
+    return tab5_wifi_c6_enlace() ? 0 : 1;   // without a link we cannot tell the firmware yet
   }
   if (!tab5_wifi_c6_enlace()) { return 1; }
   if (!tab5_wifi_radio_ativo()) { return 4; }
@@ -120,11 +120,11 @@ static void desenhar_barra(lgfx::LovyanGFX& d, const area_t& a, int est)
 {
   const uint8_t fixo = tab5_espnow_canal_fixo();
   char canal[32];
-  // Fixo: o canal que o C6 DISSE que esta (o servico confere) - se ele
-  // recusou a troca, a pilula mostra o pedido e o real, em vez de mentir.
+  // Fixed: the channel the C6 SAID it is on (the service checks) - if it
+  // refused the change, the pill shows the requested and the real one, rather than lying.
   const uint8_t real = tab5_espnow_canal();
-  // Em pe a barra tem 720 px: a pilula vai curta. "fixo" x "roteador" continua
-  // dito pela COR dela (laranja = fixo), so sem a palavra.
+  // In portrait the bar is 720 px: the pill goes short. "fixed" vs "router" is still
+  // told by its COLOUR (orange = fixed), just without the word.
   const bool pe = a.largura < a.altura;
   if (fixo && est == 3 && real && real != fixo) {
     if (pe) { snprintf(canal, sizeof(canal), "ch %u? (%u)", (unsigned)real, (unsigned)fixo); }
@@ -142,10 +142,10 @@ static void desenhar_barra(lgfx::LovyanGFX& d, const area_t& a, int est)
     if (ms == UINT32_MAX)  { snprintf(ultimo, sizeof(ultimo), tr("nada ouvido")); }
     else if (ms < 60000)   { snprintf(ultimo, sizeof(ultimo), tr("último %lus"), (unsigned long)(ms / 1000)); }
     else                   { snprintf(ultimo, sizeof(ultimo), tr("último %lumin"), (unsigned long)(ms / 60000)); }
-    // EM PE NAO CABE O MAC. Depois do titulo e da pilula sobram ~150 px, e
-    // a linha inteira encolhida ate o minimo ainda passava da borda. O MAC e
-    // o dado que menos muda (e o do proprio Tab5): sai ele, fica o que diz
-    // se ha alguem por perto.
+    // THE MAC DOES NOT FIT IN PORTRAIT. After the title and the pill ~150 px are
+    // left, and the whole line shrunk to the minimum still ran past the edge. The MAC
+    // is the datum that changes least (and it is the Tab5's own): it goes, keeping
+    // what says whether anyone is nearby.
     if (pe) {
       snprintf(txt, sizeof(txt), tr("%d ouvido(s)  %s"), tab5_espnow_vistos(), ultimo);
     } else {
@@ -162,7 +162,7 @@ static void desenhar_barra(lgfx::LovyanGFX& d, const area_t& a, int est)
   const bool m2 = pintura_mudou_s(&s_p, s_barra_txt, sizeof(s_barra_txt), tudo);
   if (!m1 && !m2) { return; }
 
-  const uint16_t FUNDO = TEMA_SUPERFICIE;   // a barra e um painel sobre o fundo da tela
+  const uint16_t FUNDO = TEMA_SUPERFICIE;   // the bar is a panel over the screen background
   tab5_tela_limpar(a.x, a.y, a.largura, BARRA_A, FUNDO);
   const int cy = a.y + BARRA_A / 2;
   const uint16_t cor = (est == 3) ? TEMA_SUCESSO : (est == 2) ? TEMA_ALERTA : TEMA_TEXTO_3;
@@ -174,11 +174,11 @@ static void desenhar_barra(lgfx::LovyanGFX& d, const area_t& a, int est)
   d.drawString("ESP-NOW", a.x + 64, cy);
   int x = a.x + 64 + (int)d.textWidth("ESP-NOW") + 28;
 
-  // Pilula do canal: e um botao (toque troca), entao tem cara de botao.
+  // Channel pill: it is a button (tap changes it), so it looks like a button.
   tab5_texto(d, 3.2f);
   const int pl = (int)d.textWidth(canal) + 44;
   const int pa = BARRA_A - 22;
-  const uint16_t cor_p = fixo ? (uint16_t)TEMA_DESTAQUE : (uint16_t)TEMA_SUPERFICIE_ALTA;   // canal fixo = destaque
+  const uint16_t cor_p = fixo ? (uint16_t)TEMA_DESTAQUE : (uint16_t)TEMA_SUPERFICIE_ALTA;   // fixed channel = accent
   d.fillRoundRect(x, cy - pa / 2, pl, pa, pa / 2, cor_p);
   d.setTextColor(fixo ? (uint16_t)TEMA_SOBRE_DESTAQUE : (uint16_t)TEMA_TEXTO, cor_p);
   d.drawString(canal, x + 22, cy);
@@ -186,8 +186,8 @@ static void desenhar_barra(lgfx::LovyanGFX& d, const area_t& a, int est)
   s_pilula_x1 = x - a.x + pl;
   x += pl + 16;
 
-  // "Aa": o tamanho da letra da conversa. A letra do botao cresce com o nivel
-  // - o proprio botao mostra o que esta valendo.
+  // "Aa": the conversation font size. The button's letter grows with the level
+  // - the button itself shows what is in effect.
   const uint8_t nivel = ajustes_espnow_letra();
   const int al = pa + 10;
   const uint16_t cor_aa = TEMA_SUPERFICIE_ALTA;
@@ -201,9 +201,9 @@ static void desenhar_barra(lgfx::LovyanGFX& d, const area_t& a, int est)
   s_aa_x1 = x - a.x + al;
   x += al + 24;
 
-  // O resto (MAC, ouvidos, ultimo) no MAIOR tamanho que caiba no que sobrou -
-  // medido, nao chutado: em retrato ou com MAC comprido, encolhe sozinho em
-  // vez de passar da borda.
+  // The rest (MAC, heard, last) at the LARGEST size that fits in what is left -
+  // measured, not guessed: in portrait or with a long MAC, it shrinks by itself
+  // rather than running past the edge.
   const int sobra = a.x + a.largura - 16 - x;
   float tam = 3.2f;
   tab5_texto(d, tam);
@@ -211,8 +211,8 @@ static void desenhar_barra(lgfx::LovyanGFX& d, const area_t& a, int est)
     tam -= 0.2f;
     tab5_texto(d, tam);
   }
-  // No menor tamanho e ainda sem caber: corta no fim, por caractere (UTF-8),
-  // em vez de passar da borda da tela.
+  // At the smallest size and still not fitting: cut at the end, per character (UTF-8),
+  // rather than running past the edge of the screen.
   tab5_cortar_ao_caber(d, txt, sobra);
   d.setTextColor(TEMA_TEXTO_2, FUNDO);
   d.drawString(txt, x, cy);
@@ -220,15 +220,15 @@ static void desenhar_barra(lgfx::LovyanGFX& d, const area_t& a, int est)
   d.setTextDatum(top_left);
 }
 
-// ---- icone da tela inicial ------------------------------------------------
-// Na linha da marca da Espressif (dona do ESP-NOW, que nao tem logotipo
-// proprio - a pagina oficial usa a marca da empresa): o vermelho dela, e em
-// branco o ponto de origem com tres ondas abrindo para cima e para a direita -
-// o sinal saindo de um aparelho, sem roteador no meio. Tudo proporcional ao
-// lado: o mesmo desenho serve em qualquer tamanho de grade.
+// ---- home screen icon -------------------------------------------------------
+// In the style of the Espressif brand (owner of ESP-NOW, which has no logo of
+// its own - the official page uses the company brand): its red, and in
+// white the point of origin with three waves opening up and to the right -
+// the signal leaving a device, with no router in between. Everything proportional
+// to the side: the same drawing works at any grid size.
 static void marca_espnow(lgfx::LovyanGFX& d, int x, int y, int lado)
 {
-  const uint16_t vermelho = d.color565(231, 53, 44);   // o vermelho da Espressif
+  const uint16_t vermelho = d.color565(231, 53, 44);   // Espressif red
   d.fillRoundRect(x, y, lado, lado, lado / 6, vermelho);
 
   const int cx = x + (lado * 28) / 100;
@@ -237,15 +237,15 @@ static void marca_espnow(lgfx::LovyanGFX& d, int x, int y, int lado)
   if (grosso < 3) { grosso = 3; }
 
   d.fillCircle(cx, cy, (lado * 8) / 100, TFT_WHITE);
-  // 270..360 graus = o quadrante de cima-direita (y cresce para baixo).
-  static const int RAIO[3] = { 24, 40, 56 };   // % do lado, ate a borda de fora da onda
+  // 270..360 degrees = the top-right quadrant (y grows downwards).
+  static const int RAIO[3] = { 24, 40, 56 };   // % of the side, to the outer edge of the wave
   for (int k = 0; k < 3; ++k) {
     const int r1 = (lado * RAIO[k]) / 100;
     d.fillArc(cx, cy, r1 - grosso, r1, 270, 360, TFT_WHITE);
   }
 }
 
-// ---- ciclo de vida ---------------------------------------------------------
+// ---- life cycle -------------------------------------------------------------
 static bool ao_abrir(void)
 {
   s_barra_estado = -1;
@@ -253,7 +253,7 @@ static bool ao_abrir(void)
   conversa_abrir(&s_c, &s_p, contar, ler, enviar, nullptr);
   conversa_escala(&s_c, LETRA[ajustes_espnow_letra()]);
   tab5_espnow_marcar_lidas();
-  tab5_espnow_janela(true);    // conversa na frente: o servico pede o receptor ligado
+  tab5_espnow_janela(true);    // conversation in front: the service asks for the receiver on
   return true;
 }
 
@@ -270,14 +270,14 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
 
 static void ao_aviso(uint32_t)
 {
-  // Com a janela aberta, o que chega ja nasce lido.
+  // With the window open, what arrives is born already read.
   tab5_espnow_marcar_lidas();
   conversa_mudou(&s_c);
 }
 
 static void ao_tocar(int x, int y)
 {
-  // A pilula do canal passa ao proximo: roteador -> 1 -> 6 -> 11 -> roteador.
+  // The channel pill steps to the next: router -> 1 -> 6 -> 11 -> router.
   if (y < BARRA_A && s_pilula_x0 >= 0 && x >= s_pilula_x0 && x < s_pilula_x1) {
     const uint8_t atual = tab5_espnow_canal_fixo();
     int k = 0;
@@ -289,7 +289,7 @@ static void ao_tocar(int x, int y)
   if (y < BARRA_A && s_aa_x0 >= 0 && x >= s_aa_x0 && x < s_aa_x1) {
     const uint8_t n = (uint8_t)((ajustes_espnow_letra() + 1) % (AJUSTES_ESPNOW_LETRA_MAX + 1));
     ajustes_definir_espnow_letra(n);
-    conversa_escala(&s_c, LETRA[n]);   // re-mede os baloes e pede a passada completa
+    conversa_escala(&s_c, LETRA[n]);   // re-measures the bubbles and requests a full pass
     return;
   }
   if (y < BARRA_A) { return; }
@@ -301,23 +301,23 @@ static void ao_teclar(const char* t, uint8_t c, uint8_t m) { conversa_teclar(&s_
 extern const app_t APP_ESPNOW = {
   .nome  = "ESP-NOW",
   .cor   = TFT_CYAN,
-  // O radio e do servico de WiFi (o ajuste do sistema mantem). O IMU e para
-  // a tela seguir o aparelho.
+  // The radio belongs to the WiFi service (the system setting keeps it). The IMU is
+  // so the screen follows the device.
   .perfil = { .imu = true },
-  .usa_sd = false,          // o historico e do servico
-  // Em pe ou deitado conforme o aparelho; com o teclado encaixado, deitado
-  // (igual ao Mesh). A conversa e o componente do sistema e ja se mede pela
-  // largura que chega - so a barra de cima precisa saber do retrato.
+  .usa_sd = false,          // the history belongs to the service
+  // Portrait or landscape following the device; with the keyboard attached, landscape
+  // (same as Mesh). The conversation is the system component and already measures
+  // itself by the width it gets - only the top bar needs to know about portrait.
   .orientacao = ORI_SEGUE_IMU,
   .ao_abrir  = ao_abrir,
   .ao_fechar = ao_fechar,
   .desenhar  = desenhar,
   .ao_tocar  = ao_tocar,
-  .ao_tocar_nivel = ao_tocar_nivel,   // tecla acende sob o dedo; rolagem
-  .ao_teclar = ao_teclar,             // teclado fisico do ExtPort1
-  .periodo_ms = 1000,                 // o "ultimo ha Ns" da barra
+  .ao_tocar_nivel = ao_tocar_nivel,   // key lights under the finger; scrolling
+  .ao_teclar = ao_teclar,             // physical keyboard on ExtPort1
+  .periodo_ms = 1000,                 // the bar's "last Ns ago"
   .avisos = AVISO_ESPNOW,
   .ao_aviso = ao_aviso,
   .icone = marca_espnow,
-  .fundo_tema = true,   // a conversa pega o fundo por sistema_cor_fundo()
+  .fundo_tema = true,   // the conversation takes the background from sistema_cor_fundo()
 };

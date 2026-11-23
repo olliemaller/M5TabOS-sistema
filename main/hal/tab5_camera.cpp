@@ -3,7 +3,7 @@
 #include "tarefa_app.h"
 #include "tab5_power.hpp"
 #include "tab5_mutex.hpp"
-#include "recursos.h"   // a camera declara o que usa: o sistema decide a suspensao
+#include "recursos.h"   // the camera declares what it uses: the system decides on suspension
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -32,32 +32,33 @@
 
 static const char* TAG = "tab5_camera";
 
-// O sensor do driver do esp_video. A funcao e global, mas o header que a
-// declara e privado do componente (esp_video_device_internal.h).
+// The esp_video driver's sensor. The function is global, but the header
+// declaring it is private to the component (esp_video_device_internal.h).
 extern "C" esp_cam_sensor_device_t* esp_video_get_csi_video_device_sensor(void);
 
 #define TAB5_CAM_NBUF 2
-// QUADROS SOB PEDIDO ao mesmo tempo (ver tab5_camera_pedir_quadro): a foto de
-// um app e o video do navegador nao disputam a vez.
+// FRAMES ON REQUEST at the same time (see tab5_camera_pedir_quadro): an app's
+// photo and the browser's video do not compete for a turn.
 #define TAB5_CAM_PEDIDOS 2
 
-// O SENSOR ESTA MONTADO DE LADO na placa - o mesmo BSP_CAMERA_ROTATION=270 do
-// BSP oficial. Sem isto a imagem sairia deitada 90 graus.
+// THE SENSOR IS MOUNTED SIDEWAYS on the board - the same BSP_CAMERA_ROTATION=270
+// as the official BSP. Without this the image would come out rotated 90 degrees.
 #define TAB5_CAM_ROTACAO PPA_SRM_ROTATION_ANGLE_270
 
 typedef struct {
   int      fd;
-  uint8_t* bruto[TAB5_CAM_NBUF];   // buffers MMAP do driver (formato do pipeline, ver abaixo)
+  uint8_t* bruto[TAB5_CAM_NBUF];   // the driver's MMAP buffers (pipeline format, see below)
   size_t   bruto_tam;
   uint32_t bruto_largura, bruto_altura;
 
   ppa_client_handle_t ppa;
-  SemaphoreHandle_t   ppa_fim;   // dado pela ISR do PPA ao fim de cada operacao (ver ppa_rodar)
+  SemaphoreHandle_t   ppa_fim;   // given by the PPA ISR at the end of each operation (see ppa_rodar)
 
-  // O PREVIEW: onde ele e escrito (buf nulo = nenhum) e, para o tamanho dele,
-  // a escala uniforme e o pedaco central do quadro bruto (ver encaixar).
-  // Calculados quando o destino e definido - o tamanho e do destino, nao da
-  // camera: quem liga a camera nao trava a resolucao de mais ninguem.
+  // THE PREVIEW: where it is written (null buf = nowhere) and, for its size,
+  // the uniform scale and the central piece of the raw frame (see encaixar).
+  // Computed when the destination is set - the size belongs to the
+  // destination, not the camera: whoever turns the camera on does not lock
+  // anyone else's resolution.
   tab5_cam_destino_t destino;
   int       recorte_w, recorte_h;
   float     escala;
@@ -66,43 +67,42 @@ typedef struct {
 
   tarefa_app_t tarefa;
   bool ligado;
-  bool video_iniciado;   // esp_video_init() teve sucesso - precisa de esp_video_deinit() no parar()
+  bool video_iniciado;   // esp_video_init() succeeded - needs esp_video_deinit() in parar()
 
-  // QUADROS PEDIDOS - ver tab5_camera_pedir_quadro(). Protegido por 'trava'.
-  // destino nulo = vaga livre; pronto = a tarefa ja escreveu (quem pediu
-  // recolhe com tab5_camera_quadro_pronto, que libera a vaga).
+  // REQUESTED FRAMES - see tab5_camera_pedir_quadro(). Protected by 'trava'.
+  // null destino = free slot; pronto = the task has written it (the requester
+  // collects it with tab5_camera_quadro_pronto, which frees the slot).
   struct { uint16_t* destino; int l, a; bool em_pe, pronto, ok; } pedidos[TAB5_CAM_PEDIDOS];
 } tab5_camera_t;
 
 static tab5_camera_t s_cam = { .fd = -1 };
 
-// A tarefa de captura foi abandonada no desligamento (nao confirmou a saida):
-// os recursos dela ficam vazados de proposito e a camera nao abre mais ate
-// reiniciar. FORA de s_cam, que iniciar_hardware() zera a cada abertura.
+// The capture task was abandoned at shutdown (it did not confirm exit): its
+// resources are deliberately leaked and the camera will not open again until
+// a reboot. OUTSIDE s_cam, which iniciar_hardware() zeroes on every open.
 static bool s_abandonada = false;
 
 static inline void travar(void)    { if (s_cam.trava) { xSemaphoreTake(s_cam.trava, portMAX_DELAY); } }
 static inline void destravar(void) { if (s_cam.trava) { xSemaphoreGive(s_cam.trava); } }
 
 // ---------------------------------------------------------------------------
-// CONTAGEM DE REFERENCIA - ver o aviso grande em tab5_camera.hpp.
+// REFERENCE COUNTING - see the big notice in tab5_camera.hpp.
 // ---------------------------------------------------------------------------
-// TRAVA PROPRIA, separada de 's_cam.trava' (que so protege os CAMPOS DE
-// FRAME - indice_pronto/tem_novo/pedido - lidos e escritos a cada volta do
-// loop de captura). Esta aqui protege a TRANSICAO 0<->1 de s_refs.
+// ITS OWN LOCK, separate from 's_cam.trava' (which only protects the FRAME
+// FIELDS - indice_pronto/tem_novo/pedido - read and written on every pass of
+// the capture loop). This one protects the 0<->1 TRANSITION of s_refs.
 //
-// COMENTARIO ATUALIZADO - o motivo original ("o comando 'foto'
-// do console chama estas funcoes da propria tarefa 'console'") NAO E MAIS
-// VERDADE: aquilo causava colisao de I2C de verdade (ver o aviso grande em
-// tab5_camera.hpp) e foi corrigido com a ponte kernel/core.cpp
-// (sistema_camera_iniciar/parar) - HOJE, toda chamada a tab5_camera_iniciar/
-// parar() acontece NA tarefa de interface, direto (app Camera) ou servida
-// pela ponte (console), nunca as duas ao mesmo tempo de tarefas diferentes.
-// A trava ficou, de proposito, como rede de seguranca BARATA contra alguem
-// um dia chamar estas funcoes direto de uma terceira tarefa, violando o
-// contrato - nao proteger custaria quase nada hoje, mas remover e assumir
-// que ninguem nunca vai violar o contrato, e essa aposta ja perdeu uma vez
-// neste mesmo arquivo.
+// UPDATED COMMENT - the original reason ("the console's 'foto' command calls
+// these functions from the 'console' task itself") IS NO LONGER TRUE: that
+// caused a real I2C collision (see the big notice in tab5_camera.hpp) and was
+// fixed with the kernel/core.cpp bridge (sistema_camera_iniciar/parar) -
+// TODAY, every call to tab5_camera_iniciar/parar() happens IN the UI task,
+// directly (Camera app) or served by the bridge (console), never both at once
+// from different tasks. The lock stays, on purpose, as a CHEAP safety net
+// against someone one day calling these functions directly from a third task,
+// breaking the contract - not protecting would cost almost nothing today, but
+// removing it is betting that nobody will ever break the contract, and that
+// bet has already been lost once in this very file.
 static Trava s_ctrl;
 static int               s_refs = 0;
 
@@ -111,23 +111,23 @@ static inline void destravar_ctrl(void) { s_ctrl.destravar(); }
 
 bool tab5_camera_ativa(void) { return s_refs > 0; }
 
-// Idem - iniciar_hardware() chama no caminho de erro (goto erro), antes de
-// parar_hardware() estar definida na leitura do arquivo.
+// Likewise - iniciar_hardware() calls it on the error path (goto erro),
+// before parar_hardware() is defined further down the file.
 static void parar_hardware(void);
 
-// O PPA EM MODO BLOQUEANTE NAO SOBREVIVE AO ENCERRAMENTO (lendo
-// esp_driver_ppa/src/ppa_core.c). No modo BLOCKING o driver espera com
-// xSemaphoreTake(trans_elm->sem, portMAX_DELAY) e IGNORA o retorno. Mas
-// tarefa_app_encerrar() acorda a tarefa com xTaskAbortDelay() - e, se ela
-// estiver nessa espera, o driver devolve "ESP_OK" com a operacao AINDA
-// RODANDO no hardware. Dai em diante: QBUF de um buffer que o PPA ainda le,
-// e o ppa_unregister_client() recusando (a transacao ainda conta) - era
-// essa, e nao so a corrida da ISR, a origem das tentativas esgotadas
-// vistas nos testes.
+// THE PPA IN BLOCKING MODE DOES NOT SURVIVE SHUTDOWN (reading
+// esp_driver_ppa/src/ppa_core.c). In BLOCKING mode the driver waits with
+// xSemaphoreTake(trans_elm->sem, portMAX_DELAY) and IGNORES the result. But
+// tarefa_app_encerrar() wakes the task with xTaskAbortDelay() - and, if it is
+// in that wait, the driver returns "ESP_OK" with the operation STILL RUNNING
+// in hardware. From then on: QBUF of a buffer the PPA is still reading, and
+// ppa_unregister_client() refusing (the transaction still counts) - that,
+// and not just the ISR race, was the source of the exhausted retries seen in
+// testing.
 //
-// A saida: modo NAO bloqueante, com um semaphore NOSSO dado pela ISR, e uma
-// espera que, se for abortada, simplesmente espera de novo. A tarefa so sai
-// do PPA quando o hardware de fato terminou.
+// The way out: NON-blocking mode, with OUR OWN semaphore given by the ISR,
+// and a wait that, if aborted, simply waits again. The task only leaves the
+// PPA when the hardware has really finished.
 static bool IRAM_ATTR ao_fim_ppa(ppa_client_handle_t, ppa_event_data_t*, void* sem)
 {
   BaseType_t acordou = pdFALSE;
@@ -141,27 +141,28 @@ static esp_err_t ppa_rodar(ppa_srm_oper_config_t* cfg)
   cfg->user_data = s_cam.ppa_fim;
   const esp_err_t err = ppa_do_scale_rotate_mirror(s_cam.ppa, cfg);
   if (err != ESP_OK) { return err; }
-  // Uma operacao leva poucos ms; 1 s so estoura se o PPA travou de vez.
+  // An operation takes a few ms; 1 s only runs out if the PPA has hung for good.
   for (int i = 0; i < 20; ++i) {
     if (xSemaphoreTake(s_cam.ppa_fim, pdMS_TO_TICKS(50)) == pdTRUE) { return ESP_OK; }
   }
   return ESP_ERR_TIMEOUT;
 }
 
-// O PRETO DO SENSOR. O SC202CS entrega o preto num pedestal: o laco de nivel
-// de preto dele mira o alvo dos registradores 0x3907/0x3908, que a tabela de
-// inicializacao do driver deixa em 0x041 (65 em 10 bits, 16 no RAW8). A
-// calibracao do componente conta com isso (bloco "blc" de 16 no JSON) - mas
-// quem subtrai e o bloco BLC do ISP, que so existe na v3 do P4
-// (ESP_VIDEO_ISP_DEVICE_BLC, esp_video_caps.h). Abaixo da v3 o pedestal passa
-// direto: vira um deslocamento fixo somado a TODO pixel, depois multiplicado
-// pelo balanco de branco e pela CCM. Com os ganhos de luz do dia isso da
-// 16 x (2,9 ; 0,4 ; 2,0) em linear - o preto sai roxo-escuro e a imagem
-// inteira ganha um veu magenta, mais forte nas sombras (a gama amplia o
-// fundo da escala). A saida e pedir ao proprio sensor o preto no zero.
-// Depois do STREAMON: o formato reescreve a tabela de inicializacao.
+// THE SENSOR'S BLACK LEVEL. The SC202CS delivers black on a pedestal: its
+// black-level loop aims at the target in registers 0x3907/0x3908, which the
+// driver's initialisation table leaves at 0x041 (65 in 10 bits, 16 in RAW8).
+// The component's calibration counts on that ("blc" block of 16 in the JSON)
+// - but the subtraction is done by the ISP's BLC block, which only exists on
+// P4 v3 (ESP_VIDEO_ISP_DEVICE_BLC, esp_video_caps.h). Below v3 the pedestal
+// passes straight through: it becomes a fixed offset added to EVERY pixel,
+// then multiplied by the white balance and the CCM. With daylight gains that
+// gives 16 x (2.9 ; 0.4 ; 2.0) in linear - black comes out dark purple and
+// the whole image gets a magenta veil, strongest in the shadows (gamma
+// stretches the bottom of the scale). The way out is to ask the sensor itself
+// for black at zero. After STREAMON: setting the format rewrites the
+// initialisation table.
 #define TAB5_CAM_PRETO_REG   0x3908
-#define TAB5_CAM_PRETO_ALVO  0x00   // de fabrica 0x41
+#define TAB5_CAM_PRETO_ALVO  0x00   // factory default 0x41
 
 static void zerar_pedestal(void)
 {
@@ -170,7 +171,7 @@ static void zerar_pedestal(void)
   if (!sensor) { return; }
   esp_cam_sensor_reg_val_t r = { .regaddr = TAB5_CAM_PRETO_REG, .value = TAB5_CAM_PRETO_ALVO };
   const esp_err_t err = esp_cam_sensor_ioctl(sensor, ESP_CAM_SENSOR_IOC_S_REG, &r);
-  if (err != ESP_OK) { ESP_LOGW(TAG, "alvo do preto no sensor: %s", esp_err_to_name(err)); }
+  if (err != ESP_OK) { ESP_LOGW(TAG, "black-level target on the sensor: %s", esp_err_to_name(err)); }
 #endif
 }
 
@@ -189,16 +190,17 @@ bool tab5_camera_reg(uint16_t reg, int valor, uint8_t* lido)
   return true;
 }
 
-// ESCALA UNIFORME, PREENCHENDO: a mesma escala nos dois eixos (a imagem nao
-// estica) e a menor, em passos de 1/16 (a precisao do PPA), que ainda cobre
-// l x a inteiro; o que sobra do quadro sai por igual dos dois lados. Girado
-// 270 (em pe), a largura de saida vem da ALTURA do quadro bruto e a altura,
-// da LARGURA; sem girar (do sensor), cada eixo do seu. Para o quadro inteiro
-// (1200x1600 em pe) a escala e 1 e nada sai.
+// UNIFORM SCALE, FILLING: the same scale on both axes (the image does not
+// stretch) and the smallest, in steps of 1/16 (the PPA's precision), that
+// still covers the whole l x a; whatever is left of the frame is cropped
+// equally from both sides. Rotated 270 (portrait), the output width comes
+// from the raw frame's HEIGHT and the height from its WIDTH; unrotated (as
+// the sensor sees), each axis from its own. For the whole frame (1200x1600
+// portrait) the scale is 1 and nothing is cropped.
 static void encaixar(int l, int a, bool em_pe, float* escala, int* rw, int* rh)
 {
   const int W = (int)s_cam.bruto_largura, H = (int)s_cam.bruto_altura;
-  const int lw = em_pe ? a : l, lh = em_pe ? l : a;   // o que sai de cada eixo do bruto
+  const int lw = em_pe ? a : l, lh = em_pe ? l : a;   // what comes out of each raw axis
   int s16 = (lw * 16 + W - 1) / W;
   const int s16h = (lh * 16 + H - 1) / H;
   if (s16h > s16) { s16 = s16h; }
@@ -208,11 +210,11 @@ static void encaixar(int l, int a, bool em_pe, float* escala, int* rw, int* rh)
   *rh = (lh * 16) / s16; if (*rh > H) { *rh = H; }
 }
 
-// A TAREFA DE CAPTURA. DQBUF bloqueia ate o sensor entregar o proximo frame
-// (livre-rodante, ~30fps) - por isso mora em tarefa_app_t, e nao na tarefa de
-// interface: se o sensor travar, quem fica preso e SO esta tarefa (ver o
-// aviso grande em kernel/tarefa_app.h sobre "abandonada de proposito" - o
-// mesmo raciocinio que ja vale para Mesh/GPS vale aqui).
+// THE CAPTURE TASK. DQBUF blocks until the sensor delivers the next frame
+// (free-running, ~30fps) - which is why it lives in tarefa_app_t and not in
+// the UI task: if the sensor hangs, ONLY this task gets stuck (see the big
+// notice in kernel/tarefa_app.h about "deliberately abandoned" - the same
+// reasoning that applies to Mesh/GPS applies here).
 static void laco_captura(tarefa_app_t* t)
 {
   const int tipo = V4L2_BUF_TYPE_VIDEO_CAPTURE;
@@ -225,16 +227,16 @@ static void laco_captura(tarefa_app_t* t)
     buf.memory = V4L2_MEMORY_MMAP;
 
     if (ioctl(s_cam.fd, VIDIOC_DQBUF, &buf) != 0) {
-      // xTaskAbortDelay NAO acorda um ioctl bloqueado - se caiu aqui por um
-      // erro de verdade (nao por termos pedido para sair), evita busy-loop.
+      // xTaskAbortDelay does NOT wake a blocked ioctl - if we got here from a
+      // real error (not because we asked it to exit), avoid a busy loop.
       if (tarefa_app_ativa(t)) { vTaskDelay(pdMS_TO_TICKS(50)); }
       continue;
     }
 
-    // A base de toda operacao: o frame bruto do sensor (1600x1200), girado 270
-    // (o sensor esta montado de lado - BSP_CAMERA_ROTATION=270) e espelhado
-    // (mirror_x e no bloco de SAIDA, pos-rotacao - esquerda/direita vinham
-    // trocadas).
+    // The basis of every operation: the sensor's raw frame (1600x1200),
+    // rotated 270 (the sensor is mounted sideways - BSP_CAMERA_ROTATION=270)
+    // and mirrored (mirror_x applies to the OUTPUT block, after rotation -
+    // left/right were swapped).
     ppa_srm_oper_config_t base = { };
     base.in.buffer   = s_cam.bruto[buf.index];
     base.in.pic_w    = s_cam.bruto_largura;
@@ -257,16 +259,16 @@ static void laco_captura(tarefa_app_t* t)
     }
     destravar();
 
-    // PREVIEW DIRETO NO DESTINO: o PPA escreve o frame ja
-    // girado e escalado no retangulo que o app indicou - na pratica, dentro
-    // da TELA VIRTUAL do sistema. Antes eram quatro viagens pela PSRAM por
-    // frame (PPA -> buffer da camera -> memcpy do app -> pushImage na tela
-    // virtual -> compositor); somadas ao painel, a banda nao fechava a 30 qps
-    // e a imagem chegava atrasada. Agora sao duas (PPA -> tela virtual ->
-    // compositor).
+    // PREVIEW STRAIGHT INTO THE DESTINATION: the PPA writes the frame already
+    // rotated and scaled into the rectangle the app specified - in practice,
+    // inside the system's VIRTUAL SCREEN. Before, there were four trips
+    // through PSRAM per frame (PPA -> camera buffer -> app memcpy -> pushImage
+    // onto the virtual screen -> compositor); added to the panel, the
+    // bandwidth did not add up at 30 fps and the image arrived late. Now
+    // there are two (PPA -> virtual screen -> compositor).
     //
-    // Escala uniforme preenchendo (encaixar): no retrato do Tab5 isso corta
-    // uns 4% da largura - o resto do quadro e o que a foto grava.
+    // Uniform scale, filling (encaixar): in the Tab5's portrait this crops
+    // about 4% of the width - the rest of the frame is what the photo saves.
     esp_err_t err = ESP_OK;
     if (dst.buf) {
       ppa_srm_oper_config_t cfg = base;
@@ -284,17 +286,17 @@ static void laco_captura(tarefa_app_t* t)
       err = ppa_rodar(&cfg);
     }
 
-    // QUADROS PEDIDOS (a foto, o video do navegador): o MESMO frame bruto, no
-    // tamanho de quem pediu, com a mesma regra de escala. Uma operacao de PPA
-    // cada (poucos ms): o preview nao para, e o que fazer com o quadro (gravar,
-    // comprimir) fica com quem pediu.
+    // REQUESTED FRAMES (the photo, the browser video): the SAME raw frame, at
+    // the requester's size, with the same scaling rule. One PPA operation each
+    // (a few ms): the preview does not stop, and what to do with the frame
+    // (save, compress) is up to the requester.
     for (int i = 0; i < TAB5_CAM_PEDIDOS; ++i) {
       if (!ped[i].destino) { continue; }
       float e;
       int rw, rh;
       encaixar(ped[i].l, ped[i].a, ped[i].em_pe, &e, &rw, &rh);
       ppa_srm_oper_config_t fc = base;
-      if (!ped[i].em_pe) {   // como o sensor ve: sem girar nem espelhar (quem mostra faz)
+      if (!ped[i].em_pe) {   // as the sensor sees: no rotation or mirroring (the displayer does it)
         fc.rotation_angle = PPA_SRM_ROTATION_ANGLE_0;
         fc.mirror_x = false;
       }
@@ -307,14 +309,14 @@ static void laco_captura(tarefa_app_t* t)
       fc.in.block_offset_x = (s_cam.bruto_largura - rw) / 2;
       fc.in.block_offset_y = (s_cam.bruto_altura  - rh) / 2;
       fc.scale_x = fc.scale_y = e;
-      // UMA LINHA EM CADA DUAS (so deitado, reduzindo a metade ou menos). O
-      // PPA custa o que ele LE: ~110 ms para os ~3 MB do recorte (medido
-      // 05/11/2026), muito acima dos ~32 ms entre frames. Declarado com o
-      // dobro da largura, o quadro bruto vira metade das linhas, cada uma com
-      // duas do sensor lado a lado - e o bloco, da largura de uma, le so a
-      // primeira de cada par. A escala vertical dobra para o resultado ter as
-      // mesmas linhas. Metade da PSRAM lida; num video de 480 linhas tiradas
-      // de ~1100, a diferenca nao se ve.
+      // ONE LINE IN EVERY TWO (landscape only, reducing to half or less). The
+      // PPA costs what it READS: ~110 ms for the ~3 MB of the crop (measured
+      // 05/11/2026), far above the ~32 ms between frames. Declared at double
+      // width, the raw frame becomes half the lines, each holding two sensor
+      // lines side by side - and the block, one line wide, reads only the
+      // first of each pair. The vertical scale doubles so the result has the
+      // same number of lines. Half the PSRAM read; in a 480-line video taken
+      // from ~1100, the difference is invisible.
       if (!ped[i].em_pe && e <= 0.5f) {
         fc.in.pic_w          = s_cam.bruto_largura * 2;
         fc.in.pic_h          = s_cam.bruto_altura / 2;
@@ -329,10 +331,10 @@ static void laco_captura(tarefa_app_t* t)
         s_cam.pedidos[i].pronto = true;
       }
       destravar();
-      if (ef != ESP_OK) { ESP_LOGW(TAG, "quadro %dx%d: PPA falhou (%s)", ped[i].l, ped[i].a, esp_err_to_name(ef)); }
+      if (ef != ESP_OK) { ESP_LOGW(TAG, "frame %dx%d: PPA failed (%s)", ped[i].l, ped[i].a, esp_err_to_name(ef)); }
     }
 
-    // Devolve o buffer BRUTO ao driver JA - o sensor pode reusar o slot.
+    // Return the RAW buffer to the driver NOW - the sensor can reuse the slot.
     ioctl(s_cam.fd, VIDIOC_QBUF, &buf);
 
     if (dst.buf && err == ESP_OK) {
@@ -341,67 +343,68 @@ static void laco_captura(tarefa_app_t* t)
       destravar();
       if (dst.avisar) { dst.avisar(); }
     }
-    if (err != ESP_OK) { ESP_LOGW(TAG, "PPA falhou: %s", esp_err_to_name(err)); }
+    if (err != ESP_OK) { ESP_LOGW(TAG, "PPA failed: %s", esp_err_to_name(err)); }
 
-    // Frames por segundo de verdade, a cada 10 s - o numero que diz se o
-    // sensor (ou a exposicao automatica, que alonga o frame no escuro) esta
-    // entregando os 30 qps.
+    // Real frames per second, every 10 s - the number that tells whether the
+    // sensor (or auto exposure, which lengthens the frame in the dark) is
+    // delivering 30 fps.
     ++quadros;
     const int64_t agora = esp_timer_get_time();
     if (agora - t_conta >= 10000000) {
-      ESP_LOGI(TAG, "%.1f quadros/s", quadros * 1e6 / (double)(agora - t_conta));
+      ESP_LOGI(TAG, "%.1f frames/s", quadros * 1e6 / (double)(agora - t_conta));
       t_conta = agora;
       quadros = 0;
     }
   }
 }
 
-// A INICIALIZACAO DE VERDADE - so roda na transicao 0->1 de s_refs (ver
-// tab5_camera_iniciar() mais abaixo, a funcao PUBLICA que decide quando
-// chamar esta aqui).
+// THE REAL INITIALISATION - only runs on the 0->1 transition of s_refs (see
+// tab5_camera_iniciar() further down, the PUBLIC function that decides when
+// to call this one).
 static bool iniciar_hardware(void)
 {
-  // A tarefa de captura de uma sessao anterior nao saiu e segue usando o
-  // esp_video, o PPA e os buffers (ver parar_hardware): subir tudo de novo por
-  // cima falharia ("/dev/video0 ja registrado") ou, pior, zeraria o s_cam que
-  // ela ainda usa. Recusa com mensagem clara; so reiniciar resolve.
+  // The capture task from a previous session did not exit and is still using
+  // esp_video, the PPA and the buffers (see parar_hardware): bringing it all
+  // up again on top would fail ("/dev/video0 already registered") or, worse,
+  // zero the s_cam it is still using. Refuse with a clear message; only a
+  // reboot fixes it.
   if (s_abandonada) {
-    ESP_LOGE(TAG, "camera indisponivel: a tarefa de captura anterior nao saiu - reinicie o aparelho");
+    ESP_LOGE(TAG, "camera unavailable: the previous capture task did not exit - reboot the device");
     return false;
   }
   s_cam = { .fd = -1 };
   s_cam.trava = xSemaphoreCreateMutex();
   if (!s_cam.trava) { return false; }
 
-  // A CAMERA SE ALIMENTA SOZINHA - ver o aviso grande no .hpp ("A CAMERA SE
-  // ALIMENTA SOZINHA AGORA"). ANTES de qualquer coisa, inclusive antes do
-  // handle I2C: o SCCB do sensor (usado logo abaixo, dentro de
-  // esp_video_init) so responde com CAM_RST fora de reset.
+  // THE CAMERA POWERS ITSELF - see the big notice in the .hpp ("THE CAMERA
+  // NOW POWERS ITSELF"). BEFORE anything else, even before the I2C handle:
+  // the sensor's SCCB (used just below, inside esp_video_init) only responds
+  // with CAM_RST out of reset.
   tab5_power_camera(true);
 
-  // FOLGA PARA O SENSOR ACORDAR - achado em hardware testando
-  // 'foto' pelo CONSOLE: "Get sensor ID failed" no primeiro SCCB, sempre.
+  // GIVE THE SENSOR TIME TO WAKE - found on hardware testing 'foto' from the
+  // CONSOLE: "Get sensor ID failed" on the first SCCB, every time.
   //
-  // O driver do SC202CS (sc202cs.c, sc202cs_hw_reset) TEM um delay de 10ms
-  // apos soltar o reset - mas SO quando 'reset_pin' e um GPIO que o proprio
-  // driver controla. O nosso CAM_RST e por fora (expansor I2C, ver
-  // tab5_power_camera()), entao passamos GPIO_NUM_NC para reset_pin/pwdn_pin
-  // (ver csi_cfg abaixo) - o driver nunca sabe que acabamos de tirar o
-  // sensor do reset, e pula o proprio delay dele. NOS temos que dar essa
-  // folga, e antes disto ela sempre "acontecia" por acidente: o app Camera
-  // ainda montava o cartao (usa_sd=true) e desenhava "abrindo..." antes de
-  // ao_abrir() chegar aqui, dezenas de ms de sobra sem ninguem ter pedido.
-  // O comando 'foto' chama esta funcao direto, sem nenhum desses passos no
-  // meio - e foi so ai que a falta de delay EXPLICITO ficou visivel. 20ms:
-  // o dobro do que o proprio driver usa para o caso que ele conhece, folga
-  // confortavel sem atrasar percebivelmente a abertura do app Camera.
+  // The SC202CS driver (sc202cs.c, sc202cs_hw_reset) DOES have a 10ms delay
+  // after releasing reset - but ONLY when 'reset_pin' is a GPIO the driver
+  // itself controls. Our CAM_RST is external (I2C expander, see
+  // tab5_power_camera()), so we pass GPIO_NUM_NC for reset_pin/pwdn_pin (see
+  // csi_cfg below) - the driver never knows we have just taken the sensor out
+  // of reset, and skips its own delay. WE have to provide that margin, and
+  // until now it always "happened" by accident: the Camera app was still
+  // mounting the card (usa_sd=true) and drawing "abrindo..." (opening...)
+  // before ao_abrir() got here, tens of ms to spare without anyone asking.
+  // The 'foto' command calls this function directly, with none of those steps
+  // in between - and only then did the lack of an EXPLICIT delay show. 20ms:
+  // double what the driver itself uses for the case it knows, a comfortable
+  // margin without noticeably slowing the Camera app's opening.
   vTaskDelay(pdMS_TO_TICKS(20));
 
-  // O BARRAMENTO E O MESMO DO RESTO DO SISTEMA (M5.In_I2C) - ver o aviso
-  // grande no .hpp. Pega o handle ja instalado, NAO cria um novo.
+  // THE BUS IS THE SAME AS THE REST OF THE SYSTEM'S (M5.In_I2C) - see the big
+  // notice in the .hpp. Take the handle already installed, do NOT create one.
   i2c_master_bus_handle_t i2c_handle = nullptr;
   if (i2c_master_get_bus_handle(I2C_NUM_1, &i2c_handle) != ESP_OK || !i2c_handle) {
-    ESP_LOGE(TAG, "barramento I2C interno (I2C_NUM_1) nao esta de pe - M5.begin() ja rodou?");
+    ESP_LOGE(TAG, "internal I2C bus (I2C_NUM_1) is not up - has M5.begin() run?");
     vSemaphoreDelete(s_cam.trava);
     s_cam.trava = nullptr;
     return false;
@@ -413,13 +416,13 @@ static bool iniciar_hardware(void)
       .i2c_handle = i2c_handle,
       .freq = 400000,
     },
-    .reset_pin = GPIO_NUM_NC,   // CAM_RST e o expansor I2C, ja aplicado via perfil.camera - ver .hpp
+    .reset_pin = GPIO_NUM_NC,   // CAM_RST is the I2C expander, already applied via perfil.camera - see .hpp
     .pwdn_pin  = GPIO_NUM_NC,
   };
   esp_video_init_config_t video_cfg = { .csi = &csi_cfg };
 
   if (esp_video_init(&video_cfg) != ESP_OK) {
-    ESP_LOGE(TAG, "esp_video_init falhou - confira CONFIG_CAMERA_SC202CS no menuconfig");
+    ESP_LOGE(TAG, "esp_video_init failed - check CONFIG_CAMERA_SC202CS in menuconfig");
     vSemaphoreDelete(s_cam.trava);
     s_cam.trava = nullptr;
     return false;
@@ -428,27 +431,27 @@ static bool iniciar_hardware(void)
 
   s_cam.fd = open(ESP_VIDEO_MIPI_CSI_DEVICE_NAME, O_RDONLY);
   if (s_cam.fd < 0) {
-    ESP_LOGE(TAG, "abrir %s falhou", ESP_VIDEO_MIPI_CSI_DEVICE_NAME);
+    ESP_LOGE(TAG, "opening %s failed", ESP_VIDEO_MIPI_CSI_DEVICE_NAME);
     goto erro;
   }
 
   {
-    // O FORMATO PADRAO DO SENSOR E RAW8 (Bayer cru) - conferido no sdkconfig
-    // apos baixar o componente (CONFIG_CAMERA_SC202CS_MIPI_DEFAULT_FMT_RAW8_*).
-    // Isto e o sensor de verdade falando: uma camera CMOS como esta NUNCA
-    // entrega RGB direto, so o padrao de Bayer. Quem faz o demosaico e o ISP
-    // do proprio chip (CONFIG_ESP_VIDEO_ENABLE_ISP_PIPELINE_CONTROLLER, ja
-    // ligado) - mas so quando a gente PEDE RGB565 via VIDIOC_S_FMT neste MESMO
-    // /dev/video0. Sem este passo, o PPA logo abaixo receberia Bayer cru e
-    // tentaria le-lo como RGB565 - a imagem sairia um chuvisco sem sentido
-    // nenhum, nao uma foto "esquisita": bytes crus do sensor, cor nenhuma.
+    // THE SENSOR'S DEFAULT FORMAT IS RAW8 (raw Bayer) - checked in sdkconfig
+    // after downloading the component (CONFIG_CAMERA_SC202CS_MIPI_DEFAULT_FMT_RAW8_*).
+    // That is the real sensor talking: a CMOS camera like this NEVER delivers
+    // RGB directly, only the Bayer pattern. The demosaicing is done by the
+    // chip's own ISP (CONFIG_ESP_VIDEO_ENABLE_ISP_PIPELINE_CONTROLLER, already
+    // on) - but only when we ASK for RGB565 via VIDIOC_S_FMT on this SAME
+    // /dev/video0. Without this step, the PPA just below would receive raw
+    // Bayer and try to read it as RGB565 - the image would come out as
+    // meaningless static, not a "weird" photo: raw sensor bytes, no colour.
     struct v4l2_format fmt = { };
     fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     if (ioctl(s_cam.fd, VIDIOC_G_FMT, &fmt) != 0) {
-      ESP_LOGE(TAG, "VIDIOC_G_FMT falhou");
+      ESP_LOGE(TAG, "VIDIOC_G_FMT failed");
       goto erro;
     }
-    ESP_LOGI(TAG, "formato padrao do sensor: %ux%u, fourcc 0x%08lx (RAW = Bayer, sem ISP ainda)",
+    ESP_LOGI(TAG, "sensor default format: %ux%u, fourcc 0x%08lx (RAW = Bayer, no ISP yet)",
              (unsigned)fmt.fmt.pix.width, (unsigned)fmt.fmt.pix.height,
              (unsigned long)fmt.fmt.pix.pixelformat);
 
@@ -459,50 +462,51 @@ static bool iniciar_hardware(void)
       pedido.fmt.pix.height      = fmt.fmt.pix.height;
       pedido.fmt.pix.pixelformat = V4L2_PIX_FMT_RGB565;
       if (ioctl(s_cam.fd, VIDIOC_S_FMT, &pedido) != 0) {
-        ESP_LOGE(TAG, "VIDIOC_S_FMT(RGB565) falhou - o ISP nao aceitou a conversao");
+        ESP_LOGE(TAG, "VIDIOC_S_FMT(RGB565) failed - the ISP did not accept the conversion");
         goto erro;
       }
-      // Confirma o que realmente ficou valendo - o driver pode ajustar.
+      // Confirm what actually took effect - the driver may adjust it.
       memset(&fmt, 0, sizeof(fmt));
       fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
       if (ioctl(s_cam.fd, VIDIOC_G_FMT, &fmt) != 0) {
-        ESP_LOGE(TAG, "VIDIOC_G_FMT (apos S_FMT) falhou");
+        ESP_LOGE(TAG, "VIDIOC_G_FMT (after S_FMT) failed");
         goto erro;
       }
     }
 
     s_cam.bruto_largura = fmt.fmt.pix.width;
     s_cam.bruto_altura  = fmt.fmt.pix.height;
-    ESP_LOGI(TAG, "capturando: %ux%u, fourcc 0x%08lx", (unsigned)s_cam.bruto_largura,
+    ESP_LOGI(TAG, "capturing: %ux%u, fourcc 0x%08lx", (unsigned)s_cam.bruto_largura,
              (unsigned)s_cam.bruto_altura, (unsigned long)fmt.fmt.pix.pixelformat);
     if (fmt.fmt.pix.pixelformat != V4L2_PIX_FMT_RGB565) {
-      ESP_LOGE(TAG, "driver ficou em fourcc 0x%08lx, nao RGB565 - PPA vai receber lixo",
+      ESP_LOGE(TAG, "driver stayed on fourcc 0x%08lx, not RGB565 - the PPA would receive garbage",
                (unsigned long)fmt.fmt.pix.pixelformat);
       goto erro;
     }
 
-    // EXPOSICAO E COR SAO DO ISP. O ganho manual fixo que havia
-    // aqui (indice 16 = 1,5x) era remendo para a imagem escura
-    // a causa era o controlador do pipeline do ISP DESLIGADO no sdkconfig
-    // (CONFIG_ESP_VIDEO_ENABLE_ISP_PIPELINE_CONTROLLER): sem ele nada rodava
-    // exposicao automatica (AGC/AE) nem balanco de branco (AWB) - o sensor
-    // entregava Bayer "cru", verde (dois pixels verdes em cada quatro, sem
-    // correcao) e no ganho minimo. Ligado, a tarefa "isp_task" do esp_video
-    // le as estatisticas do ISP a cada frame e ajusta ganho/exposicao do
-    // sensor (pelo SCCB, que passa pela trava do I2C - hal/tab5_sccb.cpp) e
-    // os ganhos de cor/CCM/gama do ISP, com a calibracao do SC202CS que vem
-    // no componente. Um ganho fixo aqui so brigaria com ela.
-    // A calibracao em uso e a PROPRIA, hal/sc202cs_tab5.json (exposicao
-    // mais baixa contra o branco estourado) - o porque esta no
-    // sdkconfig.defaults, secao "Camera". O branco magenta em si e resolvido
-    // na matriz de cor, por um IPA proprio: hal/tab5_camera_ipa.c.
+    // EXPOSURE AND COLOUR BELONG TO THE ISP. The fixed manual gain that was
+    // here (index 16 = 1.5x) was a patch for the dark image; the cause was
+    // the ISP pipeline controller being OFF in sdkconfig
+    // (CONFIG_ESP_VIDEO_ENABLE_ISP_PIPELINE_CONTROLLER): without it nothing
+    // ran auto exposure (AGC/AE) or white balance (AWB) - the sensor
+    // delivered "raw" Bayer, green (two green pixels in every four,
+    // uncorrected) and at minimum gain. With it on, esp_video's "isp_task"
+    // reads the ISP statistics every frame and adjusts the sensor's
+    // gain/exposure (via SCCB, which goes through the I2C lock -
+    // hal/tab5_sccb.cpp) and the ISP's colour gains/CCM/gamma, with the
+    // SC202CS calibration that ships with the component. A fixed gain here
+    // would only fight it.
+    // The calibration in use is OUR OWN, hal/sc202cs_tab5.json (lower
+    // exposure against blown-out whites) - the reason is in
+    // sdkconfig.defaults, "Camera" section. The magenta white itself is fixed
+    // in the colour matrix, by our own IPA: hal/tab5_camera_ipa.c.
 
     struct v4l2_requestbuffers req = { };
     req.count  = TAB5_CAM_NBUF;
     req.type   = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     req.memory = V4L2_MEMORY_MMAP;
     if (ioctl(s_cam.fd, VIDIOC_REQBUFS, &req) != 0) {
-      ESP_LOGE(TAG, "VIDIOC_REQBUFS falhou");
+      ESP_LOGE(TAG, "VIDIOC_REQBUFS failed");
       goto erro;
     }
 
@@ -512,15 +516,15 @@ static bool iniciar_hardware(void)
       buf.memory = V4L2_MEMORY_MMAP;
       buf.index = i;
       if (ioctl(s_cam.fd, VIDIOC_QUERYBUF, &buf) != 0) {
-        ESP_LOGE(TAG, "VIDIOC_QUERYBUF(%d) falhou", i);
+        ESP_LOGE(TAG, "VIDIOC_QUERYBUF(%d) failed", i);
         goto erro;
       }
       s_cam.bruto[i] = (uint8_t*)mmap(nullptr, buf.length, PROT_READ | PROT_WRITE,
                                        MAP_SHARED, s_cam.fd, buf.m.offset);
-      if (!s_cam.bruto[i]) { ESP_LOGE(TAG, "mmap(%d) falhou", i); goto erro; }
+      if (!s_cam.bruto[i]) { ESP_LOGE(TAG, "mmap(%d) failed", i); goto erro; }
       s_cam.bruto_tam = buf.length;
       if (ioctl(s_cam.fd, VIDIOC_QBUF, &buf) != 0) {
-        ESP_LOGE(TAG, "VIDIOC_QBUF(%d) inicial falhou", i);
+        ESP_LOGE(TAG, "initial VIDIOC_QBUF(%d) failed", i);
         goto erro;
       }
     }
@@ -529,13 +533,13 @@ static bool iniciar_hardware(void)
   {
     const ppa_client_config_t ppa_cfg = { .oper_type = PPA_OPERATION_SRM };
     if (ppa_register_client(&ppa_cfg, &s_cam.ppa) != ESP_OK) {
-      ESP_LOGE(TAG, "ppa_register_client falhou");
+      ESP_LOGE(TAG, "ppa_register_client failed");
       goto erro;
     }
     s_cam.ppa_fim = xSemaphoreCreateBinary();
     const ppa_event_callbacks_t cbs = { .on_trans_done = ao_fim_ppa };
     if (!s_cam.ppa_fim || ppa_client_register_event_callbacks(s_cam.ppa, &cbs) != ESP_OK) {
-      ESP_LOGE(TAG, "callback do PPA falhou");
+      ESP_LOGE(TAG, "PPA callback failed");
       goto erro;
     }
   }
@@ -543,23 +547,23 @@ static bool iniciar_hardware(void)
   {
     const int tipo = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     if (ioctl(s_cam.fd, VIDIOC_STREAMON, &tipo) != 0) {
-      ESP_LOGE(TAG, "VIDIOC_STREAMON falhou");
+      ESP_LOGE(TAG, "VIDIOC_STREAMON failed");
       goto erro;
     }
   }
   zerar_pedestal();
 
-  // So DQBUF, PPA e QBUF - a gravacao da foto saiu daqui (ver
-  // tab5_camera_pedir_quadro), entao a stack volta aos 4 KB originais.
+  // Only DQBUF, PPA and QBUF - saving the photo moved out of here (see
+  // tab5_camera_pedir_quadro), so the stack goes back to the original 4 KB.
   if (!tarefa_app_criar(&s_cam.tarefa, laco_captura, "cam", 4096, 3)) {
-    ESP_LOGE(TAG, "nao consegui subir a tarefa de captura");
+    ESP_LOGE(TAG, "could not start the capture task");
     { const int tipo = V4L2_BUF_TYPE_VIDEO_CAPTURE; ioctl(s_cam.fd, VIDIOC_STREAMOFF, &tipo); }
     goto erro;
   }
 
   s_cam.ligado = true;
-  tab5_marco("camera: ligada", 0);
-  ESP_LOGI(TAG, "camera no ar (%ux%u, rotacao %d)", (unsigned)s_cam.bruto_largura, (unsigned)s_cam.bruto_altura,
+  tab5_marco("camera: on", 0);
+  ESP_LOGI(TAG, "camera up (%ux%u, rotation %d)", (unsigned)s_cam.bruto_largura, (unsigned)s_cam.bruto_altura,
            (int)TAB5_CAM_ROTACAO);
   return true;
 
@@ -568,32 +572,32 @@ erro:
   return false;
 }
 
-// O DESLIGAMENTO DE VERDADE - so roda na transicao 1->0 de s_refs (ver
-// tab5_camera_parar() mais abaixo). Tambem chamada direto por
-// iniciar_hardware() no caminho de erro (goto erro acima) - por isso
-// continua segura de chamar mesmo com a inicializacao pela metade, exatamente
-// como o comentario original desta funcao ja avisava.
+// THE REAL SHUTDOWN - only runs on the 1->0 transition of s_refs (see
+// tab5_camera_parar() further down). Also called directly by
+// iniciar_hardware() on the error path (goto erro above) - so it stays safe
+// to call even with a half-done initialisation, exactly as this function's
+// original comment already warned.
 static void parar_hardware(void)
 {
-  tab5_marco("camera: desligando", 0);
-  // QUANTO CUSTA DESLIGAR - roda na tarefa de interface (ao_fechar), entao
-  // cada ms aqui e tela parada. O log diz qual etapa pesou.
+  tab5_marco("camera: turning off", 0);
+  // WHAT SHUTTING DOWN COSTS - runs in the UI task (ao_fechar), so every ms
+  // here is a frozen screen. The log says which step weighed most.
   const int64_t t0 = esp_timer_get_time();
   int64_t t_tarefa = t0, t_ppa = t0, t_video = t0;
 
   if (s_cam.ligado) {
-    // A tarefa so faz DQBUF (bloqueia ate o proximo frame, ~33 ms) e PPA -
-    // nenhuma escrita no cartao. 500 ms e folga de sobra; se ela nao sair,
-    // tarefa_app_encerrar() a abandona (ver tarefa_app.h).
+    // The task only does DQBUF (blocks until the next frame, ~33 ms) and PPA
+    // - no writes to the card. 500 ms is plenty of margin; if it does not
+    // exit, tarefa_app_encerrar() abandons it (see tarefa_app.h).
     if (!tarefa_app_encerrar(&s_cam.tarefa, 500)) {
-      // A tarefa abandonada pode estar no meio de DQBUF/PPA: liberar o PPA, os
-      // buffers mmap, o fd, a trava ou o esp_video agora seria ela escrever em
-      // memoria liberada. Nada disso e liberado. A energia do sensor tambem
-      // fica ligada: cortar com uma leitura em andamento pode travar o
-      // esp_video; o custo e o consumo ate reiniciar. O STREAMOFF tambem fica
-      // de fora (nao se sabe se e seguro com a tarefa dentro do driver).
-      ESP_LOGE(TAG, "tarefa de captura nao saiu em 500 ms - PPA, buffers, fd, esp_video e energia "
-                    "ficam vazados DE PROPOSITO ate reiniciar; a camera nao abre mais");
+      // The abandoned task may be in the middle of DQBUF/PPA: freeing the PPA,
+      // the mmap buffers, the fd, the lock or esp_video now would have it
+      // writing into freed memory. None of it is freed. The sensor power also
+      // stays on: cutting it with a read in progress can hang esp_video; the
+      // cost is the power draw until a reboot. STREAMOFF is also skipped (it
+      // is unknown whether it is safe with the task inside the driver).
+      ESP_LOGE(TAG, "capture task did not exit within 500 ms - PPA, buffers, fd, esp_video and power "
+                    "are leaked ON PURPOSE until reboot; the camera will not open again");
       s_abandonada = true;
       s_cam.ligado = false;
       return;
@@ -604,50 +608,50 @@ static void parar_hardware(void)
   s_cam.ligado = false;
   t_tarefa = esp_timer_get_time();
 
-  // "client still has unprocessed trans" - CAUSA RAIZ CONFIRMADA lendo o
-  // fonte do driver (esp_driver_ppa/src/ppa_core.c), nao so suposta:
+  // "client still has unprocessed trans" - ROOT CAUSE CONFIRMED by reading
+  // the driver source (esp_driver_ppa/src/ppa_core.c), not just assumed:
   //
-  //   ppa_transaction_done_cb() (a ISR de fim de transacao) faz, na ORDEM,
-  //   dentro do MESMO critico:
-  //     1. xSemaphoreGiveFromISR(trans_elm->sem, ...)   <- acorda quem
-  //        chamou ppa_do_scale_rotate_mirror (nos, em modo bloqueante)
-  //     2. client->trans_cnt--                          <- SO DEPOIS
+  //   ppa_transaction_done_cb() (the end-of-transaction ISR) does, IN ORDER,
+  //   inside the SAME critical section:
+  //     1. xSemaphoreGiveFromISR(trans_elm->sem, ...)   <- wakes whoever
+  //        called ppa_do_scale_rotate_mirror (us, in blocking mode)
+  //     2. client->trans_cnt--                          <- ONLY AFTERWARDS
   //
-  //   ppa_unregister_client() recusa se trans_cnt != 0. Ou seja: existe uma
-  //   janela real, de poucas instrucoes, entre "nossa chamada bloqueante
-  //   devolve o controle" e "o proprio driver termina de contar aquela
-  //   transacao como concluida". Em SMP (P4 e dual-core, e a tarefa "cam"
-  //   nao tem afinidade fixa - tarefa_app_criar usa tskNO_AFFINITY) essa
-  //   janela pode realmente ser cruzada.
+  //   ppa_unregister_client() refuses if trans_cnt != 0. In other words:
+  //   there is a real window, a few instructions long, between "our blocking
+  //   call returns control" and "the driver itself finishes counting that
+  //   transaction as done". On SMP (the P4 is dual-core, and the "cam" task
+  //   has no fixed affinity - tarefa_app_criar uses tskNO_AFFINITY) that
+  //   window can really be crossed.
   //
-  // NAO E OPCIONAL EVITAR - e uma corrida documentada no proprio driver, nao
-  // um bug nosso para "consertar direito"; tentativas curtas espacadas SAO o
-  // conserto correto. O que dava para melhorar era o ruido: um vTaskDelay(1)
-  // ANTES da primeira tentativa (a folga que a janela realmente precisa, so
-  // que dada de proposito em vez de descoberta por tentativa e erro) faz a
-  // 1a tentativa passar na quase totalidade das vezes; e como a mensagem de
-  // erro sai de DENTRO do driver (ESP_LOGE, nao um log nosso), a unica forma
-  // de nao assustar no log com uma condicao ja tratada e baixar o nivel
-  // daquela TAG so durante a tentativa e devolver depois.
+  // AVOIDING IT IS NOT OPTIONAL - it is a race documented in the driver
+  // itself, not a bug of ours to "fix properly"; short spaced retries ARE the
+  // correct fix. What could be improved was the noise: a vTaskDelay(1) BEFORE
+  // the first attempt (the margin the window really needs, just given on
+  // purpose instead of discovered by trial and error) makes the 1st attempt
+  // succeed almost every time; and since the error message comes from INSIDE
+  // the driver (ESP_LOGE, not our log), the only way not to alarm anyone in
+  // the log with an already-handled condition is to lower that TAG's level
+  // just for the attempt and restore it afterwards.
   //
-  // ORCAMENTO AMPLIADO - visto em hardware: as 5 tentativas
-  // originais (100ms de folga) as vezes NAO bastavam ("nao confirmou" no
-  // log, mesmo com o sistema seguindo vivo depois). NAO E SO COSMETICO: fui
-  // ler ppa_register_client()/ppa_unregister_client() em ppa_core.c, e
-  // quando 'do_unregister' da falso a funcao devolve ANTES do free() do
-  // client (heap_caps_calloc'd) e antes de soltar a referencia no motor SRM
-  // compartilhado - ou seja, esgotar as tentativas VAZA aquela estrutura de
-  // verdade, nao so imprime um aviso feio. 20 tentativas de 25ms (max. meio
-  // segundo, e SO quando a corrida realmente acontece) e um preco invisivel
-  // no fechamento da camera para reduzir bastante a chance de esgotar - o
-  // residual que ainda pode vazar se ate isso nao bastar fica registrado
-  // aqui, nao escondido: se este aviso voltar a aparecer, o proximo passo e
-  // investigar o que estaria atrasando a ISR do PPA por MEIO SEGUNDO
-  // inteiro, nao alargar o numero de novo.
-  // (a outra origem, maior, era o aborto da espera bloqueante
-  // resolvida em ppa_rodar(). As tentativas ficam para a janela da ISR.)
+  // BUDGET ENLARGED - seen on hardware: the original 5 attempts (100ms of
+  // margin) sometimes were NOT enough ("did not confirm" in the log, even
+  // with the system carrying on alive afterwards). IT IS NOT JUST COSMETIC: I
+  // read ppa_register_client()/ppa_unregister_client() in ppa_core.c, and
+  // when 'do_unregister' is false the function returns BEFORE free()ing the
+  // client (heap_caps_calloc'd) and before releasing the reference on the
+  // shared SRM engine - i.e. running out of attempts really LEAKS that
+  // structure, it does not just print an ugly warning. 20 attempts of 25ms
+  // (max. half a second, and ONLY when the race really happens) is an
+  // invisible price on camera close to greatly reduce the chance of running
+  // out - the residual that can still leak if even that is not enough is
+  // recorded here, not hidden: if this warning shows up again, the next step
+  // is to investigate what could be delaying the PPA ISR by a whole HALF
+  // SECOND, not to raise the number again.
+  // (the other, larger source was the abort of the blocking wait, resolved
+  // in ppa_rodar(). The retries remain for the ISR window.)
   if (s_cam.ppa) {
-    vTaskDelay(pdMS_TO_TICKS(1));   // a folga que a janela documentada acima precisa
+    vTaskDelay(pdMS_TO_TICKS(1));   // the margin the window documented above needs
 
     esp_log_level_set("ppa_core", ESP_LOG_NONE);
     esp_err_t err = ESP_FAIL;
@@ -658,7 +662,7 @@ static void parar_hardware(void)
     }
     esp_log_level_set("ppa_core", ESP_LOG_INFO);
 
-    if (err != ESP_OK) { ESP_LOGW(TAG, "ppa_unregister_client nao confirmou (%s) - seguindo assim mesmo (cliente PPA vazado)", esp_err_to_name(err)); }
+    if (err != ESP_OK) { ESP_LOGW(TAG, "ppa_unregister_client did not confirm (%s) - carrying on anyway (PPA client leaked)", esp_err_to_name(err)); }
     s_cam.ppa = nullptr;
   }
   if (s_cam.ppa_fim) { vSemaphoreDelete(s_cam.ppa_fim); s_cam.ppa_fim = nullptr; }
@@ -669,15 +673,15 @@ static void parar_hardware(void)
   }
   if (s_cam.fd >= 0) { close(s_cam.fd); s_cam.fd = -1; }
 
-  // O PASSO QUE FALTAVA (defeito observado): esp_video_init() registra
-  // dispositivos GLOBAIS (/dev/video0, e /dev/video20 "ISP" com o pipeline
-  // ligado) que sobrevivem ao fd fechado - sem desfazer isso, a PROXIMA
-  // chamada a esp_video_init() (no proximo ao_abrir()) encontra "/dev/video20
-  // ja registrado" e falha, e o app fica preso recusando abrir ate reiniciar
-  // o aparelho. esp_video_deinit() e o par exato de esp_video_init().
+  // THE MISSING STEP (observed defect): esp_video_init() registers GLOBAL
+  // devices (/dev/video0, and /dev/video20 "ISP" with the pipeline on) that
+  // survive the fd being closed - without undoing that, the NEXT call to
+  // esp_video_init() (on the next ao_abrir()) finds "/dev/video20 already
+  // registered" and fails, and the app is stuck refusing to open until the
+  // device reboots. esp_video_deinit() is the exact pair of esp_video_init().
   if (s_cam.video_iniciado) {
     esp_err_t err = esp_video_deinit();
-    if (err != ESP_OK) { ESP_LOGW(TAG, "esp_video_deinit falhou (%s)", esp_err_to_name(err)); }
+    if (err != ESP_OK) { ESP_LOGW(TAG, "esp_video_deinit failed (%s)", esp_err_to_name(err)); }
     s_cam.video_iniciado = false;
   }
   t_video = esp_timer_get_time();
@@ -686,31 +690,31 @@ static void parar_hardware(void)
   s_cam.destino = { };
   s_cam.tem_novo = false;
 
-  // PAR EXATO do tab5_power_camera(true) no comeco de iniciar_hardware() -
-  // ver o aviso grande no .hpp. POR ULTIMO: todo o resto ja foi desmontado
-  // acima, entao nao ha risco de deixar o sensor sem energia com alguma
-  // outra parte do desligamento ainda tentando falar SCCB com ele.
+  // EXACT PAIR of tab5_power_camera(true) at the start of iniciar_hardware()
+  // - see the big notice in the .hpp. LAST: everything else has already been
+  // torn down above, so there is no risk of cutting the sensor's power with
+  // some other part of the shutdown still trying to talk SCCB to it.
   tab5_power_camera(false);
 
   const int64_t t_fim = esp_timer_get_time();
-  ESP_LOGI(TAG, "desligada em %lld ms (tarefa %lld, ppa %lld, esp_video %lld, energia %lld)",
+  ESP_LOGI(TAG, "off in %lld ms (task %lld, ppa %lld, esp_video %lld, power %lld)",
            (t_fim - t0) / 1000, (t_tarefa - t0) / 1000, (t_ppa - t_tarefa) / 1000,
            (t_video - t_ppa) / 1000, (t_fim - t_video) / 1000);
 }
 
 // ---------------------------------------------------------------------------
-// API PUBLICA - so aqui mora a CONTAGEM DE REFERENCIA (ver o aviso grande no
-// .hpp). iniciar_hardware()/parar_hardware() acima nunca sao chamadas fora
-// destas duas funcoes.
+// PUBLIC API - the REFERENCE COUNTING lives only here (see the big notice in
+// the .hpp). iniciar_hardware()/parar_hardware() above are never called
+// outside these two functions.
 // ---------------------------------------------------------------------------
-// A PAUSA DO REPOUSO (ver tab5_camera_pausar no .hpp). So a tarefa de
-// interface mexe aqui (o kernel no repouso, e iniciar/parar do mesmo dono).
+// THE IDLE PAUSE (see tab5_camera_pausar in the .hpp). Only the UI task
+// touches this (the kernel on idle, and iniciar/parar from the same owner).
 static struct {
   bool ativa;
   char quem[24];
-  tab5_cam_destino_t destino;   // o preview de quem pausou (buf nulo = nao tinha)
-  // Quadros que morreram com a camera (ela parou de verdade na pausa): voltam
-  // como prontos com falha no despausar, para quem pediu nao esperar para sempre.
+  tab5_cam_destino_t destino;   // the preview of whoever paused (null buf = had none)
+  // Frames that died with the camera (it really stopped on pause): they come
+  // back as ready-with-failure on unpause, so the requester does not wait for ever.
   struct { uint16_t* destino; int l, a; } mortos[TAB5_CAM_PEDIDOS];
 } s_pausa;
 
@@ -724,15 +728,15 @@ static void parar_interno(const char* quem);
 
 bool tab5_camera_iniciar(const char* quem)
 {
-  // O dono pausado religou sozinho (um script com a tela apagada): a pausa
-  // perde o sentido, e ele define o proprio destino.
+  // The paused owner turned it back on itself (a script with the screen off):
+  // the pause no longer makes sense, and it sets its own destination.
   if (pausa_de(quem)) { s_pausa = { }; }
   return iniciar_interno(quem);
 }
 
 void tab5_camera_parar(const char* quem)
 {
-  // O dono pausado ja soltou o uso na pausa: parar de novo descontaria outro.
+  // The paused owner already released its use on pause: stopping again would discount another.
   if (pausa_de(quem)) { s_pausa = { }; return; }
   parar_interno(quem);
 }
@@ -744,7 +748,7 @@ bool tab5_camera_pausar(const char* quem)
   travar();
   s_pausa.destino = s_cam.destino;
   destravar();
-  // O preview para JA, mesmo que outro consumidor segure a camera ligada.
+  // The preview stops NOW, even if another consumer keeps the camera on.
   tab5_camera_definir_destino(nullptr);
   travar_ctrl();
   const bool vai_parar = s_refs == 1;
@@ -760,7 +764,7 @@ bool tab5_camera_pausar(const char* quem)
   parar_interno(quem);
   strlcpy(s_pausa.quem, quem, sizeof(s_pausa.quem));
   s_pausa.ativa = true;
-  ESP_LOGI(TAG, "pausada pelo repouso: %s%s", quem, vai_parar ? " (desligou)" : "");
+  ESP_LOGI(TAG, "paused for idle: %s%s", quem, vai_parar ? " (turned off)" : "");
   return true;
 }
 
@@ -771,7 +775,7 @@ void tab5_camera_despausar(bool religar)
   s_pausa = { };
   if (!religar) { return; }
   if (!iniciar_interno(p.quem)) {
-    ESP_LOGE(TAG, "falha ao religar a camera de %s depois do repouso", p.quem);
+    ESP_LOGE(TAG, "failed to turn %s's camera back on after idle", p.quem);
     return;
   }
   if (p.destino.buf) { tab5_camera_definir_destino(&p.destino); }
@@ -780,24 +784,25 @@ void tab5_camera_despausar(bool religar)
     if (!m.destino) { continue; }
     for (auto& v : s_cam.pedidos) {
       if (v.destino) { continue; }
-      v = { m.destino, m.l, m.a, true, true, false };   // pronto, com falha
+      v = { m.destino, m.l, m.a, true, true, false };   // ready, with failure
       break;
     }
   }
   destravar();
-  ESP_LOGI(TAG, "religada depois do repouso: %s", p.quem);
+  ESP_LOGI(TAG, "back on after idle: %s", p.quem);
 }
 
 static bool iniciar_interno(const char* quem)
 {
   travar_ctrl();
   bool ok = true;
-  if (s_refs > 0) { ++s_refs; }   // ja ligada: so mais um interessado
+  if (s_refs > 0) { ++s_refs; }   // already on: just one more interested party
   else            { ok = iniciar_hardware(); if (ok) { s_refs = 1; } }
   destravar_ctrl();
-  // A CAMERA E UM RECURSO (kernel/recursos.h): com ela ligada a suspensao
-  // segura o clock e nao entra no sono leve - por quem pediu, seja app, Berry,
-  // console ou o navegador. Quem usa nao precisa saber da suspensao.
+  // THE CAMERA IS A RESOURCE (kernel/recursos.h): while it is on, suspension
+  // holds the clock and does not enter light sleep - on behalf of whoever
+  // asked, be it app, Berry, console or browser. Users need not know about
+  // suspension.
   if (ok) { sistema_recurso_usar(RECURSO_CAMERA, quem ? quem : "camera"); }
   return ok;
 }
@@ -828,7 +833,7 @@ void tab5_camera_definir_destino(const tab5_cam_destino_t* d)
   s_cam.recorte_h = rh;
   s_cam.tem_novo = false;
   destravar();
-  if (d && d->buf) { ESP_LOGI(TAG, "preview %dx%d: escala %.4f, usa %dx%d do quadro", d->l, d->a, (double)e, rw, rh); }
+  if (d && d->buf) { ESP_LOGI(TAG, "preview %dx%d: scale %.4f, uses %dx%d of the frame", d->l, d->a, (double)e, rw, rh); }
 }
 
 bool tab5_camera_quadro_escrito(void)

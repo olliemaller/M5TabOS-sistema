@@ -6,22 +6,22 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "tab5_hora.hpp"   // tab5_agora_ms
-#include "tab5_teclado.hpp" // tempos da repeticao
+#include "tab5_teclado.hpp" // key-repeat timings
 #include <stdlib.h>
 #include <string.h>
 
-// QUATRO PAGINAS, mesma geometria (10/10/9/7 teclas): trocar de pagina so troca
-// rotulos, nada pula de lugar. Cada tecla e UM caractere UTF-8.
-//  0 letras: a fileira dos numeros fica sempre (senha, PIN e hora sem trocar
-//    de pagina).
-//  1 "?123": a pontuacao e os pares - parenteses, chaves, colchetes, sinais.
-//  2 "=\<": o resto do ASCII e os acentos do portugues (a fonte do sistema
-//    tem estes e nao muito mais - ver ferramentas/gerar_fontes.py). Os
-//    acentos seguem o shift, como as letras.
-//  3 emoji: os do dia a dia, todos da tabela leve do sistema (tab5_emoji -
-//    a mesma do Mesh); nas paginas de simbolos a tecla da esquerda circula
-//    "=\<" -> emoji -> "?123". Emoji nao volta as letras sozinho: da para
-//    mandar varios seguidos.
+// FOUR PAGES, same geometry (10/10/9/7 keys): switching page only changes
+// labels, nothing jumps around. Each key is ONE UTF-8 character.
+//  0 letters: the number row always stays (password, PIN and time without
+//    switching page).
+//  1 "?123": punctuation and pairs - parentheses, braces, brackets, signs.
+//  2 "=\<": the rest of ASCII and the Portuguese accents (the system font
+//    has these and not much more - see ferramentas/gerar_fontes.py). The
+//    accents follow shift, like the letters.
+//  3 emoji: everyday ones, all from the system's light table (tab5_emoji -
+//    the same as Mesh's); on the symbol pages the left-hand key cycles
+//    "=\<" -> emoji -> "?123". Emoji does not go back to letters by itself: you can
+//    send several in a row.
 static const int N_FILA[TECVIRT_FILAS] = { 10, 10, 9, 7 };
 static const char* const PAGINA[4][TECVIRT_FILAS] = {
   { "1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm" },
@@ -32,16 +32,16 @@ static const char* const PAGINA[4][TECVIRT_FILAS] = {
 
 #define FILAS   TECVIRT_FILAS
 
-// O PERFIL DE CADA TIPO DE CAMPO (a tabela do .hpp). A unica fonte: abrir e
-// tecvirt_tipo copiam daqui para o teclado.
+// THE PROFILE OF EACH FIELD TYPE (the table in the .hpp). The single source: opening and
+// tecvirt_tipo copy from here into the keyboard.
 enum { ACAO_OK = 0, ACAO_LINHA, ACAO_BUSCAR };
 typedef struct {
-  uint8_t acao;        // o que a tecla verde e
-  bool    frase;       // maiuscula automatica e espaco duplo (com tecvirt_contexto)
-  bool    variantes;   // acentos no toque longo
-  bool    emoji;       // a pagina de emoji
-  bool    ascii;       // so ASCII
-  bool    digitos;     // so 0-9
+  uint8_t acao;        // what the green key is
+  bool    frase;       // automatic capitals and double space (with tecvirt_contexto)
+  bool    variantes;   // accents on long press
+  bool    emoji;       // the emoji page
+  bool    ascii;       // ASCII only
+  bool    digitos;     // 0-9 only
 } perfil_t;
 static const perfil_t PERFIL[TECVIRT_TIPOS] = {
   /* TEXTO     */ { ACAO_OK,     false, true,  false, false, false },
@@ -55,32 +55,32 @@ static const perfil_t PERFIL[TECVIRT_TIPOS] = {
 };
 static const perfil_t& perfil(const tecvirt_t* t) { return PERFIL[t->tipo < TECVIRT_TIPOS ? t->tipo : TECVIRT_TEXTO]; }
 
-// TOQUE LONGO: as variantes de cada tecla (minusculas; o shift vale), na
-// ordem do teclado do Android. So o que a fonte do sistema desenha
-// (ferramentas/gerar_fontes.py): sem i grave e sem U grave maiusculo.
+// LONG PRESS: the variants of each key (lower case; shift applies), in
+// Android keyboard order. Only what the system font draws
+// (ferramentas/gerar_fontes.py): no i grave and no capital U grave.
 static const struct { int base; const char* var; } VARIANTES[] = {
   { 'a', "áàâãä" }, { 'e', "éêèë" }, { 'i', "íîï" }, { 'o', "óôõòö" },
   { 'u', "úüû" },   { 'c', "ç" },    { 'n', "ñ" },
-  { '.', "!?,;:…" },   // a tecla do ponto, na fileira de comando
+  { '.', "!?,;:…" },   // the full-stop key, on the command row
 };
 
 // ---------------------------------------------------------------------------
-// MEDIDAS POR ORIENTACAO
+// MEASUREMENTS BY ORIENTATION
 // ---------------------------------------------------------------------------
-// Deitado (1280 de largura) a tecla tem ~120 px de largura e 52 de altura: o
-// teclado e baixo e largo, e sobra pouca altura na tela. Em pe e o contrario:
-// dez teclas em 720 px dao so ~67 px de largura, e a tela tem altura de sobra.
-// Entao, em pe, a tecla cresce PARA CIMA (68 px, quase quadrada), o vao
-// encolhe um pouco para devolver largura as teclas, e a letra fica maior. O
-// teclado inteiro sobe ~80 px - o que a conversa em pe tem para dar.
+// In landscape (1280 wide) a key is ~120 px wide and 52 tall: the
+// keyboard is short and wide, and there is little height to spare on screen. In portrait it is the opposite:
+// ten keys in 720 px give only ~67 px of width, and the screen has height to spare.
+// So, in portrait, the key grows UPWARDS (68 px, almost square), the gap
+// shrinks a little to give width back to the keys, and the lettering gets bigger. The
+// whole keyboard rises ~80 px - what the portrait conversation can spare.
 static bool em_pe(const area_t& a) { return a.largura < a.altura; }
-static int  alt_t(const area_t& a)    { return em_pe(a) ? 68 : 52; }   // altura de cada tecla
+static int  alt_t(const area_t& a)    { return em_pe(a) ? 68 : 52; }   // height of each key
 static int  vao(const area_t& a)      { return em_pe(a) ? 5 : 6; }
-static int  px_letra(const area_t& a) { return em_pe(a) ? 34 : 30; }   // fonte das letras e numeros
+static int  px_letra(const area_t& a) { return em_pe(a) ? 34 : 30; }   // font for letters and numbers
 
 static int altura_teclas(const area_t& a) { return vao(a) + (FILAS + 1) * (alt_t(a) + vao(a)); }
 
-// O fisico encaixado esconde o virtual (ver o .hpp).
+// The docked physical keyboard hides the virtual one (see the .hpp).
 static bool fisico(void) { return tab5_teclado_presente(); }
 
 int tecvirt_altura(const area_t& a)
@@ -89,7 +89,7 @@ int tecvirt_altura(const area_t& a)
 }
 
 // ---------------------------------------------------------------------------
-// UTF-8 E SHIFT
+// UTF-8 AND SHIFT
 // ---------------------------------------------------------------------------
 int tecvirt_utf8(int cp, char out[4])
 {
@@ -104,7 +104,7 @@ int tecvirt_utf8(int cp, char out[4])
   return 4;
 }
 
-// O codepoint da coluna 'col' de uma fileira (UTF-8). 0 = fora dela.
+// The codepoint of column 'col' in a row (UTF-8). 0 = outside it.
 static int cp_em(const char* s, int col)
 {
   const unsigned char* u = (const unsigned char*)s;
@@ -120,7 +120,7 @@ static int cp_em(const char* s, int col)
   return 0;
 }
 
-// Letra (ASCII ou Latin-1 minuscula/maiuscula)? E a maiuscula dela.
+// A letter (ASCII or Latin-1 lower/upper case)? And its capital.
 static bool eh_letra(int cp)
 {
   return (cp >= 'a' && cp <= 'z') || (cp >= 'A' && cp <= 'Z')
@@ -133,7 +133,7 @@ static int maiuscula(int cp)
   return cp;
 }
 
-// O que a tecla de caractere digita agora (pagina e shift aplicados).
+// What the character key types right now (page and shift applied).
 static int cp_tecla(const tecvirt_t* t, int fila, int col)
 {
   if (fila < 0 || fila >= FILAS || col < 0 || col >= N_FILA[fila]) { return 0; }
@@ -142,38 +142,38 @@ static int cp_tecla(const tecvirt_t* t, int fila, int col)
 }
 
 // ---------------------------------------------------------------------------
-// TECLAS ESPECIAIS
+// SPECIAL KEYS
 // ---------------------------------------------------------------------------
-// Como no teclado do Android: shift e apagar nas pontas da fileira do "zxcv",
-// e embaixo a troca de pagina, virgula, espaco, ponto, ENVIAR e fechar. Cor,
-// o que faz e a largura num lugar so: o desenho completo, o de uma tecla
-// isolada e o toque precisam concordar. Na fileira de comando a largura vai
-// em MEIAS unidades de 1/10 da largura (20 no total); shift e apagar ocupam
-// a sobra da fileira de 7 teclas (1,5 unidade cada).
+// As on the Android keyboard: shift and delete at the ends of the "zxcv" row,
+// and below them page switch, comma, space, full stop, SEND and close. Colour,
+// what it does and the width in one place: the full drawing, the drawing of an
+// isolated key and touch all need to agree. On the command row the width is
+// in HALF units of 1/10 of the width (20 in total); shift and delete take
+// up the leftover of the 7-key row (1.5 units each).
 //
-// ICONES DESENHADOS, NAO DIGITADOS: os codigos < 0x20 viram desenho em
-// pintar_tecla (shift solto/uma letra/travado e apagar).
+// DRAWN ICONS, NOT TYPED: codes < 0x20 become drawings in
+// pintar_tecla (shift released/one letter/locked, and delete).
 #define ICO_SHIFT  "\x01"
 #define ICO_SHIFT1 "\x02"
 #define ICO_CAPS   "\x03"
 #define ICO_APAGA  "\x04"
-#define ICO_ENTER  "\x05"   // nova linha (a fonte nao tem o simbolo)
+#define ICO_ENTER  "\x05"   // new line (the font does not have the symbol)
 enum { E_SHIFT, E_APAGA, E_MODO, E_VIRG, E_ESPACO, E_PONTO, E_ENVIAR, E_FECHAR, NESP };
 #define ID_ESP(i) (64 + (i))
-#define CMD0 E_MODO   // a primeira especial da fileira de comando
+#define CMD0 E_MODO   // the first special key on the command row
 typedef struct { uint16_t cor; int acao; int meias; } esp_t;
 static const esp_t ESP[NESP] = {
-  { TEMA_LINHA,    0,              0 },   // shift / troca de pagina de simbolos (interna)
+  { TEMA_LINHA,    0,              0 },   // shift / symbol page switch (internal)
   { TEMA_LINHA,    TECVIRT_APAGAR, 0 },
-  { TEMA_LINHA,    0,              3 },   // ?123 / ABC (interna)
+  { TEMA_LINHA,    0,              3 },   // ?123 / ABC (internal)
   { TEMA_LINHA,    ',',            2 },
   { TEMA_LINHA,    ' ',            8 },
   { TEMA_LINHA,    '.',            2 },
-  { TEMA_DESTAQUE, TECVIRT_ENVIAR, 3 },   // a unica tecla de destaque: enviar / OK
+  { TEMA_DESTAQUE, TECVIRT_ENVIAR, 3 },   // the only accent key: send / OK
   { TEMA_LINHA,    TECVIRT_FECHAR, 2 },
 };
 
-// O rotulo da especial no estado atual.
+// The special key's label in the current state.
 static const char* rotulo_esp(const tecvirt_t* t, int i)
 {
   switch (i) {
@@ -199,16 +199,16 @@ static const char* rotulo_esp(const tecvirt_t* t, int i)
 
 static uint16_t cor_esp(const tecvirt_t* t, int i)
 {
-  if (i == E_SHIFT && t->pagina == 0 && t->shift != TECVIRT_SHIFT_NAO) { return TEMA_DESTAQUE; }   // aceso = vale
+  if (i == E_SHIFT && t->pagina == 0 && t->shift != TECVIRT_SHIFT_NAO) { return TEMA_DESTAQUE; }   // lit = active
   return ESP[i].cor;
 }
 
 // ---------------------------------------------------------------------------
-// GEOMETRIA - calculada e nao tabelada: a largura muda com a rotacao.
+// GEOMETRY - calculated, not tabulated: the width changes with rotation.
 // ---------------------------------------------------------------------------
 static int topo_de(const area_t& a) { return a.y + a.altura - altura_teclas(a); }
 static int y_fila(const area_t& a, int f) { return topo_de(a) + vao(a) + f * (alt_t(a) + vao(a)); }
-static int larg_tecla(const area_t& a) { return (a.largura - 2 * vao(a) - vao(a) * 9) / 10; }   // pela maior fileira
+static int larg_tecla(const area_t& a) { return (a.largura - 2 * vao(a) - vao(a) * 9) / 10; }   // by the longest row
 static int recuo_fila(const area_t& a, int f)
 {
   const int u = larg_tecla(a) + vao(a);
@@ -251,14 +251,14 @@ static bool retangulo(const area_t& a, int id, int* x, int* y, int* l)
   return tecla_em(a, id / 16, id % 16, x, y, l);
 }
 
-// O ALVO DE UMA TECLA (onde o toque vale para ela) e maior que o desenho:
-//  - o vao entre teclas e de alguem: cada uma responde ate a metade dele,
-//    como em teclado de celular;
-//  - nas pontas das fileiras recuadas ("asdf..."), meia tecla a mais para
-//    fora: o recuo era ponto morto, e o dedo que mira o "a" e cai um pouco a
-//    esquerda dele quer o "a", nao nada. Shift e apagar vao ate a borda;
-//  - a fileira de comando vai de borda a borda e para baixo sem limite (a
-//    faixa de navegacao travada entrega o toque na ultima linha da area).
+// A KEY'S TARGET (where a touch counts for it) is bigger than its drawing:
+//  - the gap between keys belongs to someone: each responds up to half of it,
+//    as on a phone keyboard;
+//  - at the ends of the indented rows ("asdf..."), half a key further
+//    out: the indent was a dead spot, and a finger aiming for "a" that lands a little to
+//    its left wants "a", not nothing. Shift and delete go to the edge;
+//  - the command row goes edge to edge and downwards without limit (the
+//    locked navigation strip delivers the touch on the area's last row).
 static const int ALVO_SEM_FIM = 1 << 14;
 
 static bool alvo_de(const area_t& a, int id, int* x0, int* y0, int* x1, int* y1)
@@ -292,11 +292,11 @@ static bool no_alvo(const area_t& a, int id, int xs, int ys, int folga)
   return xs >= x0 - folga && xs < x1 + folga && ys >= y0 - folga && ys < y1 + folga;
 }
 
-// HISTERESE: o dedo que ja esta numa tecla so passa para a vizinha quando
-// entra HISTERESE_PX nela. Na fronteira exata, o tremor do dedo (e o do
-// GT911) trocava a tecla de uma amostra para outra - e a que valia era a da
-// ultima amostra antes de soltar, no sorteio. 'atual' = a tecla em que o
-// dedo estava (TECVIRT_NENHUMA para um toque novo).
+// HYSTERESIS: a finger already on a key only moves to the neighbour once it
+// enters HISTERESE_PX into it. On the exact boundary, finger tremor (and the
+// GT911's) switched the key from one sample to the next - and the one that counted was
+// the last sample's before lifting, a lottery. 'atual' = the key the
+// finger was on (TECVIRT_NENHUMA for a new touch).
 static const int HISTERESE_PX = 8;
 
 static int tecla_no_ponto(const area_t& a, int xs, int ys, int atual)
@@ -316,22 +316,22 @@ static int tecla_no_ponto(const area_t& a, int xs, int ys, int atual)
 static bool eh_apagar(int id) { return id == ID_ESP(E_APAGA); }
 
 // ---------------------------------------------------------------------------
-// DESENHO - so primitivas e a fonte do sistema (cache de glifos): nenhuma
-// imagem guardada. Uma imagem do teclado pronto custaria ~420 KB de PSRAM por
-// estado para economizar alguns ms numa pintura que so acontece ao abrir e ao
-// trocar shift/pagina; no dia a dia so 1-2 teclas sao repintadas por toque.
+// DRAWING - only primitives and the system font (glyph cache): no
+// stored image. An image of the finished keyboard would cost ~420 KB of PSRAM per
+// state to save a few ms on a paint that only happens on opening and on
+// switching shift/page; day to day only 1-2 keys are repainted per touch.
 // ---------------------------------------------------------------------------
 
-// A fonte de cada especial, uma vez por largura: o MAIOR rotulo que ela pode
-// ter ("ENVIAR", "espaço", "?123") desce de 2 em 2 ate caber (5 px de
-// respiro de cada lado).
+// Each special key's font, once per width: the LONGEST label it can
+// have ("ENVIAR", "espaço", "?123") drops 2 at a time until it fits (5 px of
+// breathing room on each side).
 static void medir(tecvirt_t* t, lgfx::LovyanGFX& d)
 {
-  const char* const VARIANTES[NESP][2] = {   // os rotulos no idioma atual
+  const char* const VARIANTES[NESP][2] = {   // the labels in the current language
     { "=\\<", "?123" }, { "", "" }, { "?123", "ABC" }, { ",", "" },
     { tr("espaço"), "" }, { ".", "" }, { "OK", tr("BUSCAR") }, { "X", "" },
   };
-  const int chave = t->a.largura ^ (int)(idioma_versao() << 16);   // outra largura ou outro idioma: mede de novo
+  const int chave = t->a.largura ^ (int)(idioma_versao() << 16);   // another width or another language: measure again
   if (t->med_larg == chave) { return; }
   t->med_larg = chave;
   for (int i = 0; i < NESP; ++i) {
@@ -348,8 +348,8 @@ static void medir(tecvirt_t* t, lgfx::LovyanGFX& d)
   }
 }
 
-// Seta do shift: cheia quando vale (uma letra ou travado), so o contorno
-// quando solta; travado ganha a barra embaixo.
+// Shift arrow: filled when active (one letter or locked), outline only
+// when released; locked gets the bar underneath.
 static void icone_shift(lgfx::LovyanGFX& d, int cx, int cy, char tipo, uint16_t tinta)
 {
   const int oy = (tipo == ICO_CAPS[0]) ? cy - 3 : cy;
@@ -365,8 +365,8 @@ static void icone_shift(lgfx::LovyanGFX& d, int cx, int cy, char tipo, uint16_t 
   if (tipo == ICO_CAPS[0]) { d.fillRect(cx - 13, oy + 18, 26, 4, tinta); }
 }
 
-// Nova linha: o desenho de sempre do "return" - desce pela direita e volta
-// para a esquerda com a ponta da seta.
+// New line: the usual "return" drawing - goes down on the right and back
+// to the left with the arrowhead.
 static void icone_enter(lgfx::LovyanGFX& d, int cx, int cy, uint16_t tinta)
 {
   for (int o = 0; o < 3; ++o) {
@@ -376,7 +376,7 @@ static void icone_enter(lgfx::LovyanGFX& d, int cx, int cy, uint16_t tinta)
   d.fillTriangle(cx - 22, cy + 3, cx - 10, cy - 7, cx - 10, cy + 13, tinta);
 }
 
-// Apagar: corpo com ponta a esquerda e um X vazado na cor da tecla.
+// Delete: body with a point on the left and a hollow X in the key's colour.
 static void icone_apagar(lgfx::LovyanGFX& d, int cx, int cy, uint16_t cor, uint16_t tinta)
 {
   d.fillTriangle(cx - 24, cy, cx - 9, cy - 14, cx - 9, cy + 14, tinta);
@@ -405,10 +405,10 @@ static void pintar_tecla(const tecvirt_t* t, lgfx::LovyanGFX& d, int id, bool ac
     cor = TEMA_SUPERFICIE_ALTA;
     px  = px_letra(t->a);
   }
-  // Letra e icone: branco sobre o destaque, texto comum nas demais.
+  // Letter and icon: white on the accent, normal text on the others.
   const uint16_t tinta = cor == TEMA_DESTAQUE ? (uint16_t)TEMA_SOBRE_DESTAQUE : (uint16_t)TEMA_TEXTO;
-  // Acesa = DESTAQUE_SUAVE, e nao "a mesma cor mais clara": debaixo do dedo so
-  // a borda aparece, e uma cor DIFERENTE e o que se ve nela.
+  // Lit = DESTAQUE_SUAVE, not "the same colour lighter": under the finger only
+  // the edge shows, and a DIFFERENT colour is what you see there.
   if (acesa) { cor = TEMA_DESTAQUE_SUAVE; }
   d.fillRoundRect(x, y, l, alt_t(t->a), TEMA_RAIO_M, cor);
 
@@ -426,8 +426,8 @@ static void pintar_tecla(const tecvirt_t* t, lgfx::LovyanGFX& d, int id, bool ac
 
 static void soltar_dedos(tecvirt_t* t);
 
-// A FAIXA DAS VARIANTES (toque longo), por cima da fileira de cima da tecla:
-// uma celula por variante, a escolhida em destaque.
+// THE VARIANTS STRIP (long press), over the row above the key:
+// one cell per variant, the chosen one highlighted.
 static void pintar_faixa(tecvirt_t* t, lgfx::LovyanGFX& d)
 {
   const int a = alt_t(t->a);
@@ -444,8 +444,8 @@ static void pintar_faixa(tecvirt_t* t, lgfx::LovyanGFX& d)
   }
 }
 
-// Visivel ou nao (o fisico entrou ou saiu com ele aberto): a trava da
-// navegacao acompanha, e o app redesenha inteiro - a area dele mudou de tamanho.
+// Visible or not (the physical keyboard came or went with it open): the navigation
+// lock follows, and the app redraws entirely - its area changed size.
 static void sincronizar(tecvirt_t* t)
 {
   const bool quer = t->aberto && !fisico();
@@ -463,7 +463,7 @@ void tecvirt_pintar(tecvirt_t* t, lgfx::LovyanGFX& d, bool completo)
   if (!t->aberto || fisico()) { return; }
   const bool tudo = completo || t->sujo;
   const bool rot  = !tudo && t->rotulos;
-  if (!tudo && !rot && t->tecla_sob == t->tecla_pinta && !t->pop_pintar) { return; }   // nada mudou: nem toca na tela
+  if (!tudo && !rot && t->tecla_sob == t->tecla_pinta && !t->pop_pintar) { return; }   // nothing changed: do not even touch the screen
 
   const lgfx::TextStyle estilo = d.getTextStyle();
   const lgfx::IFont* fonte = d.getFont();
@@ -472,11 +472,11 @@ void tecvirt_pintar(tecvirt_t* t, lgfx::LovyanGFX& d, bool completo)
   d.setTextDatum(middle_center);
 
   if (tudo || rot) {
-    // O fundo so e limpo quando o teclado aparece ou muda de lugar; na troca
-    // de shift/pagina as teclas sao opacas, os cantos ja estao no fundo do painel, e
-    // repintar todas e mais simples (e quase tao barato) que escolher quais.
+    // The background is only cleared when the keyboard appears or moves; on a
+    // shift/page switch the keys are opaque, the corners are already in the panel background, and
+    // repainting them all is simpler (and almost as cheap) than choosing which.
     if (tudo) { tab5_tela_limpar(t->a.x, topo_de(t->a), t->a.largura, altura_teclas(t->a), TEMA_SUPERFICIE); }
-    else if (t->pop_limpar) {   // a faixa fechou: so o retangulo dela (as teclas vem em seguida)
+    else if (t->pop_limpar) {   // the strip closed: only its rectangle (the keys come next)
       tab5_tela_limpar(t->pop_x - 4, t->pop_y - 4, t->pop_n * t->pop_l + 8, alt_t(t->a) + 8, TEMA_SUPERFICIE);
     }
     t->pop_limpar = false;
@@ -486,7 +486,7 @@ void tecvirt_pintar(tecvirt_t* t, lgfx::LovyanGFX& d, bool completo)
     for (int i = 0; i < NESP; ++i) { pintar_tecla(t, d, ID_ESP(i), ID_ESP(i) == t->tecla_sob); }
     t->sujo = t->rotulos = false;
   } else {
-    // Retorno da tecla: no maximo duas - a que o dedo deixou e a que encontrou.
+    // Key feedback: at most two - the one the finger left and the one it found.
     if (t->tecla_pinta != TECVIRT_NENHUMA) { pintar_tecla(t, d, t->tecla_pinta, false); }
     if (t->tecla_sob   != TECVIRT_NENHUMA) { pintar_tecla(t, d, t->tecla_sob, true); }
   }
@@ -499,7 +499,7 @@ void tecvirt_pintar(tecvirt_t* t, lgfx::LovyanGFX& d, bool completo)
 }
 
 // ---------------------------------------------------------------------------
-// ESTADO: shift, pagina, maiuscula automatica
+// STATE: shift, page, automatic capitals
 // ---------------------------------------------------------------------------
 static void mudar(tecvirt_t* t, uint8_t shift, uint8_t pagina)
 {
@@ -517,7 +517,7 @@ void tecvirt_tipo(tecvirt_t* t, uint8_t tipo)
   t->frase = PERFIL[tipo].frase;
   t->tem_contexto = false;
   t->ult_acao = 0;
-  // A pagina atual pode ter sumido (emoji num campo de senha): volta as letras.
+  // The current page may have disappeared (emoji in a password field): back to letters.
   if (t->pagina == 3 && !PERFIL[tipo].emoji) { t->pagina = 0; }
   if (!t->frase && t->shift == TECVIRT_SHIFT_UMA) { t->shift = TECVIRT_SHIFT_NAO; }
   t->rotulos = true;
@@ -547,7 +547,7 @@ bool tecvirt_editar(char* buf, size_t cap, int acao)
   if (acao == TECVIRT_APAGAR) {
     while (n > 0) {
       const unsigned char b = (unsigned char)buf[--n];
-      if ((b & 0xC0) != 0x80) { break; }   // continuacao de UTF-8: tira o caractere inteiro
+      if ((b & 0xC0) != 0x80) { break; }   // UTF-8 continuation: remove the whole character
     }
     buf[n] = 0;
     return true;
@@ -561,7 +561,7 @@ bool tecvirt_editar(char* buf, size_t cap, int acao)
 }
 
 // ---------------------------------------------------------------------------
-// CICLO DE VIDA
+// LIFECYCLE
 // ---------------------------------------------------------------------------
 static void soltar_dedos(tecvirt_t* t)
 {
@@ -572,7 +572,7 @@ static void soltar_dedos(tecvirt_t* t)
     dd.cand_n = 0;
     dd.eco = dd.repetiu = false;
   }
-  if (t->pop_dedo >= 0) { t->pop_dedo = -1; t->pop_limpar = t->rotulos = true; }   // a faixa some com os dedos
+  if (t->pop_dedo >= 0) { t->pop_dedo = -1; t->pop_limpar = t->rotulos = true; }   // the strip goes with the fingers
 }
 
 void tecvirt_abrir(tecvirt_t* t, uint8_t tipo)
@@ -590,8 +590,8 @@ void tecvirt_abrir(tecvirt_t* t, uint8_t tipo)
   t->pop_limpar = false;
   soltar_dedos(t);
   tecvirt_tipo(t, tipo);
-  // O INICIO fica logo abaixo da tecla de espaco - mas so com o virtual na
-  // tela: com o fisico, nada cobre a navegacao.
+  // INICIO (home) sits just below the space key - but only with the virtual one on
+  // screen: with the physical one, nothing covers navigation.
   t->trava = !fisico();
   if (t->trava) { sistema_travar_navegacao(true); }
 }
@@ -619,13 +619,13 @@ bool tecvirt_contem(const tecvirt_t* t, int xs, int ys)
 }
 
 // ---------------------------------------------------------------------------
-// TOQUE
+// TOUCH
 // ---------------------------------------------------------------------------
 
-// O DEDO QUE ABRIU O TECLADO NAO DIGITA. A soltura do toque que abriu (ou
-// uma amostra atrasada do GT911 logo depois dela) caia numa tecla e o texto
-// ja nascia com uma letra. Ate a tela ficar sem dedo por duas amostras
-// seguidas depois de abrir, nada responde (nivel e clique).
+// THE FINGER THAT OPENED THE KEYBOARD DOES NOT TYPE. The release of the touch that opened it (or
+// a late GT911 sample right after it) landed on a key and the text
+// was born with a letter in it. Until the screen has had no finger for two consecutive
+// samples after opening, nothing responds (level or click).
 static const int LIVRE_AMOSTRAS = 2;
 
 static bool dedos_ativos(const tecvirt_t* t)
@@ -634,15 +634,15 @@ static bool dedos_ativos(const tecvirt_t* t)
   return false;
 }
 
-// Confirma uma tecla (com o freio contra repique). Shift e troca de pagina
-// ficam aqui dentro; o resto vai para a lista do app. Devolve a acao, ou 0.
+// Confirms a key (with the debounce brake). Shift and page switching
+// stay in here; the rest goes to the app's list. Returns the action, or 0.
 //
-// SHIFT COMO NO CELULAR: um toque arma para UMA letra (ela sai maiuscula e o
-// shift solta sozinho); outro toque em ate SHIFT_DUPLO_MS trava (caps lock);
-// um toque travado solta. Nas paginas de simbolos a mesma tecla alterna
-// entre as duas paginas. ESPACO numa pagina de simbolos volta as letras, e
-// um acento (pagina 2) tambem: a palavra continua em letras.
-// O tipo do campo aceita este caractere?
+// SHIFT AS ON A PHONE: one tap arms it for ONE letter (it comes out capitalised and
+// shift releases by itself); another tap within SHIFT_DUPLO_MS locks it (caps lock);
+// a tap while locked releases it. On the symbol pages the same key toggles
+// between the two pages. SPACE on a symbol page goes back to letters, and
+// so does an accent (page 2): the word carries on in letters.
+// Does the field type accept this character?
 static bool aceita(const tecvirt_t* t, int cp)
 {
   const perfil_t& p = perfil(t);
@@ -657,14 +657,14 @@ static int confirmar(tecvirt_t* t, int tecla)
   static const uint32_t SHIFT_DUPLO_MS = 400;
   if (tecla == TECVIRT_NENHUMA) { return 0; }
   const uint32_t agora = tab5_agora_ms();
-  // APAGAR e a tecla batida em rajada no mesmo ponto: sem freio de repique.
+  // DELETE is the key hammered in bursts on the same spot: no debounce brake.
   if (!eh_apagar(tecla) && tecla == t->ultima_tecla && agora - t->tecla_ms < REPIQUE_MS) { return 0; }
   t->tecla_ms = agora;
   t->ultima_tecla = (int16_t)tecla;
 
   if (tecla == ID_ESP(E_SHIFT)) {
-    // Nas paginas de simbolos ela circula "?123" -> "=\<" -> emoji, e o emoji
-    // so existe nos tipos que o aceitam.
+    // On the symbol pages it cycles "?123" -> "=\<" -> emoji, and emoji
+    // only exists in the types that accept it.
     if (t->pagina) {
       const uint8_t prox = t->pagina == 1 ? 2 : (t->pagina == 2 && perfil(t).emoji) ? 3 : 1;
       mudar(t, t->shift, prox);
@@ -687,10 +687,10 @@ static int confirmar(tecvirt_t* t, int tecla)
   } else {
     ac = cp_tecla(t, tecla / 16, tecla % 16);
   }
-  // O QUE O CAMPO NAO ACEITA NAO SAI (e nao muda shift nem pagina).
+  // WHAT THE FIELD DOES NOT ACCEPT DOES NOT COME OUT (and changes neither shift nor page).
   if (ac > 0 && !aceita(t, ac)) { return 0; }
   if (ac > 0) {
-    // Depois do caractere: o shift de UMA letra solta; espaco e acento voltam as letras.
+    // After the character: one-letter shift releases; space and accent go back to letters.
     const uint8_t s = t->shift == TECVIRT_SHIFT_UMA ? (uint8_t)TECVIRT_SHIFT_NAO : t->shift;
     const bool volta = t->pagina && (ac == ' ' || (t->pagina == 2 && eh_letra(ac)));
     mudar(t, s, volta ? 0 : t->pagina);
@@ -699,9 +699,9 @@ static int confirmar(tecvirt_t* t, int tecla)
 }
 
 // ---------------------------------------------------------------------------
-// TOQUE LONGO: A FAIXA DAS VARIANTES
+// LONG PRESS: THE VARIANTS STRIP
 // ---------------------------------------------------------------------------
-// As variantes da tecla agora (so na pagina das letras). 0 = nenhuma.
+// The key's variants right now (only on the letters page). 0 = none.
 static int variantes_de(const tecvirt_t* t, int tecla, int32_t* out)
 {
   if (t->pagina != 0 || !perfil(t).variantes) { return 0; }
@@ -722,8 +722,8 @@ static int variantes_de(const tecvirt_t* t, int tecla, int32_t* out)
   return 0;
 }
 
-// Abre a faixa da tecla para o dedo k: uma fileira acima, comecando sobre a
-// tecla e empurrada para dentro nas bordas. false = a tecla nao tem variantes.
+// Opens the key's strip for finger k: one row above, starting over the
+// key and pushed inwards at the edges. false = the key has no variants.
 static bool abrir_faixa(tecvirt_t* t, int k, int tecla)
 {
   const int n = variantes_de(t, tecla, t->pop_cp);
@@ -747,7 +747,7 @@ static bool abrir_faixa(tecvirt_t* t, int k, int tecla)
   return true;
 }
 
-// A variante escolhida vale como tecla digitada: o shift de UMA letra solta.
+// The chosen variant counts as a typed key: one-letter shift releases.
 static int confirmar_variante(tecvirt_t* t)
 {
   t->tecla_ms = tab5_agora_ms();
@@ -758,49 +758,49 @@ static int confirmar_variante(tecvirt_t* t)
 
 static bool letra_ou_numero(int cp) { return eh_letra(cp) || (cp >= '0' && cp <= '9'); }
 
-// UM DEDO POR TECLA, CADA UM COM A SUA SOLTURA.
+// ONE FINGER PER KEY, EACH WITH ITS OWN RELEASE.
 //
-// A tecla acende sob o dedo e vale na SOLTURA daquele dedo - da para
-// escorregar ate a certa antes de soltar. Digitando rapido o dedo seguinte
-// desce antes de o anterior subir: cada dedo (id do controlador) tem a sua
-// tecla, e as letras saem na ordem em que os dedos soltam.
+// The key lights under the finger and counts on THAT finger's RELEASE - you can
+// slide to the right one before lifting. Typing fast, the next finger
+// comes down before the previous one lifts: each finger (controller id) has its own
+// key, and the letters come out in the order the fingers lift.
 //
-// A TECLA QUE VALE E A FIRME, nao a da ultima amostra. Ao subir, a area de
-// contato encolhe e o centro dela anda alguns pixels - a ultima amostra antes
-// da soltura pegava a vizinha e a letra saia errada. O dedo que desce fixa a
-// tecla na hora; escorregar para outra so troca depois de TECLA_FIRME
-// amostras seguidas nela (~40 ms): a correcao de quem escorrega de proposito
-// continua valendo, o tropeco da soltura nao. A tecla acesa e sempre a firme
-// - o que se ve aceso e o que vai ser digitado.
+// THE KEY THAT COUNTS IS THE SETTLED ONE, not the last sample's. On lifting, the
+// contact area shrinks and its centre moves a few pixels - the last sample before
+// release caught the neighbour and the wrong letter came out. A finger coming down fixes the
+// key at once; sliding to another only switches after TECLA_FIRME
+// consecutive samples on it (~40 ms): the correction of someone sliding on purpose
+// still works, the stumble on release does not. The lit key is always the settled one
+// - what you see lit is what will be typed.
 //
-// A LETRA SAI NA PRIMEIRA AMOSTRA SEM O DEDO. O GT911 as vezes perde um dedo
-// por uma amostra, e a volta dele viraria letra dupla. A volta e reconhecida
-// pelo que ela e - a mesma tecla, o mesmo ponto, NA AMOSTRA SEGUINTE a
-// soltura - e marcada como ECO: acende, mas nao digita de novo. A janela e
-// contada em amostras: o intervalo entre amostras varia com o desenho (20 a
-// 45 ms), e um limite so em ms ficava ora curto, ora longo. ECO_MS_MAX e o
-// teto: numa volta lenta (desenho pesado), "a amostra seguinte" pode chegar
-// tarde o bastante para ser uma batida nova de verdade no mesmo ponto.
-// Escorregou para outra tecla, deixa de ser eco.
+// THE LETTER COMES OUT ON THE FIRST SAMPLE WITHOUT THE FINGER. The GT911 sometimes loses a finger
+// for one sample, and its return would become a double letter. The return is recognised
+// for what it is - the same key, the same spot, ON THE SAMPLE AFTER the
+// release - and marked as an ECHO: it lights, but does not type again. The window is
+// counted in samples: the interval between samples varies with drawing (20 to
+// 45 ms), and a limit in ms alone was sometimes short, sometimes long. ECO_MS_MAX is the
+// ceiling: on a slow pass (heavy drawing), "the next sample" may arrive
+// late enough to be a genuinely new tap on the same spot.
+// If it slid to another key, it is no longer an echo.
 //
-// O ECO NAO VALE PARA O APAGAR, e nunca encadeia. Batido rapido no mesmo
-// ponto, o apagar subia e descia dentro da janela do eco: a batida era
-// engolida, e a soltura dela virava a referencia da seguinte - uma rajada
-// inteira sumia. So a soltura que DIGITOU serve de referencia, e o apagar
-// nunca e eco.
+// THE ECHO DOES NOT APPLY TO DELETE, and never chains. Tapped fast on the same
+// spot, delete went up and down within the echo window: the tap was
+// swallowed, and its release became the reference for the next - a whole burst
+// vanished. Only a release that TYPED serves as a reference, and delete
+// is never an echo.
 //
-// APAGAR SEGURADO REPETE, como em qualquer teclado: depois de REP_INICIO_MS
-// com o dedo parado nele, apaga um a cada REP_MS.
+// HELD DELETE REPEATS, as on any keyboard: after REP_INICIO_MS
+// with the finger still on it, it deletes one every REP_MS.
 int tecvirt_nivel(tecvirt_t* t, int* acoes, int max)
 {
   static const int      SALTO_PX      = 45;
   static const uint32_t ECO_AMOSTRAS  = 1;
-  static const uint32_t ECO_MS_MAX    = 60;   // e nunca mais que isto (volta lenta)
+  static const uint32_t ECO_MS_MAX    = 60;   // and never more than this (slow pass)
   static const uint8_t  TECLA_FIRME   = 2;
-  // Os mesmos tempos do teclado fisico (hal/tab5_teclado.hpp).
+  // The same timings as the physical keyboard (hal/tab5_teclado.hpp).
   static const uint32_t REP_INICIO_MS = TAB5_TECLA_REPETE_INICIO_MS;
   static const uint32_t REP_MS        = TAB5_TECLA_REPETE_MS;
-  static const uint32_t LONGO_MS      = 450;   // segurar uma letra: as variantes
+  static const uint32_t LONGO_MS      = 450;   // holding a letter: the variants
   static const uint32_t ESPACO_DUPLO_MS = 700;
   sincronizar(t);
   if (!t->aberto || fisico()) { return 0; }
@@ -808,8 +808,8 @@ int tecvirt_nivel(tecvirt_t* t, int* acoes, int max)
   sistema_toque_t q[SISTEMA_TOQUES_MAX];
   const int n = sistema_toques(q, SISTEMA_TOQUES_MAX);
   const area_t ap = sistema_area();
-  // Dedo na faixa do teclado: o toque e dele, a soltura nao vira clique em
-  // nada (ver sistema_consumir_toque). Inclusive na carencia de abertura.
+  // Finger on the keyboard strip: the touch is its, the release does not become a click on
+  // anything (see sistema_consumir_toque). Including during the opening grace period.
   for (int i = 0; i < n; ++i) {
     if (tecvirt_contem(t, ap.x + q[i].x, ap.y + q[i].y)) { sistema_consumir_toque(); break; }
   }
@@ -825,11 +825,11 @@ int tecvirt_nivel(tecvirt_t* t, int* acoes, int max)
   int na = 0;
   const uint32_t agora = tab5_agora_ms();
   auto por = [&](int ac) { if (na < max) { acoes[na++] = ac; } };
-  // ESPACO DUPLO = ". " (texto corrido): o primeiro espaco e trocado pelo ponto.
-  // ESPACO DUPLO = ". " (PARAGRAFO): o primeiro espaco vira ponto. Decidido
-  // pelo TEXTO que o app contou (tecvirt_contexto), nao pela memoria das
-  // teclas: com o cursor movido entre os dois espacos, a memoria apagaria
-  // a letra errada.
+  // DOUBLE SPACE = ". " (running text): the first space is swapped for the full stop.
+  // DOUBLE SPACE = ". " (PARAGRAFO): the first space becomes a full stop. Decided
+  // by the TEXT the app reported (tecvirt_contexto), not by the memory of the
+  // keys: with the cursor moved between the two spaces, the memory would delete
+  // the wrong letter.
   auto anotar = [&](int ac) {
     if (!ac) { return; }
     const bool duplo = ac == ' ' && t->frase && t->tem_contexto && t->ult_acao == ' '
@@ -837,7 +837,7 @@ int tecvirt_nivel(tecvirt_t* t, int* acoes, int max)
                     && t->antes[0] == ' ' && letra_ou_numero((unsigned char)t->antes[1]);
     if (duplo) {
       por(TECVIRT_APAGAR); por('.'); por(' ');
-      t->ult_acao = 0;   // o terceiro espaco seguido e um espaco
+      t->ult_acao = 0;   // the third space in a row is a space
       t->ult_ms = agora;
       return;
     }
@@ -846,18 +846,18 @@ int tecvirt_nivel(tecvirt_t* t, int* acoes, int max)
   };
   const int16_t antes = t->tecla_sob;
 
-  // 1) Dedos que ja estavam: seguem a tecla sob eles, ou soltam.
+  // 1) Fingers already down: follow the key under them, or release.
   for (int k = 0; k < SISTEMA_TOQUES_MAX; ++k) {
     auto& dd = t->dedos[k];
     if (dd.id < 0) { continue; }
     int achou = -1;
     for (int i = 0; i < n; ++i) { if (q[i].id == dd.id) { achou = i; break; } }
-    // O DEDO DA FAIXA: escorregar escolhe a variante, soltar a digita.
+    // THE STRIP'S FINGER: sliding chooses the variant, lifting types it.
     if (k == t->pop_dedo) {
       if (achou >= 0) {
-        // Ate o dedo ESCORREGAR vale a primeira variante (como no Android e no
-        // iPhone): perto da borda a faixa e empurrada para dentro, e a celula
-        // embaixo do dedo parado nao e a que a pessoa quis.
+        // Until the finger SLIDES the first variant counts (as on Android and the
+        // iPhone): near the edge the strip is pushed inwards, and the cell
+        // under the still finger is not the one the person wanted.
         const int xs = ap.x + q[achou].x;
         if (abs(xs - t->pop_dedo_x) > 12) { t->pop_mexeu = true; }
         int sel = t->pop_mexeu ? (xs - t->pop_x) / t->pop_l : 0;
@@ -869,7 +869,7 @@ int tecvirt_nivel(tecvirt_t* t, int* acoes, int max)
       }
       anotar(confirmar_variante(t));
       t->pop_dedo = -1;
-      t->pop_limpar = t->rotulos = true;   // limpa so o lugar da faixa e repinta as teclas
+      t->pop_limpar = t->rotulos = true;   // clear only the strip's place and repaint the keys
       t->solta.tecla = TECVIRT_NENHUMA;
       dd.id = -1;
       dd.tecla = dd.firme = dd.cand = TECVIRT_NENHUMA;
@@ -881,18 +881,18 @@ int tecvirt_nivel(tecvirt_t* t, int* acoes, int max)
       const int16_t sob = tecla_de(q[achou], dd.tecla);
       const int dx = q[achou].x - dd.x, dy = q[achou].y - dd.y;
       if (sob != dd.tecla && (abs(dx) > SALTO_PX || abs(dy) > SALTO_PX)) {
-        // O CONTROLADOR REAPROVEITA O ID: o dedo sobe e o proximo desce
-        // dentro de uma amostra, e para o sistema e o "mesmo dedo" que pulou
-        // de tecla. Um dedo de verdade nao anda mais que ~45 px numa amostra;
-        // um salto maior e um toque novo - a tecla anterior vale e a nova
-        // comeca firme.
+        // THE CONTROLLER REUSES THE ID: the finger lifts and the next comes down
+        // within one sample, and to the system it is the "same finger" that jumped
+        // keys. A real finger does not travel more than ~45 px in one sample;
+        // a bigger jump is a new touch - the previous key counts and the new one
+        // starts settled.
         if (!dd.eco && !dd.repetiu) { anotar(confirmar(t, dd.firme)); }
         dd.firme = sob;
         dd.cand = TECVIRT_NENHUMA; dd.cand_n = 0;
         dd.desde = dd.rep_ms = agora;
         dd.eco = dd.repetiu = false;
       } else if (sob == dd.firme) {
-        dd.cand = TECVIRT_NENHUMA; dd.cand_n = 0;      // voltou: o desvio nao conta
+        dd.cand = TECVIRT_NENHUMA; dd.cand_n = 0;      // came back: the detour does not count
       } else {
         if (sob == dd.cand) { if (dd.cand_n < 255) { ++dd.cand_n; } }
         else                { dd.cand = sob; dd.cand_n = 1; }
@@ -905,13 +905,13 @@ int tecvirt_nivel(tecvirt_t* t, int* acoes, int max)
       }
       dd.tecla = sob;
       dd.x = q[achou].x; dd.y = q[achou].y;
-      // Repeticao do APAGAR segurado.
+      // Repeat of the held DELETE.
       if (eh_apagar(dd.firme) && agora - dd.rep_ms >= (dd.repetiu ? REP_MS : REP_INICIO_MS)) {
         anotar(confirmar(t, dd.firme));
         dd.repetiu = true;
         dd.rep_ms = agora;
       }
-      // Segurou parado numa tecla com variantes: abre a faixa (uma por vez).
+      // Held still on a key with variants: opens the strip (one at a time).
       else if (t->pop_dedo < 0 && !dd.eco && !dd.repetiu && dd.cand_n == 0 && dd.firme != TECVIRT_NENHUMA
             && agora - dd.rep_ms >= LONGO_MS && abrir_faixa(t, k, dd.firme)) {
         sistema_pedir_redesenho();
@@ -919,7 +919,7 @@ int tecvirt_nivel(tecvirt_t* t, int* acoes, int max)
     } else {
       const bool digita = !dd.eco && !dd.repetiu;
       if (digita) { anotar(confirmar(t, dd.firme)); }
-      // So a soltura que digitou e referencia de eco - um eco nunca gera outro.
+      // Only a release that typed is an echo reference - an echo never creates another.
       t->solta = { digita ? dd.firme : (int16_t)TECVIRT_NENHUMA, dd.x, dd.y, t->amostra, agora };
       dd.id = -1;
       dd.tecla = dd.firme = dd.cand = TECVIRT_NENHUMA;
@@ -927,7 +927,7 @@ int tecvirt_nivel(tecvirt_t* t, int* acoes, int max)
       dd.eco = dd.repetiu = false;
     }
   }
-  // 2) Dedos novos: a tecla sob o ponto de descida ja nasce firme.
+  // 2) New fingers: the key under the touch-down point starts out settled.
   for (int i = 0; i < n; ++i) {
     bool conhecido = false;
     for (int k = 0; k < SISTEMA_TOQUES_MAX; ++k) { if (t->dedos[k].id == q[i].id) { conhecido = true; break; } }
@@ -948,7 +948,7 @@ int tecvirt_nivel(tecvirt_t* t, int* acoes, int max)
       break;
     }
   }
-  // 3) A tecla acesa e a firme do dedo que desceu por ultimo.
+  // 3) The lit key is the settled one of the finger that came down last.
   int recente = -1;
   for (int k = 0; k < SISTEMA_TOQUES_MAX; ++k) {
     if (t->dedos[k].id < 0) { continue; }
@@ -964,7 +964,7 @@ bool tecvirt_centro(const tecvirt_t* t, int acao, int* xs, int* ys)
   int x, y, l;
   for (int fi = 0; fi < FILAS; ++fi) {
     for (int c = 0; c < N_FILA[fi]; ++c) {
-      const int cp = cp_tecla(t, fi, c);   // com o shift: a letra vale nas duas caixas
+      const int cp = cp_tecla(t, fi, c);   // with shift: the letter counts in both cases
       if ((cp == acao || (acao > 0 && maiuscula(cp) == maiuscula(acao))) && tecla_em(t->a, fi, c, &x, &y, &l)) {
         *xs = x + l / 2; *ys = y + alt_t(t->a) / 2;
         return true;
@@ -982,8 +982,8 @@ bool tecvirt_centro(const tecvirt_t* t, int acao, int* xs, int* ys)
 
 int tecvirt_clique(tecvirt_t* t, int xs, int ys)
 {
-  // So a rede para o toque rapido demais para o nivel ter visto (senao daria
-  // letra dupla): o nivel cuida de tudo que ele viu.
+  // Only the safety net for a touch too quick for the level handler to have seen (otherwise it would
+  // double the letter): the level handler takes care of everything it saw.
   if (!t->aberto || fisico() || t->livre < LIVRE_AMOSTRAS || dedos_ativos(t) || tab5_agora_ms() - t->tecla_ms < 120) { return 0; }
-  return confirmar(t, tecla_no_ponto(t->a, xs, ys, TECVIRT_NENHUMA));   // confirmar() marca tecla_ms
+  return confirmar(t, tecla_no_ponto(t->a, xs, ys, TECVIRT_NENHUMA));   // confirmar() sets tecla_ms
 }

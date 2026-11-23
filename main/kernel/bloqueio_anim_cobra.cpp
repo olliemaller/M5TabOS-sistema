@@ -1,28 +1,28 @@
-// Animacao do bloqueio: Cobrinha que joga sozinha (homenagem ao CreazySnake).
-// (parte do bloqueio_anim; o que e comum a todas esta no bloqueio_anim_interno.hpp).
+// Lock screen animation: a little snake that plays by itself (tribute to CreazySnake).
+// (part of bloqueio_anim; what is common to all of them is in bloqueio_anim_interno.hpp).
 
 #include "bloqueio_anim_interno.hpp"
 
 namespace bq_anim {
 
 // ---------------------------------------------------------------------------
-// 6. COBRINHA - joga sozinha (homenagem ao CreazySnake)
+// 6. LITTLE SNAKE - plays by itself (tribute to CreazySnake)
 // ---------------------------------------------------------------------------
 namespace {
-static const int CEL = 40;   // lado da celula, px
+static const int CEL = 40;   // cell side, px
 struct Cobra {
-  uint8_t sx[64], sy[64];    // anel: [cab] e a cabeca, [cab-1] o pescoco...
-  uint8_t occ[800];          // gx*gy: 1 = corpo
-  int     gx, gy, ox, oy;    // grade e origem na tela
+  uint8_t sx[64], sy[64];    // ring: [cab] is the head, [cab-1] the neck...
+  uint8_t occ[800];          // gx*gy: 1 = body
+  int     gx, gy, ox, oy;    // grid and origin on screen
   int     cab, len;
-  int     fx, fy;            // comida
-  int     dx, dy;            // direcao
+  int     fx, fy;            // food
+  int     dx, dy;            // direction
   float   acum;
-  bool    passou;            // deu um passo neste quadro
+  bool    passou;            // took a step this frame
 };
 }
 
-static inline int cobra_i(const Cobra& s, int k) { return (s.cab - k) & 63; }   // k-esimo segmento a partir da cabeca
+static inline int cobra_i(const Cobra& s, int k) { return (s.cab - k) & 63; }   // k-th segment from the head
 
 static void cobra_comida(Cobra& s)
 {
@@ -35,7 +35,7 @@ static void cobra_comida(Cobra& s)
 
 static void cobra_reiniciar(Cobra& s)
 {
-  // Apaga o que ainda esta na tela, celula por celula (nada de limpar a area).
+  // Erases what is still on screen, cell by cell (no clearing the area).
   if (s.len > 0) {
     for (int k = 0; k < s.len; ++k) {
       const int i = cobra_i(s, k);
@@ -102,12 +102,12 @@ void cobra_passo(float dt)
     if (DX[k] == s.dx && DY[k] == s.dy)      { n -= 0.4f; }
     if (n < nota) { nota = n; melhor = k; }
   }
-  if (melhor < 0) { cobra_reiniciar(s); return; }   // encurralou: recomeca
+  if (melhor < 0) { cobra_reiniciar(s); return; }   // cornered: start over
 
   const int nx = hx + DX[melhor], ny = hy + DY[melhor];
   s.dx = DX[melhor]; s.dy = DY[melhor];
   const bool come = nx == s.fx && ny == s.fy;
-  rec(s.ox + hx * CEL, s.oy + hy * CEL, CEL, CEL);   // o pescoco troca de cor
+  rec(s.ox + hx * CEL, s.oy + hy * CEL, CEL, CEL);   // the neck changes colour
   if (!come) {
     s.occ[ty * s.gx + tx] = 0;
     rec(s.ox + tx * CEL, s.oy + ty * CEL, CEL, CEL);
@@ -136,7 +136,7 @@ void cobra_desenhar(lgfx::LovyanGFX& d)
   if (!s.passou && !s_tudo) { return; }
   d.fillCircle(s.ox + s.fx * CEL + CEL / 2, s.oy + s.fy * CEL + CEL / 2 + 1, 12, c565(255, 70, 70));
   d.fillRect(s.ox + s.fx * CEL + CEL / 2, s.oy + s.fy * CEL + 5, 3, 7, c565(120, 200, 80));
-  // Corpo: da cauda ao pescoco, em listras; so os dois ultimos se nao for tudo.
+  // Body: from tail to neck, in stripes; only the last two if not everything.
   const int ate = s_tudo ? s.len : 2;
   for (int k = ate - 1; k >= 1; --k) {
     const int i = cobra_i(s, k);

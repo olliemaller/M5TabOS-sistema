@@ -2,20 +2,20 @@
 # cor: 0x07FF
 # periodo: 16
 #
-# Teste de velocidade: separa "o desenho e lento" de "a IMU e lenta".
+# Speed test: tells "drawing is slow" apart from "the IMU is slow".
 #
-# - Bolinha AMARELA: anda sozinha de um lado ao outro, pelo relogio
-#   (sistema.ms). Nao depende da IMU. Se ela anda aos saltos, o problema e
-#   a cadencia dos quadros, nao o sensor.
-# - Bolinha VERDE: a IMU (incline o aparelho).
-# - Numeros: quadros por segundo, o tempo do desenhar() em Berry, o maior
-#   intervalo entre quadros no ultimo segundo, e quantas leituras NOVAS da
-#   IMU chegaram por segundo (se for bem menor que os quadros, o sensor
-#   esta devolvendo o mesmo valor repetido).
+# - YELLOW ball: moves by itself from side to side, driven by the clock
+#   (sistema.ms). It doesn't depend on the IMU. If it moves in jumps, the
+#   problem is the frame cadence, not the sensor.
+# - GREEN ball: the IMU (tilt the device).
+# - Numbers: frames per second, the time desenhar() takes in Berry, the
+#   longest gap between frames in the last second, and how many NEW IMU
+#   readings arrived per second (if it's well below the frame rate, the
+#   sensor is returning the same value over and over).
 
-var t0 = sistema.ms()       # inicio da animacao
-var ultimo = t0              # o quadro anterior
-var janela = t0              # inicio da janela de 1 s das medidas
+var t0 = sistema.ms()       # start of the animation
+var ultimo = t0              # the previous frame
+var janela = t0              # start of the 1 s measurement window
 var quadros = 0
 var novas = 0
 var pior = 0
@@ -29,7 +29,7 @@ def desenhar(tudo)
   var ini = sistema.ms()
   var l = tela.largura()
 
-  # Medidas, fechadas a cada segundo.
+  # Measurements, totalled every second.
   var dt = ini - ultimo
   ultimo = ini
   if dt > pior pior = dt end
@@ -44,7 +44,7 @@ def desenhar(tudo)
     janela = ini
   end
 
-  # A bolinha independente: vai e volta em 2 s, pelo relogio.
+  # The independent ball: goes there and back in 2 s, driven by the clock.
   var m = 60
   var curso = l - 2 * m
   var fase = ((ini - t0) % 4000) / 2000.0     # 0..2
@@ -52,7 +52,7 @@ def desenhar(tudo)
   tela.linha(m, 150, l - m, 150, tela.CINZA)
   tela.circulo(m + int(curso * fase), 150, 30, tela.AMARELO)
 
-  # A IMU.
+  # The IMU.
   var g = sistema.imu()
   var cx = l / 2
   var cy = 430
@@ -64,11 +64,11 @@ def desenhar(tudo)
     ant_ax = g[0]
     tela.circulo(cx + int(g[0] * -170), cy + int(g[1] * 170), 26, tela.VERDE)
   else
-    tela.texto("IMU sem leitura", cx - 150, cy - 12, 3, tela.VERMELHO)
+    tela.texto(idioma.escolher("IMU sem leitura", "IMU not reading"), cx - 150, cy - 12, 3, tela.VERMELHO)
   end
 
-  tela.texto("quadros/s: " + str(fps) + "   pior intervalo: " + str(pior_s) + " ms", 30, 20, 3)
-  tela.texto("desenhar(): " + str(custo) + " ms   IMU novas/s: " + str(imu_s), 30, 60, 3)
+  tela.texto(idioma.escolher("quadros/s: ", "frames/s: ") + str(fps) + idioma.escolher("   pior intervalo: ", "   worst gap: ") + str(pior_s) + " ms", 30, 20, 3)
+  tela.texto("desenhar(): " + str(custo) + idioma.escolher(" ms   IMU novas/s: ", " ms   new IMU/s: ") + str(imu_s), 30, 60, 3)
 
   custo = sistema.ms() - ini
 end

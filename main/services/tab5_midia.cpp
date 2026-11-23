@@ -1,4 +1,4 @@
-// MIDIA - ver tab5_midia.hpp.
+// MEDIA - see tab5_midia.hpp.
 
 #include "tab5_midia.hpp"
 #include "tab5_volumes.hpp"
@@ -6,7 +6,7 @@
 #include "esp_heap_caps.h"
 #include <cstring>
 
-// ---- as funcoes de arquivo do medf, pelo leitor do sistema ----------------
+// ---- medf's file functions, through the system reader --------------------
 static void* abrir(const char* caminho, off_t* tamanho)
 {
   tab5_leitor_t* r = tab5_leitor_abrir(caminho);
@@ -15,7 +15,7 @@ static void* abrir(const char* caminho, off_t* tamanho)
   return r;
 }
 
-// Le 'n' bytes a partir de 'pos'. Devolve quantos leu (menos so no fim ou erro).
+// Reads 'n' bytes from 'pos'. Returns how many were read (fewer only at EOF or on error).
 static size_t ler_em(void* arq, off_t pos, void* dst, size_t n)
 {
   tab5_leitor_t* r = (tab5_leitor_t*)arq;
@@ -33,12 +33,12 @@ static void fechar(void* arq) { tab5_leitor_fechar((tab5_leitor_t*)arq); }
 
 void tab5_midia_preparar(void)
 {
-  static bool feito = false;   // medf_set_io so copia a configuracao: repetir e inofensivo
+  static bool feito = false;   // medf_set_io only copies the configuration: repeating is harmless
   if (feito) { return; }
-  // Leitura antecipada com prioridade 5 em qualquer nucleo: acima dos
-  // decodificadores (4), que ocupam o nucleo inteiro. Ela passa quase todo o
-  // tempo esperando o cartao, entao nao rouba CPU de ninguem - e sem isso o
-  // som de um video pesado engasgava (a leitura do AAC ficava sem vez).
+  // Read-ahead at priority 5 on any core: above the decoders (4), which
+  // occupy a whole core. It spends almost all its time waiting for the
+  // SD card, so it steals CPU from nobody - and without it the sound of a
+  // heavy video stuttered (the AAC read never got its turn).
   const medf_io_t io = { abrir, ler_em, fechar, 5, -1 };
   medf_set_io(&io);
   feito = true;

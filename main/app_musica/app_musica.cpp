@@ -1,25 +1,25 @@
-// APP MUSICA - o tocador. A pessoa poe as musicas na pasta Music (ou Música...) do cartao
-// (com subpastas, se quiser); o app lista, e tocar uma musica toca a pasta
-// dela inteira a partir dali - ou uma playlist. Um PENDRIVE no USB-A aparece
-// no topo da lista de Pastas: o pendrive inteiro, com as pastas dele, toca
-// direto de la (sem copiar nada).
+// MUSIC APP - the player. The person puts the songs in the Music (or Música...) folder on the
+// SD card (with subfolders, if they like); the app lists them, and playing a song plays its
+// whole folder from there on - or a playlist. A USB FLASH DRIVE in USB-A appears
+// at the top of the Folders list: the whole flash drive, with its folders, plays
+// straight from there (without copying anything).
 //
-// Este app e SO A INTERFACE. Quem toca e o tocador do sistema
-// (services/tab5_musica): achar a pasta, listar, a fila, aleatorio/repetir,
-// as playlists (.m3u), a duracao de cada arquivo, a capa (etiqueta, pasta ou
-// internet), decodificar, o alto-falante, o espectro - tudo la. Fechar o app
-// nao para a musica; com ele fechado, a barra mostra o que toca e a central
-// de avisos tem o miniplayer. O modulo Berry 'musica' usa o mesmo servico.
+// This app is ONLY THE INTERFACE. What plays is the system player
+// (services/tab5_musica): finding the folder, listing, the queue, shuffle/repeat,
+// the playlists (.m3u), each file's duration, the cover art (tag, folder or
+// internet), decoding, the speaker, the spectrum - all there. Closing the app
+// does not stop the music; with it closed, the status bar shows what is playing and the
+// notification centre has the mini player. The Berry 'musica' module uses the same service.
 //
-// DUAS TELAS:
-//   TOCANDO    - a capa grande (ou o espectro, tocando nela), titulo, artista,
-//                coracao (playlist Favoritas), a linha do tempo, aleatorio,
-//                anterior, tocar, proxima, repetir, volume.
-//   BIBLIOTECA - abas Pastas e Playlists; cada musica com a duracao a direita
-//                e o botao de por numa playlist; o miniplayer embaixo.
+// TWO SCREENS:
+//   TOCANDO    - (now playing) the large cover (or the spectrum, by tapping it), title,
+//                artist, heart (Favoritas playlist), the timeline, shuffle,
+//                previous, play, next, repeat, volume.
+//   BIBLIOTECA - (library) Folders and Playlists tabs; each song with its duration on
+//                the right and the add-to-playlist button; the mini player below.
 //
-// O QUE LE O CARTAO NAO RODA AQUI: listar, medir duracoes, abrir a capa e
-// mexer nas playlists vao para o worker (kernel/trabalho.hpp) e voltam por
+// WHAT READS THE SD CARD DOES NOT RUN HERE: listing, measuring durations, opening the cover
+// and editing playlists go to the worker (kernel/trabalho.hpp) and come back via
 // AVISO_TRABALHO.
 
 #include "app.h"
@@ -45,27 +45,27 @@
 #include <strings.h>
 
 static const char* TAG = "app.musica";
-#define APP_NOME "Música"   // o mesmo nome da parte de fundo do servico: o cartao da central abre este app
+#define APP_NOME "Música"   // the same name as the service's background part: the notification centre card opens this app
 
-static const uint16_t LILAS = 0xAC7F;   // rgb(176,140,255) - so o ICONE do app (fica como esta; o resto da tela usa o tema)
+static const uint16_t LILAS = 0xAC7F;   // rgb(176,140,255) - only the app ICON (stays as is; the rest of the screen uses the theme)
 
-// O destaque da tela, da lista e do miniplayer: a cor do tema do espectro.
-// A REGRA E DA INTERFACE (o servico so guarda e publica a cor que receber):
-// na ordem dos TEMAS, mais abaixo - arco-iris, "lilas" (agora o azul do
-// tema do sistema), fogo, oceano, neon. As outras cores sao escolha do
-// usuario no espectro e seguem como estao.
+// The screen, list and mini player accent: the spectrum theme colour.
+// THE RULE BELONGS TO THE INTERFACE (the service only stores and publishes the colour it gets):
+// in the order of the THEMES, further down - rainbow, "lilac" (now the system
+// theme blue), fire, ocean, neon. The other colours are the user's
+// choice in the spectrum and stay as they are.
 static uint16_t destaque(void)
 {
-  static const uint16_t COR[] = { 0xFBCB /* coral */, TEMA_DESTAQUE, 0xFCA5 /* laranja */,
-                                  0x2E5E /* ciano */, 0xF9F9 /* rosa */ };
+  static const uint16_t COR[] = { 0xFBCB /* coral */, TEMA_DESTAQUE, 0xFCA5 /* orange */,
+                                  0x2E5E /* cyan */, 0xF9F9 /* pink */ };
   return COR[ajustes_tema_espectro() % (sizeof(COR) / sizeof(COR[0]))];
 }
 
-// A tinta do que fica EM CIMA do destaque (texto e icone): branca no azul do
-// tema; preta nas outras cores do espectro, que sao claras.
+// The ink for what sits ON TOP of the accent (text and icon): white on the theme
+// blue; black on the other spectrum colours, which are light.
 static uint16_t sobre_destaque(void)
 {
-  return (ajustes_tema_espectro() % 5) == 1 ? (uint16_t)TEMA_SOBRE_DESTAQUE : (uint16_t)TFT_BLACK;   // 1 = o tema azul
+  return (ajustes_tema_espectro() % 5) == 1 ? (uint16_t)TEMA_SOBRE_DESTAQUE : (uint16_t)TFT_BLACK;   // 1 = the blue theme
 }
 
 static void tempo_txt(char* out, size_t n, uint32_t ms)
@@ -75,16 +75,16 @@ static void tempo_txt(char* out, size_t n, uint32_t ms)
   else           { snprintf(out, n, "%u:%02u", (unsigned)(s / 60), (unsigned)(s % 60)); }
 }
 
-// O que mostrar de um arquivo: "Artista - Titulo (Video).mp3" -> titulo
-// "Titulo", sub "Artista". Quem limpa o nome e o servico (o mesmo que usa
-// para o que toca; la a etiqueta ID3 vence).
+// What to show for a file: "Artist - Title (Video).mp3" -> title
+// "Title", sub "Artist". The service cleans the name (the same one it uses
+// for what is playing; there the ID3 tag wins).
 static void nome_para_mostrar(const char* nome_cartao, char* tit, size_t tt, char* sub, size_t ts)
 {
   sub[0] = '\0';
   tab5_musica_titulo_do_arquivo(nome_cartao, tit, tt, sub, ts);
 }
 
-// ---- icones (primitivas: a fonte nao tem esses simbolos) ---------------------
+// ---- icons (primitives: the font does not have these symbols) ----------------
 static void ic_tocar(lgfx::LovyanGFX& d, int cx, int cy, int r, uint16_t c)
 {
   d.fillTriangle(cx - r * 4 / 10, cy - r / 2, cx - r * 4 / 10, cy + r / 2, cx + r * 6 / 10, cy, c);
@@ -113,7 +113,7 @@ static void ic_repetir(lgfx::LovyanGFX& d, int cx, int cy, int s, uint16_t c, ui
   d.drawRoundRect(cx - s, cy - s * 6 / 10, 2 * s, s * 12 / 10, s / 2, c);
   d.drawRoundRect(cx - s + 1, cy - s * 6 / 10 + 1, 2 * s - 2, s * 12 / 10 - 2, s / 2, c);
   d.drawRoundRect(cx - s + 2, cy - s * 6 / 10 + 2, 2 * s - 4, s * 12 / 10 - 4, s / 2, c);
-  d.fillRect(cx - 4, cy - s * 6 / 10 - 2, 10, 7, fundo);   // o vao da seta
+  d.fillRect(cx - 4, cy - s * 6 / 10 - 2, 10, 7, fundo);   // the arrow gap
   d.fillTriangle(cx + 8, cy - s * 6 / 10 + 1, cx - 2, cy - s * 6 / 10 - 8, cx - 2, cy - s * 6 / 10 + 10, c);
   if (uma) {
     d.fillCircle(cx + s, cy - s * 6 / 10, 11, c);
@@ -126,7 +126,7 @@ static void ic_coracao(lgfx::LovyanGFX& d, int cx, int cy, int s, uint16_t c, bo
   d.fillCircle(cx - r, cy - r / 2, r, c);
   d.fillCircle(cx + r, cy - r / 2, r, c);
   d.fillTriangle(cx - 2 * r + 1, cy - r / 4, cx + 2 * r - 1, cy - r / 4, cx, cy + s + 2, c);
-  if (!cheio) {   // o contorno: o mesmo desenho, 3 px menor, na cor do fundo
+  if (!cheio) {   // the outline: the same drawing, 3 px smaller, in the background colour
     const int q = r - 3;
     d.fillCircle(cx - r, cy - r / 2, q, fundo);
     d.fillCircle(cx + r, cy - r / 2, q, fundo);
@@ -143,7 +143,7 @@ static void ic_pasta(lgfx::LovyanGFX& d, int x, int cy, uint16_t c)
   d.fillRoundRect(x, cy - 16, 18, 9, 3, c);
   d.fillRoundRect(x, cy - 11, 40, 29, 4, c);
 }
-// Um pendrive de lado: o corpo e o conector.
+// A flash drive on its side: the body and the connector.
 static void ic_pendrive(lgfx::LovyanGFX& d, int cx, int cy, uint16_t c, uint16_t fundo)
 {
   d.fillRoundRect(cx - 22, cy - 11, 30, 22, 5, c);
@@ -169,30 +169,30 @@ static void ic_volume(lgfx::LovyanGFX& d, int cx, int cy, int ondas, uint16_t c)
   for (int k = 0; k < ondas; ++k) { d.drawArc(cx + 4, cy, 9 + k * 7, 7 + k * 7, -45, 45, c); }
 }
 
-// ---- estado ------------------------------------------------------------------
+// ---- state -------------------------------------------------------------------
 typedef enum { TELA_TOCANDO, TELA_BIBLIOTECA } tela_t;
 typedef enum { ABA_PASTAS, ABA_PLAYLISTS } aba_t;
 typedef enum { LIN_PASTA, LIN_MUSICA, LIN_PLAYLIST, LIN_NOVA, LIN_DISCO } lin_tipo_t;
 
 typedef struct {
   uint8_t tipo;                           // lin_tipo_t
-  int16_t n;                              // playlist: quantas musicas
-  char    nome[TAB5_MUSICA_NOME_MAX];     // como no cartao
-  char    caminho[TAB5_MUSICA_CAMINHO_MAX];   // musica e pasta: o caminho no servico (relativo ou "/usb/...")
+  int16_t n;                              // playlist: how many songs
+  char    nome[TAB5_MUSICA_NOME_MAX];     // as on the SD card
+  char    caminho[TAB5_MUSICA_CAMINHO_MAX];   // song and folder: the path in the service (relative or "/usb/...")
 } linha_t;
 
 #define LIN_MAX (TAB5_MUSICA_LISTA_MAX + 2)
 
 static tela_t   s_tela = TELA_BIBLIOTECA;
 static aba_t    s_aba = ABA_PASTAS;
-static char     s_raiz[160] = "";    // a pasta de musica (so para o nome)
-static char     s_rel[160] = "";     // a pasta aberta, relativa a s_raiz ("" = a raiz); ou "/usb/..." (o pendrive)
-static char     s_pl[TAB5_MUSICA_NOME_MAX] = "";   // a playlist aberta ("" = a lista delas)
+static char     s_raiz[160] = "";    // the music folder (for the name only)
+static char     s_rel[160] = "";     // the open folder, relative to s_raiz ("" = the root); or "/usb/..." (the flash drive)
+static char     s_pl[TAB5_MUSICA_NOME_MAX] = "";   // the open playlist ("" = the list of them)
 static bool     s_forcar = true;
 static lista_t  s_lista;
 
-// As linhas: a interface desenha s_lin; o worker enche s_lin_tras e a
-// interface troca as duas no aviso (kernel/trabalho.hpp, "o padrao do resultado").
+// The rows: the UI draws s_lin; the worker fills s_lin_tras and the
+// UI swaps the two on the notice (kernel/trabalho.hpp, "the result pattern").
 static linha_t* s_lin = nullptr;
 static linha_t* s_lin_tras = nullptr;
 static int      s_n = 0;
@@ -200,66 +200,66 @@ static int      s_n_musicas = 0;
 static bool     s_cheia = false;
 static bool     s_sem_cartao = false;
 static bool     s_carregando = false;
-static uint32_t s_gen = 0;                       // muda a cada navegacao
-static std::atomic<uint32_t> s_carga_pronta{0};  // a geracao que o worker terminou de carregar
+static uint32_t s_gen = 0;                       // changes on every navigation
+static std::atomic<uint32_t> s_carga_pronta{0};  // the generation the worker finished loading
 static int      s_n_tras = 0, s_musicas_tras = 0;
-// Linhas no topo que nao sao da pasta (o pendrive, na raiz): a musica da
-// linha i e o item i - s_extra do que o servico lista.
+// Rows at the top that are not from the folder (the flash drive, at the root): the song on
+// row i is item i - s_extra of what the service lists.
 static int      s_extra = 0, s_extra_tras = 0;
 static bool     s_cheia_tras = false, s_sem_cartao_tras = false;
 static int      s_tocando_linha = -1;
 
-// Duracoes: o worker mede de 16 em 16 (cada pedaco e um trabalho curto).
+// Durations: the worker measures 16 at a time (each chunk is a short job).
 static std::atomic<bool> s_dur_pedaco{false};
-static int      s_dur_prox = 0;        // a proxima linha a medir
+static int      s_dur_prox = 0;        // the next row to measure
 static uint32_t s_dur_gen = 0;
 
-// A capa: um sprite (PSRAM) que o worker pinta; a interface so le com s_capa_ok.
+// The cover: a sprite (PSRAM) that the worker paints; the UI only reads it with s_capa_ok.
 static M5Canvas* s_capa = nullptr;
 static bool      s_capa_ok = false;
 static uint32_t  s_capa_ver = 0xFFFFFFFF;
 static char      s_capa_arq[200] = "";
-static std::atomic<int> s_capa_feita{0};   // 1 = pintou, -1 = nao abriu
-static bool      s_capa_rodando = false;   // o worker esta pintando o sprite
-static uint16_t  s_tinta = 0;              // o fundo da tela Tocando (da cor da capa)
+static std::atomic<int> s_capa_feita{0};   // 1 = painted, -1 = did not open
+static bool      s_capa_rodando = false;   // the worker is painting the sprite
+static uint16_t  s_tinta = 0;              // the Now Playing screen background (from the cover colour)
 static uint16_t  s_tinta_tras = 0;
-static bool      s_ver_espectro = false;   // tocar na capa troca capa <-> espectro
+static bool      s_ver_espectro = false;   // tapping the cover toggles cover <-> spectrum
 
-// Favoritas (o coracao) da musica que toca.
+// Favourites (the heart) of the song playing.
 static char     s_fav_caminho[TAB5_MUSICA_CAMINHO_MAX] = "";
 static bool     s_fav = false;
-static std::atomic<int> s_fav_tras{-1};    // -1 = nada novo; 0/1 = resposta do worker
+static std::atomic<int> s_fav_tras{-1};    // -1 = nothing new; 0/1 = worker's answer
 
-// Avisos rapidos ("Adicionada a Rock").
+// Quick notices ("Adicionada a Rock" - added to Rock).
 static char     s_aviso[96] = "";
 static uint32_t s_aviso_ate = 0;
 static char     s_aviso_tras[96] = "";
 static std::atomic<bool> s_aviso_novo{false};
-static std::atomic<bool> s_recarregar{false};   // o worker mudou playlists: recarregar a lista
+static std::atomic<bool> s_recarregar{false};   // the worker changed playlists: reload the list
 
-// A folha "Adicionar a playlist" e a pagina "Nova playlist".
+// The "Adicionar a playlist" (add to playlist) sheet and the "Nova playlist" (new playlist) page.
 static bool     s_folha = false;
 static char     s_folha_caminho[TAB5_MUSICA_CAMINHO_MAX] = "";
-static tab5_musica_item_t* s_folha_pl = nullptr;   // as playlists, na folha
+static tab5_musica_item_t* s_folha_pl = nullptr;   // the playlists, in the sheet
 static int      s_folha_n = 0;
 static bool     s_nova = false;
 static char     s_nova_txt[48] = "";
-static char     s_nova_por[TAB5_MUSICA_CAMINHO_MAX] = "";   // musica a por na playlist criada
+static char     s_nova_por[TAB5_MUSICA_CAMINHO_MAX] = "";   // song to put in the created playlist
 static tecvirt_t s_kb;
-static uint32_t s_apagar_ate = 0;          // "Apagar" tocado: confirma ate esta hora
+static uint32_t s_apagar_ate = 0;          // "Apagar" (delete) tapped: confirm until this time
 
-static bool     s_restante = false;        // o tempo da direita mostra quanto falta
+static bool     s_restante = false;        // the right-hand time shows how much is left
 static uint32_t s_sig = 0, s_prog_sig = 0, s_mini_sig = 0;
 
-// A pasta 'rel' para mostrar: "" = a pasta de musica do cartao; "/usb" = o
-// nome do disco; "/usb/Rock/Anos 80" = "Pendrive / Rock / Anos 80" (com
-// 'caminho_todo') ou so "Anos 80".
+// The 'rel' folder for display: "" = the SD card music folder; "/usb" = the
+// disk name; "/usb/Rock/Anos 80" = "Pendrive / Rock / Anos 80" (with
+// 'caminho_todo') or just "Anos 80".
 static void pasta_para_mostrar(const char* rel, bool caminho_todo, char* out, size_t tam)
 {
   const char* r = strrchr(s_raiz, '/');
   if (!rel[0]) { snprintf(out, tam, "%s", r ? r + 1 : "Music"); return; }
   if (rel[0] == '/') {
-    const char* resto = strchr(rel + 1, '/');   // depois de "/usb"
+    const char* resto = strchr(rel + 1, '/');   // after "/usb"
     if (!resto) { snprintf(out, tam, "%s", tr(tab5_volume_tipo(rel))); return; }
     if (!caminho_todo) { snprintf(out, tam, "%s", strrchr(rel, '/') + 1); return; }
     snprintf(out, tam, "%s", tr(tab5_volume_tipo(rel)));
@@ -275,15 +275,15 @@ static void pasta_para_mostrar(const char* rel, bool caminho_todo, char* out, si
   snprintf(out, tam, "%s / %s", r ? r + 1 : "Music", rel);
 }
 
-// ---- geometria -----------------------------------------------------------------
+// ---- geometry -------------------------------------------------------------------
 static const int M = 24;
-// TOCANDO
+// NOW PLAYING
 static const int TC_CAB_A = 80;
 static const int TC_CAPA_Y = 88;
-// ix/iw: a coluna do texto e dos controles (relativa a area). Em pe e a
-// largura toda, abaixo do quadrado. DEITADO (teclado fisico encaixado,
-// kernel/orientacao) sao duas colunas: o quadrado (capa ou espectro) a
-// esquerda, do tamanho da altura, e o resto a direita.
+// ix/iw: the text and controls column (relative to the area). In portrait it is the
+// full width, below the square. In LANDSCAPE (physical keyboard attached,
+// kernel/orientacao) there are two columns: the square (cover or spectrum) on the
+// left, as tall as the height, and the rest on the right.
 typedef struct { int capa_x, capa_y, capa_l, ix, iw, tit_y, art_y, sub_y, prog_y, ctrl_y, vol_y; } geo_tc_t;
 static geo_tc_t geo_tc(const area_t& a)
 {
@@ -316,19 +316,19 @@ static geo_tc_t geo_tc(const area_t& a)
   g.vol_y  = g.ctrl_y + 110;
   return g;
 }
-// BIBLIOTECA
+// LIBRARY
 static const int BB_TIT_A = 84;
 static const int BB_ABAS_Y = 88, BB_ABAS_A = 60;
 static const int BB_SUB_Y = 160, BB_SUB_A = 72;
-static const int BB_BOT_A = 84;           // os botoes da playlist aberta
+static const int BB_BOT_A = 84;           // the open playlist's buttons
 static const int LIN_A = 96;
 static const int MINI_A = 116;
 static int bb_lista_y(void) { return BB_SUB_Y + BB_SUB_A + (s_aba == ABA_PLAYLISTS && s_pl[0] ? BB_BOT_A : 0) + 4; }
 
-// ---- carregar a lista (worker) ----------------------------------------------------
+// ---- loading the list (worker) ---------------------------------------------------
 typedef struct { uint32_t gen; uint8_t aba; char rel[160]; char pl[TAB5_MUSICA_NOME_MAX]; } carga_t;
-// Um anel: navegar rapido enfileira cargas, e cada uma le o SEU argumento
-// (a geracao dela diz se o resultado ainda serve).
+// A ring: navigating quickly queues loads, and each one reads ITS OWN argument
+// (its generation says whether the result is still useful).
 static carga_t s_carga_arg[4];
 static int     s_carga_vez = 0;
 
@@ -340,7 +340,7 @@ static void trab_carregar(void* arg)
   bool cheia = false, sem = false;
   int extra = 0;
   if (c->aba == ABA_PASTAS) {
-    // NA RAIZ, OS OUTROS DISCOS PRIMEIRO: o pendrive do USB-A, se houver.
+    // AT THE ROOT, THE OTHER DISKS FIRST: the USB-A flash drive, if there is one.
     if (!c->rel[0]) {
       tab5_vol_t v[TAB5_VOL_N];
       const int nv = tab5_volumes_listar(v, TAB5_VOL_N);
@@ -357,7 +357,7 @@ static void trab_carregar(void* arg)
     tab5_musica_item_t* it = (tab5_musica_item_t*)heap_caps_malloc(sizeof(tab5_musica_item_t) * TAB5_MUSICA_LISTA_MAX, MALLOC_CAP_SPIRAM);
     if (it) {
       const int k = tab5_musica_listar(c->rel, it, TAB5_MUSICA_LISTA_MAX, &cheia);
-      sem = k < 0 && !extra;   // sem cartao, mas com pendrive: a lista mostra o pendrive
+      sem = k < 0 && !extra;   // no SD card, but with a flash drive: the list shows the flash drive
       for (int i = 0; i < k && n < LIN_MAX; ++i) {
         linha_t& l = out[n++];
         l.tipo = it[i].pasta ? LIN_PASTA : LIN_MUSICA;
@@ -426,7 +426,7 @@ static void carregar(void)
   if (!sistema_trabalho(trab_carregar, c)) { s_carregando = false; }
 }
 
-// A navegacao mudou (pasta, aba, playlist): a lista atual some ja.
+// The navigation changed (folder, tab, playlist): the current list goes at once.
 static void navegar(void)
 {
   s_n = 0;
@@ -438,10 +438,10 @@ static void navegar(void)
   sistema_pedir_redesenho_completo();
 }
 
-// ---- duracoes (worker, em pedacos) -------------------------------------------------
+// ---- durations (worker, in chunks) -------------------------------------------------
 typedef struct { uint32_t gen; int n; char caminho[16][TAB5_MUSICA_CAMINHO_MAX]; } dur_arg_t;
-static dur_arg_t* s_dur_arg = nullptr;   // PSRAM; so o worker le enquanto o pedaco roda
-static bool       s_dur_rodando = false;  // ha um pedaco no worker: nao mexer em s_dur_arg
+static dur_arg_t* s_dur_arg = nullptr;   // PSRAM; only the worker reads it while the chunk runs
+static bool       s_dur_rodando = false;  // there is a chunk on the worker: do not touch s_dur_arg
 
 static void trab_duracoes(void* arg)
 {
@@ -450,10 +450,10 @@ static void trab_duracoes(void* arg)
   s_dur_pedaco = true;
 }
 
-// Pede o proximo pedaco de linhas sem duracao lembrada. Na interface.
+// Requests the next chunk of rows with no remembered duration. On the UI.
 static void duracoes_seguir(void)
 {
-  if (s_dur_rodando) { return; }   // o pedaco atual, ao terminar, chama de novo
+  if (s_dur_rodando) { return; }   // the current chunk, when it finishes, calls again
   if (s_dur_gen != s_gen) { s_dur_gen = s_gen; s_dur_prox = 0; }
   if (!s_dur_arg) { s_dur_arg = (dur_arg_t*)heap_caps_malloc(sizeof(dur_arg_t), MALLOC_CAP_SPIRAM); }
   if (!s_dur_arg) { return; }
@@ -470,7 +470,7 @@ static void duracoes_seguir(void)
   s_dur_rodando = sistema_trabalho(trab_duracoes, s_dur_arg);
 }
 
-// ---- capa (worker) ----------------------------------------------------------------
+// ---- cover (worker) ---------------------------------------------------------------
 typedef struct { char arq[200]; } capa_arg_t;
 static capa_arg_t s_capa_arg;
 
@@ -478,19 +478,19 @@ static void trab_capa(void* arg)
 {
   const capa_arg_t* c = (const capa_arg_t*)arg;
   int r = -1;
-  // A leitura e do servico da musica: o app so recebe a imagem inteira na PSRAM.
+  // The reading belongs to the music service: the app only receives the whole image in PSRAM.
   size_t n = 0;
   uint8_t* b = s_capa ? tab5_musica_capa_ler(c->arq, &n) : nullptr;
   if (b) {
     const int L = s_capa->width();
     s_capa->fillScreen(TFT_BLACK);
     const bool png = n > 8 && b[0] == 0x89 && b[1] == 'P';
-    // escala 0 = "caber": a imagem inteira no quadrado, centralizada.
+    // scale 0 = "fit": the whole image in the square, centred.
     const bool ok = png ? s_capa->drawPng(b, n, 0, 0, L, L, 0, 0, 0.0f, 0.0f, middle_center)
                         : s_capa->drawJpg(b, n, 0, 0, L, L, 0, 0, 0.0f, 0.0f, middle_center);
     if (ok) {
-      // A COR DO FUNDO sai da capa: a media de uma grade de pontos,
-      // escurecida - a tela inteira fica "da cor do disco".
+      // THE BACKGROUND COLOUR comes from the cover: the average of a grid of points,
+      // darkened - the whole screen becomes "the colour of the record".
       uint32_t sr = 0, sg = 0, sb = 0, k = 0;
       for (int y = 8; y < L; y += 24) {
         for (int x = 8; x < L; x += 24) {
@@ -499,7 +499,7 @@ static void trab_capa(void* arg)
         }
       }
       if (k) {
-        // Mais saturada que a media (a media de uma capa tende ao cinza), e escura.
+        // More saturated than the average (the average of a cover tends to grey), and dark.
         float r5 = sr / (float)k / 31.0f, g6 = sg / (float)k / 63.0f, b5 = sb / (float)k / 31.0f;
         const float m = (r5 + g6 + b5) / 3.0f;
         r5 = m + (r5 - m) * 1.8f; g6 = m + (g6 - m) * 1.8f; b5 = m + (b5 - m) * 1.8f;
@@ -514,10 +514,10 @@ static void trab_capa(void* arg)
   s_capa_feita = r;
 }
 
-// ---- favoritas e playlists (worker) -------------------------------------------------
+// ---- favourites and playlists (worker) -------------------------------------------
 typedef struct { char caminho[TAB5_MUSICA_CAMINHO_MAX]; char pl[TAB5_MUSICA_NOME_MAX]; int op; } pl_arg_t;
 enum { OP_FAV_TEM, OP_FAV_TROCAR, OP_POR, OP_TIRAR, OP_CRIAR, OP_APAGAR };
-static pl_arg_t s_pl_arg[4];   // um anel: cada pedido tem o seu (o worker pode estar com o anterior)
+static pl_arg_t s_pl_arg[4];   // a ring: each request has its own (the worker may still have the previous one)
 static int      s_pl_vez = 0;
 
 static void aviso_tras(const char* t) { snprintf(s_aviso_tras, sizeof(s_aviso_tras), "%s", t); s_aviso_novo = true; }
@@ -543,7 +543,7 @@ static void trab_pl(void* arg)
       tab5_musica_nome_utf8(p->pl, nome, sizeof(nome));
       snprintf(t, sizeof(t), tab5_musica_playlist_por(p->pl, p->caminho) ? tr("Adicionada a %s") : tr("Já estava em %s"), nome);
       aviso_tras(t);
-      if (!strcmp(p->pl, TAB5_MUSICA_FAVORITAS)) { s_fav_tras = -2; }   // o coracao pode ter mudado
+      if (!strcmp(p->pl, TAB5_MUSICA_FAVORITAS)) { s_fav_tras = -2; }   // the heart may have changed
       s_recarregar = true;
       break;
     case OP_TIRAR:
@@ -579,12 +579,12 @@ static void pedir_pl(int op, const char* pl, const char* caminho)
   sistema_trabalho(trab_pl, p);
 }
 
-// O worker terminou alguma coisa: pega os resultados (na interface).
+// The worker finished something: picks up the results (on the UI).
 static void ao_aviso(uint32_t av)
 {
   if (av & AVISO_VOLUMES) {
-    // UM PENDRIVE ENTROU OU SAIU. Dentro dele e ele saiu: volta a raiz. Na
-    // raiz: recarrega (a linha dele aparece ou some).
+    // A FLASH DRIVE WAS INSERTED OR REMOVED. Inside it and it was removed: back to the root. At the
+    // root: reload (its row appears or disappears).
     if (s_rel[0] == '/' && !tab5_volume_disponivel(s_rel)) { s_rel[0] = '\0'; }
     if (s_aba == ABA_PASTAS && (!s_rel[0] || s_rel[0] == '/')) { navegar(); }
   }
@@ -607,7 +607,7 @@ static void ao_aviso(uint32_t av)
     s_dur_rodando = false;
     if (!s_carregando) {
       if (s_dur_gen == s_gen) { lista_itens_mudaram(&s_lista, s_n); }
-      duracoes_seguir();   // outra geracao: recomeca do zero da lista nova
+      duracoes_seguir();   // another generation: starts again from zero on the new list
     }
   }
   const int cf = s_capa_feita.exchange(0);
@@ -619,7 +619,7 @@ static void ao_aviso(uint32_t av)
     if (s_tela == TELA_TOCANDO) { sistema_pedir_redesenho_completo(); }
   }
   const int fv = s_fav_tras.exchange(-1);
-  if (fv == -2) { s_fav_caminho[0] = '\0'; }   // reconsultar
+  if (fv == -2) { s_fav_caminho[0] = '\0'; }   // query again
   else if (fv >= 0) { s_fav = fv; s_forcar = true; }
   if (s_aviso_novo.exchange(false)) {
     snprintf(s_aviso, sizeof(s_aviso), "%s", s_aviso_tras);
@@ -630,10 +630,10 @@ static void ao_aviso(uint32_t av)
   sistema_pedir_redesenho();
 }
 
-// ---- espectro -----------------------------------------------------------------------
-// Barras em SEGMENTOS (os "LEDs" dos tocadores antigos), com um pico que fica
-// um instante e cai devagar, DENTRO DO QUADRADO DA CAPA. Desenha so o que
-// mudou: segmento que acendeu, segmento que apagou, o pico que andou.
+// ---- spectrum ------------------------------------------------------------------------
+// Bars in SEGMENTS (the "LEDs" of old players), with a peak that holds for
+// a moment and falls slowly, INSIDE THE COVER SQUARE. Draws only what
+// changed: a segment that lit, a segment that went out, the peak that moved.
 static const int SEG_A = 12, SEG_V = 4, SEG_P = SEG_A + SEG_V;
 static const int VIS_MAX_LINHAS = 36;
 static int      s_vis_linhas = 30;
@@ -691,7 +691,7 @@ static void vis_cores(lgfx::LovyanGFX& d)
       const float t = (float)k / (s_vis_linhas - 1);
       uint16_t c;
       switch (tema) {
-        case 0:  c = hsv(d, fi * 290.0f, 0.85f - 0.35f * t * t, 0.65f + 0.35f * t); break;   // vermelho -> violeta
+        case 0:  c = hsv(d, fi * 290.0f, 0.85f - 0.35f * t * t, 0.65f + 0.35f * t); break;   // red -> violet
         case 1:  c = degrade(d, t, LIL[0], LIL[1], LIL[2], 0.7f); break;
         case 2:  c = degrade(d, t, FOGO[0], FOGO[1], FOGO[2], 0.6f); break;
         case 3:  c = degrade(d, t, MAR[0], MAR[1], MAR[2], 0.65f); break;
@@ -705,7 +705,7 @@ static void vis_cores(lgfx::LovyanGFX& d)
   s_vis_cores_ok = true;
 }
 
-static uint16_t fundo_tc(void) { return s_tinta ? s_tinta : (uint16_t)TEMA_FUNDO; }   // sem capa: o fundo do tema
+static uint16_t fundo_tc(void) { return s_tinta ? s_tinta : (uint16_t)TEMA_FUNDO; }   // no cover: the theme background
 static uint16_t fundo_vis(void) { return TEMA_SUPERFICIE; }
 
 static void vis_x(const area_t& a, const geo_tc_t& g, int i, int* x, int* l)
@@ -733,7 +733,7 @@ static void desenhar_espectro(lgfx::LovyanGFX& d, const area_t& a, const geo_tc_
   const uint16_t fundo = fundo_vis();
   bool vivo = false;
   for (int i = 0; i < TAB5_MUSICA_FAIXAS; ++i) {
-    // Sobe na hora, desce suave (~1 linha por quadro): a batida "pula".
+    // Rises at once, falls smoothly (~1 row per frame): the beat "jumps".
     const float alvo = f[i] * s_vis_linhas / 255.0f;
     float& n = s_vis_nivel[i];
     n = alvo > n ? alvo : (n - 1.3f > alvo ? n - 1.3f : alvo);
@@ -769,16 +769,16 @@ static void trocar_tema(void)
   ajustes_definir_tema_espectro((uint8_t)((ajustes_tema_espectro() + 1) % N_TEMAS));
   s_tema_nome_ate = tab5_agora_ms() + 1500;
   s_vis_cores_ok = false;
-  // O destaque muda junto: tela, lista, barra e miniplayer - redesenho completo.
+  // The accent changes too: screen, list, bar and mini player - full redraw.
   tab5_musica_definir_cor(destaque());
   s_forcar = true;
   lista_itens_mudaram(&s_lista, s_n);
   sistema_pedir_redesenho_completo();
 }
 
-// ---- a capa no quadrado ---------------------------------------------------------------
-// Cantos redondos sem mascara: depois de pintar o quadrado, os quatro cantos
-// recebem a cor do fundo por fora do arco.
+// ---- the cover in the square -----------------------------------------------------------
+// Rounded corners without a mask: after painting the square, the four corners
+// get the background colour outside the arc.
 static void cantos(lgfx::LovyanGFX& d, int x, int y, int l, int r, uint16_t fundo)
 {
   for (int i = 0; i < r; ++i) {
@@ -798,7 +798,7 @@ static void desenhar_quadrado(lgfx::LovyanGFX& d, const area_t& a, const geo_tc_
 {
   const int x = a.x + g.capa_x, y = a.y + g.capa_y, l = g.capa_l;
   if (!mostra_espectro() && s_capa) {
-    // O sprite nasce do tamanho do quadrado de quando abriu; girou, escala.
+    // The sprite is born at the square's size when it opened; if it rotated, it scales.
     if (s_capa->width() == l) { s_capa->pushSprite(&d, x, y); }
     else {
       const float z = (float)l / s_capa->width();
@@ -812,12 +812,12 @@ static void desenhar_quadrado(lgfx::LovyanGFX& d, const area_t& a, const geo_tc_
   tab5_musica_estado_t e;
   tab5_musica_estado(&e);
   if (!e.ativo || !e.tocando) {
-    // Parado: uma nota grande no meio (o espectro volta quando tocar).
+    // Stopped: a large note in the middle (the spectrum returns when it plays).
     ic_nota(d, x + l / 2, y + l / 2 - 10, l / 4, TEMA_TEXTO_3);
   }
 }
 
-// ---- TOCANDO -----------------------------------------------------------------------------
+// ---- NOW PLAYING -----------------------------------------------------------------------
 static void desenhar_progresso(lgfx::LovyanGFX& d, const area_t& a, const geo_tc_t& g, const tab5_musica_estado_t& e)
 {
   const uint16_t bg = fundo_tc();
@@ -825,7 +825,7 @@ static void desenhar_progresso(lgfx::LovyanGFX& d, const area_t& a, const geo_tc
   d.fillRect(lx - 14, ly - 14, lw + 28, 70, bg);
   const uint32_t dur = e.dur_ms, pos = (dur && e.pos_ms > dur) ? dur : e.pos_ms;
   const int feito = (e.ativo && dur) ? (int)((uint64_t)lw * pos / dur) : 0;
-  d.fillRoundRect(lx, ly - 3, lw, 6, 3, TEMA_SUPERFICIE_ALTA);   // trilho
+  d.fillRoundRect(lx, ly - 3, lw, 6, 3, TEMA_SUPERFICIE_ALTA);   // track
   if (feito > 0) { d.fillRoundRect(lx, ly - 3, feito, 6, 3, TEMA_TEXTO); }
   if (e.ativo && dur) { d.fillCircle(lx + feito, ly, 10, TEMA_TEXTO); }
   char tp[16], td[20];
@@ -845,11 +845,11 @@ static void desenhar_tocando(lgfx::LovyanGFX& d, const area_t& a, const tab5_mus
   const geo_tc_t g = geo_tc(a);
   const uint16_t bg = fundo_tc();
   const uint16_t ac = destaque();
-  const int WA = a.largura;              // o cabecalho: a largura toda
-  const int W = g.iw, X = a.x + g.ix;   // o texto e os controles: a coluna deles
+  const int WA = a.largura;              // the header: the full width
+  const int W = g.iw, X = a.x + g.ix;   // the text and controls: their column
   if (tudo) {
     d.fillRect(a.x, a.y, a.largura, a.altura, bg);
-    // Cabecalho: voltar (chevron), de onde toca, e o tema.
+    // Header: back (chevron), where it is playing from, and the theme.
     const int cy = a.y + TC_CAB_A / 2;
     tab5_linha_grossa(d, a.x + 34, cy - 8, a.x + 48, cy + 6, 3.0f, TEMA_TEXTO);
     tab5_linha_grossa(d, a.x + 48, cy + 6, a.x + 62, cy - 8, 3.0f, TEMA_TEXTO);
@@ -864,7 +864,7 @@ static void desenhar_tocando(lgfx::LovyanGFX& d, const area_t& a, const tab5_mus
     }
     tab5_escrever(d, de, a.x + WA / 2, cy - 14, 18, false, TEMA_TEXTO_2, bg, middle_center);
     tab5_escrever(d, nome, a.x + WA / 2, cy + 14, 24, true, TEMA_TEXTO, bg, middle_center, WA - 220);
-    // Tema: tres pontos coloridos.
+    // Theme: three coloured dots.
     const int tx = a.x + WA - 52;
     d.fillCircle(tx - 12, cy + 6, 7, 0xFBCB);
     d.fillCircle(tx + 12, cy + 6, 7, 0x2E5E);
@@ -872,7 +872,7 @@ static void desenhar_tocando(lgfx::LovyanGFX& d, const area_t& a, const tab5_mus
 
     desenhar_quadrado(d, a, g);
 
-    // Titulo, artista e a linha de baixo; o coracao a direita.
+    // Title, artist and the bottom line; the heart on the right.
     char t[128];
     snprintf(t, sizeof(t), "%s", e.ativo && e.titulo[0] ? e.titulo : tr("Escolha uma música"));
     tab5_escrever(d, t, X + M + 16, a.y + g.tit_y, TEMA_LETRA_TITULO, true, TEMA_TEXTO, bg, middle_left, W - 2 * M - 120);
@@ -894,12 +894,12 @@ static void desenhar_tocando(lgfx::LovyanGFX& d, const area_t& a, const tab5_mus
 
     desenhar_progresso(d, a, g, e);
 
-    // Aleatorio, anterior, tocar/pausar, proxima, repetir.
+    // Shuffle, previous, play/pause, next, repeat.
     const int by = a.y + g.ctrl_y, cx = X + W / 2;
     const uint16_t cb = e.ativo ? (uint16_t)TEMA_TEXTO : (uint16_t)TEMA_TEXTO_3;
     ic_aleatorio(d, cx - 270, by, 20, e.aleatorio ? ac : cb);
     if (e.aleatorio) { d.fillCircle(cx - 270, by + 34, 4, ac); }
-    // Anterior/proxima em circulo de superficie; tocar/pausar em circulo de destaque.
+    // Previous/next in a surface circle; play/pause in an accent circle.
     d.fillCircle(cx - 140, by, 40, TEMA_SUPERFICIE);
     ic_pular(d, cx - 140, by, 20, false, cb);
     d.fillCircle(cx, by, 58, TEMA_DESTAQUE);
@@ -909,7 +909,7 @@ static void desenhar_tocando(lgfx::LovyanGFX& d, const area_t& a, const tab5_mus
     ic_repetir(d, cx + 270, by, 22, e.repetir ? ac : cb, bg, e.repetir == TAB5_MUSICA_REPETIR_UMA);
     if (e.repetir) { d.fillCircle(cx + 270, by + 34, 4, ac); }
 
-    // Por numa playlist, volume, parar.
+    // Add to a playlist, volume, stop.
     const int vy = a.y + g.vol_y;
     d.drawCircle(X + M + 30, vy, 26, TEMA_LINHA);
     ic_mais(d, X + M + 30, vy, 12, cb);
@@ -924,7 +924,7 @@ static void desenhar_tocando(lgfx::LovyanGFX& d, const area_t& a, const tab5_mus
     d.fillRoundRect(X + W - M - 46, vy - 16, 32, 32, 6, cb);
   }
   if (mostra_espectro() && (e.ativo || s_vis_vivo)) { desenhar_espectro(d, a, g); }
-  // O nome do tema, por 1,5 s depois de trocar - dentro do quadrado.
+  // The theme name, for 1.5 s after changing - inside the square.
   if (s_tema_nome_ate) {
     const int x = a.x + g.capa_x, y = a.y + g.capa_y;
     if ((int32_t)(s_tema_nome_ate - tab5_agora_ms()) > 0) {
@@ -937,12 +937,12 @@ static void desenhar_tocando(lgfx::LovyanGFX& d, const area_t& a, const tab5_mus
   }
 }
 
-// ---- BIBLIOTECA ------------------------------------------------------------------------------
+// ---- LIBRARY ---------------------------------------------------------------------------------
 static int linha_altura(int, void*) { return LIN_A; }
 
 static void barras_tocando(lgfx::LovyanGFX& d, int cx, int cy, uint16_t c)
 {
-  // Tres barrinhas que mexem com o relogio (a linha que toca).
+  // Three little bars that move with the clock (the row that is playing).
   const uint32_t t = tab5_agora_ms() / 140;
   for (int k = 0; k < 3; ++k) {
     const int h = 8 + (int)((t * (k + 2) + k * 5) % 16);
@@ -958,11 +958,11 @@ static void linha_desenhar(lgfx::LovyanGFX& d, int i, int x0, int y, int largura
   const uint16_t ac = destaque();
   const int cy = y + LIN_A / 2;
   d.fillRect(x0, y, largura, LIN_A, TEMA_FUNDO);
-  // O "quadradinho" da esquerda.
+  // The little square on the left.
   const int qx = x0 + M, q = 64;
   char t[TAB5_MUSICA_NOME_MAX * 2], sub[TAB5_MUSICA_NOME_MAX * 2];
   sub[0] = '\0';
-  int dir = largura - M;   // ate onde o texto vai
+  int dir = largura - M;   // how far the text goes
   switch (l.tipo) {
     case LIN_NOVA:
       d.fillRoundRect(qx, cy - q / 2, q, q, TEMA_RAIO_M, TEMA_SUPERFICIE_ALTA);
@@ -989,7 +989,7 @@ static void linha_desenhar(lgfx::LovyanGFX& d, int i, int x0, int y, int largura
       dir -= 40;
       break;
     case LIN_PASTA:
-      ic_pasta(d, qx + 12, cy, TEMA_APP_AMARELO);   // a pasta amarela de sempre, no tom do tema
+      ic_pasta(d, qx + 12, cy, TEMA_APP_AMARELO);   // the usual yellow folder, in the theme tone
       tab5_musica_nome_utf8(l.nome, t, sizeof(t));
       snprintf(sub, sizeof(sub), tr("Pasta"));
       tab5_escrever(d, ">", x0 + largura - M, cy, 30, false, TEMA_TEXTO_3, TEMA_FUNDO, middle_right);
@@ -1000,11 +1000,11 @@ static void linha_desenhar(lgfx::LovyanGFX& d, int i, int x0, int y, int largura
       if (toca) { barras_tocando(d, qx + q / 2, cy, ac); }
       else      { ic_nota(d, qx + q / 2, cy - 2, 26, TEMA_TEXTO_2); }
       nome_para_mostrar(l.nome, t, sizeof(t), sub, sizeof(sub));
-      // O botao da direita: + (por numa playlist) ou - (tirar desta playlist).
+      // The right-hand button: + (add to a playlist) or - (remove from this playlist).
       const int bx = x0 + largura - M - 22;
       if (s_pl[0]) { d.fillRoundRect(bx - 12, cy - 2, 24, 5, 2, TEMA_TEXTO_2); }
       else         { ic_mais(d, bx, cy, 12, TEMA_TEXTO_2); }
-      // A DURACAO, na coluna da direita (como no Spotify).
+      // THE DURATION, in the right-hand column (as in Spotify).
       uint32_t ms;
       if (tab5_musica_duracao_lembrada(l.caminho, &ms) && ms) {
         char dt[16];
@@ -1055,7 +1055,7 @@ static void miniplayer(lgfx::LovyanGFX& d, const area_t& a, const tab5_musica_es
   const int bp = a.x + W - 130, bn = a.x + W - 56;
   if (e.tocando) { ic_pausa(d, bp, cy, 40, TEMA_TEXTO); } else { ic_tocar(d, bp + 3, cy, 44, TEMA_TEXTO); }
   ic_pular(d, bn, cy, 15, true, TEMA_TEXTO);
-  // A linha do tempo, fina, na base do cartao.
+  // The timeline, thin, at the base of the card.
   const int lx = a.x + 30, lw = W - 60;
   const int f = e.dur_ms ? (int)((uint64_t)lw * (e.pos_ms > e.dur_ms ? e.dur_ms : e.pos_ms) / e.dur_ms) : 0;
   d.fillRect(lx, y + MINI_A - 13, lw, 3, TEMA_SUPERFICIE_ALTA);
@@ -1069,7 +1069,7 @@ static void desenhar_biblioteca(lgfx::LovyanGFX& d, const area_t& a, const tab5_
   if (tudo) {
     d.fillRect(a.x, a.y, W, bb_lista_y(), TEMA_FUNDO);
     tab5_escrever(d, tr("Biblioteca"), a.x + M, a.y + BB_TIT_A / 2 + 4, TEMA_LETRA_TITULO, true, TEMA_TEXTO, TEMA_FUNDO, middle_left);
-    // As abas.
+    // The tabs.
     const char* NOMES[2] = { tr("Pastas"), tr("Playlists") };
     int x = a.x + M;
     for (int i = 0; i < 2; ++i) {
@@ -1082,7 +1082,7 @@ static void desenhar_biblioteca(lgfx::LovyanGFX& d, const area_t& a, const tab5_
             sel ? ac : TEMA_FUNDO, middle_center);
       x += w + 14;
     }
-    // A linha de baixo das abas: a pasta, ou a playlist aberta.
+    // The line below the tabs: the folder, or the open playlist.
     const int sy = a.y + BB_SUB_Y + BB_SUB_A / 2;
     char t[260], u[300];
     int tx = a.x + M;
@@ -1106,7 +1106,7 @@ static void desenhar_biblioteca(lgfx::LovyanGFX& d, const area_t& a, const tab5_
     tab5_musica_nome_utf8(t, tu, sizeof(tu));
     tab5_escrever(d, u, a.x + W - M, sy, 22, false, TEMA_TEXTO_2, TEMA_FUNDO, middle_right);
     tab5_escrever(d, tu, tx, sy, 28, true, TEMA_TEXTO, TEMA_FUNDO, middle_left, W - (tx - a.x) - M - 150);
-    // Os botoes da playlist aberta: tocar, aleatorio, apagar.
+    // The open playlist's buttons: play, shuffle, delete.
     if (s_aba == ABA_PLAYLISTS && s_pl[0]) {
       const int by = a.y + BB_SUB_Y + BB_SUB_A + 8, bh = BB_BOT_A - 20;
       const int bw = (W - 2 * M - 2 * 14) / 3;
@@ -1154,7 +1154,7 @@ static void desenhar_biblioteca(lgfx::LovyanGFX& d, const area_t& a, const tab5_
     }
     lista_esconder(&s_lista);
   } else {
-    // A linha que toca: as barrinhas mexem, entao ela e redesenhada sempre.
+    // The row that is playing: the little bars move, so it is always redrawn.
     if (s_tocando_linha >= 0 && e.tocando) { lista_item_mudou(&s_lista, s_tocando_linha); }
     lista_desenhar(&s_lista, d, janela, TEMA_FUNDO, tudo);
   }
@@ -1162,7 +1162,7 @@ static void desenhar_biblioteca(lgfx::LovyanGFX& d, const area_t& a, const tab5_
     const uint32_t sig = (uint32_t)(e.pos_ms / 1000) * 7919u + e.tocando + (uint32_t)e.idx * 31u + s_capa_ok * 2u + s_tinta;
     if (tudo || sig != s_mini_sig) { s_mini_sig = sig; miniplayer(d, a, e); }
   }
-  // O aviso rapido, acima do miniplayer.
+  // The quick notice, above the mini player.
   if (s_aviso_ate) {
     if ((int32_t)(s_aviso_ate - tab5_agora_ms()) > 0) {
       const int y = a.y + a.altura - mini - 76;
@@ -1172,13 +1172,13 @@ static void desenhar_biblioteca(lgfx::LovyanGFX& d, const area_t& a, const tab5_
       tab5_escrever(d, s_aviso, a.x + W / 2, y + 28, 24, true, TEMA_TEXTO, TEMA_SUPERFICIE_ALTA, middle_center);
     } else {
       s_aviso_ate = 0;
-      lista_itens_mudaram(&s_lista, s_n);   // o que estava embaixo do aviso volta
+      lista_itens_mudaram(&s_lista, s_n);   // what was under the notice comes back
       s_forcar = true;
     }
   }
 }
 
-// ---- a folha "Adicionar a playlist" ---------------------------------------------------------
+// ---- the "Adicionar a playlist" (add to playlist) sheet -------------------------------------
 static const int FL_LIN = 88;
 static int folha_y(const area_t& a) { const int h = FL_LIN * (s_folha_n + 1) + 120; return a.altura - (h > a.altura - 80 ? a.altura - 80 : h); }
 
@@ -1187,7 +1187,7 @@ static void abrir_folha(const char* caminho)
   if (!caminho || !caminho[0]) { return; }
   if (!s_folha_pl) { s_folha_pl = (tab5_musica_item_t*)heap_caps_malloc(sizeof(tab5_musica_item_t) * 32, MALLOC_CAP_SPIRAM); }
   if (!s_folha_pl) { return; }
-  // Um opendir na pasta das playlists: rapido o bastante para a interface.
+  // An opendir on the playlists folder: fast enough for the UI.
   s_folha_n = tab5_musica_playlists(s_folha_pl, 32);
   if (s_folha_n < 0) { s_folha_n = 0; }
   snprintf(s_folha_caminho, sizeof(s_folha_caminho), "%s", caminho);
@@ -1228,7 +1228,7 @@ static void tocar_folha(int x, int y)
   const int y0 = folha_y(a);
   s_folha = false;
   sistema_pedir_redesenho_completo();
-  if (y < y0) { return; }   // fora: fecha
+  if (y < y0) { return; }   // outside: closes
   const int k = (y - (y0 + 100)) / FL_LIN;
   if (k == 0 && y >= y0 + 100) {
     s_nova = true;
@@ -1240,7 +1240,7 @@ static void tocar_folha(int x, int y)
   if (k >= 1 && k <= s_folha_n) { pedir_pl(OP_POR, s_folha_pl[k - 1].nome, s_folha_caminho); }
 }
 
-// ---- a pagina "Nova playlist" ------------------------------------------------------------
+// ---- the "Nova playlist" (new playlist) page ---------------------------------------------
 static void desenhar_nova(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
 {
   tecvirt_posicionar(&s_kb, a);
@@ -1280,7 +1280,7 @@ static void nova_tecla(int ac)
   sistema_pedir_redesenho();
 }
 
-// ---- desenhar -------------------------------------------------------------------------------
+// ---- drawing --------------------------------------------------------------------------------
 static uint32_t assinatura(const tab5_musica_estado_t& e)
 {
   uint32_t h = 2166136261u;
@@ -1298,7 +1298,7 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
   const auto estilo = d.getTextStyle();
   bool tudo = sistema_area_foi_limpa() || s_forcar;
   s_forcar = false;
-  // As linhas do espectro saem da altura do quadrado - que muda ao girar.
+  // The spectrum rows come from the square's height - which changes on rotation.
   int vl = (geo_tc(a).capa_l - 40) / SEG_P;
   if (vl > VIS_MAX_LINHAS) { vl = VIS_MAX_LINHAS; }
   if (!s_vis_cores_ok || vl != s_vis_linhas) { s_vis_linhas = vl; vis_cores(d); }
@@ -1306,17 +1306,17 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
   tab5_musica_estado_t e;
   tab5_musica_estado(&e);
 
-  // A CAPA mudou (outra musica, a busca terminou): abre no worker.
+  // The COVER changed (another song, the search finished): open it on the worker.
   char arq[200];
   uint32_t ver;
   const tab5_musica_capa_t ce = tab5_musica_capa(arq, sizeof(arq), &ver);
-  if (ver != s_capa_ver && !s_capa_rodando) {   // pintando: espera o worker (o sprite e dele)
+  if (ver != s_capa_ver && !s_capa_rodando) {   // painting: wait for the worker (the sprite is its own)
     s_capa_ver = ver;
     if (ce == TAB5_MUSICA_CAPA_PRONTA && e.ativo) {
       if (strcmp(arq, s_capa_arq) != 0 || !s_capa_ok) {
         if (!s_capa) { const int L = geo_tc(a).capa_l; s_capa = tab5_sprite_novo(&d, L, L); }
         if (s_capa) {
-          s_capa_ok = false;   // a interface solta o sprite ate o worker terminar
+          s_capa_ok = false;   // the UI lets go of the sprite until the worker finishes
           snprintf(s_capa_arq, sizeof(s_capa_arq), "%s", arq);
           snprintf(s_capa_arg.arq, sizeof(s_capa_arg.arq), "%s", arq);
           s_capa_rodando = sistema_trabalho(trab_capa, &s_capa_arg);
@@ -1324,11 +1324,11 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
         }
       }
     } else if (ce == TAB5_MUSICA_CAPA_NENHUMA || ce == TAB5_MUSICA_CAPA_BUSCANDO) {
-      // Buscando: segura a anterior so se for a mesma musica (nao e: a versao muda ao trocar).
+      // Searching: holds the previous one only if it is the same song (it is not: the version changes on switching).
       if (s_capa_ok || s_tinta) { s_capa_ok = false; s_tinta = 0; s_capa_arq[0] = '\0'; tudo = true; }
     }
   }
-  // O CORACAO: a musica mudou, pergunta ao worker se ela esta nas Favoritas.
+  // THE HEART: the song changed, ask the worker whether it is in Favourites.
   if (e.ativo && strcmp(e.caminho, s_fav_caminho) != 0) {
     snprintf(s_fav_caminho, sizeof(s_fav_caminho), "%s", e.caminho);
     s_fav = false;
@@ -1336,7 +1336,7 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
   }
 
   if (s_nova) { desenhar_nova(d, a, tudo); d.setTextStyle(estilo); tab5_fonte_corpo(d); return; }
-  // "Confirmar?" do apagar venceu: o botao volta a "Apagar".
+  // The delete "Confirmar?" (confirm?) expired: the button goes back to "Apagar".
   if (s_apagar_ate && (int32_t)(s_apagar_ate - tab5_agora_ms()) <= 0) { s_apagar_ate = 0; tudo = true; }
 
   const uint32_t sig = assinatura(e);
@@ -1361,7 +1361,7 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
   tab5_fonte_corpo(d);
 }
 
-// ---- toque ----------------------------------------------------------------------------------
+// ---- touch ----------------------------------------------------------------------------------
 static void tocar_tocando(int x, int y)
 {
   const area_t a = sistema_area();
@@ -1379,19 +1379,19 @@ static void tocar_tocando(int x, int y)
     sistema_pedir_redesenho();
     return;
   }
-  // Daqui para baixo, a coluna do texto e dos controles (deitado, a direita).
+  // From here down, the text and controls column (in landscape, on the right).
   if (x < g.ix) { return; }
   x -= g.ix;
   const int W = g.iw;
   if (abs(y - (g.tit_y + 14)) < 44 && x > W - M - 100 && e.ativo) {
-    s_fav = !s_fav;   // na hora; o worker confirma
+    s_fav = !s_fav;   // at once; the worker confirms
     pedir_pl(OP_FAV_TROCAR, nullptr, e.caminho);
     s_forcar = true;
     sistema_pedir_redesenho();
     return;
   }
-  // O tempo da direita (embaixo da linha) troca duracao <-> quanto falta;
-  // a faixa da linha, acima dele, busca.
+  // The right-hand time (below the line) toggles duration <-> time remaining;
+  // the line's strip, above it, seeks.
   if (y > g.prog_y + 12 && y < g.prog_y + 60 && x > W - 170) {
     s_restante = !s_restante;
   } else if (y >= g.prog_y - 34 && y <= g.prog_y + 12 && e.ativo && e.dur_ms) {
@@ -1432,7 +1432,7 @@ static void tocar_biblioteca(int x, int y)
   const int W = a.largura;
   tab5_musica_estado_t e;
   tab5_musica_estado(&e);
-  // O miniplayer.
+  // The mini player.
   if (e.ativo && y >= a.altura - MINI_A) {
     if      (x > W - 95)  { tab5_musica_proxima(); }
     else if (x > W - 175) { tab5_musica_tocar_pausar(); }
@@ -1462,7 +1462,7 @@ static void tocar_biblioteca(int x, int y)
         navegar();
         return;
       default:
-        if (x > W - M - 60) {   // o botao da direita
+        if (x > W - M - 60) {   // the right-hand button
           if (s_pl[0]) { pedir_pl(OP_TIRAR, s_pl, l.caminho); }
           else         { abrir_folha(l.caminho); }
           return;
@@ -1470,24 +1470,24 @@ static void tocar_biblioteca(int x, int y)
         {
           const bool ok = s_pl[0] ? tab5_musica_tocar_playlist(s_pl, i, APP_NOME)
                                   : tab5_musica_tocar(s_rel, i - s_extra, APP_NOME);
-          if (!ok) { ESP_LOGW(TAG, "o tocador nao ligou"); }
+          if (!ok) { ESP_LOGW(TAG, "the player did not start"); }
           else     { s_tela = TELA_TOCANDO; s_forcar = true; sistema_pedir_redesenho_completo(); }
         }
         sistema_pedir_redesenho();
         return;
     }
   }
-  // As abas.
+  // The tabs.
   if (y >= BB_ABAS_Y && y < BB_ABAS_Y + BB_ABAS_A) {
     const aba_t nova = x < M + 160 ? ABA_PASTAS : ABA_PLAYLISTS;
     if (x < M + 360 && nova != s_aba) { s_aba = nova; s_pl[0] = '\0'; navegar(); }
     else if (x < M + 360 && nova == s_aba && s_aba == ABA_PLAYLISTS && s_pl[0]) { s_pl[0] = '\0'; navegar(); }
     return;
   }
-  // A linha da pasta/playlist: volta.
+  // The folder/playlist line: goes back.
   if (y >= BB_SUB_Y && y < BB_SUB_Y + BB_SUB_A) {
     if (s_aba == ABA_PASTAS && s_rel[0]) {
-      // "/usb/Rock" -> "/usb" -> "" (a raiz, com o cartao e o pendrive).
+      // "/usb/Rock" -> "/usb" -> "" (the root, with the SD card and the flash drive).
       char* barra = strrchr(s_rel, '/');
       if (barra) { *barra = '\0'; } else { s_rel[0] = '\0'; }
       navegar();
@@ -1497,7 +1497,7 @@ static void tocar_biblioteca(int x, int y)
     }
     return;
   }
-  // Os botoes da playlist aberta.
+  // The open playlist's buttons.
   if (s_aba == ABA_PLAYLISTS && s_pl[0] && y >= BB_SUB_Y + BB_SUB_A && y < BB_SUB_Y + BB_SUB_A + BB_BOT_A) {
     const int bw = (W - 2 * M - 2 * 14) / 3;
     const int k = (x - M) / (bw + 14);
@@ -1557,7 +1557,7 @@ static void ao_teclar(const char* txt, uint8_t codigo, uint8_t)
   }
 }
 
-// ---- ciclo de vida --------------------------------------------------------------------------
+// ---- life cycle -----------------------------------------------------------------------------
 static bool ao_abrir(void)
 {
   if (!s_lin)      { s_lin      = (linha_t*)heap_caps_malloc(sizeof(linha_t) * LIN_MAX, MALLOC_CAP_SPIRAM); }
@@ -1566,16 +1566,16 @@ static bool ao_abrir(void)
   tab5_musica_estado_t e;
   tab5_musica_estado(&e);
   if (!tab5_musica_pasta(s_raiz, sizeof(s_raiz))) { s_raiz[0] = '\0'; }
-  // Tocando: abre na tela Tocando, e a biblioteca no lugar de onde toca.
+  // Playing: opens on the Now Playing screen, and the library at the place it is playing from.
   s_tela = e.ativo ? TELA_TOCANDO : TELA_BIBLIOTECA;
   if (e.ativo && e.playlist[0]) { s_aba = ABA_PLAYLISTS; snprintf(s_pl, sizeof(s_pl), "%s", e.playlist); }
   else if (e.ativo)             { s_aba = ABA_PASTAS; snprintf(s_rel, sizeof(s_rel), "%s", e.rel); s_pl[0] = '\0'; }
-  if (s_rel[0] == '/' && !tab5_volume_disponivel(s_rel)) { s_rel[0] = '\0'; }   // o pendrive saiu
+  if (s_rel[0] == '/' && !tab5_volume_disponivel(s_rel)) { s_rel[0] = '\0'; }   // the flash drive was removed
   tab5_musica_definir_cor(destaque());
   lista_definir(&s_lista, ROLAGEM_INICIO, 0, linha_altura, linha_desenhar, nullptr);
   s_n = 0;
-  // A CAPA GUARDADA do fechamento anterior (ver ao_fechar) vale se for a
-  // mesma: o desenhar compara o arquivo e nao manda o worker de novo.
+  // THE COVER KEPT from the previous close (see ao_fechar) is valid if it is the
+  // same: desenhar compares the file and does not send the worker again.
   s_capa_ver = 0xFFFFFFFF;
   if (!s_capa || !s_capa_ok) { s_capa_ok = false; s_capa_arq[0] = '\0'; }
   s_tinta = s_capa_ok ? s_tinta_tras : 0;
@@ -1594,18 +1594,18 @@ static bool ao_abrir(void)
 
 static void ao_fechar(void)
 {
-  // A musica continua (parte de fundo); a lista, a capa e o resto saem da
-  // memoria. O worker ja terminou (o sistema espera antes de chamar isto).
+  // The music continues (background part); the list, the cover and the rest leave
+  // memory. The worker has already finished (the system waits before calling this).
   if (s_nova) { s_nova = false; tecvirt_fechar(&s_kb); }
   heap_caps_free(s_lin);      s_lin = nullptr;
   heap_caps_free(s_lin_tras); s_lin_tras = nullptr;
   heap_caps_free(s_dur_arg);  s_dur_arg = nullptr;
   heap_caps_free(s_folha_pl); s_folha_pl = nullptr;
-  // A CAPA FICA enquanto a musica toca (~627 KB na PSRAM): reabrir o app nao
-  // le nem decodifica o JPEG de novo. Medido 06/11/2026: abrir o app ja
-  // aperta a CPU e o barramento (o redesenho inteiro), e a decodificacao da
-  // capa no worker somava a isso a cada volta - o engasgo de sair e voltar.
-  // Com a musica parada, solta (ninguem vai mostrar).
+  // THE COVER STAYS while the music plays (~627 KB in PSRAM): reopening the app does not
+  // read nor decode the JPEG again. Measured 06/11/2026: opening the app already
+  // squeezes the CPU and the bus (the full redraw), and decoding the
+  // cover on the worker added to that on every return - the stutter of leaving and coming back.
+  // With the music stopped, it is released (nobody is going to show it).
   tab5_musica_estado_t e;
   tab5_musica_estado(&e);
   if (!e.ativo || !s_capa_ok) {
@@ -1618,10 +1618,10 @@ static void ao_fechar(void)
   s_carregando = false;
 }
 
-// A TELA GIROU (teclado fisico encaixado ou retirado). O quadrado da capa
-// muda de tamanho: o sprite renasce do tamanho novo (o worker repinta) em vez
-// de esticar o antigo, e o espectro, a lista e o miniplayer recomecam na
-// geometria nova. Pintando agora, o sprite e do worker: fica, e escala.
+// THE SCREEN ROTATED (physical keyboard attached or removed). The cover square
+// changes size: the sprite is reborn at the new size (the worker repaints) instead
+// of stretching the old one, and the spectrum, the list and the mini player restart in the
+// new geometry. If it is painting now, the sprite belongs to the worker: it stays, and scales.
 static void ao_girar(void)
 {
   if (!s_capa_rodando) {
@@ -1637,9 +1637,9 @@ static void ao_girar(void)
   s_forcar = true;
 }
 
-// Tocando, a tela acompanha o espectro (~30 quadros/s) e o segundo; na
-// biblioteca, as barrinhas da linha que toca e o miniplayer. Pausado: de
-// meio em meio segundo. Parado: so quando tocam (ou o aviso sumir).
+// Playing, the screen follows the spectrum (~30 frames/s) and the second; in the
+// library, the little bars of the playing row and the mini player. Paused: every
+// half second. Stopped: only when they are tapped (or the notice goes away).
 static uint32_t periodo_agora(void)
 {
   if (s_nova) { return 0; }
@@ -1656,7 +1656,7 @@ static void icone_musica(lgfx::LovyanGFX& d, int x, int y, int lado)
 {
   d.fillRoundRect(x, y, lado, lado, lado / 6, d.color565(52, 36, 86));
   const int s = lado;
-  // Duas colcheias ligadas.
+  // Two beamed quavers.
   const int h1x = x + s * 30 / 100, h2x = x + s * 66 / 100;
   const int hy1 = y + s * 70 / 100, hy2 = y + s * 62 / 100;
   const int rx = s / 10, ry = s / 13, haste = s / 22;
@@ -1675,8 +1675,8 @@ extern const app_t APP_MUSICA = {
   .cor   = LILAS,
   .perfil = { .alto_falante = true },
   .usa_sd = true,
-  // NAO exige: com o cartao no computador (modo pendrive) ainda toca o
-  // pendrive do USB-A - o app mostra "Sem cartão SD" no lugar das pastas dele.
+  // NOT required: with the SD card on the computer (flash drive mode) it still plays the
+  // USB-A flash drive - the app shows "Sem cartão SD" (no SD card) in place of its folders.
   .exige_sd = false,
   .ao_abrir  = ao_abrir,
   .ao_fechar = ao_fechar,
@@ -1689,5 +1689,5 @@ extern const app_t APP_MUSICA = {
   .ao_aviso = ao_aviso,
   .icone = icone_musica,
   .ao_girar = ao_girar,
-  .fundo_tema = true,   // o sistema limpa a area com o fundo do tema
+  .fundo_tema = true,   // the system clears the area with the theme background
 };

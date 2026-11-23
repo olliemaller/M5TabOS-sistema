@@ -1,4 +1,4 @@
-// O Mesh no navegador do PC - ver tab5_mesh_web.hpp.
+// Mesh in the PC's browser - see tab5_mesh_web.hpp.
 #include "tab5_mesh_web.hpp"
 
 #include <stdio.h>
@@ -11,17 +11,17 @@
 extern const char PAGINA_INICIO[] asm("_binary_tab5_mesh_web_html_start");
 extern const char PAGINA_FIM[]    asm("_binary_tab5_mesh_web_html_end");
 
-#define MSGS_MAX 80   // as ultimas de uma conversa, como o app
+#define MSGS_MAX 80   // the last ones of a conversation, like the app
 
 static esp_err_t pagina(httpd_req_t* req)
 {
   httpd_resp_set_type(req, "text/html; charset=utf-8");
   httpd_resp_set_hdr(req, "Cache-Control", "no-store");
-  return httpd_resp_send(req, PAGINA_INICIO, PAGINA_FIM - PAGINA_INICIO - 1);   // TEXT poe um '\0' no fim
+  return httpd_resp_send(req, PAGINA_INICIO, PAGINA_FIM - PAGINA_INICIO - 1);   // TEXT adds a '\0' at the end
 }
 
-// JSON EM PEDACOS: listas que podem ser longas (nos, mensagens) saem item a
-// item, sem montar tudo num buffer.
+// CHUNKED JSON: lists that can be long (nodes, messages) go out item by
+// item, without building everything in one buffer.
 static void comecar_json(httpd_req_t* req)
 {
   httpd_resp_set_type(req, "application/json");
@@ -30,7 +30,7 @@ static void comecar_json(httpd_req_t* req)
 static void pedaco(httpd_req_t* req, const char* s) { httpd_resp_send_chunk(req, s, HTTPD_RESP_USE_STRLEN); }
 static esp_err_t fim_json(httpd_req_t* req) { return httpd_resp_send_chunk(req, nullptr, 0); }
 
-// A conversa do pedido: c=1&idx=N (canal) ou no=N (direta). false = ja respondeu 400.
+// The request's conversation: c=1&idx=N (channel) or no=N (direct). false = already answered 400.
 static bool conversa_do_pedido(httpd_req_t* req, bool* canal, uint8_t* idx, uint32_t* no)
 {
   char v[16];
@@ -106,7 +106,7 @@ static esp_err_t canais(httpd_req_t* req)
   return fim_json(req);
 }
 
-// Um no inteiro, para a aba Nos da pagina. Os textos na PSRAM (ver msg_txt_t).
+// A whole node, for the page's Nodes tab. The texts in PSRAM (see msg_txt_t).
 typedef struct {
   mesh_no_t no;
   char nome[48], nj[100], lj[MESH_NOME_LONGO * 6 + 4], hj[72];
@@ -132,7 +132,7 @@ static esp_err_t nos(httpd_req_t* req)
     char hw_num[8];
     snprintf(hw_num, sizeof(hw_num), "%u", (unsigned)no->hw);
     tab5_web_json_texto(t->hj, sizeof(t->hj), no->hw ? (hw ? hw : hw_num) : "");
-    // Sem %f (pilha): SNR em decimos de dB, tensao em mV, posicao em graus x 1e7.
+    // No %f (stack): SNR in tenths of a dB, voltage in mV, position in degrees x 1e7.
     snprintf(t->js, sizeof(t->js),
              "%s{\"num\":%lu,\"id\":\"%s\",\"nome\":%s,\"longo\":%s,\"hw\":%s,\"visto\":%lu,\"idade\":%ld,"
              "\"saltos\":%u,\"snr10\":%d,\"bat\":%u,\"mv\":%d,\"mqtt\":%s,\"fav\":%s,\"lat\":%ld,\"lon\":%ld}",
@@ -148,7 +148,7 @@ static esp_err_t nos(httpd_req_t* req)
   return fim_json(req);
 }
 
-// A saude da malha (o que o nosso no conta de si). Inteiros: uso em decimos de %.
+// Mesh health (what our node reports about itself). Integers: usage in tenths of a %.
 static esp_err_t saude(httpd_req_t* req)
 {
   mesh_saude_t m;
@@ -165,7 +165,7 @@ static esp_err_t saude(httpd_req_t* req)
   return tab5_web_json(req, js);
 }
 
-// Estrela num no (a mesma do app: vai para o no quando ele estiver ai).
+// Star on a node (the same as the app's: goes to the node when it is there).
 static esp_err_t favorito(httpd_req_t* req)
 {
   char v[16];
@@ -176,9 +176,9 @@ static esp_err_t favorito(httpd_req_t* req)
   return tab5_web_json(req, "{\"ok\":true}");
 }
 
-// OS TEXTOS DE UMA MENSAGEM NA PSRAM, nao na pilha: a do httpd e interna e
-// pequena (WEB_PILHA), e com eles nela + o historico do cartao + o printf ela
-// ESTOUROU (Breakpoint do fim de pilha dentro do snprintf).
+// A MESSAGE'S TEXTS IN PSRAM, not on the stack: the httpd one is internal and
+// small (WEB_PILHA), and with them on it + the card history + printf it
+// OVERFLOWED (end-of-stack Breakpoint inside snprintf).
 typedef struct {
   char nome[48], nj[100], tj[MESH_TEXTO * 6 + 4], ej[48];
   char js[MESH_TEXTO * 6 + 400];
@@ -194,7 +194,7 @@ static esp_err_t msgs(httpd_req_t* req)
   msg_txt_t* t = (msg_txt_t*)heap_caps_malloc(sizeof(msg_txt_t), MALLOC_CAP_SPIRAM);
   if (!m || !t) { heap_caps_free(m); heap_caps_free(t); return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "out of memory"); }
   const int n = tab5_mesh_historico_de(canal, idx, no, m, MSGS_MAX);
-  // Lida no PC = lida (como abrir a conversa no app).
+  // Read on the PC = read (like opening the conversation in the app).
   const int vis = tab5_mesh_conversa_indice(canal, idx, no);
   if (vis >= 0) { tab5_mesh_marcar_conversa_lida(vis); }
   const uint32_t eu = tab5_mesh_meu_numero();
@@ -206,9 +206,9 @@ static esp_err_t msgs(httpd_req_t* req)
     tab5_web_json_texto(t->nj, sizeof(t->nj), t->nome);
     tab5_web_json_texto(t->tj, sizeof(t->tj), m[i].texto);
     uint8_t envio = m[i].envio, erro = m[i].erro;
-    if (minha && m[i].id) { envio = tab5_mesh_estado_envio(m[i].id, &erro); }   // o do momento
+    if (minha && m[i].id) { envio = tab5_mesh_estado_envio(m[i].id, &erro); }   // the current one
     tab5_web_json_texto(t->ej, sizeof(t->ej), envio == MESH_FALHOU ? mesh_erro_nome(erro) : "");
-    // Sem %f: formatar ponto flutuante e o que mais gasta pilha no printf.
+    // No %f: formatting floating point is what uses the most stack in printf.
     snprintf(t->js, sizeof(t->js),
              "%s{\"de\":%lu,\"nome\":%s,\"texto\":%s,\"quando\":%lu,\"minha\":%s,\"envio\":%u,\"erro\":%s,"
              "\"mqtt\":%s,\"saltos\":%u,\"snr10\":%d,\"rssi\":%ld}",
@@ -231,10 +231,10 @@ static esp_err_t enviar(httpd_req_t* req)
   if (!conversa_do_pedido(req, &canal, &idx, &no)) { return ESP_OK; }
   char texto[MESH_PAYLOAD_MAX + 1];
   const int n = tab5_web_corpo(req, texto, sizeof(texto));
-  if (n < 0) { return ESP_OK; }   // grande demais: ja respondeu 413
+  if (n < 0) { return ESP_OK; }   // too big: already answered 413
   if (n == 0) { return tab5_web_json(req, "{\"ok\":false,\"erro\":\"empty message\"}"); }
   if (!tab5_mesh_servico_ativo()) { return tab5_web_json(req, "{\"ok\":false,\"erro\":\"Mesh is off on the Tab5\"}"); }
-  // A conversa aparece na coluna (a direta com quem ainda nao falou, o canal escondido).
+  // The conversation appears in the column (a direct one with someone not yet spoken to, the hidden channel).
   if (canal) { tab5_mesh_conversa_do_canal(idx); } else { tab5_mesh_conversa_com(no); }
   const bool ok = tab5_mesh_enviar(canal ? 0xFFFFFFFFu : no, canal ? idx : 0, texto);
   return tab5_web_json(req, ok ? "{\"ok\":true,\"erro\":\"\"}" : "{\"ok\":false,\"erro\":\"the node did not answer (link silent)\"}");

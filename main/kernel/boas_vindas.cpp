@@ -1,19 +1,19 @@
-// BOAS-VINDAS - a configuracao inicial, so no primeiro uso.
+// WELCOME - the initial setup, only on first use.
 //
-// O boot abre este app quando ajustes_config_inicial() e false: aparelho que
-// nunca rodou o sistema, ou gravado pelo M5Burner (que apaga os ajustes).
-// Quem ja usava o sistema nunca o ve - gravar uma versao nova pelo VS Code nao
-// traz o assistente de volta (ver ajustes.h).
+// Boot opens this app when ajustes_config_inicial() is false: a device that
+// has never run the system, or one flashed with M5Burner (which wipes the settings).
+// Anyone already using the system never sees it - flashing a new version from VS Code doesn't
+// bring the wizard back (see ajustes.h).
 //
-// Quatro passos rapidos, cada um ajustavel depois em Ajustes:
-//   1. idioma           (Ajustes > Idioma; vale na hora, ja para os passos seguintes)
-//   2. fuso horario     (Ajustes > Data e hora)
-//   3. malha pela internet: o servidor MQTT da regiao (Ajustes > Malha pela internet)
-//   4. Wi-Fi            (manda para Ajustes > Wi-Fi, ou conclui)
+// Four quick steps, each adjustable later in Settings:
+//   1. language         (Settings > Language; takes effect immediately, already for the following steps)
+//   2. time zone        (Settings > Date and time)
+//   3. mesh over the internet: the region's MQTT server (Settings > Mesh over the internet)
+//   4. Wi-Fi            (sends you to Settings > Wi-Fi, or finishes)
 //
-// NAO ESTA NA TELA INICIAL: nao mora numa pasta app_* (a lista de apps e
-// gerada delas). Fechar por qualquer caminho - CONCLUIR, ou o INICIO da barra -
-// conta como feito: quem pulou nao quer ver de novo.
+// IT IS NOT ON THE HOME SCREEN: it doesn't live in an app_* folder (the app list is
+// generated from them). Closing by any route - CONCLUIR, or the bar's HOME -
+// counts as done: whoever skipped it doesn't want to see it again.
 
 #include <cstdlib>
 #include "app.h"
@@ -30,7 +30,7 @@ extern const app_t APP_CONFIG;
 static int s_passo = 0;
 static const int N_PASSOS = 4;
 
-static const int M = 32;          // margem
+static const int M = 32;          // margin
 static const int BTN_A = 80;
 
 static void titulo(lgfx::LovyanGFX& d, const area_t& a, const char* t, const char* sub)
@@ -47,7 +47,7 @@ static void titulo(lgfx::LovyanGFX& d, const area_t& a, const char* t, const cha
 
 static void passo_e_botoes(lgfx::LovyanGFX& d, const area_t& a)
 {
-  // Os pontinhos do progresso e os botoes VOLTAR / PROXIMO (ou CONCLUIR).
+  // The progress dots and the VOLTAR / PROXIMO (or CONCLUIR) buttons.
   for (int i = 0; i < N_PASSOS; ++i) {
     d.fillCircle(a.x + a.largura / 2 + (i - 1) * 32 - 16, a.y + a.altura - BTN_A - 64, 8,
                  i == s_passo ? TFT_CYAN : TFT_DARKGREY);
@@ -58,7 +58,7 @@ static void passo_e_botoes(lgfx::LovyanGFX& d, const area_t& a)
   tab5_botao(d, a.x + 2 * M + l, y, l, BTN_A, s_passo == N_PASSOS - 1 ? tr("CONCLUIR") : tr("PRÓXIMO"), TFT_GREENYELLOW);
 }
 
-// ---- passo 2: fuso ------------------------------------------------------------
+// ---- step 2: time zone ---------------------------------------------------------
 static const int FUSO_Y = 260;
 static const int PM_L = 150;
 static const int REGIAO_Y = FUSO_Y + BTN_A + 200;   // the region row (daylight saving)
@@ -102,11 +102,11 @@ static void desenhar_fuso(lgfx::LovyanGFX& d, const area_t& a)
   d.setTextDatum(top_left);
 }
 
-// ---- passo 3: malha pela internet ------------------------------------------------
+// ---- step 3: mesh over the internet ----------------------------------------------
 static const int LISTA_Y = 200, PASSO = BTN_A + 14;
 static const int IDIOMA_Y = 220;
-// Os da lista que cabem acima dos botoes do rodape (a de fabrica tem 3; os
-// outros se adicionam depois, em Ajustes > Meshtastic).
+// Those from the list that fit above the footer buttons (the factory one has 3; the
+// others are added later, in Settings > Meshtastic).
 static const int MALHA_MAX = 6;
 static int malha_itens(void)
 {
@@ -132,16 +132,16 @@ static void desenhar_malha(lgfx::LovyanGFX& d, const area_t& a)
   }
 }
 
-// ---- desenho e toque -------------------------------------------------------------
+// ---- drawing and touch -----------------------------------------------------------
 static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
 {
-  // Cada mudanca pede passada completa: o quadro inteiro, sem piscar.
+  // Each change requests a full pass: the whole frame, without flicker.
   if (!sistema_area_foi_limpa()) { return; }
   const lgfx::TextStyle estilo = d.getTextStyle();
   switch (s_passo) {
     case 0:
       titulo(d, a, tr("Bem-vindo ao M5tabOS"), tr("Três ajustes rápidos e o Tab5 está pronto."));
-      // Cada idioma com o nome NELE MESMO: e como a pessoa acha o seu.
+      // Each language with its name IN ITSELF: that's how people find theirs.
       for (int i = 0; i < idioma_n(); ++i) {
         const bool sel = (idioma_atual() == i);
         tab5_botao(d, a.x + M, a.y + IDIOMA_Y + i * PASSO, a.largura - 2 * M, BTN_A, idioma_nome(i),
@@ -168,7 +168,7 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
 static void concluir(const app_t* abrir_depois)
 {
   ajustes_definir_config_inicial(true);
-  sistema_simular_abrir(abrir_depois);   // nullptr = volta para o inicio
+  sistema_simular_abrir(abrir_depois);   // nullptr = back to the home screen
 }
 
 static void ao_tocar(int x, int y)
@@ -221,8 +221,8 @@ static void ao_tocar(int x, int y)
 
 static bool ao_abrir(void) { s_passo = 0; return true; }
 
-// Fechar por qualquer caminho conta como feito (ver o topo). O servico do Mesh
-// pega o servidor escolhido quando subir pela internet.
+// Closing by any route counts as done (see the top). The Mesh service
+// picks up the chosen server when it comes up over the internet.
 static void ao_fechar(void) { if (!ajustes_config_inicial()) { ajustes_definir_config_inicial(true); } }
 
 extern const app_t APP_BOAS_VINDAS = {

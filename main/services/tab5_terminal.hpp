@@ -1,30 +1,30 @@
-// TERMINAL - a sessao de comandos do aparelho, para a tela (app Terminal) e
-// para quem mais quiser (Berry, amanha o SSH).
+// TERMINAL - the device's command session, for the screen (Terminal app) and
+// for anyone else who wants it (Berry, SSH tomorrow).
 //
-// O QUE E. Os comandos SAO os do console serial (console.cpp): 'help', 'ls',
-// 'cd', 'cat', 'ping', 'wifi', 'ble', 'berry', 'mem', 'tarefas'... uma tabela
-// so, com a ajuda junto. O console ganhou a ideia de SESSAO (a pasta atual e o
-// Ctrl+C de quem digita - console_sessao_t); este servico e a sessao da tela.
-// Nada de comando duplicado: o que entrar no console aparece aqui, e vice-versa.
+// WHAT IT IS. The commands ARE those of the serial console (console.cpp): 'help', 'ls',
+// 'cd', 'cat', 'ping', 'wifi', 'ble', 'berry', 'mem', 'tarefas'... a single
+// table, with the help alongside. The console gained the idea of a SESSION (the
+// current folder and the typist's Ctrl+C - console_sessao_t); this service is the
+// screen's session. No duplicated commands: whatever goes into the console appears here, and vice versa.
 //
-// COMO A SAIDA CHEGA AQUI. No ESP-IDF o stdout e de cada tarefa. A tarefa que
-// roda os comandos troca o dela por um FILE* (funopen) que guarda o texto em
-// linhas - os comandos continuam com o printf de sempre, sem saber.
+// HOW THE OUTPUT GETS HERE. In ESP-IDF stdout is per task. The task that
+// runs the commands swaps its own for a FILE* (funopen) that stores the text as
+// lines - the commands keep using plain printf, unaware.
 //
-// RODA POR TRAS. Cada linha roda numa PARTE DE FUNDO do sistema (kernel/
-// fundo.h): fechar o app nao para o comando. O que passa de 3 s ganha a
-// pastilha "Terminal" (com o comando) e o X da central interrompe; o curto
-// nao pisca na barra. Sem comando, nao ha tarefa nenhuma: o fundo sai quando
-// a fila seca e a vaga do pool volta a dormir.
+// RUNS IN THE BACKGROUND. Each line runs in a BACKGROUND PART of the system (kernel/
+// fundo.h): closing the app does not stop the command. Anything over 3 s gets
+// the "Terminal" pill (with the command) and the X in the control centre interrupts
+// it; short ones do not flash in the status bar. With no command there is no task
+// at all: the background part exits when the queue drains and the pool slot goes back to sleep.
 //
-// MEMORIA. As linhas (TERM_LINHAS x 128 B, ~51 KB) ficam na PSRAM e so
-// existem depois da primeira abertura; ficam vivas com o app fechado (voltar
-// mostra o que estava la). Fila, historico e estado: PSRAM tambem. Na RAM
-// interna, so a trava e a pilha emprestada do pool enquanto um comando roda.
+// MEMORY. The lines (TERM_LINHAS x 128 B, ~51 KB) live in PSRAM and only
+// exist after the first opening; they stay alive with the app closed (coming back
+// shows what was there). Queue, history and state: PSRAM too. In internal
+// RAM, only the lock and the stack borrowed from the pool while a command runs.
 //
-// QUEM CHAMA: qualquer tarefa - a tela (app Terminal) e o navegador do PC
-// (services/tab5_terminal_web) mandam linhas para a MESMA sessao. O comando
-// roda numa parte de fundo que o kernel liga na interface
+// WHO CALLS: any task - the screen (Terminal app) and the PC's browser
+// (services/tab5_terminal_web) send lines to the SAME session. The command
+// runs in a background part that the kernel switches on in the interface
 // (sistema_fundo_pedir).
 #pragma once
 
@@ -32,41 +32,41 @@
 #include <stddef.h>
 #include <stdbool.h>
 
-#define TERM_LINHA_MAX  126   // bytes de UMA linha guardada; mais longa continua na seguinte
-#define TERM_LINHAS     400   // as que ficam na tela; a mais antiga sai
-#define TERM_ENTRADA    192   // uma linha digitada (o limite do console)
+#define TERM_LINHA_MAX  126   // bytes of ONE stored line; a longer one continues on the next
+#define TERM_LINHAS     400   // the ones kept on screen; the oldest goes
+#define TERM_ENTRADA    192   // one typed line (the console's limit)
 
 typedef enum {
-  TERM_SAIDA = 0,    // o que o comando escreveu
-  TERM_COMANDO,      // a linha digitada, com o prompt
-  TERM_AVISO,        // o proprio terminal ("^C", "na fila")
+  TERM_SAIDA = 0,    // what the command wrote
+  TERM_COMANDO,      // the typed line, with the prompt
+  TERM_AVISO,        // the terminal itself ("^C", "na fila")
 } term_tipo_t;
 
-// Prepara a sessao (as linhas na PSRAM e a saudacao). false = sem memoria.
+// Prepares the session (the lines in PSRAM and the greeting). false = out of memory.
 bool tab5_terminal_abrir(void);
 
-// Roda a linha (ou poe na fila, se outro comando esta rodando). false = fila cheia.
+// Runs the line (or queues it, if another command is running). false = queue full.
 bool tab5_terminal_enviar(const char* linha);
-// Ctrl+C: o comando que roda para na proxima pergunta (console_interrompido).
+// Ctrl+C: the running command stops at the next check (console_interrompido).
 void tab5_terminal_interromper(void);
-bool tab5_terminal_ocupado(void);          // rodando ou com fila
-void tab5_terminal_limpar(void);           // a tela vazia (o comando 'clear' faz o mesmo)
+bool tab5_terminal_ocupado(void);          // running or with a queue
+void tab5_terminal_limpar(void);           // empty screen (the 'clear' command does the same)
 
-// LEITURA, para desenhar. versao muda a cada texto novo; i = 0 e a mais antiga.
+// READING, for drawing. versao changes on every new text; i = 0 is the oldest.
 uint32_t tab5_terminal_versao(void);
 int      tab5_terminal_linhas(void);
-// O NUMERO ABSOLUTO da linha i = 0 (as linhas sao numeradas desde o boot; a
-// mais antiga que sai do anel e o 'clear' fazem este numero subir). Quem le de
-// longe (o navegador) pede so o que passou do que ja tem.
+// The ABSOLUTE NUMBER of line i = 0 (lines are numbered since boot; the
+// oldest leaving the ring and 'clear' make this number go up). A remote
+// reader (the browser) asks only for what is past what it already has.
 uint32_t tab5_terminal_primeira(void);
-// A linha de numero ABSOLUTO 'abs' (a mesma linha sempre, mesmo com o anel
-// andando; so a ultima ainda cresce). -1 = ja saiu do anel ou ainda nao existe.
+// The line with ABSOLUTE number 'abs' (always the same line, even as the ring
+// moves; only the last one still grows). -1 = already left the ring or does not exist yet.
 int      tab5_terminal_linha_abs(uint32_t abs, char* out, size_t n, term_tipo_t* tipo);
-int      tab5_terminal_tamanho(int i);     // bytes da linha i (0 se nao ha)
-int      tab5_terminal_linha(int i, char* out, size_t n, term_tipo_t* tipo);   // -1 = nao ha
-void     tab5_terminal_prompt(char* out, size_t n);   // "/sdcard/Música $ ", ou a pergunta do comando
-// O comando que roda esta lendo uma linha (console_ler_linha): o que se
-// digitar e dele. 'oculto' = senha (a tela mascara).
+int      tab5_terminal_tamanho(int i);     // bytes of line i (0 if none)
+int      tab5_terminal_linha(int i, char* out, size_t n, term_tipo_t* tipo);   // -1 = none
+void     tab5_terminal_prompt(char* out, size_t n);   // "/sdcard/Música $ ", or the command's question
+// The running command is reading a line (console_ler_linha): whatever is
+// typed belongs to it. 'oculto' = password (the screen masks it).
 bool     tab5_terminal_lendo(bool* oculto);
-// O que foi digitado antes: k = 0 e o ultimo. false = nao ha tantos.
+// What was typed before: k = 0 is the last. false = there are not that many.
 bool     tab5_terminal_historico(int k, char* out, size_t n);

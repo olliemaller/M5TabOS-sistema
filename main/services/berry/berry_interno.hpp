@@ -1,10 +1,10 @@
-// O que os modulos Berry (berry_mod_*.cpp) e o motor (berry_apps.cpp)
-// compartilham: o contexto do script em curso, os ajudantes de argumento e de
-// resposta, e as funcoes que o motor chama dentro dos modulos. So para eles:
-// nenhum app inclui este header - app fala com o Berry por berry_apps.hpp.
+// What the Berry modules (berry_mod_*.cpp) and the engine (berry_apps.cpp)
+// share: the running script's context, the argument and reply
+// helpers, and the functions the engine calls inside the modules. For them only:
+// no app includes this header - apps talk to Berry through berry_apps.hpp.
 //
-// ATENCAO: inclua este header POR ULTIMO em cada .cpp. Ele define a macro 'C'
-// (o contexto), e um nome tao curto estragaria qualquer header incluido depois.
+// WARNING: include this header LAST in each .cpp. It defines the macro 'C'
+// (the context), and such a short name would break any header included afterwards.
 #pragma once
 
 #include <stdint.h>
@@ -15,69 +15,69 @@
 #include "teclado_virtual.hpp"
 
 // ---------------------------------------------------------------------------
-// O ESTADO DE CADA APP
+// EACH APP'S STATE
 // ---------------------------------------------------------------------------
 typedef struct {
   char  nome[24];
-  char  arquivo[96];       // caminho completo do .be
-  bvm*  vm;                // nullptr = fechado
-  char  erro[160];         // o ultimo erro do script ("" = nenhum): aparece na tela
-  int   notif;             // fonte de aviso (sistema.avisar), -1 = ainda nao
-  bool  usa_imu;           // o quadro anterior chamou sistema.imu()/giro(): ler o sensor antes deste
-  uint8_t funcs;           // F_*: as funcoes que o script definiu (vistas ao abrir)
-  char  pasta[96];         // a pasta do app no cartao, apps/Berry/<nome> ("" = ainda nao criada nesta abertura)
-  bool  dedo_antes;        // havia dedo na amostra anterior (para entregar a soltura)
-  uint32_t periodo_cab;    // o '# periodo:' do cabecalho
-  uint32_t periodo;        // o de agora (sistema.periodo muda)
-  bool  acumular;          // sistema.acumular(true): o quadro NAO chega limpo (desenhar(tudo=false))
-  lgfx::LGFX_Sprite* camadas[8];   // tela.camada: imagens guardadas (nullptr = vaga livre)
-  // A PARTE DE FUNDO (sistema.fundo): o script segue rodando fundo() com a
-  // janela fechada - a MESMA maquina, entao janela e fundo veem as mesmas
-  // variaveis. Quem roda o laco e o kernel (kernel/fundo.h).
-  bool     janela;         // a janela esta aberta (abrir ate fechar)
-  uint32_t fundo_ms;       // o intervalo pedido entre duas chamadas de fundo()
-  int      fundo_pedido;   // FP_*: o script pediu ligar/desligar (a interface aplica)
-  volatile bool fundo_sair;   // o proprio fundo() pediu para parar, ou deu erro
-  char     fundo_txt[40];  // sistema.fundo_estado(texto): a pastilha na barra
+  char  arquivo[96];       // full path of the .be
+  bvm*  vm;                // nullptr = closed
+  char  erro[160];         // the script's last error ("" = none): shown on screen
+  int   notif;             // notice source (sistema.avisar), -1 = not yet
+  bool  usa_imu;           // the previous frame called sistema.imu()/giro(): read the sensor before this one
+  uint8_t funcs;           // F_*: the functions the script defined (seen on opening)
+  char  pasta[96];         // the app's folder on the card, apps/Berry/<nome> ("" = not yet created in this session)
+  bool  dedo_antes;        // there was a finger in the previous sample (to deliver the release)
+  uint32_t periodo_cab;    // the header's '# periodo:'
+  uint32_t periodo;        // the current one (sistema.periodo changes it)
+  bool  acumular;          // sistema.acumular(true): the frame does NOT arrive clean (desenhar(tudo=false))
+  lgfx::LGFX_Sprite* camadas[8];   // tela.camada: stored images (nullptr = free slot)
+  // THE BACKGROUND PART (sistema.fundo): the script keeps running fundo() with the
+  // window closed - the SAME machine, so window and background see the same
+  // variables. The kernel runs the loop (kernel/fundo.h).
+  bool     janela;         // the window is open (from abrir to fechar)
+  uint32_t fundo_ms;       // the requested interval between two fundo() calls
+  int      fundo_pedido;   // FP_*: the script asked to turn it on/off (the UI applies it)
+  volatile bool fundo_sair;   // fundo() itself asked to stop, or it errored
+  char     fundo_txt[40];  // sistema.fundo_estado(texto): the chip on the bar
   int      fundo_n;
-  fundo_def_t fundo_def;   // a descricao para o kernel (nome = o do app)
+  fundo_def_t fundo_def;   // the description for the kernel (name = the app's)
 } berry_app_t;
 
-// O pedido de ligar/desligar o fundo (sistema.fundo), aplicado pela interface.
+// The request to turn the background on/off (sistema.fundo), applied by the UI.
 enum { FP_NADA, FP_LIGAR, FP_DESLIGAR };
 
-// Contagem de tempo: vezes, soma e pior (ver 'berry tempos').
+// Timing: count, sum and worst (see 'berry tempos').
 typedef struct { uint32_t n, max_us; uint64_t soma_us; } tempo_t;
 
-// O CONTEXTO DE UM TRABALHO - quem roda e onde desenha. Quem pede monta o
-// seu (a interface em pedir(), o fundo no laco dele) e o aponta em s_ctx so
-// durante o trabalho; os nativos leem por C. Fora de trabalho de app (o
-// console) C e o contexto vazio: sem app, sem tela.
+// THE CONTEXT OF A JOB - who runs and where it draws. Whoever requests builds
+// their own (the UI in pedir(), the background in its loop) and points s_ctx at it only
+// during the job; the natives read it through C. Outside an app job (the
+// console) C is the empty context: no app, no screen.
 //
-// POR QUE NAO VARIAVEIS SOLTAS: o app que roda e onde ele desenha sao do
-// TRABALHO, nao do modulo. Hoje a tarefa do Berry e uma so (um trabalho por
-// vez, s_ctx basta); para rodar maquinas em tarefas diferentes, so s_ctx
-// passa a ser por tarefa - o resto ja nao assume um app so.
+// WHY NOT LOOSE VARIABLES: the running app and where it draws belong to the
+// JOB, not the module. Today there is just one Berry task (one job at a
+// time, s_ctx is enough); to run machines on different tasks, only s_ctx
+// needs to become per-task - the rest no longer assumes a single app.
 typedef struct {
-  berry_app_t*      app;      // nullptr = o console
-  bool              fundo;    // trabalho da parte de fundo: sem tela, teclado, camera nem bip
-  lgfx::LovyanGFX*  d;        // onde 'tela' desenha agora (a tela, ou a camada do alvo)
-  area_t            a;        // a area de 'd' (na camada: 0, 0, largura, altura)
-  // A TELA de verdade, separada do alvo: tela.alvo(c) desvia d/a para a
-  // camada, tela.alvo() volta para estes (nullptr fora do desenhar()).
+  berry_app_t*      app;      // nullptr = the console
+  bool              fundo;    // background-part job: no screen, keyboard, camera or beep
+  lgfx::LovyanGFX*  d;        // where 'tela' draws now (the screen, or the target layer)
+  area_t            a;        // the area of 'd' (on a layer: 0, 0, width, height)
+  // The REAL SCREEN, kept apart from the target: tela.alvo(c) diverts d/a to the
+  // layer, tela.alvo() goes back to these (nullptr outside desenhar()).
   lgfx::LovyanGFX*  tela_d;
   area_t            tela_a;
-  int               alvo;     // 0 = a tela; N = a camada N
+  int               alvo;     // 0 = the screen; N = layer N
 } contexto_t;
 
-extern contexto_t* s_ctx;   // definido em berry_apps.cpp
+extern contexto_t* s_ctx;   // defined in berry_apps.cpp
 #define C s_ctx
 
-// Um membro de modulo: funcao nativa (fn) ou constante inteira (valor).
-// Cada tabela termina com { nullptr }.
+// A module member: native function (fn) or integer constant (valor).
+// Each table ends with { nullptr }.
 typedef struct { const char* nome; bntvfunc fn; int valor; } membro_t;
 
-// As tabelas dos modulos, registradas por berry_modulos_registrar (berry_apps.cpp).
+// The module tables, registered by berry_modulos_registrar (berry_apps.cpp).
 extern const membro_t BERRY_MOD_TELA[];
 extern const membro_t BERRY_MOD_SISTEMA[];
 extern const membro_t BERRY_MOD_TECLADO[];
@@ -95,18 +95,18 @@ extern const membro_t BERRY_MOD_AJUSTES[];
 extern const membro_t BERRY_MOD_TEMA[];
 
 // ---------------------------------------------------------------------------
-// AJUDANTES DOS MODULOS
+// MODULE HELPERS
 // ---------------------------------------------------------------------------
 static inline int arg_int(bvm* vm, int i, int padrao)
 {
   return (be_top(vm) >= i && be_isnumber(vm, i)) ? (int)be_toint(vm, i) : padrao;
 }
 
-// Um numero de 32 bits SEM sinal (numero de no do Meshtastic). O inteiro do
-// Berry aqui e de 32 bits COM sinal: um no acima de 2^31 chega negativo (o que
-// mesh.no()/meu() devolvem) ou, digitado por extenso (4294967295), vira REAL -
-// e o cast de real fora da faixa para int e indefinido (saia um numero
-// qualquer, que escapava das checagens). Real fora de 0..2^32-1: 'padrao'.
+// An UNSIGNED 32-bit number (Meshtastic node number). Berry's integer
+// here is SIGNED 32-bit: a node above 2^31 arrives negative (which is what
+// mesh.no()/meu() return) or, typed out in full (4294967295), becomes a REAL -
+// and casting an out-of-range real to int is undefined (out came some
+// arbitrary number, which slipped past the checks). A real outside 0..2^32-1: 'padrao'.
 static inline uint32_t arg_u32(bvm* vm, int i, uint32_t padrao)
 {
   if (be_top(vm) < i) { return padrao; }
@@ -123,8 +123,8 @@ static inline const char* arg_txt(bvm* vm, int i)
   return (be_top(vm) >= i) ? be_tostring(vm, i) : "";
 }
 
-// Montar mapa/lista para devolver ao script. mapa_novo/lista_nova deixam DOIS
-// valores na pilha (o objeto e o dado dele); fim() tira o dado e sobra o objeto.
+// Building a map/list to return to the script. mapa_novo/lista_nova leave TWO
+// values on the stack (the object and its data); fim() removes the data and the object remains.
 static inline void mapa_novo(bvm* vm)  { be_newobject(vm, "map"); }
 static inline void lista_nova(bvm* vm) { be_newobject(vm, "list"); }
 static inline void fim(bvm* vm)        { be_pop(vm, 1); }
@@ -137,17 +137,17 @@ static inline void l_real(bvm* vm, double v)      { be_pushreal(vm, (breal)v); b
 static inline void l_int(bvm* vm, int v)          { be_pushint(vm, v); be_data_push(vm, -2); be_pop(vm, 1); }
 static inline void l_txt(bvm* vm, const char* v)  { be_pushstring(vm, v); be_data_push(vm, -2); be_pop(vm, 1); }
 
-// "AA:BB:CC:DD:EE:FF" - o MAC em texto (o ESP-NOW e a rede mostram do mesmo jeito).
+// "AA:BB:CC:DD:EE:FF" - the MAC as text (ESP-NOW and the network show it the same way).
 static inline void mac_txt(const uint8_t mac[6], char out[18])
 {
   snprintf(out, 18, "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 }
 
-// O que e da JANELA (tela, camadas, teclado, camera, bip...) no fundo(): erro
-// claro - o fundo roda com a janela fechada, nao ha onde desenhar nem tocar.
+// What belongs to the WINDOW (screen, layers, keyboard, camera, beep...) in fundo(): a clear
+// error - the background runs with the window closed, there is nowhere to draw or touch.
 static inline bool so_janela(bvm* vm, const char* o_que)
 {
-  berry_prazo_conferir(vm);   // cada desenho custa ms: o prazo vale aqui tambem
+  berry_prazo_conferir(vm);   // every drawing costs ms: the deadline applies here too
   if (!C->fundo) { return true; }
   char msg[96];
   snprintf(msg, sizeof(msg), "%s e da janela: nao pode ser usado dentro de fundo()", o_que);
@@ -155,7 +155,7 @@ static inline bool so_janela(bvm* vm, const char* o_que)
   return false;
 }
 
-// 'tela' fora do desenhar(): erro claro em vez de desenhar em lugar nenhum.
+// 'tela' outside desenhar(): a clear error instead of drawing nowhere.
 static inline bool exige_tela(bvm* vm)
 {
   if (!so_janela(vm, "a tela")) { return false; }
@@ -164,57 +164,57 @@ static inline bool exige_tela(bvm* vm)
   return false;
 }
 
-// A pasta (relativa a /sdcard/apps) dos dados de um app: Berry/<nome>.
+// The folder (relative to /sdcard/apps) for an app's data: Berry/<nome>.
 static inline void pasta_rel(const char* nome, char* out, size_t tam)
 {
   snprintf(out, tam, "%s/%s", BERRY_PASTA, nome);
 }
 
 // ---------------------------------------------------------------------------
-// O QUE E DA JANELA (bip, teclado, tela acesa, camera): ha UMA janela na
-// tela, entao um estado so - e so trabalho da janela mexe nele (os nativos
-// recusam no fundo, ver so_janela). Os modulos so PEDEM; quem aplica e a
-// interface, em pedir() (berry_apps.cpp), depois que o trabalho volta.
+// WHAT BELONGS TO THE WINDOW (beep, keyboard, screen kept on, camera): there is ONE window on
+// screen, so a single state - and only window jobs touch it (the natives
+// refuse in the background, see so_janela). The modules only REQUEST; the
+// UI applies it, in pedir() (berry_apps.cpp), once the job comes back.
 // ---------------------------------------------------------------------------
-// O bip pedido pelo script (sistema.bip). Definido em berry_mod_sistema.cpp.
+// The beep requested by the script (sistema.bip). Defined in berry_mod_sistema.cpp.
 extern float    s_bip_hz;
 extern uint32_t s_bip_ms;
 
-// Manter a tela acesa (sistema.acordado): -1 = nada pedido. Idem.
+// Keep the screen on (sistema.acordado): -1 = nothing requested. Likewise.
 extern int s_acordado_pedido;
 
-// O TECLADO VIRTUAL DO SISTEMA (um so: so um app Berry fica aberto por vez).
-// Definido em berry_mod_tela.cpp.
+// THE SYSTEM'S ON-SCREEN KEYBOARD (just one: only one Berry app is open at a time).
+// Defined in berry_mod_tela.cpp.
 extern tecvirt_t s_kb;
 enum { KB_NADA, KB_ABRIR, KB_FECHAR };
 extern int     s_kb_pedido;
-extern uint8_t s_kb_tipo;   // o tipo do campo do ultimo teclado.abrir(tipo)
+extern uint8_t s_kb_tipo;   // the field type of the last teclado.abrir(tipo)
 
 // ---------------------------------------------------------------------------
-// O QUE O MOTOR CHAMA DENTRO DOS MODULOS
+// WHAT THE ENGINE CALLS INSIDE THE MODULES
 // ---------------------------------------------------------------------------
 // tela (berry_mod_tela.cpp)
-int  altura_livre(void);                // a altura que sobra para o app (o teclado aberto come a base)
-void alvo_tela(void);                   // o desenho volta para a tela
-void camadas_liberar(berry_app_t* a);   // as camadas da janela voltam ao fechar
+int  altura_livre(void);                // the height left for the app (the open keyboard eats the bottom)
+void alvo_tela(void);                   // drawing goes back to the screen
+void camadas_liberar(berry_app_t* a);   // the window's layers are returned on closing
 
-// QUANTO CADA DESENHO CUSTA ('berry tempos'): o tempo dentro de cada funcao de 'tela'.
+// WHAT EACH DRAWING COSTS ('berry tempos'): the time inside each 'tela' function.
 enum { P_LIMPAR, P_RETANGULO, P_CIRCULO, P_LINHA, P_TEXTO, P_MEDIR, P_ARREDONDADO, P_TRIANGULO, P_PIXEL, P_BOTAO, P_COLAR, P_N };
 extern const char* const P_NOME[P_N];
 extern tempo_t s_prim[P_N];
 
-// gnss (berry_mod_gnss.cpp): solta a assinatura do GPS (a do app, ou qualquer uma se a == nullptr)
+// gnss (berry_mod_gnss.cpp): releases the GPS subscription (the app's, or any one if a == nullptr)
 void gnss_soltar(const berry_app_t* a);
 
-// rede (berry_mod_rede.cpp): o app fechou - cancela o pedido dele e libera a resposta
+// rede (berry_mod_rede.cpp): the app closed - cancels its request and frees the reply
 void rede_soltar(const berry_app_t* a);
 
 // camera (berry_mod_camera.cpp)
-bool cam_no_ar(void);                     // o preview esta ligado
-void cam_aplicar(void);                   // aplica o que o script pediu (so a interface; nada pedido = nada a fazer)
-void cam_quadro(const berry_app_t* app);  // a cada desenhar, antes do script
-void cam_limpar_fora(const area_t& a);    // a area sem a faixa do preview
-void cam_fechar(void);                    // o app fechou: tudo desce
+bool cam_no_ar(void);                     // the preview is on
+void cam_aplicar(void);                   // applies what the script asked for (UI only; nothing requested = nothing to do)
+void cam_quadro(const berry_app_t* app);  // on every desenhar, before the script
+void cam_limpar_fora(const area_t& a);    // the area without the preview strip
+void cam_fechar(void);                    // the app closed: everything comes down
 
-// ajustes (berry_mod_ajustes.cpp): volume([v]) 0..100 - o musica.volume usa a mesma
+// ajustes (berry_mod_ajustes.cpp): volume([v]) 0..100 - musica.volume uses the same
 int berry_volume(bvm* vm);

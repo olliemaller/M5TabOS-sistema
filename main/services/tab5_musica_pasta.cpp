@@ -1,5 +1,5 @@
-// TOCADOR DE MUSICA - a pasta de musica e as playlists: achar a pasta no
-// cartao, listar, tocar uma pasta ou uma playlist (.m3u). Ver
+// MUSIC PLAYER - the music folder and playlists: finding the folder on the
+// card, listing, playing a folder or a playlist (.m3u). See
 // tab5_musica_interno.hpp.
 #include "tab5_musica_interno.hpp"
 #include "tab5_sd.hpp"
@@ -19,15 +19,15 @@
 static const char* TAG = "musica";
 
 // ---------------------------------------------------------------------------
-// A PASTA DE MUSICA (ver tab5_musica.hpp)
+// THE MUSIC FOLDER (see tab5_musica.hpp)
 // ---------------------------------------------------------------------------
-// Era so "/Music": quem criou "Música" no computador nao via nada, e o app
-// ainda criava uma "Music" vazia ao lado. As cinco primeiras letras, sem
-// acento e sem maiuscula, tem que ser "music" ("Música", "MUSICAS", "Music").
-// "m_sic" tambem vale: e como o Ú aparecia no nome curto 8.3 ("M_SICA~1").
+// It used to be just "/Music": anyone who created "Música" on the computer saw nothing, and the app
+// even created an empty "Music" next to it. The first five letters, without
+// accents and ignoring case, have to be "music" ("Música", "MUSICAS", "Music").
+// "m_sic" also counts: that is how the Ú appeared in the 8.3 short name ("M_SICA~1").
 static bool nome_de_musica(const char* utf8)
 {
-  // U+00C0..U+00FF sem acento, em minuscula (o que vem depois de 0xC3 no UTF-8).
+  // U+00C0..U+00FF without accents, in lower case (what comes after 0xC3 in UTF-8).
   static const char DOBRA[] = "aaaaaaaceeeeiiiidnooooo_ouuuuyts" "aaaaaaaceeeeiiiidnooooo_ouuuuyty";
   char n[8] = "";
   int k = 0;
@@ -52,7 +52,7 @@ static int contar_itens(const char* pasta, int max)
   return n;
 }
 
-// Com o cartao ja montado.
+// With the card already mounted.
 static void achar_pasta(char* out, size_t tam)
 {
   char melhor[160] = "", vazia_music[160] = "";
@@ -72,9 +72,9 @@ static void achar_pasta(char* out, size_t tam)
   }
   if (!melhor[0]) {
     snprintf(melhor, sizeof(melhor), TAB5_SD_RAIZ "/Music");
-    mkdir(melhor, 0775);   // primeira vez: a pasta ja fica pronta para receber as musicas
+    mkdir(melhor, 0775);   // first time: the folder is ready to receive music
   } else if (vazia_music[0] && strcmp(vazia_music, melhor) != 0) {
-    if (rmdir(vazia_music) == 0) { ESP_LOGI(TAG, "apagada a %s vazia (a musica esta em %s)", vazia_music, melhor); }
+    if (rmdir(vazia_music) == 0) { ESP_LOGI(TAG, "deleted the empty %s (the music is in %s)", vazia_music, melhor); }
   }
   snprintf(out, tam, "%s", melhor);
 }
@@ -97,12 +97,12 @@ static int comparar_itens(const void* x, const void* y)
 {
   const tab5_musica_item_t* a = (const tab5_musica_item_t*)x;
   const tab5_musica_item_t* b = (const tab5_musica_item_t*)y;
-  if (a->pasta != b->pasta) { return a->pasta ? -1 : 1; }   // pastas primeiro
+  if (a->pasta != b->pasta) { return a->pasta ? -1 : 1; }   // folders first
   return strcasecmp(a->nome, b->nome);
 }
 
-// O disco de 'rel' ja montado (o cartao, ou o do caminho absoluto). 'abs'
-// recebe o caminho da pasta listada.
+// The disk of 'rel' already mounted (the card, or the absolute path's one). 'abs'
+// receives the path of the listed folder.
 static int listar_montado(const char* rel, tab5_musica_item_t* out, int max, bool* cheia, char* abs, size_t abs_tam)
 {
   if (absoluto(rel)) {
@@ -119,10 +119,10 @@ static int listar_montado(const char* rel, tab5_musica_item_t* out, int max, boo
   int n = 0;
   struct dirent* e;
   while ((e = readdir(d)) != nullptr) {
-    if (e->d_name[0] == '.') { continue; }   // ocultos e o lixo do macOS (._*) - e o cache .capas
+    if (e->d_name[0] == '.') { continue; }   // hidden files and macOS junk (._*) - and the .capas cache
     const bool pasta = e->d_type == DT_DIR;
     if (pasta && !(rel && rel[0]) && !strcasecmp(e->d_name, TAB5_MUSICA_PLAYLISTS)) { continue; }
-    // O que o Windows deixa num pendrive: lixeira e pasta do sistema.
+    // What Windows leaves on a USB drive: recycle bin and system folder.
     if (pasta && (e->d_name[0] == '$' || !strcasecmp(e->d_name, "System Volume Information"))) { continue; }
     if (!pasta && !e_musica(e->d_name)) { continue; }
     if (n >= max) { if (cheia) { *cheia = true; } break; }
@@ -135,8 +135,8 @@ static int listar_montado(const char* rel, tab5_musica_item_t* out, int max, boo
   return n;
 }
 
-// O disco onde 'rel' mora: o cartao (relativo a pasta de musica) ou o do
-// caminho absoluto.
+// The disk where 'rel' lives: the card (relative to the music folder) or the
+// absolute path's one.
 bool musica_montar_rel(const char* rel)    { return absoluto(rel) ? tab5_volume_montar(rel) : tab5_sd_montar(); }
 void musica_desmontar_rel(const char* rel) { if (absoluto(rel)) { tab5_volume_desmontar(rel); } else { tab5_sd_desmontar(); } }
 
@@ -160,10 +160,10 @@ bool tab5_musica_tocar(const char* rel, int idx, const char* app)
   if (musica_montar_rel(rel)) {
     char abs[320], raiz[160] = "";
     const int n = listar_montado(rel, itens, TAB5_MUSICA_LISTA_MAX, nullptr, abs, sizeof(abs));
-    if (!absoluto(rel)) { achar_pasta(raiz, sizeof(raiz)); }   // fila do pendrive: os caminhos ja sao absolutos
+    if (!absoluto(rel)) { achar_pasta(raiz, sizeof(raiz)); }   // USB drive queue: paths are already absolute
     musica_desmontar_rel(rel);
     if (n > idx && !itens[idx].pasta) {
-      // A fila: so os arquivos, na ordem da lista. O indice vira indice na fila.
+      // The queue: files only, in list order. The index becomes the queue index.
       int k = 0, inicio = -1;
       for (int j = 0; j < n && k < TAB5_MUSICA_FILA_MAX; ++j) {
         if (itens[j].pasta) { continue; }
@@ -181,9 +181,9 @@ bool tab5_musica_tocar(const char* rel, int idx, const char* app)
 }
 
 // ---------------------------------------------------------------------------
-// A RAIZ SEM VARRER DE NOVO. achar_pasta() abre a raiz do cartao e conta o
-// que ha em cada pasta de musica - caro para quem mede a duracao de 400
-// arquivos seguidos. Lembrada por alguns segundos (com o cartao montado).
+// THE ROOT WITHOUT SCANNING AGAIN. achar_pasta() opens the card's root and counts
+// what is in each music folder - expensive for something measuring the duration of 400
+// files in a row. Remembered for a few seconds (with the card mounted).
 // ---------------------------------------------------------------------------
 static Trava s_trava_raiz;
 static char    s_raiz_lembrada[160] = "";
@@ -203,10 +203,10 @@ void musica_raiz_montado(char* out, size_t tam)
 }
 
 // ---------------------------------------------------------------------------
-// PLAYLISTS (ver tab5_musica.hpp) - arquivos .m3u em <musica>/Playlists.
+// PLAYLISTS (see tab5_musica.hpp) - .m3u files in <musica>/Playlists.
 // ---------------------------------------------------------------------------
-// O nome que a pessoa digitou (UTF-8) -> um nome que o FAT aceita: o que o
-// FAT recusa (/ \ : * ? " < > | e controle) vira '_'; o resto vai como esta.
+// The name the person typed (UTF-8) -> a name FAT accepts: what
+// FAT refuses (/ \ : * ? " < > | and control chars) becomes '_'; the rest goes as is.
 static void nome_para_cartao(const char* utf8, char* out, size_t tam)
 {
   size_t k = 0;
@@ -215,8 +215,8 @@ static void nome_para_cartao(const char* utf8, char* out, size_t tam)
     out[k++] = (c < 0x20 || (c < 0x80 && strchr("/\\:*?\"<>|", (int)c))) ? '_' : (char)c;
   }
   out[k] = '\0';
-  while (k && !musica_utf8_valido(out)) { out[--k] = '\0'; }   // o corte partiu uma letra
-  while (k && (out[k - 1] == ' ' || out[k - 1] == '.')) { out[--k] = '\0'; }   // o FAT tira sozinho
+  while (k && !musica_utf8_valido(out)) { out[--k] = '\0'; }   // the cut split a character
+  while (k && (out[k - 1] == ' ' || out[k - 1] == '.')) { out[--k] = '\0'; }   // FAT strips these itself
 }
 
 static void pasta_playlists(const char* raiz, char* out, size_t tam)
@@ -229,12 +229,12 @@ static void arquivo_playlist(const char* raiz, const char* nome, char* out, size
   snprintf(out, tam, "%s/" TAB5_MUSICA_PLAYLISTS "/%s.m3u", raiz, nome);
 }
 
-// Le o .m3u para 'out' (caminhos relativos a raiz). Com o cartao montado.
-// Linhas "../X" sao relativas a pasta de musica (o que gravamos); "/sdcard/..."
-// dentro dela viram relativas; outro disco ("/usb/...", o pendrive) fica
-// absoluto - a faixa toca quando aquele pendrive estiver plugado; o resto,
-// relativas a pasta Playlists (o padrao do formato). Playlist gravada antes
-// do FAT em UTF-8 tem os nomes em CP437: convertidos aqui.
+// Reads the .m3u into 'out' (paths relative to the root). With the card mounted.
+// "../X" lines are relative to the music folder (what we write); "/sdcard/..."
+// inside it become relative; another disk ("/usb/...", the USB drive) stays
+// absolute - the track plays when that USB drive is plugged in; the rest are
+// relative to the Playlists folder (the format's default). A playlist written before
+// FAT went UTF-8 has its names in CP437: converted here.
 static int m3u_ler(const char* raiz, const char* nome, tab5_musica_faixa_t* out, int max)
 {
   char arq[320];
@@ -250,13 +250,13 @@ static int m3u_ler(const char* raiz, const char* nome, tab5_musica_faixa_t* out,
     if (!k || linha[0] == '#') { continue; }
     for (char* q = linha; *q; ++q) { if (*q == '\\') { *q = '/'; } }
     char conv[TAB5_MUSICA_CAMINHO_MAX + 64];
-    tab5_musica_nome_utf8(linha, conv, sizeof(conv));   // CP437 antigo -> UTF-8 (UTF-8 passa igual)
+    tab5_musica_nome_utf8(linha, conv, sizeof(conv));   // old CP437 -> UTF-8 (UTF-8 passes unchanged)
     const char* c = conv;
     char tmp[TAB5_MUSICA_CAMINHO_MAX + 64];
     if (!strncmp(c, "../", 3))                          { c += 3; }
     else if (!strncmp(c, raiz, nr) && c[nr] == '/')     { c += nr + 1; }
-    else if (c[0] == '/' && tab5_volume_de(c) == TAB5_VOL_NENHUM) { continue; }   // nao e de disco nenhum
-    else if (c[0] == '/')                               { }   // outro disco: fica absoluto
+    else if (c[0] == '/' && tab5_volume_de(c) == TAB5_VOL_NENHUM) { continue; }   // not on any disk
+    else if (c[0] == '/')                               { }   // another disk: stays absolute
     else { snprintf(tmp, sizeof(tmp), TAB5_MUSICA_PLAYLISTS "/%s", c); c = tmp; }
     snprintf(out[n].caminho, sizeof(out[n].caminho), "%s", c);
     ++n;
@@ -351,7 +351,7 @@ int tab5_musica_playlist_itens(const char* nome, tab5_musica_faixa_t* out, int m
   return n;
 }
 
-// Le, muda e grava de volta. 'por' = poe no fim (false = tira). false = nada mudou.
+// Reads, changes and writes back. 'por' = append at the end (false = remove). false = nothing changed.
 static bool playlist_mudar(const char* nome, const char* caminho, bool por)
 {
   if (!nome || !nome[0] || !caminho || !caminho[0]) { return false; }
@@ -406,7 +406,7 @@ bool tab5_musica_tocar_playlist(const char* nome, int idx, const char* app)
     musica_raiz_montado(raiz, sizeof(raiz));
     const int n = m3u_ler(raiz, nome, it, TAB5_MUSICA_FILA_MAX);
     tab5_sd_desmontar();
-    // tab5_musica_faixa_t e um caminho_t: a fila copia direto.
+    // tab5_musica_faixa_t is a caminho_t: the queue copies it directly.
     static_assert(sizeof(tab5_musica_faixa_t) == sizeof(caminho_t), "faixa = caminho");
     ok = n > 0 && musica_fila_tocar((const caminho_t*)it, n, idx, raiz, nullptr, nome, app);
   }

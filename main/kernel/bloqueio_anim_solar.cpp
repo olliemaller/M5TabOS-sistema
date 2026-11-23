@@ -1,12 +1,12 @@
-// Animacao do bloqueio: Sistema solar: sol pulsando, seis planetas (um com lua, um com anel).
-// (parte do bloqueio_anim; o que e comum a todas esta no bloqueio_anim_interno.hpp).
+// Lock screen animation: Solar system: a pulsing sun, six planets (one with a moon, one with a ring).
+// (part of bloqueio_anim; what is common to all of them is in bloqueio_anim_interno.hpp).
 
 #include "bloqueio_anim_interno.hpp"
 
 namespace bq_anim {
 
 // ---------------------------------------------------------------------------
-// 11. SISTEMA SOLAR - sol pulsando, seis planetas (um com lua, um com anel)
+// 11. SOLAR SYSTEM - a pulsing sun, six planets (one with a moon, one with a ring)
 // ---------------------------------------------------------------------------
 namespace {
 static const int N_PLANETA = 6;
@@ -20,7 +20,7 @@ void solar_iniciar(void)
 {
   Solar& s = bq_estado_como<Solar>();
   s.cx = s_ax + s_W / 2;
-  s.cy = s_ay + (int)(s_H * 0.6f);   // abaixo do relogio
+  s.cy = s_ay + (int)(s_H * 0.6f);   // below the clock
   float rmax = fminf(s_W * 0.5f, s_H * 0.4f) - 22;
   if (rmax < 120) { rmax = 120; }
   static const float   ORB[N_PLANETA] = { 0.21f, 0.34f, 0.49f, 0.64f, 0.81f, 1.0f };
@@ -32,7 +32,7 @@ void solar_iniciar(void)
     p.orb = rmax * ORB[i];
     if (p.orb < SOL_R + 16 + RAD[i]) { p.orb = SOL_R + 16 + RAD[i]; }
     p.ang = frand(0, 6.2832f);
-    p.w   = 1.4f * powf(70.0f / p.orb, 1.5f);   // Kepler: longe e mais devagar
+    p.w   = 1.4f * powf(70.0f / p.orb, 1.5f);   // Kepler: further out is slower
     p.r   = RAD[i];
     p.cor = c565(COR[i][0], COR[i][1], COR[i][2]);
     p.ox  = s.cx + cosf(p.ang) * p.orb;
@@ -56,18 +56,18 @@ void solar_passo(float dt)
 {
   Solar& s = bq_estado_como<Solar>();
   s.t += dt;
-  // O sol pulsa: a caixa dele (com a coroa) se refaz todo quadro.
+  // The sun pulses: its box (with the corona) is redone every frame.
   rec(s.cx - SOL_R - 7, s.cy - SOL_R - 7, 2 * SOL_R + 15, 2 * SOL_R + 15);
   for (int i = 0; i < N_PLANETA; ++i) {
     Planeta& p = s.p[i];
     p.ang += p.w * dt;
     if (p.ang > 6.2832f) { p.ang -= 6.2832f; }
     const float x = s.cx + cosf(p.ang) * p.orb, y = s.cy + sinf(p.ang) * p.orb;
-    const int folga = p.r + (i == 4 ? 12 : 2);   // o anel passa do planeta
+    const int folga = p.r + (i == 4 ? 12 : 2);   // the ring extends beyond the planet
     rec2(p.ox, p.oy, x, y, folga);
     p.ox = x; p.oy = y;
   }
-  // A lua da terra (planeta 2).
+  // Earth's moon (planet 2).
   s.lua += 3.2f * dt;
   const float lx = s.p[2].ox + cosf(s.lua) * 18, ly = s.p[2].oy + sinf(s.lua) * 18;
   rec2(s.lox, s.loy, lx, ly, 5);

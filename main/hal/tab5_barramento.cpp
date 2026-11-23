@@ -5,12 +5,12 @@
 
 static const char* TAG = "barramento";
 
-// 0..15 nos dois campos, com 0 de fabrica para todo mundo.
+// 0..15 in both fields, with a factory default of 0 for everyone.
 //
-// 8 e nao 15 de proposito. O que importa e a ORDEM entre os mestres, e nao a
-// magnitude: basta a tela estar acima da CPU para vencer a disputa. Deixando
-// folga por cima, sobra faixa para um dia colocar algo entre os dois (o DMA do
-// audio, por exemplo) sem ter que rebaixar a tela.
+// 8 and not 15 on purpose. What matters is the ORDER between masters, not the
+// magnitude: the screen just has to be above the CPU to win. Leaving headroom
+// above leaves room to one day put something between the two (the audio DMA,
+// for example) without having to demote the screen.
 #define PRIO_TELA   8
 #define PRIO_PADRAO 0
 
@@ -20,11 +20,11 @@ void tab5_barramento_priorizar_tela(bool ligar)
 {
   const uint32_t p = ligar ? PRIO_TELA : PRIO_PADRAO;
 
-  // JA ESTA ASSIM: nao reescreve. O acordar do repouso reafirma a prioridade
-  // a cada vez - e com musica tocando o barramento esta ocupado (cartao por
-  // DMA, alto-falante, decodificador na PSRAM). Mexer na arbitragem no meio
-  // desse trafego sem necessidade nao e de graca; so quando algo de fato
-  // mudou (o padrao de fabrica voltou) ela e escrita.
+  // ALREADY SET: do not rewrite. Waking from idle reasserts the priority
+  // every time - and with music playing the bus is busy (SD card via DMA,
+  // speaker, decoder in PSRAM). Touching arbitration in the middle of that
+  // traffic needlessly is not free; it is written only when something really
+  // changed (the factory default came back).
   if (AXI_ICM.mst_arb_priority_reg0.reg_gdma_mst1_priority == p
       && AXI_ICM.mst_arb_priority_reg0.reg_gdma_mst2_priority == p
       && AXI_ICM.mst_arqos_reg0.reg_gdma_mst1_arqos == p
@@ -35,22 +35,23 @@ void tab5_barramento_priorizar_tela(bool ligar)
     return;
   }
 
-  // Prioridade de ARBITRAGEM: quem ganha o barramento quando dois pedem junto.
-  // E este o campo que decide a disputa.
+  // ARBITRATION priority: who wins the bus when two ask at once.
+  // This is the field that decides the contest.
   AXI_ICM.mst_arb_priority_reg0.reg_gdma_mst1_priority = p;
   AXI_ICM.mst_arb_priority_reg0.reg_gdma_mst2_priority = p;
 
-  // ARQOS do canal de LEITURA. Complementar: a arbitragem escolhe quem entra,
-  // o QoS diz o quanto o pedido dele vale para o controlador de memoria.
+  // ARQOS of the READ channel. Complementary: arbitration picks who gets in,
+  // QoS says how much their request is worth to the memory controller.
   //
-  // So leitura (arqos), nao escrita: o painel apenas LE o framebuffer. Mexer no
-  // canal de escrita nao ajudaria a tela e tiraria banda de quem escreve.
+  // Read only (arqos), not write: the panel only READS the framebuffer.
+  // Touching the write channel would not help the screen and would take
+  // bandwidth from writers.
   axi_icm_ll_set_dw_gdma_qos_arbiter_prio(0, 0, p);
   axi_icm_ll_set_dw_gdma_qos_arbiter_prio(1, 0, p);
 
   s_ligado = ligar;
-  ESP_LOGI(TAG, "prioridade da tela no acesso a memoria: %s (gdma=%u, cache=%u)",
-           ligar ? "ALTA (contra a piscada azul)" : "padrao",
+  ESP_LOGI(TAG, "screen priority for memory access: %s (gdma=%u, cache=%u)",
+           ligar ? "HIGH (against the blue flash)" : "default",
            (unsigned)AXI_ICM.mst_arb_priority_reg0.reg_gdma_mst1_priority,
            (unsigned)AXI_ICM.mst_arb_priority_reg0.reg_cache_priority);
 }

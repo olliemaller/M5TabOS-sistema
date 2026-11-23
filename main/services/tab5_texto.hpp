@@ -1,42 +1,42 @@
-// tab5_texto: abrir um texto/CSV grande (de MB) e ler um trecho de linhas.
+// tab5_texto: open a large text/CSV file (megabytes) and read a range of lines.
 //
-// Serve a qualquer app que mostre texto paginado (hoje o Arquivos). O motor
-// fica aqui; o app so pede e desenha.
+// Serves any app that shows paged text (today, Files). The engine lives
+// here; the app only asks and draws.
 //
 //   tab5_texto_t* t = tab5_texto_abrir(caminho, sistema_trabalho_cancelado);
 //   int total = tab5_texto_linhas(t);
-//   int n = tab5_texto_ler(t, 1000, 48, &buf[0][0], 601);   // linhas 1000..1047
+//   int n = tab5_texto_ler(t, 1000, 48, &buf[0][0], 601);   // lines 1000..1047
 //   tab5_texto_fechar(t);
 //
-// COMO FUNCIONA: abrir percorre o arquivo UMA vez, conta as linhas e anota
-// onde comeca cada trecho de TAB5_TEXTO_BLOCO linhas (o indice que faz ir ao
-// fim ou a uma posicao da barra ser rapido). Ler salta pelo indice ate perto
-// da linha pedida. Os dois leem pelo tab5_leitor (read POSIX rapido). O disco
-// so fica seguro DURANTE cada chamada, nao entre elas.
+// HOW IT WORKS: opening walks the file ONCE, counts the lines and notes where
+// each run of TAB5_TEXTO_BLOCO lines starts (the index that makes jumping to
+// the end or to a scroll-bar position fast). Reading jumps via the index to
+// near the requested line. Both read through tab5_leitor (fast POSIX read). The
+// disk is only safe DURING each call, not between them.
 //
-// BLOQUEIA (le o disco): chamar fora da tarefa de interface, no worker.
-// Um tab5_texto_t e de UMA tarefa por vez.
+// BLOCKS (reads the disk): call outside the interface task, on the worker.
+// A tab5_texto_t belongs to ONE task at a time.
 #pragma once
 #include <stddef.h>
 
-// De quantas em quantas linhas o indice guarda um ponto de salto.
+// Every how many lines the index keeps a jump point.
 #define TAB5_TEXTO_BLOCO 28
 
 typedef struct tab5_texto tab5_texto_t;
 
-// Abre e monta o indice. 'cancelado' (pode ser nullptr) e consultado de tempos
-// em tempos: se der true, desiste. nullptr = nao abriu, foi cancelado ou sem memoria.
+// Opens and builds the index. 'cancelado' (may be nullptr) is checked every so
+// often: if it returns true, gives up. nullptr = did not open, was cancelled or out of memory.
 tab5_texto_t* tab5_texto_abrir(const char* caminho, bool (*cancelado)(void));
 
-// Quantas linhas o arquivo tem (a ultima sem '\n' conta).
+// How many lines the file has (the last one without '\n' counts).
 int tab5_texto_linhas(const tab5_texto_t* t);
 
-// Le ate 'max' linhas a partir da linha 'inicio' (0 = a primeira) para
-// 'saida', que tem 'max' linhas de 'larg' bytes cada (uma apos a outra, cada
-// uma terminada em '\0'). O '\r' do fim sai; linha maior que 'larg' - 1 e
-// cortada e termina em " ..."; arquivo .csv ganha um espaco depois de cada
-// ',' ou ';'. Devolve quantas linhas leu (0 = alem do fim) ou -1 se o
-// arquivo nao abriu.
+// Reads up to 'max' lines starting at line 'inicio' (0 = the first) into
+// 'saida', which has 'max' lines of 'larg' bytes each (one after another, each
+// terminated by '\0'). The trailing '\r' is dropped; a line longer than 'larg' - 1
+// is cut and ends in " ..."; a .csv file gets a space after each ',' or
+// ';'. Returns how many lines were read (0 = past the end) or -1 if the
+// file did not open.
 int tab5_texto_ler(tab5_texto_t* t, int inicio, int max, char* saida, size_t larg);
 
-void tab5_texto_fechar(tab5_texto_t* t);   // aceita nullptr
+void tab5_texto_fechar(tab5_texto_t* t);   // accepts nullptr

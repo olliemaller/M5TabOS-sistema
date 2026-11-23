@@ -1,19 +1,19 @@
-// MIDIA - a ponte entre as bibliotecas de midia (components/medf: leitores de
-// MP4 e outros conteineres; components/audf: decodificadores de som como o
-// AAC) e o sistema.
+// MEDIA - the bridge between the media libraries (components/medf: MP4 and
+// other container readers; components/audf: sound decoders such as AAC) and
+// the system.
 //
-// O medf le o arquivo por funcoes que o sistema registra: aqui elas usam o
-// leitor de tab5_volumes (cartao ou pendrive, o disco fica seguro enquanto o
-// arquivo esta aberto). Quem usa o medf chama tab5_midia_preparar() antes.
+// medf reads the file through functions the system registers: here they use
+// the tab5_volumes reader (SD card or USB flash drive; the disk stays safe
+// while the file is open). Anyone using medf calls tab5_midia_preparar() first.
 #pragma once
 #include <stddef.h>
 #include "medf_buffer.h"
 
-// Registra as funcoes de arquivo no medf (uma vez; chamar de novo nao faz nada).
+// Registers the file functions with medf (once; calling again does nothing).
 void tab5_midia_preparar(void);
 
-// A memoria de leitura de um arquivo (o "arena" do medf), na PSRAM e com o
-// alinhamento que ele pede. 'bytes' em multiplos de 64 KB; o maior pacote que
-// pode ser lido de uma vez e 1/4 disso. false = sem memoria.
+// The read memory for a file (medf's "arena"), in PSRAM and with the
+// alignment it asks for. 'bytes' in multiples of 64 KB; the largest packet
+// that can be read in one go is 1/4 of that. false = out of memory.
 bool tab5_midia_arena(medf_arena_t* a, size_t bytes);
 void tab5_midia_arena_soltar(medf_arena_t* a);

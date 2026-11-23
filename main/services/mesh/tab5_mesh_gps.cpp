@@ -1,5 +1,5 @@
-// Servico Mesh - a POSICAO do GPS para a malha. Partido de tab5_mesh.cpp (o
-// servico); o que as partes compartilham esta em mesh/tab5_mesh_interno.hpp.
+// Mesh service - GPS POSITION for the mesh. Split out of tab5_mesh.cpp (the
+// service); what the parts share lives in mesh/tab5_mesh_interno.hpp.
 
 #include "esp_log.h"
 #include "esp_random.h"
@@ -14,29 +14,29 @@
 static const char *TAG = "mesh";
 
 // ---------------------------------------------------------------------------
-// POSICAO DO GPS PARA A MALHA
+// GPS POSITION FOR THE MESH
 // ---------------------------------------------------------------------------
-// Com o C6L no Bluetooth o Grove fica livre para o GPS. A posicao vai num
-// MeshPacket, porta POSITION_APP (3), com um Position dentro:
-//   1: latitude_i  (sfixed32, graus x 1e7)
-//   2: longitude_i (sfixed32, graus x 1e7)
-//   3: altitude    (int32, metros)
+// With the C6L on Bluetooth the Grove port is free for the GPS. The position goes
+// in a MeshPacket, port POSITION_APP (3), with a Position inside:
+//   1: latitude_i  (sfixed32, degrees x 1e7)
+//   2: longitude_i (sfixed32, degrees x 1e7)
+//   3: altitude    (int32, metres)
 //   4: time        (fixed32, epoch UTC)
 //
-// PARA QUEM, e a diferenca e de tempo de ar.
-//   - COM O NO do outro lado: SO PARA ELE (to = o numero dele), como faz o
-//     app do celular. Ele passa a usa-la como a propria posicao e a difunde
-//     no ritmo dele (Localizacao > "enviar a cada", "ao se mover"), com a
-//     precisao do canal. Antes ia em DIFUSAO, 3 saltos: a malha recebia a
-//     mesma posicao duas vezes - a do Tab5 e, logo depois, a do no repetindo
-//     o que ja sabia, cada uma no ritmo de um.
-//   - O no JA SABE onde esta (posicao fixa, ou o GPS dele ligado): nada a
-//     mandar. A fixa ignoraria a nossa; o GPS dele a atropelaria.
-//   - PELA INTERNET (sem no, ou o Bluetooth caiu e o MQTT cobre): o Tab5 e o
-//     no, entao difunde ele mesmo - com a precisao do canal primario que o
-//     no deixou configurada (0 = nao manda; menos de 32 = so a regiao).
-// Sem fix, nao manda nada (devolve false e a tarefa tenta de novo em 30 s);
-// true = resolvido ate a proxima volta (mandou, ou nao ha o que mandar).
+// TO WHOM - and the difference is airtime.
+//   - WITH THE NODE on the other end: ONLY TO IT (to = its number), as the
+//     phone app does. It then uses it as its own position and broadcasts it
+//     at its own rate (Position > "send every", "on movement"), with the
+//     channel's precision. It used to go as a BROADCAST, 3 hops: the mesh got
+//     the same position twice - the Tab5's and, right after, the node repeating
+//     what it already knew, each at its own rate.
+//   - The node ALREADY KNOWS where it is (fixed position, or its own GPS on):
+//     nothing to send. A fixed one would ignore ours; its GPS would override it.
+//   - OVER THE INTERNET (no node, or Bluetooth dropped and MQTT covers): the
+//     Tab5 is the node, so it broadcasts itself - with the precision of the
+//     primary channel the node left configured (0 = don't send; under 32 = region only).
+// Without a fix it sends nothing (returns false and the task retries in 30 s);
+// true = settled until the next round (sent, or nothing to send).
 bool enviar_posicao(void)
 {
   if (!s_servico_ativo || !tab5_gps_servico_ativo()) { return false; }
@@ -52,8 +52,8 @@ bool enviar_posicao(void)
   if (!g.valida || g.qualidade == 0) { return false; }
   int32_t lat = (int32_t)(g.lat * 1e7), lon = (int32_t)(g.lon * 1e7);
   if (pela_net && prec > 0 && prec < 32) {
-    // O mesmo corte do firmware (PositionModule): os bits que sobram vao
-    // para o meio da celula, nao para o canto.
+    // The same truncation as the firmware (PositionModule): the leftover bits go
+    // to the middle of the cell, not the corner.
     const uint32_t mascara = 0xFFFFFFFFu << (32 - prec);
     lat = (int32_t)(((uint32_t)lat & mascara) + (1u << (31 - prec)));
     lon = (int32_t)(((uint32_t)lon & mascara) + (1u << (31 - prec)));
@@ -63,14 +63,14 @@ bool enviar_posicao(void)
   pb_escritor_t w = pb_escritor(pos, sizeof(pos));
   mesh_pb_posicao(&w, lat, lon, (int32_t)g.altitude_m, tab5_hora_epoch());
 
-  // Para o no: sem saltos (nao sai dele). Difusao: 3 saltos (ver tab5_mesh_enviar).
+  // To the node: no hops (it doesn't leave it). Broadcast: 3 hops (see tab5_mesh_enviar).
   const mesh_pb_envelope_t env = { com_no ? s_meu_num : MESH_PB_DIFUSAO, -1, PORT_POSICAO, pos,
                                    pb_tamanho(&w), esp_random() | 1u, (uint8_t)(com_no ? 0 : 3), false };
   uint8_t quadro[96];
   const size_t n = pb_tamanho(&w) ? mesh_pb_to_radio(&env, quadro, sizeof(quadro)) : 0;
   const bool ok = n && enlace_enviar(quadro, n);
   if (ok) {
-    ESP_LOGI(TAG, "posicao do GPS %s (%.5f, %.5f)", com_no ? "passada ao no" : "difundida pela internet",
+    ESP_LOGI(TAG, "GPS position %s (%.5f, %.5f)", com_no ? "passed to the node" : "broadcast over the internet",
              g.lat, g.lon);
   }
   return ok;

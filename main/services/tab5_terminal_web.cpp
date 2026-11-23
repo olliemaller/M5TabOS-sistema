@@ -1,4 +1,4 @@
-// O Terminal no navegador do PC - ver tab5_terminal_web.hpp.
+// The Terminal in the PC's browser - see tab5_terminal_web.hpp.
 #include "tab5_terminal_web.hpp"
 
 #include <stdio.h>
@@ -26,12 +26,12 @@ extern const uint8_t FIT_JS_F[]     asm("_binary_addon_fit_js_gz_end");
 
 #define CLIENTES_MAX 3
 #define RETRATO_MAX  (48 * 1024)
-#define CONSOLE_MAX  (48 * 1024)   // uma resposta do api/console (PSRAM)
-#define CONSOLE_LIN  200           // linhas por resposta; o resto vem na seguinte
+#define CONSOLE_MAX  (48 * 1024)   // one api/console response (PSRAM)
+#define CONSOLE_LIN  200           // lines per response; the rest comes in the next one
 
-// As abas abertas (conexoes WebSocket) e a assinatura da sessao, que existe
-// enquanto houver ao menos uma. Sob s_trava (a tarefa do servidor e a da
-// sessao mexem nisto).
+// The open tabs (WebSocket connections) and the session subscription, which
+// exists while there is at least one. Under s_trava (the server task and the
+// session task both touch this).
 static SemaphoreHandle_t s_trava = nullptr;
 static int s_fds[CLIENTES_MAX] = { -1, -1, -1 };
 static int s_assinatura = -1;
@@ -43,22 +43,22 @@ static esp_err_t pagina(httpd_req_t* req)
 {
   httpd_resp_set_type(req, "text/html; charset=utf-8");
   httpd_resp_set_hdr(req, "Cache-Control", "no-store");
-  return httpd_resp_send(req, PAGINA_INICIO, PAGINA_FIM - PAGINA_INICIO - 1);   // TEXT poe um '\0' no fim
+  return httpd_resp_send(req, PAGINA_INICIO, PAGINA_FIM - PAGINA_INICIO - 1);   // TEXT adds a '\0' at the end
 }
 
-// Os arquivos do xterm.js, comprimidos na flash: o navegador descomprime.
+// The xterm.js files, compressed in flash: the browser decompresses them.
 static esp_err_t gz(httpd_req_t* req, const char* tipo, const uint8_t* i, const uint8_t* f)
 {
   httpd_resp_set_type(req, tipo);
   httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
-  httpd_resp_set_hdr(req, "Cache-Control", "max-age=86400");   // nao muda entre versoes do firmware
+  httpd_resp_set_hdr(req, "Cache-Control", "max-age=86400");   // does not change between firmware versions
   return httpd_resp_send(req, (const char*)i, f - i);
 }
 static esp_err_t xterm_js(httpd_req_t* req)  { return gz(req, "application/javascript", XTERM_JS_I, XTERM_JS_F); }
 static esp_err_t xterm_css(httpd_req_t* req) { return gz(req, "text/css", XTERM_CSS_I, XTERM_CSS_F); }
 static esp_err_t fit_js(httpd_req_t* req)    { return gz(req, "application/javascript", FIT_JS_I, FIT_JS_F); }
 
-// O estado da sessao em JSON (texto curto, na pilha).
+// The session state as JSON (short text, on the stack).
 static int estado_json(char* out, size_t n)
 {
   tab5_ssh_sessao_info_t i;
@@ -81,8 +81,8 @@ static void mandar_a_todos(const void* d, size_t n, bool texto)
   for (int fd : fds) { if (fd >= 0) { tab5_web_ws_enviar(fd, d, n, texto); } }
 }
 
-// A sessao falou (na tarefa dela): o cru vai para todas as abas; o "estado
-// mudou" (d = nullptr) vira o JSON.
+// The session spoke (on its own task): the raw data goes to every tab; "state
+// changed" (d = nullptr) becomes the JSON.
 static void da_sessao(const char* d, size_t n, void*)
 {
   if (d) { mandar_a_todos(d, n, false); return; }
@@ -91,7 +91,7 @@ static void da_sessao(const char* d, size_t n, void*)
   mandar_a_todos(js, (size_t)k, true);
 }
 
-// Uma aba entrou: o estado e, com a sessao aberta, o retrato da tela.
+// A tab joined: the state and, with the session open, the screen snapshot.
 static void receber_aba(int fd)
 {
   bool nova = true;
@@ -119,7 +119,7 @@ static void aba_fechou(int fd)
   for (int& f : s_fds) { if (f == fd) { f = -1; } resta |= f >= 0; }
   if (!resta) { assin = s_assinatura; s_assinatura = -1; }
   destravar();
-  if (assin >= 0) { tab5_ssh_sessao_desassinar(assin); }   // a sessao continua: so ninguem assiste pelo PC
+  if (assin >= 0) { tab5_ssh_sessao_desassinar(assin); }   // the session carries on: just nobody watching from the PC
 }
 
 static int num(cJSON* j, const char* k, int padrao)
@@ -133,7 +133,7 @@ static const char* txt(cJSON* j, const char* k)
   return cJSON_IsString(v) ? v->valuestring : "";
 }
 
-// Uma mensagem de controle da pagina.
+// A control message from the page.
 static void controle(int fd, const char* s)
 {
   cJSON* j = cJSON_Parse(s);
@@ -150,7 +150,7 @@ static void controle(int fd, const char* s)
   } else if (!strcmp(t, "fechar")) {
     tab5_ssh_sessao_fechar();
   }
-  // A senha nao fica no heap: zera o texto antes de soltar.
+  // The password does not stay on the heap: zero the text before releasing it.
   if (!strcmp(t, "senha")) {
     cJSON* sv = cJSON_GetObjectItemCaseSensitive(j, "s");
     if (cJSON_IsString(sv)) { memset(sv->valuestring, 0, strlen(sv->valuestring)); }
@@ -158,7 +158,7 @@ static void controle(int fd, const char* s)
   cJSON_Delete(j);
 }
 
-// UM QUADRO do WebSocket: teclas (binario) ou controle (texto).
+// ONE WebSocket FRAME: keys (binary) or control (text).
 static esp_err_t ws(httpd_req_t* req)
 {
   httpd_ws_frame_t q = {};
@@ -173,18 +173,18 @@ static esp_err_t ws(httpd_req_t* req)
     if (q.type == HTTPD_WS_TYPE_BINARY)    { tab5_ssh_sessao_escrever(b, q.len); }
     else if (q.type == HTTPD_WS_TYPE_TEXT) { controle(httpd_req_to_sockfd(req), (const char*)b); }
   }
-  memset(b, 0, q.len);   // podia ser a senha
+  memset(b, 0, q.len);   // it could be the password
   heap_caps_free(b);
   return r;
 }
 
 // ---------------------------------------------------------------------------
-// OS COMANDOS (a sessao do services/tab5_terminal)
+// THE COMMANDS (the services/tab5_terminal session)
 // ---------------------------------------------------------------------------
-// O que mudou desde 'desde' (numero absoluto de linha). Sem mudanca desde a
-// versao 'v' do navegador, so {"v":...}: a pagina pergunta a cada fracao de
-// segundo e quase sempre nao ha nada. A ultima linha que ela tem vem de novo
-// (ainda podia crescer).
+// What changed since 'desde' (absolute line number). With no change since the
+// browser's version 'v', only {"v":...}: the page polls every fraction of a
+// second and there is almost never anything. The last line it has comes again
+// (it could still grow).
 static esp_err_t console(httpd_req_t* req)
 {
   char p[16];
@@ -233,8 +233,8 @@ static esp_err_t console(httpd_req_t* req)
   return r;
 }
 
-// Uma linha digitada no navegador: o mesmo caminho da tela (comando novo, ou a
-// resposta do comando que pergunta - a senha inclusive, que nao volta no eco).
+// A line typed in the browser: the same path as the screen (a new command, or
+// the answer to a command that prompts - the password included, which is not echoed).
 static esp_err_t enviar(httpd_req_t* req)
 {
   char linha[TERM_ENTRADA];
@@ -264,6 +264,6 @@ bool tab5_terminal_web_ligar(void)
 {
   if (!s_trava) { s_trava = xSemaphoreCreateMutex(); }
   if (!s_trava || !tab5_terminal_abrir()) { return false; }
-  ESP_LOGI(TAG, "terminal no navegador: /terminal/");
+  ESP_LOGI(TAG, "terminal in the browser: /terminal/");
   return tab5_web_abrir("Terminal", "terminal", ROTAS, sizeof(ROTAS) / sizeof(ROTAS[0]));
 }

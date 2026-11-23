@@ -1,13 +1,13 @@
-// APP TAREFAS - a JANELA do monitor do sistema (services/tab5_monitor).
+// TAREFAS (TASKS) APP - the WINDOW for the system monitor (services/tab5_monitor).
 //
-// Este app NAO MEDE NADA. Quem mede e o servico, o tempo
-// todo, com o app aberto ou fechado: CPU por tarefa, memoria, picos, e
-// eventos disparados por gatilhos. Aqui so se mostra o que ele ja guardou -
-// inclusive o que aconteceu enquanto ninguem olhava.
+// This app MEASURES NOTHING. The one measuring is the service, all the
+// time, with the app open or closed: CPU per task, memory, peaks, and
+// events fired by triggers. Here we only show what it has already stored -
+// including what happened while nobody was looking.
 //
-// A tela e redesenhada INTEIRA uma vez por segundo. Com o compositor isso nao
-// pisca (tudo vai para a tela virtual e so o que mudou chega ao painel), e o
-// app nao precisa de nenhuma contabilidade de "o que mudou".
+// The screen is redrawn IN FULL once a second. With the compositor this does not
+// flicker (everything goes to the virtual screen and only what changed reaches the panel), and the
+// app does not need any "what changed" bookkeeping.
 
 #include "sdkconfig.h"
 #include "app.h"
@@ -27,29 +27,29 @@ static const char *TAG = "app.tarefas";
 
 #include "esp_attr.h"
 #include "esp_timer.h"
-EXT_RAM_BSS_ATTR static mon_foto_t s_f;      // copia da foto do monitor (a tela le daqui)
-EXT_RAM_BSS_ATTR static mon_foto_t s_nova;   // a ultima que o monitor entregou
-static bool         s_forcar = true;         // proxima passada redesenha tudo
+EXT_RAM_BSS_ATTR static mon_foto_t s_f;      // copy of the monitor snapshot (the screen reads from here)
+EXT_RAM_BSS_ATTR static mon_foto_t s_nova;   // the last one the monitor delivered
+static bool         s_forcar = true;         // next pass redraws everything
 
-// A TABELA DE TAREFAS ROLA (kernel/lista): com muitas tarefas ela
-// passava por baixo dos eventos e sumia. Linha de altura fixa, lida da foto.
+// THE TASK TABLE SCROLLS (kernel/lista): with many tasks it
+// went under the events and vanished. Fixed-height row, read from the snapshot.
 static lista_t s_lista;
 static const int LIN = 34;
 
-// AGRUPADA POR DONO, como o "usuario / sistema" dos
-// gerenciadores de tarefa: primeiro o que e de APP (o aberto e os de fundo),
-// depois os SERVICOS, e por fim o SISTEMA (kernel, drivers, IDF). O dono vem
-// declarado por quem criou a tarefa - hal/tab5_donos.hpp -, nao adivinhado
-// pelo nome. Cada linha da lista e um cabecalho de grupo ou uma tarefa.
+// GROUPED BY OWNER, like the "user / system" of
+// task managers: first what belongs to an APP (the open one and the background ones),
+// then the SERVICES, and finally the SYSTEM (kernel, drivers, IDF). The owner is
+// declared by whoever created the task - hal/tab5_donos.hpp -, not guessed
+// from the name. Each list row is either a group header or a task.
 static const dono_tipo_t GRUPOS[] = { DONO_APP, DONO_FUNDO, DONO_SERVICO, DONO_SISTEMA };
-static const char* const GRUPO_NOME[] = { N_("SISTEMA"), N_("SERVIÇOS"), N_("APP ABERTO"), N_("APPS EM FUNDO") };   // por dono_tipo_t
-static int s_linhas[MON_MAX_TAREFAS + 4];   // >= 0: indice em s_f.t; < 0: cabecalho (-1 - dono_tipo_t)
+static const char* const GRUPO_NOME[] = { N_("SISTEMA"), N_("SERVIÇOS"), N_("APP ABERTO"), N_("APPS EM FUNDO") };   // by dono_tipo_t
+static int s_linhas[MON_MAX_TAREFAS + 4];   // >= 0: index in s_f.t; < 0: header (-1 - dono_tipo_t)
 static int s_nlinhas = 0;
 
 static uint16_t cor_grupo(int tipo)
 {
   switch (tipo) {
-    // Cores de CATEGORIA (quem e o dono da tarefa), nos tons do tema.
+    // CATEGORY colours (who owns the task), in the theme's tones.
     case DONO_APP:     return TEMA_APP_CIANO;
     case DONO_FUNDO:   return TEMA_APP_ROXO;
     case DONO_SERVICO: return TEMA_APP_AMARELO;
@@ -75,10 +75,10 @@ static mon_evento_t s_ev[6];
 static uint32_t     s_flash_usado = 0, s_flash_total = 0;
 static bool         s_tem_flash = false;
 
-static const float TAM_CORPO  = 2.6f * 1.5f;   // tamanhos pedidos em 13 e
+static const float TAM_CORPO  = 2.6f * 1.5f;   // sizes requested in 13 and
 static const float TAM_TITULO = 2.6f * 1.4f;
 
-// Botao ZERAR PICOS, no rodape (coordenadas relativas a area).
+// ZERAR PICOS (reset peaks) button, in the footer (coordinates relative to the area).
 static const int BT_L = 280, BT_A = 56;
 
 static void ler_flash_programa(void)
@@ -91,14 +91,14 @@ static bool ao_abrir(void)
   ler_flash_programa();
   lista_definir(&s_lista, ROLAGEM_INICIO, 0, linha_altura, linha_desenhar, nullptr);
   s_forcar = true;
-  ESP_LOGI(TAG, "aberto (o monitor ja estava medindo)");
+  ESP_LOGI(TAG, "opened (the monitor was already measuring)");
   return true;
 }
 
 static void ao_fechar(void) { }
 
-// SRAM de uso geral do P4 = 768 KB menos a parte que o cache L2 toma. Nunca
-// menor que o heap medido (se a configuracao mudar de forma inesperada).
+// General-purpose SRAM of the P4 = 768 KB minus the part the L2 cache takes. Never
+// smaller than the measured heap (in case the configuration changes unexpectedly).
 static uint32_t sram_fisica(uint32_t heap)
 {
   const uint32_t t = 768u * 1024u - (uint32_t)CONFIG_CACHE_L2_CACHE_SIZE;
@@ -112,7 +112,7 @@ static void mem_txt(char* buf, size_t n, uint32_t b)
   else                         { snprintf(buf, n, "%5uB", (unsigned)b); }
 }
 
-// "ha 3m", "ha 2h05" - quanto tempo atras, a partir do uptime.
+// "ha 3m", "ha 2h05" (3m ago, 2h05 ago) - how long ago, from the uptime.
 static void ha_quanto(char* buf, size_t n, uint32_t agora, uint32_t em)
 {
   const uint32_t d = (agora >= em) ? agora - em : 0;
@@ -130,17 +130,17 @@ static uint16_t cor_folga(uint32_t livre, uint32_t total)
 
 static void corpo(lgfx::LovyanGFX& d)   { tab5_fonte_corpo(d); tab5_texto(d, TAM_CORPO); }
 static void titulo(lgfx::LovyanGFX& d)  { tab5_fonte_corpo(d); tab5_texto(d, TAM_TITULO); }
-// Monoespacada: 12 px por caractere em pe; deitada, 1,6x (~10 px), para as
-// linhas de memoria (53 caracteres) caberem na coluna da direita.
+// Monospaced: 12 px per character in portrait; in landscape, 1.6x (~10 px), so the
+// memory rows (53 characters) fit in the right-hand column.
 static float s_mono = 2.0f;
 static void mono(lgfx::LovyanGFX& d)    { d.setFont(&fonts::Font0); d.setTextSize(s_mono); }
 
-// A geometria da tela, a mesma para o desenho e para o toque.
-// x1/l1: a coluna da tabela; x2/l2: a de eventos, grafico e memoria. Em pe
-// sao a mesma (uma embaixo da outra); deitada, lado a lado.
+// The screen geometry, the same for drawing and for touch.
+// x1/l1: the table column; x2/l2: the events, graph and memory one. In portrait
+// they are the same (one under the other); in landscape, side by side.
 typedef struct { int y_rodape, y_prog, y_psram, y_bloco, y_ram, graf_y0, graf_y1, ev_y0, tab_y0, tab_y1, y_resumo, y_recursos, y_cab;
                  int x1, l1, x2, l2, tab_l; } geo_t;
-static const int TAB_L = 720;   // a largura da tabela (as colunas sao fixas)
+static const int TAB_L = 720;   // the table width (the columns are fixed)
 static const int EV_N = 5;
 static geo_t geometria(const area_t& a)
 {
@@ -153,17 +153,17 @@ static geo_t geometria(const area_t& a)
   g.graf_y1  = g.y_ram - 14;
   g.graf_y0  = g.graf_y1 - 170;
   g.ev_y0    = g.graf_y0 - 14 - 40 - EV_N * 26;
-  g.y_resumo = a.y + 12;                 // quais apps estao abertos
-  g.y_recursos = g.y_resumo + LIN + 2;   // o que segura a suspensao (kernel/recursos)
-  g.y_cab    = g.y_recursos + LIN + 4;   // cabecalho da tabela
-  g.tab_y0   = g.y_cab + LIN + 6;        // abaixo do cabecalho da tabela
+  g.y_resumo = a.y + 12;                 // which apps are open
+  g.y_recursos = g.y_resumo + LIN + 2;   // what holds off suspend (kernel/recursos)
+  g.y_cab    = g.y_recursos + LIN + 4;   // table header
+  g.tab_y0   = g.y_cab + LIN + 6;        // below the table header
   g.tab_y1   = g.ev_y0 - 10;
   g.x1 = g.x2 = a.x + 16;
   g.l1 = g.l2 = a.largura - 32;
   g.tab_l = a.largura;
   if (a.largura > a.altura && a.largura >= TAB_L + 400) {
-    // DEITADA: a tabela a esquerda com a altura toda; eventos, grafico e
-    // memoria (556 px) cabem na direita (584 px), sem rolar a tela.
+    // LANDSCAPE: the table on the left at full height; events, graph and
+    // memory (556 px) fit on the right (584 px), without scrolling the screen.
     g.tab_y1 = a.y + a.altura - 8;
     g.tab_l  = TAB_L;
     g.l1     = TAB_L - 32;
@@ -173,14 +173,14 @@ static geo_t geometria(const area_t& a)
   return g;
 }
 
-// DEITADA (teclado fisico, kernel/orientacao) a area tem ~584 px. Antes a
-// tela inteira rolava (a tabela, e depois eventos, grafico e memoria); agora
-// sao duas colunas (ver geometria) e nada rola alem da tabela, como em pe.
+// In LANDSCAPE (physical keyboard, kernel/orientacao) the area is ~584 px. Previously the
+// whole screen scrolled (the table, then events, graph and memory); now
+// there are two columns (see geometry) and nothing scrolls except the table, as in portrait.
 
 static int linha_altura(int, void*) { return LIN; }
 
-// O TEXTO DE UMA LINHA DA TABELA, exatamente como ela vai para a tela -
-// usado para desenhar e para saber se a linha mudou desde a ultima amostra.
+// THE TEXT OF A TABLE ROW, exactly as it goes to the screen -
+// used to draw and to know whether the row changed since the last sample.
 typedef struct {
   char nome[40], cpu[12], pico[12], nucleo[8], prio[8], pilha[12];
   uint16_t cor_nome, cor_pico, cor_grupo;
@@ -189,9 +189,9 @@ typedef struct {
 
 static void linha_texto(int li, linha_txt_t* t)
 {
-  memset(t, 0, sizeof(*t));   // inclusive o enchimento: a assinatura le os bytes crus
+  memset(t, 0, sizeof(*t));   // including the padding: the signature reads the raw bytes
   const int i = s_linhas[li];
-  if (i < 0) {   // cabecalho do grupo
+  if (i < 0) {   // group header
     const int tipo = -1 - i;
     int n = 0;
     for (int k = 0; k < s_f.n; ++k) { if (s_f.t[k].tipo == tipo) { ++n; } }
@@ -217,7 +217,7 @@ static uint32_t linha_assinatura(int li)
 {
   linha_txt_t t;
   linha_texto(li, &t);
-  uint32_t h = 2166136261u;   // FNV-1a sobre o texto e as cores
+  uint32_t h = 2166136261u;   // FNV-1a over the text and the colours
   const uint8_t* p = (const uint8_t*)&t;
   for (size_t k = 0; k < sizeof(t); ++k) { h = (h ^ p[k]) * 16777619u; }
   return h;
@@ -237,7 +237,7 @@ static void linha_desenhar(lgfx::LovyanGFX& d, int li, int x0, int y, int, void*
     d.drawFastHLine(x + (int)d.textWidth(t.nome) + 12, y + LIN / 2, 400, t.cor_grupo);
     return;
   }
-  d.fillRect(x0 + 4, y + 4, 6, LIN - 8, t.cor_grupo);   // a marca do grupo
+  d.fillRect(x0 + 4, y + 4, 6, LIN - 8, t.cor_grupo);   // the group mark
   d.setTextColor(t.cor_nome, TEMA_FUNDO);
   d.drawString(t.nome, x, y);
   d.drawString(t.cpu,  x + 240, y);
@@ -250,22 +250,22 @@ static void linha_desenhar(lgfx::LovyanGFX& d, int li, int x0, int y, int, void*
 }
 
 // ---------------------------------------------------------------------------
-// CAMPOS - PINTAR SO O QUE MUDOU
+// FIELDS - PAINT ONLY WHAT CHANGED
 // ---------------------------------------------------------------------------
-// A janela repintava TUDO a cada amostra (1 Hz): apagar a area inteira e
-// redesenhar tabela, eventos, grafico e memoria - ~70 ms de CPU e 1,6 MB de
-// tela por segundo, para mudar meia duzia de numeros. Agora cada linha de
-// texto e um CAMPO que guarda o que esta na tela e so e repintado (apaga a
-// faixa dele e escreve) quando o texto ou a cor mudam. A tabela faz o mesmo
-// por linha (lista_item_mudou). O que muda de fato a cada segundo - o
-// grafico, os "ha Ns" - e so isso que vai para a tela.
+// The window repainted EVERYTHING on every sample (1 Hz): clearing the whole area and
+// redrawing table, events, graph and memory - ~70 ms of CPU and 1.6 MB of
+// screen per second, to change half a dozen numbers. Now each line of
+// text is a FIELD that stores what is on screen and is only repainted (clears its
+// strip and writes) when the text or the colour changes. The table does the same
+// per row (lista_item_mudou). What actually changes every second - the
+// graph, the "N s ago" - is all that goes to the screen.
 typedef struct { char txt[96]; uint16_t cor; bool ok; } campo_t;
 
 static campo_t  s_c_resumo, s_c_recursos, s_c_ev_tit, s_c_ev[EV_N], s_c_cpu_tit, s_c_cpu_val;
 static campo_t  s_c_ram, s_c_bloco, s_c_psram, s_c_prog, s_c_rodape;
 static uint32_t s_sig[MON_MAX_TAREFAS + 4];
-static int      s_sig_n = -1;              // -1 = a tabela inteira de novo
-static uint32_t s_graf_uptime = 0;         // amostra que o grafico mostra
+static int      s_sig_n = -1;              // -1 = the whole table again
+static uint32_t s_graf_uptime = 0;         // sample the graph is showing
 
 static void esquecer_campos(void)
 {
@@ -277,8 +277,8 @@ static void esquecer_campos(void)
   s_graf_uptime = 0;
 }
 
-// 'l' x 'a' e a faixa do campo (apagada antes de escrever). datum
-// top_right: x e a borda DIREITA do texto e da faixa.
+// 'l' x 'a' is the field's strip (cleared before writing). datum
+// top_right: x is the RIGHT edge of the text and the strip.
 static void campo(lgfx::LovyanGFX& d, campo_t* c, const char* txt, uint16_t cor,
                   int x, int y, int l, int a, bool direita = false)
 {
@@ -300,18 +300,18 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
   const area_t janela = { a.x, g.tab_y0, g.tab_l, g.tab_y1 - g.tab_y0 };
   s_mono = g.x2 != g.x1 ? 1.6f : 2.0f;
 
-  // A ESTRUTURA (titulos, linhas, moldura, botao) so quando o sistema acabou
-  // de limpar a area - abrir, voltar do repouso. Nesse caso tudo o que os
-  // campos achavam que estava na tela ja nao esta.
+  // THE STRUCTURE (titles, lines, frame, button) only when the system has just
+  // cleared the area - opening, coming back from idle. In that case everything the
+  // fields thought was on screen no longer is.
   const bool estrutura = sistema_area_foi_limpa() || s_forcar;
   if (estrutura) { esquecer_campos(); }
 
-  // SO A ROLAGEM, entre duas amostras: desloca a tabela e desenha a faixa
-  // exposta com a MESMA foto (a que ja esta na tela) - senao a faixa nova
-  // nao bateria com os pixels deslocados. O resto da tela fica como esta.
+  // ONLY THE SCROLLING, between two samples: shifts the table and draws the exposed
+  // strip with the SAME snapshot (the one already on screen) - otherwise the new strip
+  // would not match the shifted pixels. The rest of the screen stays as it is.
   const bool tem = tab5_monitor_foto(&s_nova);
-  // FOTO VELHA: o monitor amostra a 1 Hz; passando de 3 s, a tela diz que o
-  // que mostra e antigo (e o rodape tem que ser repintado para dizer isso).
+  // OLD SNAPSHOT: the monitor samples at 1 Hz; past 3 s, the screen says what
+  // it shows is old (and the footer has to be repainted to say so).
   const uint32_t agora_s = (uint32_t)(esp_timer_get_time() / 1000000LL);
   const uint32_t atraso = (tem && agora_s > s_nova.uptime_s) ? agora_s - s_nova.uptime_s : 0;
   if (tem && !estrutura && s_nova.uptime_s == s_f.uptime_s && atraso <= 3) {
@@ -323,7 +323,7 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
   d.setTextDatum(top_left);
 
   const int x = g.x1, larg = g.l1, lin = LIN;
-  const int xb = g.x2, lb = g.l2;   // eventos, grafico, memoria e rodape
+  const int xb = g.x2, lb = g.l2;   // events, graph, memory and footer
   char buf[96], m1[12], m2[12], m3[12], h[16];
 
   if (!tem) {
@@ -341,7 +341,7 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
   const int gy0 = graf_y0 + 40, gh = graf_y1 - gy0;
 
   if (estrutura) {
-    // Cabecalho da tabela.
+    // Table header.
     titulo(d); d.setTextColor(TEMA_TEXTO_2, TEMA_FUNDO);
     d.drawString(tr("TAREFA"), x, g.y_cab);
     d.drawString(tr("CPU"),    x + 250, g.y_cab);
@@ -350,21 +350,21 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
     d.drawString(tr("PRI"),    x + 535, g.y_cab);
     d.drawString(tr("PILHA"),  x + 600, g.y_cab);
     d.drawFastHLine(x, g.y_cab + lin, larg, TEMA_LINHA);
-    // Moldura do grafico e separador da memoria.
+    // Graph frame and memory separator.
     d.drawRect(xb, gy0, lb, gh, TEMA_LINHA);
     d.drawFastHLine(xb, y_ram - 8, lb, TEMA_LINHA);
     tab5_botao(d, a.x + a.largura - 16 - BT_L, y_rodape, BT_L, BT_A, tr("ZERAR PICOS"), TEMA_ALERTA,
                TEMA_FUNDO, TAB5_BOTAO_TEXTO_GRANDE);
   }
 
-  // ---- quem esta aberto: o app na frente e as partes de fundo ------------
+  // ---- who is open: the app in front and the background parts -------------
   {
     corpo(d);
     fundo_info_t fi[4];
     const int nf = sistema_fundo_listar(fi, 4);
     char resumo[96];
     int k = snprintf(resumo, sizeof(resumo), tr("EM FUNDO: "));
-    // Cada app aberto no servidor web conta como rodando de fundo (no PC).
+    // Each app open on the web server counts as running in the background (on the PC).
     const char* web[WEB_PARTES_MAX];
     const int nw = tab5_web_abertos(web, WEB_PARTES_MAX);
     if (nf == 0 && nw == 0) { snprintf(resumo + k, sizeof(resumo) - k, tr("nenhum app")); }
@@ -377,9 +377,9 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
     campo(d, &s_c_resumo, resumo, (nf || nw) ? TEMA_APP_ROXO : TEMA_TEXTO_3, x, g.y_resumo, larg, lin);
   }
 
-  // ---- o que segura a suspensao: os recursos em uso (kernel/recursos.h) ---
-  // Responde "por que nao dorme": cada linha e um recurso e quem o declarou
-  // (o app, o navegador, o Mesh). Nenhum = a tela apagada desce a 40 MHz.
+  // ---- what holds off suspend: the resources in use (kernel/recursos.h) ---
+  // Answers "why does it not sleep": each row is a resource and who declared it
+  // (the app, the browser, Mesh). None = the screen off drops to 40 MHz.
   {
     corpo(d);
     recurso_uso_t u[RECURSOS_MAX];
@@ -393,7 +393,7 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
     campo(d, &s_c_recursos, rr, nr ? TEMA_ALERTA : TEMA_TEXTO_3, x, g.y_recursos, larg, lin);
   }
 
-  // ---- tabela de tarefas: so as linhas que mudaram ------------------------
+  // ---- task table: only the rows that changed -----------------------------
   {
     const int n_antes = s_nlinhas;
     int antes[MON_MAX_TAREFAS + 4];
@@ -402,7 +402,7 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
     const bool mesma_forma = s_sig_n == s_nlinhas && n_antes == s_nlinhas
                           && memcmp(antes, s_linhas, sizeof(int) * (size_t)s_nlinhas) == 0;
     if (!mesma_forma) {
-      // Entrou ou saiu tarefa, ou a ordem mudou: a lista inteira de novo.
+      // A task came or went, or the order changed: the whole list again.
       lista_itens_mudaram(&s_lista, s_nlinhas);
       for (int li = 0; li < s_nlinhas; ++li) { s_sig[li] = linha_assinatura(li); }
       s_sig_n = s_nlinhas;
@@ -416,7 +416,7 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
     }
   }
 
-  // ---- eventos (o que os gatilhos registraram) ----------------------------
+  // ---- events (what the triggers recorded) --------------------------------
   titulo(d);
   snprintf(buf, sizeof(buf), tr("EVENTOS  (%lu desde o boot)"), (unsigned long)tab5_monitor_total_eventos());
   campo(d, &s_c_ev_tit, buf, TEMA_TEXTO, xb, ev_y0, lb, 36);
@@ -436,7 +436,7 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
     campo(d, &s_c_ev[k], buf, cor, xb, ey, lb, 26);
   }
 
-  // ---- grafico de CPU (5 min) ---------------------------------------------
+  // ---- CPU graph (5 min) --------------------------------------------------
   {
     titulo(d);
     ha_quanto(h, sizeof(h), agora, s_f.cpu_pico_em);
@@ -446,8 +446,8 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
     campo(d, &s_c_cpu_val, buf, s_f.cpu > 80 ? TEMA_PERIGO : s_f.cpu > 50 ? TEMA_ALERTA : TEMA_SUCESSO,
           xb + lb, graf_y0, 120, 36, true);
 
-    // O grafico muda a cada amostra (uma nova entra pela direita): o MIOLO e
-    // repintado, uma vez por amostra; a moldura fica.
+    // The graph changes on every sample (a new one enters from the right): the CORE is
+    // repainted, once per sample; the frame stays.
     if (s_graf_uptime != agora) {
       s_graf_uptime = agora;
       d.fillRect(xb + 1, gy0 + 1, lb - 2, gh - 2, TEMA_FUNDO);
@@ -458,28 +458,28 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
       const int n = tab5_monitor_historico(s_cpu, nullptr, nullptr, MON_HIST_N);
       int px0 = 0, py0 = 0;
       for (int k = 0; k < n; ++k) {
-        // Alinhado a direita: o mais novo sempre na borda, o grafico enche da
-        // direita para a esquerda nos primeiros 5 minutos.
+        // Right-aligned: the newest always at the edge, the graph fills from
+        // right to left in the first 5 minutes.
         const int px = xb + 2 + ((MON_HIST_N - n + k) * (lb - 4)) / (MON_HIST_N - 1);
         const int py = gy0 + gh - 2 - (int)(s_cpu[k] * (float)(gh - 4) / 100.0f);
-        // cor de DADO: a curva da CPU
+        // DATA colour: the CPU curve
         if (k > 0) { d.drawLine(px0, py0, px, py, TEMA_APP_LIMA); }
         px0 = px; py0 = py;
       }
     }
   }
 
-  // ---- memoria: agora, total e o MENOR que ja sobrou, com quando ----------
+  // ---- memory: now, total and the LOWEST ever left, with when -------------
   mono(d);
   const mon_mem_t& r = s_f.ram;
-  // O total mostrado e a SRAM FISICA do P4 (768 KB menos o cache L2), nao so o
-  // heap: o resto e codigo e dados fixos do sistema. A cor da folga continua
-  // medida contra o heap, que e o que de fato pode ser alocado.
+  // The total shown is the P4's PHYSICAL SRAM (768 KB minus the L2 cache), not just the
+  // heap: the rest is code and fixed system data. The headroom colour is still
+  // measured against the heap, which is what can actually be allocated.
   mem_txt(m1, sizeof(m1), r.livre); mem_txt(m2, sizeof(m2), sram_fisica(r.total)); mem_txt(m3, sizeof(m3), r.min_livre);
   ha_quanto(h, sizeof(h), agora, r.min_livre_em);
-  // COLUNAS FIXAS (Font0 e monoespacada): rotulo 6, descricao 12, valor 14 -
-  // o "min" cai na mesma coluna nas tres linhas. Antes cada linha contava os
-  // proprios espacos e o "min" do bloco saia 2 casas fora.
+  // FIXED COLUMNS (Font0 is monospaced): label 6, description 12, value 14 -
+  // the "min" falls in the same column on all three rows. Previously each row counted its
+  // own spaces and the block's "min" came out 2 places off.
   char v[24];
   snprintf(v, sizeof(v), "%s/%s", m1, m2);
   snprintf(buf, sizeof(buf), tr("%-6s%-12s%-14s min %s %s"), tr("RAM"), tr("livre"), v, m3, h);
@@ -501,7 +501,7 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
     campo(d, &s_c_prog, buf, cor_folga(s_flash_total - s_flash_usado, s_flash_total), xb, y_prog, lb, 24);
   }
 
-  // ---- rodape: uptime (o botao ZERAR PICOS e estrutura) -------------------
+  // ---- footer: uptime (the ZERAR PICOS button is structure) ---------------
   const uint32_t up = agora;
   if      (up < 3600)  { snprintf(h, sizeof(h), "%um%02us", (unsigned)(up / 60), (unsigned)(up % 60)); }
   else if (up < 86400) { snprintf(h, sizeof(h), "%uh%02um", (unsigned)(up / 3600), (unsigned)((up % 3600) / 60)); }
@@ -518,7 +518,7 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
   d.setTextStyle(estilo);
 }
 
-// Arrastar na tabela rola; o resto da tela nao rola.
+// Dragging on the table scrolls; the rest of the screen does not scroll.
 static void ao_tocar_nivel(int x, int y, bool pressionado)
 {
   if (lista_arrastar(&s_lista, x, y, pressionado)) { sistema_pedir_redesenho(); }
@@ -526,7 +526,7 @@ static void ao_tocar_nivel(int x, int y, bool pressionado)
 
 static void ao_tocar(int x, int y)
 {
-  if (lista_item_tocado(&s_lista, x, y, nullptr) == LISTA_ARRASTE) { return; }   // fim de arraste nao e clique
+  if (lista_item_tocado(&s_lista, x, y, nullptr) == LISTA_ARRASTE) { return; }   // end of a drag is not a click
   const area_t a = sistema_area();
   const int bx = a.largura - 16 - BT_L;
   const int by = a.altura - BT_A - 8;
@@ -537,11 +537,11 @@ static void ao_tocar(int x, int y)
 }
 
 // ---------------------------------------------------------------------------
-// ICONE DA TELA INICIAL
+// HOME SCREEN ICON
 // ---------------------------------------------------------------------------
-// Primitivas e fracao do lado, como a marca do Mesh: sai limpo em qualquer
-// tamanho, nao gasta flash e nao serrilha. A letra grande que estava aqui era
-// a fonte embutida ampliada 6x - cada pixel dela virava um quadrado de 6.
+// Primitives and fractions of the side, like the Mesh logo: comes out clean at any
+// size, uses no flash and has no jaggies. The large letter that was here was
+// the built-in font enlarged 6x - each pixel of it became a 6x6 square.
 static void icone_tarefas(lgfx::LovyanGFX& d, int x, int y, int lado)
 {
   const uint16_t fundo = d.color565(22, 40, 26);
@@ -549,8 +549,8 @@ static void icone_tarefas(lgfx::LovyanGFX& d, int x, int y, int lado)
 
   d.fillRoundRect(x, y, lado, lado, lado / 6, fundo);
 
-  // Barras de altura diferente: o app e um monitor, e monitor se reconhece pelo
-  // perfil irregular. Barras iguais leriam como "lista", que e outra coisa.
+  // Bars of different heights: the app is a monitor, and a monitor is recognised by its
+  // irregular profile. Equal bars would read as "list", which is something else.
   const float alt[4] = { 0.30f, 0.52f, 0.22f, 0.42f };
   const int larg = lado / 9;
   const int vao  = lado / 22;
@@ -559,14 +559,14 @@ static void icone_tarefas(lgfx::LovyanGFX& d, int x, int y, int lado)
 
   for (int i = 0; i < 4; ++i) {
     const int h = (int)(alt[i] * lado);
-    // A ultima em laranja: o app existe para achar quem esta gastando, e o
-    // icone ja aponta para isso.
+  // The last one in orange: the app exists to find who is using up resources, and the
+  // icon already points to that.
     d.fillRoundRect(bx, base - h, larg, h, larg / 3,
                     (i == 1) ? TFT_ORANGE : barra);
     bx += larg + vao;
   }
 
-  // Linha de base: da chao as barras e fecha a leitura de grafico.
+  // Baseline: gives the bars a floor and completes the reading as a graph.
   d.fillRect(x + (int)(0.16f * lado), base + lado / 40,
              (int)(0.68f * lado), lado / 40, d.color565(90, 130, 95));
 }
@@ -580,7 +580,7 @@ extern const app_t APP_TAREFAS = {
   .desenhar  = desenhar,
   .ao_tocar  = ao_tocar,
   .ao_tocar_nivel = ao_tocar_nivel,
-  .periodo_ms = 1000,   // o monitor amostra a 1Hz; a janela acompanha
+  .periodo_ms = 1000,   // the monitor samples at 1Hz; the window follows
   .icone = icone_tarefas,
   .fundo_tema = true,
 };

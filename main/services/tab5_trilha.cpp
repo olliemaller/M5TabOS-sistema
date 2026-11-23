@@ -2,7 +2,7 @@
 #include "tab5_linhas.hpp"
 #include "tab5_gps.hpp"
 #include "tab5_sd.hpp"
-#include "tab5_arquivos.hpp"   // listar pasta e do sistema
+#include "tab5_arquivos.hpp"   // listing a folder is the system's job
 #include "tab5_hora.hpp"
 #include "tab5_mutex.hpp"
 #include "notificacao.h"
@@ -18,19 +18,19 @@
 
 static const char* TAG = "trilha";
 #define TRILHA_PASTA "Trilha"
-#define AMOSTRA_MS   5000   // um ponto a cada 5s - trilha nao precisa de mais que isso
+#define AMOSTRA_MS   5000   // one point every 5 s - a track needs no more than that
 
-static uint32_t       s_pontos  = 0;   // uint32_t sozinho: leitura/escrita de palavra e atomica nesta CPU
-// O nome muda em dois momentos: tab5_trilha_iniciar (antes da tarefa subir) e a
-// virada do dia (na tarefa).
+static uint32_t       s_pontos  = 0;   // a lone uint32_t: word read/write is atomic on this CPU
+// The name changes at two moments: tab5_trilha_iniciar (before the task starts) and the
+// day rollover (in the task).
 static char           s_nome[32] = "";
-static uint32_t       s_numero   = 0;     // o N de trilha_N.csv gravando (0 = parado)
-static uint32_t       s_continuar = 0;    // pedido para o proximo inicio (tab5_trilha_continuar)
-static bool           s_carregar = false; // o laco comeca lendo o arquivo existente
-static uint32_t       s_dia = 0;          // AAAAMMDD LOCAL da trilha gravando (0 = ainda nao sabe)
+static uint32_t       s_numero   = 0;     // the N of the trilha_N.csv being written (0 = stopped)
+static uint32_t       s_continuar = 0;    // request for the next start (tab5_trilha_continuar)
+static bool           s_carregar = false; // the loop starts by reading the existing file
+static uint32_t       s_dia = 0;          // LOCAL AAAAMMDD of the track being written (0 = not known yet)
 
 // ---------------------------------------------------------------------------
-// A DECIMACAO - uma so, usada pelo mapa ao vivo e pela leitura do historico.
+// THE DECIMATION - a single one, used by the live map and by reading the history.
 // ---------------------------------------------------------------------------
 void tab5_trilha_decimar_iniciar(tab5_trilha_decimador_t* d, tab5_trilha_ponto_t* pts, uint32_t max)
 {
@@ -48,7 +48,7 @@ void tab5_trilha_decimar_somar(tab5_trilha_decimador_t* d, float lat, float lon)
     for (uint32_t k = 0; k < d->max / 2; ++k) { d->pts[k] = d->pts[k * 2]; }
     d->n      = d->max / 2;
     d->passo *= 2;
-    // Passo dobrou - a amostra atual pode nao caber mais na cadencia nova.
+    // The step doubled - the current sample may no longer fit the new cadence.
     if ((d->idx % d->passo) != 0) { return; }
   }
   d->pts[d->n].lat = lat;
@@ -57,42 +57,42 @@ void tab5_trilha_decimar_somar(tab5_trilha_decimador_t* d, float lat, float lon)
 }
 
 // ---------------------------------------------------------------------------
-// O MAPA AO VIVO
+// THE LIVE MAP
 // ---------------------------------------------------------------------------
-// Escrito pela tarefa "trilha" (laco), lido pela tarefa do app (de dentro de
-// desenhar()) - tarefas DIFERENTES, por isso o mutex; nao e o mesmo caso de
-// s_pontos/s_nome acima (aqueles sao publicados so DEPOIS de estaveis, e uma
-// palavra sozinha nao rasga leitura).
+// Written by the "trilha" task (loop), read by the app's task (from inside
+// desenhar()) - DIFFERENT tasks, hence the mutex; not the same case as
+// s_pontos/s_nome above (those are only published AFTER they are stable, and a
+// lone word does not tear on read).
 static tab5_trilha_ponto_t     s_mapa[TAB5_TRILHA_MAPA_MAX];
-static tab5_trilha_decimador_t s_mapa_dec;       // quem decima s_mapa (n = pontos validos)
-static bool                    s_mapa_pronto = false;   // s_mapa_dec ja foi iniciado
-static uint32_t                s_mapa_dia   = 0;   // AAAAMMDD do tracado atual; 0 = nenhum ainda
+static tab5_trilha_decimador_t s_mapa_dec;       // what decimates s_mapa (n = valid points)
+static bool                    s_mapa_pronto = false;   // s_mapa_dec has been initialised
+static uint32_t                s_mapa_dia   = 0;   // AAAAMMDD of the current trace; 0 = none yet
 static Trava s_mapa_mutex;
 
 static inline void travar_mapa(void)    { s_mapa_mutex.travar(); }
 static inline void destravar_mapa(void) { s_mapa_mutex.destravar(); }
 
-// Recomeca o tracado do zero. Chamar com o mapa travado.
+// Restarts the trace from scratch. Call with the map locked.
 static void mapa_zerar(void)
 {
   tab5_trilha_decimar_iniciar(&s_mapa_dec, s_mapa, TAB5_TRILHA_MAPA_MAX);
   s_mapa_pronto = true;
 }
 
-// UM TRACADO POR DIA (acumular tudo na mesma imagem a tornaria ilegivel).
-// Uma gravacao pode ficar ligada por dias (e o app so para no botao, nunca
-// sozinho); sem isto, uma caminhada de segunda ficaria emendada com a de terca
-// na MESMA imagem - e, depois de decimado o suficiente, viraria uma mancha sem
-// formato nenhum, sem representar caminhada nenhuma de verdade.
-// 'dia_chave' e AAAAMMDD no dia LOCAL (tab5_trilha_dia_local) - comparado
-// contra o dia do tracado ATUAL; virou, reseta como se fosse um inicio novo,
-// mas SEM tocar no arquivo/contagem de pontos (a gravacao no cartao
-// continua, so o desenho recomeca do zero).
+// ONE TRACE PER DAY (piling everything onto the same image would make it illegible).
+// A recording can stay on for days (and the app only stops on the button, never
+// by itself); without this, a Monday walk would be joined to Tuesday's
+// on the SAME image - and, once decimated enough, would become a shapeless
+// smudge, representing no real walk at all.
+// 'dia_chave' is AAAAMMDD on the LOCAL day (tab5_trilha_dia_local) - compared
+// against the CURRENT trace's day; if it rolled over, resets as if it were a new start,
+// but WITHOUT touching the file/point count (recording to the card
+// carries on, only the drawing restarts from scratch).
 static void mapa_virar_dia_se_precisar(uint32_t dia_chave)
 {
   if (dia_chave == s_mapa_dia) { return; }
-  if (s_mapa_dia != 0) {   // 0 = primeiro ponto desta sessao, nao e "virada" de verdade
-    ESP_LOGI(TAG, "mapa: virou o dia (%lu -> %lu) - tracado zerado",
+  if (s_mapa_dia != 0) {   // 0 = first point of this session, not a real "rollover"
+    ESP_LOGI(TAG, "map: the day rolled over (%lu -> %lu) - trace cleared",
              (unsigned long)s_mapa_dia, (unsigned long)dia_chave);
   }
   mapa_zerar();
@@ -118,9 +118,9 @@ uint32_t tab5_trilha_mapa(tab5_trilha_ponto_t* out, uint32_t max)
 }
 
 // ---------------------------------------------------------------------------
-// O CARTAO
+// THE SD CARD
 // ---------------------------------------------------------------------------
-// Caminho absoluto de "trilha_NNNN.csv" (para o leitor). false = sem pasta.
+// Absolute path of "trilha_NNNN.csv" (for the reader). false = no folder.
 static bool caminho_da_trilha(uint32_t numero, char* out, size_t tam)
 {
   char pasta[96];
@@ -129,10 +129,10 @@ static bool caminho_da_trilha(uint32_t numero, char* out, size_t tam)
   return true;
 }
 
-// "AAAA-MM-DDTHH:MM:SSZ,lat,lon,altitude_m,qualidade" - so data e lat/lon
-// interessam para o tracado. O primeiro campo (data) tem virgula nenhuma
-// dentro, entao o PRIMEIRO strchr ja aponta para depois dela. false = o
-// cabecalho, ou linha cortada.
+// "AAAA-MM-DDTHH:MM:SSZ,lat,lon,altitude_m,qualidade" - only the date and lat/lon
+// matter for the trace. The first field (date) has no comma
+// inside, so the FIRST strchr already points past it. false = the
+// header, or a truncated line.
 static bool ler_ponto(const char* linha, uint32_t* ep, float* lat, float* lon)
 {
   if (!tab5_trilha_ler_carimbo(linha, ep)) { return false; }
@@ -140,11 +140,11 @@ static bool ler_ponto(const char* linha, uint32_t* ep, float* lat, float* lon)
   return apos_data && sscanf(apos_data + 1, "%f,%f", lat, lon) == 2;
 }
 
-// MAIOR "trilha_NNNN.csv" JA NO CARTAO - cada gravacao e um arquivo novo, e o
-// numero tem que vir do que ja existe no cartao, nao de uma variavel que
-// nasce zerada a cada boot. MONTA o cartao: sem isso, tab5_sd_pasta() via
-// cartao ausente, devolvia false, e todo INICIAR comecava do zero em
-// "trilha_0001.csv" - sobrescrevendo a sessao anterior.
+// HIGHEST "trilha_NNNN.csv" ALREADY ON THE CARD - each recording is a new file, and the
+// number has to come from what already exists on the card, not from a variable that
+// starts at zero on every boot. MOUNTS the card: without that, tab5_sd_pasta() saw
+// the card as absent, returned false, and every START began from zero at
+// "trilha_0001.csv" - overwriting the previous session.
 static uint32_t maior_trilha_existente(void)
 {
   uint32_t maior = 0;
@@ -158,16 +158,16 @@ static uint32_t maior_trilha_existente(void)
 }
 
 // ---------------------------------------------------------------------------
-// A GRAVACAO (o fundo)
+// THE RECORDING (the background part)
 // ---------------------------------------------------------------------------
-// CONTINUAR: o tracado e a contagem voltam do proprio arquivo - lido aqui, na
-// tarefa de fundo (um dia inteiro sao ~17 mil linhas: segundos de cartao,
-// que na interface seriam segundos de tela parada).
+// CONTINUE: the trace and the count come back from the file itself - read here, on the
+// background task (a whole day is ~17 thousand lines: seconds of card access,
+// which in the interface would be seconds of frozen screen).
 static void carregar_existente(fundo_t* f)
 {
   char caminho[160];
   if (!caminho_da_trilha(s_numero, caminho, sizeof(caminho))) { return; }
-  tab5_linhas_t* l = tab5_linhas_abrir(caminho);   // grava o pendente antes de ler
+  tab5_linhas_t* l = tab5_linhas_abrir(caminho);   // writes pending data before reading
   if (!l) { return; }
   char linha[112];
   uint32_t n = 0, voltas = 0;
@@ -183,17 +183,17 @@ static void carregar_existente(fundo_t* f)
   }
   tab5_linhas_fechar(l);
   s_pontos = n;
-  ESP_LOGI(TAG, "continuando %s: %lu ponto(s) ja no arquivo", s_nome, (unsigned long)n);
+  ESP_LOGI(TAG, "continuing %s: %lu point(s) already in the file", s_nome, (unsigned long)n);
 }
 
-// MEIA-NOITE: a trilha do dia fecha (vira historico) e a do dia seguinte
-// abre - o numero seguinte ao maior que ja existe, como num INICIAR.
+// MIDNIGHT: the day's track closes (becomes history) and the next day's
+// opens - the number after the highest that exists, as on a START.
 static void virar_trilha(uint32_t dia_novo)
 {
   uint32_t proximo = s_numero + 1;
   const uint32_t m = maior_trilha_existente() + 1;
   if (m > proximo) { proximo = m; }
-  ESP_LOGI(TAG, "virou o dia: %s fica no historico (%lu ponto(s)), segue em trilha_%04lu.csv",
+  ESP_LOGI(TAG, "the day rolled over: %s goes to history (%lu point(s)), continuing in trilha_%04lu.csv",
            s_nome, (unsigned long)s_pontos, (unsigned long)proximo);
   travar_mapa();
   s_numero = proximo;
@@ -203,9 +203,9 @@ static void virar_trilha(uint32_t dia_novo)
   s_dia = dia_novo;
 }
 
-// O LOOP - roda na tarefa que o kernel cria (kernel/fundo.h). Dorme
-// AMOSTRA_MS, olha o GPS, grava se tiver fix. fundo_esperar() volta NA HORA
-// quando pedem para parar.
+// THE LOOP - runs on the task the kernel creates (kernel/fundo.h). Sleeps
+// AMOSTRA_MS, checks the GPS, writes if it has a fix. fundo_esperar() returns IMMEDIATELY
+// when asked to stop.
 static void laco_trilha(fundo_t* f)
 {
   if (s_carregar) {
@@ -219,12 +219,12 @@ static void laco_trilha(fundo_t* f)
     const nmea_posicao_t pos  = tab5_gps_posicao();
     const nmea_tempo_t   hora = tab5_gps_tempo();
 
-    // SEM FIX, SEM PONTO - nao vale a pena gravar lat/lon zerados so para
-    // dizer "tentei". A proxima volta tenta de novo sozinha.
+    // NO FIX, NO POINT - not worth writing zeroed lat/lon just to
+    // say "I tried". The next round tries again by itself.
     if (!pos.valida || pos.qualidade == 0 || !hora.valida) { continue; }
 
-    // O DIA LOCAL DESTE PONTO. Mudou (e ja se sabia o dia da trilha): fecha
-    // esta e abre a do dia novo ANTES de gravar o ponto.
+    // THE LOCAL DAY OF THIS POINT. Changed (and the track's day was known): close
+    // this one and open the new day's BEFORE writing the point.
     char carimbo[24];
     snprintf(carimbo, sizeof(carimbo), "%04u-%02u-%02uT%02u:%02u:%02uZ",
              (unsigned)hora.ano, (unsigned)hora.mes, (unsigned)hora.dia,
@@ -234,15 +234,15 @@ static void laco_trilha(fundo_t* f)
     if (dia_chave && s_dia && dia_chave != s_dia) { virar_trilha(dia_chave); }
     if (dia_chave) { s_dia = dia_chave; }
 
-    // Pelo gravador do sistema (hal/tab5_sd.hpp): entrega a linha e segue -
-    // o loop nao monta mais o cartao a cada ponto. O cabecalho vai junto e so
-    // e escrito se o arquivo da sessao estiver vazio.
+    // Through the system writer (hal/tab5_sd.hpp): hands over the line and carries on -
+    // the loop no longer mounts the card on every point. The header goes along and is only
+    // written if the session's file is empty.
     char linha[112];
     snprintf(linha, sizeof(linha), "%s,%.6f,%.6f,%.1f,%u\n",
              carimbo, pos.lat, pos.lon, pos.altitude_m, (unsigned)pos.qualidade);
     if (tab5_sd_anexar(TRILHA_PASTA, s_nome, linha, "data_hora_utc,lat,lon,altitude_m,qualidade\n")) {
       mapa_adicionar(pos.lat, pos.lon, dia_chave);
-      ++s_pontos;   // palavra sozinha, sem trava - ver o aviso no topo do arquivo
+      ++s_pontos;   // lone word, no lock - see the notice at the top of the file
       char resumo[NOTIF_RESUMO];
       snprintf(resumo, sizeof(resumo), "%lu ponto(s)", (unsigned long)s_pontos);
       fundo_estado(f, (int)s_pontos, resumo);
@@ -250,12 +250,12 @@ static void laco_trilha(fundo_t* f)
   }
 }
 
-// Prepara a sessao, na interface, antes de o kernel subir o loop.
+// Prepares the session, on the interface, before the kernel starts the loop.
 static bool ao_iniciar(void)
 {
   uint32_t proximo = s_continuar;
   s_carregar = (s_continuar != 0);
-  s_continuar = 0;   // o pedido vale para UM inicio
+  s_continuar = 0;   // the request applies to ONE start
   if (!proximo) { proximo = maior_trilha_existente() + 1; }
   travar_mapa();
   s_numero = proximo;
@@ -264,31 +264,31 @@ static bool ao_iniciar(void)
   s_pontos = 0;
   s_dia = 0;
 
-  // Mapa NOVO por sessao (nao acumula caminhadas diferentes juntas) - mas so
-  // limpo aqui, nunca em ao_parar(): assim da para olhar o tracado
-  // completo depois de apertar PARAR, ate a proxima vez que apertar INICIAR.
+  // A NEW map per session (does not pile different walks together) - but only
+  // cleared here, never in ao_parar(): that way you can look at the complete trace
+  // after pressing STOP, until the next time START is pressed.
   travar_mapa();
   mapa_zerar();
-  s_mapa_dia = 0;   // 0 = "nenhum tracado ainda" - o 1o ponto define o dia, sem logar "virada"
+  s_mapa_dia = 0;   // 0 = "no trace yet" - the 1st point sets the day, without logging a "rollover"
   destravar_mapa();
 
-  ESP_LOGI(TAG, "%s em %s/%s", s_carregar ? "continuando" : "gravando", TRILHA_PASTA, s_nome);
+  ESP_LOGI(TAG, "%s in %s/%s", s_carregar ? "continuing" : "recording", TRILHA_PASTA, s_nome);
   return true;
 }
 
-// Depois que o loop saiu: o arquivo ja esta fechado (cada ponto abre e fecha).
+// After the loop exits: the file is already closed (each point opens and closes it).
 static void ao_parar(void)
 {
-  ESP_LOGI(TAG, "parado - %lu ponto(s) em %s", (unsigned long)s_pontos, s_nome);
+  ESP_LOGI(TAG, "stopped - %lu point(s) in %s", (unsigned long)s_pontos, s_nome);
   travar_mapa();
   s_nome[0] = '\0';
   s_numero = 0;
   destravar_mapa();
 }
 
-// A DESCRICAO QUE O KERNEL RODA. Perfil vazio de proposito: o GPS e servico
-// (a energia do Grove e decidida pelo kernel), e o cartao se empresta a cada
-// ponto. Prioridade, pastilha, parada e limpeza sao do sistema.
+// THE DESCRIPTION THE KERNEL RUNS. Profile deliberately empty: the GPS is a service
+// (the Grove power is decided by the kernel), and the card is lent on each
+// point. Priority, pill, stopping and clean-up belong to the system.
 const fundo_def_t TRILHA_FUNDO = {
   .nome       = "Trilha",
   .corpo      = laco_trilha,
@@ -305,10 +305,10 @@ void     tab5_trilha_continuar(uint32_t numero) { s_continuar = numero; }
 uint32_t tab5_trilha_numero(void) { return sistema_fundo_ativo(&TRILHA_FUNDO) ? s_numero : 0; }
 
 // ---------------------------------------------------------------------------
-// CARIMBO E DIA
+// TIMESTAMP AND DAY
 // ---------------------------------------------------------------------------
-// Dias desde 1970-01-01 de uma data civil (Howard Hinnant) - o newlib nao tem
-// timegm(), e o mktime() usaria o fuso do sistema.
+// Days since 1970-01-01 of a civil date (Howard Hinnant) - newlib has no
+// timegm(), and mktime() would use the system time zone.
 static int32_t dias_de_civil(int y, unsigned m, unsigned d)
 {
   y -= m <= 2;
@@ -330,7 +330,7 @@ bool tab5_trilha_ler_carimbo(const char* linha, uint32_t* epoch_utc)
 
 uint32_t tab5_trilha_dia_local(uint32_t epoch_utc)
 {
-  if (epoch_utc < 1577836800u) { return 0; }   // antes de 2020: relogio sem acerto
+  if (epoch_utc < 1577836800u) { return 0; }   // before 2020: clock not set
   struct tm t;
   tab5_hora_local(epoch_utc, &t);
   return (uint32_t)(t.tm_year + 1900) * 10000 + (uint32_t)(t.tm_mon + 1) * 100 + (uint32_t)t.tm_mday;
@@ -339,16 +339,16 @@ uint32_t tab5_trilha_dia_local(uint32_t epoch_utc)
 void tab5_trilha_definir_beep(bool tocar)
 {
   ajustes_definir_beep_trilha(tocar);
-  // A fonte da notificacao e a do kernel, pelo nome (registro idempotente).
+  // The notification source is the kernel's, by name (idempotent registration).
   notif_silenciar(notif_registrar(TRILHA_FUNDO.nome), !tocar);
 }
 
 bool tab5_trilha_beep_ligado(void) { return ajustes_beep_trilha(); }
 
 // ---------------------------------------------------------------------------
-// O HISTORICO
+// THE HISTORY
 // ---------------------------------------------------------------------------
-// "06/10 08:15" do primeiro ponto da trilha N (hora local); "" se nao der.
+// "06/10 08:15" of the first point of track N (local time); "" if not possible.
 static void quando_comecou(uint32_t numero, char* out, size_t n)
 {
   out[0] = 0;
@@ -358,7 +358,7 @@ static void quando_comecou(uint32_t numero, char* out, size_t n)
   if (!l) { return; }
   char linha[96];
   uint32_t ep;
-  for (int k = 0; k < 3 && tab5_linhas_proxima(l, linha, sizeof(linha)); ++k) {   // pula o cabecalho
+  for (int k = 0; k < 3 && tab5_linhas_proxima(l, linha, sizeof(linha)); ++k) {   // skips the header
     if (tab5_trilha_ler_carimbo(linha, &ep) && tab5_trilha_dia_local(ep)) {
       struct tm t;
       tab5_hora_local(ep, &t);
@@ -369,7 +369,7 @@ static void quando_comecou(uint32_t numero, char* out, size_t n)
   tab5_linhas_fechar(l);
 }
 
-// O que a varredura da pasta precisa levar e trazer.
+// What the folder scan needs to carry in and out.
 typedef struct {
   uint32_t* numeros;
   int       max, n;
@@ -399,15 +399,15 @@ int tab5_trilha_listar(uint32_t* numeros, char (*quando)[TAB5_TRILHA_QUANDO_TAM]
 {
   varredura_t v = { numeros, max, 0, exceto_a, exceto_b };
   char pasta[128];
-  // Segura o cartao durante a lista toda: quando_comecou abre um arquivo por
-  // trilha, e montar de verdade a cada um seria lento.
+  // Hold the card for the whole list: quando_comecou opens one file per
+  // track, and really mounting for each one would be slow.
   const bool montou = tab5_sd_montar();
   if (montou && tab5_sd_pasta(TRILHA_PASTA, pasta, sizeof(pasta))) {
     tab5_arq_percorrer(pasta, visita_trilha, &v);
   }
   int n = v.n;
 
-  // MAIOR PRIMEIRO: a sessao mais recente no topo.
+  // HIGHEST FIRST: the most recent session at the top.
   if (n > 1) { qsort(numeros, n, sizeof(uint32_t), maior_primeiro); }
   for (int i = 0; i < n; ++i) {
     if (quando) {
@@ -434,12 +434,12 @@ void tab5_trilha_ler(uint32_t numero, tab5_trilha_leitura_t* r, tab5_trilha_canc
   uint32_t voltas = 0;
   while (tab5_linhas_proxima(l, linha, sizeof(linha))) {
     if ((++voltas % 64) == 0) {
-      vTaskDelay(1);                                   // nao segurar o core num arquivo grande
-      if (cancelado && cancelado()) { break; }         // o app fechou: o resultado nao serve mais
+      vTaskDelay(1);                                   // do not hog the core on a big file
+      if (cancelado && cancelado()) { break; }         // the app closed: the result is no longer needed
     }
     uint32_t ep;
     float lat, lon;
-    if (!ler_ponto(linha, &ep, &lat, &lon)) { continue; }   // o cabecalho, ou linha cortada
+    if (!ler_ponto(linha, &ep, &lat, &lon)) { continue; }   // the header, or a truncated line
 
     if (!r->primeiro) { r->primeiro = ep; }
     r->ultimo = ep;

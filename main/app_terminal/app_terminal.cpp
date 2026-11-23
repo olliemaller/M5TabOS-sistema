@@ -1,25 +1,25 @@
-// APP: Terminal - os comandos do sistema na tela, com teclado.
+// APP: Terminal - the system commands on screen, with a keyboard.
 //
-// So interface. A sessao (as linhas, a fila, a pasta atual, o comando que
-// roda) e do servico (services/tab5_terminal), e os comandos sao os do
-// console (console.cpp): fechar o app nao para o que roda, e voltar mostra
-// tudo onde estava.
+// Interface only. The session (the lines, the queue, the current folder, the command
+// running) belongs to the service (services/tab5_terminal), and the commands are the
+// console's (console.cpp): closing the app does not stop what is running, and coming back shows
+// everything where it was.
 //
-//   em cima    a saida, rolando (a mais nova embaixo, como todo terminal)
-//   embaixo    a linha de comando: o prompt com a pasta atual e o que se digita
+//   top       the output, scrolling (newest at the bottom, like every terminal)
+//   bottom    the command line: the prompt with the current folder and what is typed
 //
-// Teclado fisico (ExtPort1): Enter roda, setas cima/baixo trazem o que foi
-// digitado antes, Esc apaga a linha, Ctrl+C para o comando, Ctrl+L limpa,
-// Ctrl+V cola. Sem ele: tocar na linha abre o virtual.
+// Physical keyboard (ExtPort1): Enter runs, up/down arrows bring back what was
+// typed before, Esc clears the line, Ctrl+C stops the command, Ctrl+L clears,
+// Ctrl+V pastes. Without it: tapping the line opens the virtual one.
 //
-// NO PC: o botao no fim da linha de comando abre o painel do sistema
-// (kernel/painel_web) - ligar o acesso pelo navegador, o endereco e a senha.
-// Verde = o Terminal ja esta aberto no PC. O comando 'web' mostra o mesmo.
+// ON THE PC: the button at the end of the command line opens the system panel
+// (kernel/painel_web) - turning on browser access, the address and the password.
+// Green = the Terminal is already open on the PC. The 'web' command shows the same.
 //
-// O SSH E UM COMANDO: 'ssh usuario@host' abre a sessao SSH compartilhada com
-// o navegador do PC, e o app troca SOZINHO para a tela dela (terminal_ssh.cpp)
-// enquanto ela esta de pe; 'exit' (ou Encerrar) volta aos comandos, com o
-// motivo na barra. A mesma regra vale na pagina /terminal/ do navegador.
+// SSH IS A COMMAND: 'ssh user@host' opens the SSH session shared with
+// the PC browser, and the app switches BY ITSELF to its screen (terminal_ssh.cpp)
+// while it is up; 'exit' (or Encerrar - end) goes back to the commands, with the
+// reason in the bar. The same rule applies on the browser's /terminal/ page.
 
 #include "app.h"
 #include "idioma.h"
@@ -39,39 +39,39 @@
 #include <stdio.h>
 #include <string.h>
 
-static const int MX    = 12;    // margem do texto
-static const int BAR_A = 64;    // a linha de comando
-static const int PARAR_L = 120; // o botao "Parar" na linha, com comando rodando
-static const int PC_L  = 120;   // o botao "No PC" no fim da linha
-static const int TOPO_PC = 64;  // a tela do No PC: a faixa do "< Voltar"
-// O fundo da saida fica PRETO (e nao TEMA_FUNDO), de proposito: e um terminal,
-// e as cores do texto (e as ANSI da sessao SSH) foram feitas para fundo preto.
-// Por isso este app NAO liga .fundo_tema. So a "moldura" (barra, botoes) usa o tema.
+static const int MX    = 12;    // text margin
+static const int BAR_A = 64;    // the command line
+static const int PARAR_L = 120; // the "Parar" (stop) button on the line, with a command running
+static const int PC_L  = 120;   // the "No PC" (on PC) button at the end of the line
+static const int TOPO_PC = 64;  // the On PC screen: the "< Voltar" (back) strip
+// The output background stays BLACK (and not TEMA_FUNDO), on purpose: it is a terminal,
+// and the text colours (and the SSH session's ANSI ones) were made for a black background.
+// That is why this app does NOT turn on .fundo_tema. Only the "frame" (bar, buttons) uses the theme.
 static const uint16_t FUNDO_TERM = TFT_BLACK;
 
 static lista_t   s_lista;
 static tecvirt_t s_kb;
 static char      s_txt[TERM_ENTRADA] = "";
-static int       s_hist = -1;          // -1 = editando a linha nova; k = o k-esimo de antes
+static int       s_hist = -1;          // -1 = editing the new line; k = the k-th earlier one
 static uint32_t  s_versao = 0xFFFFFFFF;
 static bool      s_ocupado = false;
 static bool      s_forcar = true;
-static bool      s_ssh = false;        // a tela SSH na frente (a sessao esta de pe)
-static bool      s_pc = false;         // a tela do No PC na frente (o painel do servidor web)
-static uint32_t  s_pc_assin = 0;       // o que o painel mostrava (painel_web_assinatura)
+static bool      s_ssh = false;        // the SSH screen in front (the session is up)
+static bool      s_pc = false;         // the On PC screen in front (the web server panel)
+static uint32_t  s_pc_assin = 0;       // what the panel showed (painel_web_assinatura)
 
-#define DONO_WEB "Terminal"   // a parte do servidor web (o mesmo de tab5_terminal_web_ligar)
+#define DONO_WEB "Terminal"   // the web server part (the same as in tab5_terminal_web_ligar)
 
-// A grade da fonte monoespacada, medida no desenho (muda ao girar).
+// The monospaced font grid, measured when drawing (changes on rotation).
 static int s_cw = 14, s_lh = 26, s_cols = 48;
 
-// Da borda de cima da fileira ate a linha de base da FreeMono12pt7b.
+// From the top edge of the row to the FreeMono12pt7b baseline.
 static const int BASE = 19;
 
 static void fonte(lgfx::LovyanGFX& d) { d.setFont(&fonts::FreeMono12pt7b); d.setTextSize(1); }
 
 // ---------------------------------------------------------------------------
-// A SAIDA (kernel/lista: rola, recorta e desenha so o que mudou)
+// THE OUTPUT (kernel/lista: scrolls, clips and draws only what changed)
 // ---------------------------------------------------------------------------
 static int item_altura(int i, void*)
 {
@@ -90,21 +90,21 @@ static void item_desenhar(lgfx::LovyanGFX& d, int i, int x, int y, int, void*)
   d.setTextDatum(top_left);
   d.setTextColor(tipo == TERM_COMANDO ? (uint16_t)TFT_GREENYELLOW
                : tipo == TERM_AVISO   ? (uint16_t)TFT_ORANGE : d.color565(210, 210, 210));
-  // Quebra a cada s_cols caracteres; o acento vai na fonte do corpo
-  // (tab5_mono). A altura do item conta bytes: uma linha longa com acento
-  // pode ganhar uma fileira vazia no fim - so isso.
+  // Wraps every s_cols characters; accents go in the body font
+  // (tab5_mono). The item height counts bytes: a long line with accents
+  // may gain an empty row at the end - that is all.
   const char* p = t;
   for (int r = 0; *p; ++r) { p = tab5_mono(d, p, x + MX, y + r * s_lh + BASE, s_cw, s_cols); }
 }
 
 // ---------------------------------------------------------------------------
-// GEOMETRIA
+// GEOMETRY
 // ---------------------------------------------------------------------------
 static int kb_altura(const area_t& a) { return tecvirt_aberto(&s_kb) ? tecvirt_altura(a) : 0; }
-static int bar_y(const area_t& a)     { return a.altura - kb_altura(a) - BAR_A; }   // relativo a area
+static int bar_y(const area_t& a)     { return a.altura - kb_altura(a) - BAR_A; }   // relative to the area
 
 // ---------------------------------------------------------------------------
-// A LINHA DE COMANDO
+// THE COMMAND LINE
 // ---------------------------------------------------------------------------
 static void desenhar_barra(lgfx::LovyanGFX& d, const area_t& a)
 {
@@ -117,17 +117,17 @@ static void desenhar_barra(lgfx::LovyanGFX& d, const area_t& a)
   tab5_terminal_prompt(p, sizeof(p));
   bool oculto = false;
   if (tab5_terminal_lendo(&oculto) && oculto) {
-    // A senha que um comando pediu: so asteriscos, um por caractere.
+    // The password a command asked for: asterisks only, one per character.
     for (const char* c = s_txt; *c; ++c) { if ((*c & 0xC0) != 0x80) { strlcat(p, "*", sizeof(p)); } }
   } else {
     strlcat(p, s_txt, sizeof(p));
   }
   strlcat(p, "_", sizeof(p));
-  // So o fim, se nao couber (o que se digita fica sempre a vista).
+  // Only the end, if it does not fit (what is typed always stays in view).
   const int livre = (a.largura - 3 * MX - PC_L - (s_ocupado ? PARAR_L + MX : 0)) / s_cw;
   const int n = (int)strlen(p);
   const char* mostra = n > livre && livre > 0 ? p + (n - livre) : p;
-  while ((*mostra & 0xC0) == 0x80) { ++mostra; }   // nao comecar no meio de um acento
+  while ((*mostra & 0xC0) == 0x80) { ++mostra; }   // do not start in the middle of an accent
   d.setTextColor(TEMA_TEXTO);
   tab5_mono(d, mostra, a.x + MX, y + BAR_A / 2 + BASE - s_lh / 2, s_cw, livre > 0 ? livre : 1);
   const bool no_pc = tab5_web_aberto(DONO_WEB);
@@ -143,7 +143,7 @@ static void desenhar_barra(lgfx::LovyanGFX& d, const area_t& a)
 }
 
 // ---------------------------------------------------------------------------
-// A TELA DO NO PC (o painel do sistema, com o "< Voltar" em cima)
+// THE ON PC SCREEN (the system panel, with "< Voltar" at the top)
 // ---------------------------------------------------------------------------
 static void pc_abrir(bool sim)
 {
@@ -185,7 +185,7 @@ static void rodar(void)
   tab5_terminal_enviar(s_txt);
   s_txt[0] = 0;
   s_hist = -1;
-  lista_ao_inicio(&s_lista);   // a ancora e o FIM: volta para a linha mais nova
+  lista_ao_inicio(&s_lista);   // the anchor is the END: back to the newest line
   sistema_pedir_redesenho();
 }
 
@@ -209,16 +209,16 @@ static void colar(void)
 
 static void acao_teclado(int ac)
 {
-  if (ac == TECVIRT_LINHA || ac == TECVIRT_ENVIAR) { rodar(); }   // COMANDO: a tecla verde e o Enter
+  if (ac == TECVIRT_LINHA || ac == TECVIRT_ENVIAR) { rodar(); }   // COMMAND: the green key and Enter
   else if (ac == TECVIRT_FECHAR) { tecvirt_fechar(&s_kb); s_forcar = true; sistema_pedir_redesenho_completo(); }
   else                           { editar(ac); }
 }
 
 // ---------------------------------------------------------------------------
-// A TELA SEGUE A SESSAO SSH
+// THE SCREEN FOLLOWS THE SSH SESSION
 // ---------------------------------------------------------------------------
-// De pe: a tela dela. Terminou: os comandos de volta, com o motivo na barra
-// (a sessao fica LIVRE para o proximo 'ssh').
+// Up: its screen. Ended: the commands back, with the reason in the bar
+// (the session is left FREE for the next 'ssh').
 static void seguir_ssh(void)
 {
   tab5_ssh_sessao_info_t i;
@@ -227,7 +227,7 @@ static void seguir_ssh(void)
   if (ssh == s_ssh) { return; }
   if (ssh) {
     tecvirt_fechar(&s_kb);
-    s_pc = false;   // a sessao que sobe (aqui ou no PC) vem para a frente
+    s_pc = false;   // the session coming up (here or on the PC) comes to the front
     ssh_tela_abrir();
   } else {
     ssh_tela_fechar();
@@ -245,7 +245,7 @@ static void seguir_ssh(void)
 }
 
 // ---------------------------------------------------------------------------
-// DESENHO
+// DRAWING
 // ---------------------------------------------------------------------------
 static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
 {
@@ -260,7 +260,7 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
   s_cw = d.textWidth("M");
   s_lh = d.fontHeight() + 2;
   if (s_cw <= 0) { s_cw = 14; }
-  const int cols = (a.largura - 2 * MX - 8) / s_cw;   // 8: a coluna da barra de rolagem
+  const int cols = (a.largura - 2 * MX - 8) / s_cw;   // 8: the scroll bar column
   if (cols != s_cols) { s_cols = cols > 8 ? cols : 8; s_versao = 0xFFFFFFFF; }
 
   const uint32_t v = tab5_terminal_versao();
@@ -268,7 +268,7 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
 
   const area_t janela = { a.x, a.y, a.largura, bar_y(a) };
   lista_desenhar(&s_lista, d, janela, FUNDO_TERM, tudo);
-  desenhar_barra(d, a);   // barata: sempre (o texto digitado, o botao Parar)
+  desenhar_barra(d, a);   // cheap: always (the typed text, the Parar button)
 
   tecvirt_posicionar(&s_kb, a);
   tecvirt_pintar(&s_kb, d, tudo);
@@ -277,15 +277,15 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
 
 static uint32_t periodo_agora(void)
 {
-  // Rodando: a saida chega a qualquer hora (10 quadros/s bastam para ler).
-  // Acabou de parar ou sobrou texto: mais um quadro (o botao Parar sai).
-  // Parado: so quando alguem toca ou tecla.
+  // Running: output arrives at any time (10 frames/s is enough to read).
+  // Just stopped or text left over: one more frame (the Parar button goes).
+  // Stopped: only when someone taps or types.
   const bool o = tab5_terminal_ocupado();
   return (o || o != s_ocupado || tab5_terminal_versao() != s_versao) ? 100 : 0;
 }
 
 // ---------------------------------------------------------------------------
-// TOQUE E TECLADO
+// TOUCH AND KEYBOARD
 // ---------------------------------------------------------------------------
 static void ao_tocar(int x, int y)
 {
@@ -304,7 +304,7 @@ static void ao_tocar(int x, int y)
     if (!tecvirt_aberto(&s_kb)) { tecvirt_abrir(&s_kb, TECVIRT_COMANDO); s_forcar = true; sistema_pedir_redesenho_completo(); }
     return;
   }
-  lista_item_tocado(&s_lista, x, y, nullptr);   // fecha o arraste; a saida nao tem botao
+  lista_item_tocado(&s_lista, x, y, nullptr);   // closes the drag; the output has no button
 }
 
 static void ao_tocar_nivel(int x, int y, bool pressionado)
@@ -324,7 +324,7 @@ static void ao_teclar(const char* txt, uint8_t codigo, uint8_t mod)
   if (s_ssh) { ssh_tela_teclar(txt, codigo, mod); return; }
   if (s_pc)  { if (codigo == TAB5_TECLA_ESC) { pc_abrir(false); } return; }
   if (mod & TAB5_TECLA_CTRL) {
-    const char c = txt ? (char)(txt[0] | 0x20) : 0;   // minuscula
+    const char c = txt ? (char)(txt[0] | 0x20) : 0;   // lower case
     if (c == 'c') { tab5_terminal_interromper(); }
     else if (c == 'l') { tab5_terminal_limpar(); }
     else if (c == 'v') { colar(); }
@@ -349,7 +349,7 @@ static void ao_teclar(const char* txt, uint8_t codigo, uint8_t mod)
 }
 
 // ---------------------------------------------------------------------------
-// CICLO DE VIDA
+// LIFE CYCLE
 // ---------------------------------------------------------------------------
 static bool ao_abrir(void)
 {
@@ -358,7 +358,7 @@ static bool ao_abrir(void)
   s_versao = 0xFFFFFFFF;
   s_hist = -1;
   s_forcar = true;
-  // Sessao SSH no ar (aberta aqui ou no PC): o app abre nela.
+  // SSH session on air (opened here or on the PC): the app opens on it.
   s_ssh = false;
   s_pc = false;
   seguir_ssh();
@@ -367,18 +367,18 @@ static bool ao_abrir(void)
 
 static void ao_aviso(uint32_t)
 {
-  seguir_ssh();   // a sessao subiu ou terminou (aqui, no PC ou por 'ssh fechar')
+  seguir_ssh();   // the session came up or ended (here, on the PC or via 'ssh fechar')
   if (s_ssh) { ssh_tela_aviso(); } else { sistema_pedir_redesenho(); }
 }
 
 static void ao_fechar(void)
 {
-  // A sessao continua (o comando que roda tambem, e a SSH): so a tela sai.
+  // The session continues (the running command too, and SSH): only the screen goes.
   tecvirt_fechar(&s_kb);
   if (s_ssh) { ssh_tela_fechar(); }
 }
 
-// A grade muda de largura: as alturas das linhas tambem.
+// The grid changes width: so do the line heights.
 static void ao_girar(void)
 {
   s_versao = 0xFFFFFFFF;
@@ -391,7 +391,7 @@ static void icone_terminal(lgfx::LovyanGFX& d, int x, int y, int lado)
   d.drawRoundRect(x, y, lado, lado, lado / 6, d.color565(60, 80, 64));
   const uint16_t c = TFT_GREENYELLOW;
   const int m = lado / 4, cy = y + lado / 2, t = lado / 14 + 1;
-  // ">" e "_"
+  // ">" and "_"
   for (int k = 0; k < t; ++k) {
     d.drawLine(x + m, cy - lado / 6 + k, x + m + lado / 6, cy + k, c);
     d.drawLine(x + m + lado / 6, cy + k, x + m, cy + lado / 6 + k, c);
@@ -403,7 +403,7 @@ extern const app_t APP_TERMINAL = {
   .nome  = "Terminal",
   .cor   = TFT_GREENYELLOW,
   .perfil = { },
-  .usa_sd = false,     // quem precisa do cartao e o comando, e ele monta (console)
+  .usa_sd = false,     // whoever needs the SD card is the command, and it mounts it (console)
   .exige_sd = false,
   .ao_abrir  = ao_abrir,
   .ao_fechar = ao_fechar,

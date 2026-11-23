@@ -1,108 +1,108 @@
-// TOCADOR DO SISTEMA - o servico de musica. Le os arquivos da pasta de musica
-// do cartao, decodifica (MP3 pelo componente minimp3, WAV PCM direto) e
-// alimenta o alto-falante em blocos (sistema_som_fluxo_*), com qualquer app
-// na tela - ou nenhum.
+// SYSTEM PLAYER - the music service. Reads the files in the SD card's music
+// folder, decodes them (MP3 via the minimp3 component, WAV PCM directly) and
+// feeds the speaker in blocks (sistema_som_fluxo_*), with any app on
+// screen - or none.
 //
-// QUEM USA E SO INTERFACE. O app Musica (main/app_musica) e o modulo Berry
-// 'musica' (services/berry_apps) sao duas caras deste mesmo servico: listam,
-// pedem para tocar, mostram o estado e o espectro. Nenhum deles decodifica,
-// le o cartao ou mexe no alto-falante. Um tocador so no aparelho: quem pede
-// para tocar troca a fila de quem estava tocando.
+// WHOEVER USES IT IS JUST INTERFACE. The Music app (main/app_musica) and the Berry
+// module 'musica' (services/berry_apps) are two faces of this same service: they list,
+// ask to play, show the state and the spectrum. None of them decodes,
+// reads the card or touches the speaker. One player per device: whoever asks
+// to play replaces the queue of whoever was playing.
 //
-// O QUE O SISTEMA GARANTE SEM NINGUEM PEDIR (o servico roda como parte de
-// fundo do kernel, kernel/fundo.h, com o nome "Música"):
-//   - toca com a janela de quem pediu fechada;
-//   - a barra mostra o que toca, e a central de avisos tem o miniplayer e o X
-//     que para (kernel/midia.h) - tocar o titulo abre o app que pediu;
-//   - pausado por TAB5_MUSICA_PAUSA_MAX_S (ou sem nada para tocar por
-//     TAB5_MUSICA_VAZIO_MAX_S), encerra sozinho;
-//   - o cartao indo para o computador (pendrive) para a musica na hora;
-//   - a capa de cada musica (etiqueta, pasta ou internet) e procurada sozinha.
-// Tambem moram aqui o aleatorio/repetir, as playlists (.m3u) e a duracao de
-// cada arquivo - a interface so pede e mostra.
+// WHAT THE SYSTEM GUARANTEES WITHOUT ANYONE ASKING (the service runs as a kernel
+// background part, kernel/fundo.h, named "Música"):
+//   - plays with the requester's window closed;
+//   - the status bar shows what is playing, and the notification centre has the miniplayer and
+//     the X that stops it (kernel/midia.h) - tapping the title opens the app that asked;
+//   - paused for TAB5_MUSICA_PAUSA_MAX_S (or with nothing to play for
+//     TAB5_MUSICA_VAZIO_MAX_S), it ends by itself;
+//   - the card going to the computer (USB drive mode) stops the music immediately;
+//   - each track's cover (tag, folder or internet) is looked up automatically.
+// Shuffle/repeat, playlists (.m3u) and each file's duration also live
+// here - the interface only asks and shows.
 //
-// DE ONDE TOCA: a pasta de musica do cartao (caminhos RELATIVOS a ela,
-// "Rock/x.mp3") ou qualquer pasta de um disco, por caminho ABSOLUTO
-// ("/usb/Rock/x.mp3" - o pendrive no USB-A, services/tab5_volumes). Toda
-// funcao que recebe 'rel' ou 'caminho' aceita os dois; a fila, as playlists
-// e as Favoritas misturam os dois sem problema (a faixa de um pendrive que
-// nao esta plugado e pulada). O pendrive inteiro e "a pasta de musica" dele:
-// listar("/usb") mostra a raiz do pendrive.
+// WHERE IT PLAYS FROM: the card's music folder (paths RELATIVE to it,
+// "Rock/x.mp3") or any folder on a disk, by ABSOLUTE path
+// ("/usb/Rock/x.mp3" - the USB flash drive in USB-A, services/tab5_volumes). Every
+// function taking 'rel' or 'caminho' accepts both; the queue, playlists
+// and Favourites mix the two without trouble (a track from a USB drive that
+// is not plugged in is skipped). The whole USB drive is its "music folder":
+// listar("/usb") shows the USB drive's root.
 //
-// TAREFAS: tudo daqui pode ser chamado de qualquer tarefa (interface, tarefa
-// de um app, Berry, console). Os controles so marcam um pedido; quem atende
-// e o laco do servico, entre um bloco de som e outro.
+// TASKS: everything here may be called from any task (interface, an app's
+// task, Berry, console). The controls only flag a request; the service loop
+// serves it, between one sound block and the next.
 #pragma once
 
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
 
-#define TAB5_MUSICA_NOME_MAX   128           // nome de arquivo como esta no disco (bytes, UTF-8)
-#define TAB5_MUSICA_CAMINHO_MAX 256          // relativo a pasta de musica ("Rock/x.mp3") ou absoluto ("/usb/...")
-#define TAB5_MUSICA_FILA_MAX   400           // arquivos numa fila (uma pasta ou uma playlist)
-#define TAB5_MUSICA_LISTA_MAX  400           // itens que listar() devolve de uma pasta
-#define TAB5_MUSICA_PAUSA_MAX_S (5 * 60)     // pausado (com musica carregada) por mais que isto, o tocador se encerra
-#define TAB5_MUSICA_VAZIO_MAX_S 30           // sem nada para tocar (a lista acabou, parou): encerra antes
-#define TAB5_MUSICA_FAIXAS     32            // faixas do espectro
-// As playlists sao arquivos .m3u nesta subpasta da pasta de musica - o mesmo
-// formato que qualquer tocador do computador abre (linhas "../Rock/x.mp3").
-// A pasta nao aparece em listar(): a interface mostra as playlists a parte.
+#define TAB5_MUSICA_NOME_MAX   128           // file name as on disk (bytes, UTF-8)
+#define TAB5_MUSICA_CAMINHO_MAX 256          // relative to the music folder ("Rock/x.mp3") or absolute ("/usb/...")
+#define TAB5_MUSICA_FILA_MAX   400           // files in a queue (a folder or a playlist)
+#define TAB5_MUSICA_LISTA_MAX  400           // items listar() returns from a folder
+#define TAB5_MUSICA_PAUSA_MAX_S (5 * 60)     // paused (with music loaded) longer than this, the player shuts down
+#define TAB5_MUSICA_VAZIO_MAX_S 30           // nothing to play (the list ended, stopped): shuts down sooner
+#define TAB5_MUSICA_FAIXAS     32            // spectrum bands
+// Playlists are .m3u files in this subfolder of the music folder - the same
+// format any computer player opens (lines "../Rock/x.mp3").
+// The folder does not appear in listar(): the interface shows playlists separately.
 #define TAB5_MUSICA_PLAYLISTS  "Playlists"
-#define TAB5_MUSICA_FAVORITAS  "Favoritas"   // a playlist do coracao
+#define TAB5_MUSICA_FAVORITAS  "Favoritas"   // the heart playlist
 
-// ---- a pasta de musica ------------------------------------------------------
-// Qualquer pasta na RAIZ do cartao cujo nome, sem acento e sem diferenca de
-// maiuscula, comece por "music" (Music, Música, Musicas, MUSICA~1); com mais de
-// uma, a que tem mais coisa. Nenhuma: cria "Music". A "Music" vazia que o
-// sistema criou antes e apagada quando ha outra com musica.
-// out recebe o caminho absoluto ("/sdcard/Música"). false = sem cartao.
+// ---- the music folder -------------------------------------------------------
+// Any folder in the card's ROOT whose name, ignoring accents and
+// case, starts with "music" (Music, Música, Musicas, MUSICA~1); with more than
+// one, the one with the most in it. None: creates "Music". The empty "Music" the
+// system created earlier is deleted when there is another with music.
+// out receives the absolute path ("/sdcard/Música"). false = no card.
 bool tab5_musica_pasta(char* out, size_t tam);
 
 typedef struct {
-  char nome[TAB5_MUSICA_NOME_MAX];   // como esta no disco (UTF-8)
+  char nome[TAB5_MUSICA_NOME_MAX];   // as on disk (UTF-8)
   bool pasta;
 } tab5_musica_item_t;
 
-// O conteudo de uma subpasta ('rel' relativo a pasta de musica, "" = a raiz;
-// ou absoluto, "/usb" = a raiz do pendrive):
-// pastas primeiro, depois .mp3/.wav, em ordem alfabetica (a pasta das
-// playlists e as ocultas ficam de fora). Devolve quantos
-// (ate 'max'); -1 = sem cartao ou a pasta nao existe. 'cheia' (opcional) =
-// havia mais que 'max'.
+// The contents of a subfolder ('rel' relative to the music folder, "" = the root;
+// or absolute, "/usb" = the USB drive's root):
+// folders first, then .mp3/.wav, in alphabetical order (the playlists
+// folder and hidden ones are left out). Returns how many
+// (up to 'max'); -1 = no card or the folder does not exist. 'cheia' (optional) =
+// there were more than 'max'.
 int tab5_musica_listar(const char* rel, tab5_musica_item_t* out, int max, bool* cheia);
 
-// Um nome do disco, para mostrar. O FAT ja entrega UTF-8 (e isto so copia);
-// texto que nao e UTF-8 valido veio de antes disso - uma playlist antiga,
-// gravada em CP437 - e e convertido.
+// A name from the disk, for display. FAT already returns UTF-8 (and this only copies);
+// text that is not valid UTF-8 came from before that - an old playlist,
+// written in CP437 - and is converted.
 void tab5_musica_nome_utf8(const char* nome, char* out, size_t out_tam);
 
-// ---- tocar --------------------------------------------------------------------
-// TOCA a pasta 'rel' a partir do item 'idx' de tab5_musica_listar(rel) (tem
-// que ser um arquivo): a fila sao as musicas da pasta, em ordem. 'app' = o
-// nome do app que pediu (tocar o titulo no miniplayer abre ele; nullptr = o
-// app Musica). false = nao ligou (sem cartao, item nao e musica, sem memoria).
+// ---- playing ------------------------------------------------------------------
+// PLAYS the folder 'rel' from item 'idx' of tab5_musica_listar(rel) (it has
+// to be a file): the queue is the folder's tracks, in order. 'app' = the
+// name of the app that asked (tapping the title in the miniplayer opens it; nullptr = the
+// Music app). false = did not start (no card, item is not music, out of memory).
 bool tab5_musica_tocar(const char* rel, int idx, const char* app);
 
-// TOCA UM arquivo so ('caminho' absoluto, ex. "/sdcard/Videos/filme.mp3"): a
-// fila tem ele sozinho, entao no fim o tocador para (ou repete, se o repetir
-// estiver ligado) em vez de seguir para o proximo da pasta. E o som de um
-// video (services/tab5_video). 'app' como em tab5_musica_tocar.
+// PLAYS A single file ('caminho' absolute, e.g. "/sdcard/Videos/filme.mp3"): the
+// queue holds only it, so at the end the player stops (or repeats, if repeat
+// is on) instead of moving to the next in the folder. It is a video's
+// sound (services/tab5_video). 'app' as in tab5_musica_tocar.
 bool tab5_musica_tocar_um(const char* caminho, const char* app);
 
-// TOCA uma playlist (o nome como esta no cartao, sem .m3u) a partir da faixa
-// 'idx' de tab5_musica_playlist_itens(); idx < 0 = do comeco (com o
-// aleatorio ligado, uma qualquer). As faixas que sumiram do cartao sao
-// puladas. false = playlist vazia ou nao abriu.
+// PLAYS a playlist (the name as on the card, without .m3u) from track
+// 'idx' of tab5_musica_playlist_itens(); idx < 0 = from the start (with
+// shuffle on, any one). Tracks that vanished from the card are
+// skipped. false = empty playlist or did not open.
 bool tab5_musica_tocar_playlist(const char* nome, int idx, const char* app);
 
-// ---- como a fila anda ---------------------------------------------------------
-// ALEATORIO: a fila e embaralhada (a musica atual fica tocando e vira a
-// primeira); desligar volta a ordem da pasta/playlist sem cortar o som.
-// REPETIR: NAO = toca ate o fim e para; TUDO = no fim volta ao comeco (com o
-// aleatorio, embaralha de novo); UMA = a mesma musica de novo ao acabar (os
-// botoes de proxima/anterior continuam andando na fila). Guardados nos
-// ajustes: valem para a proxima fila e ao ligar de novo.
+// ---- how the queue moves ------------------------------------------------------
+// SHUFFLE: the queue is shuffled (the current track keeps playing and becomes the
+// first); turning it off restores the folder/playlist order without cutting the sound.
+// REPEAT: NAO (off) = plays to the end and stops; TUDO (all) = at the end goes back to the
+// start (with shuffle, reshuffles); UMA (one) = the same track again when it ends (the
+// next/previous buttons still move along the queue). Stored in
+// settings: they apply to the next queue and on restarting.
 typedef enum {
   TAB5_MUSICA_REPETIR_NAO = 0,
   TAB5_MUSICA_REPETIR_TUDO,
@@ -115,114 +115,114 @@ tab5_musica_repetir_t tab5_musica_repetir(void);
 
 void tab5_musica_tocar_pausar(void);
 void tab5_musica_proxima(void);
-void tab5_musica_anterior(void);   // depois de 3 s de musica, volta ao comeco dela
+void tab5_musica_anterior(void);   // after 3 s of a track, goes back to its start
 void tab5_musica_ir_para(uint32_t ms);
-void tab5_musica_parar(void);      // pede e segue: o servico sai logo depois
+void tab5_musica_parar(void);      // asks and carries on: the service exits soon after
 
 typedef struct {
-  bool     ativo;          // ha fila (o servico esta rodando)
-  bool     tocando;        // false = pausado (ou carregando)
-  int      idx, n;         // posicao na ordem em que a fila toca (0 = a primeira)
-  char     pasta[160];     // a pasta da fila, caminho absoluto ("" = fila de playlist)
-  char     rel[160];       // a mesma, relativa a pasta de musica ("" = a raiz)
-  char     playlist[TAB5_MUSICA_NOME_MAX];   // a playlist que toca (como no cartao); "" = uma pasta
-  char     caminho[TAB5_MUSICA_CAMINHO_MAX]; // o que toca, relativo a pasta de musica
-  char     arquivo[TAB5_MUSICA_NOME_MAX];    // so o nome do arquivo
-  char     titulo[64];     // da etiqueta ID3, ou do nome do arquivo ("Artista - Titulo (Video)" -> "Titulo")
-  char     artista[48];    // da etiqueta ID3, ou da parte antes do " - " no nome ("" = nao tem)
-  char     album[48];      // da etiqueta ID3 ("" = nao tem)
+  bool     ativo;          // there is a queue (the service is running)
+  bool     tocando;        // false = paused (or loading)
+  int      idx, n;         // position in the queue's play order (0 = the first)
+  char     pasta[160];     // the queue's folder, absolute path ("" = playlist queue)
+  char     rel[160];       // the same, relative to the music folder ("" = the root)
+  char     playlist[TAB5_MUSICA_NOME_MAX];   // the playlist playing (as on the card); "" = a folder
+  char     caminho[TAB5_MUSICA_CAMINHO_MAX]; // what is playing, relative to the music folder
+  char     arquivo[TAB5_MUSICA_NOME_MAX];    // just the file name
+  char     titulo[64];     // from the ID3 tag, or from the file name ("Artista - Titulo (Video)" -> "Titulo")
+  char     artista[48];    // from the ID3 tag, or the part before " - " in the name ("" = none)
+  char     album[48];      // from the ID3 tag ("" = none)
   bool     aleatorio;
   uint8_t  repetir;        // tab5_musica_repetir_t
-  uint32_t pos_ms, dur_ms; // a posicao do que SAI no alto-falante; dur 0 = desconhecida
+  uint32_t pos_ms, dur_ms; // the position of what is COMING OUT of the speaker; dur 0 = unknown
   uint32_t hz;
   uint8_t  canais;
   uint16_t kbps;           // 0 = WAV
-  char     erro[48];       // o ultimo problema ("" = nenhum)
-  // DIAGNOSTICO (console: musica estado): o som engasga quando a fila do
-  // alto-falante seca. 'secas' conta os blocos enfileirados com a fila JA
-  // vazia (fora o primeiro depois de abrir, buscar ou retomar).
+  char     erro[48];       // the last problem ("" = none)
+  // DIAGNOSTICS (console: musica estado): the sound stutters when the speaker
+  // queue runs dry. 'secas' counts blocks queued with the queue ALREADY
+  // empty (except the first after opening, seeking or resuming).
   uint32_t blocos, secas;
-  uint32_t dec_max_us, dec_media_us;   // decodificar um bloco
-  uint32_t bloco_ms;                   // quanto som cabe num bloco
-  uint32_t ler_no_pior_us;             // do pior bloco, quanto foi lendo o cartao
-  uint32_t ler_soma_ms;                // tempo total lendo o cartao
-  uint32_t esp_max_us;                 // pior tempo do espectro num bloco
+  uint32_t dec_max_us, dec_media_us;   // decoding one block
+  uint32_t bloco_ms;                   // how much sound fits in a block
+  uint32_t ler_no_pior_us;             // of the worst block, how much was reading the card
+  uint32_t ler_soma_ms;                // total time reading the card
+  uint32_t esp_max_us;                 // worst spectrum time in a block
 } tab5_musica_estado_t;
 
 void tab5_musica_estado(tab5_musica_estado_t* out);
 void tab5_musica_zerar_diag(void);
 
-// ---- o espectro ---------------------------------------------------------------
-// As faixas (0..255, graves primeiro) do som que esta saindo AGORA. Cada
-// quadro (1024 amostras, ~23 ms) leva a hora em que sai no alto-falante: a
-// barra bate com o que se ouve. O servico so calcula enquanto ALGUEM LE: a
-// primeira leitura liga, e um segundo sem leitura desliga - com a janela
-// fechada ou a tela apagada, nao gasta nada. false = nada saindo (pausa,
-// fim, ou a primeira leitura, que so liga o calculo).
+// ---- the spectrum -------------------------------------------------------------
+// The bands (0..255, bass first) of the sound coming out NOW. Each
+// frame (1024 samples, ~23 ms) carries the time it leaves the speaker: the
+// bar matches what you hear. The service only computes while SOMEONE READS: the
+// first read switches it on, and a second without reads switches it off - with the window
+// closed or the screen off, it costs nothing. false = nothing playing (pause,
+// end, or the first read, which only switches the computation on).
 bool tab5_musica_espectro(uint8_t* faixas);
 
-// ---- a cor --------------------------------------------------------------------
-// A cor de destaque do tocador (RGB565; 0 = a do sistema): a pastilha da barra
-// e o miniplayer usam esta. Guardada nos ajustes: vale ao ligar de novo.
+// ---- the colour ---------------------------------------------------------------
+// The player's accent colour (RGB565; 0 = the system's): the status bar pill
+// and the miniplayer use it. Stored in settings: applies on restarting.
 void tab5_musica_definir_cor(uint16_t cor565);
 
 // ---- playlists ------------------------------------------------------------------
-// Tudo aqui le ou grava o cartao: chamar FORA da tarefa de interface
-// (sistema_trabalho), menos o que diz o contrario. Nomes de playlist como
-// estao no cartao (sem .m3u, UTF-8).
+// Everything here reads or writes the card: call OUTSIDE the interface task
+// (sistema_trabalho), except where stated otherwise. Playlist names as
+// they are on the card (without .m3u, UTF-8).
 typedef struct {
-  char caminho[TAB5_MUSICA_CAMINHO_MAX];   // relativo a pasta de musica
+  char caminho[TAB5_MUSICA_CAMINHO_MAX];   // relative to the music folder
 } tab5_musica_faixa_t;
 
-// As playlists, em ordem alfabetica (a Favoritas primeiro). 'out[i].pasta' =
-// false; -1 = sem cartao.
+// The playlists, in alphabetical order (Favoritas first). 'out[i].pasta' =
+// false; -1 = no card.
 int  tab5_musica_playlists(tab5_musica_item_t* out, int max);
-// Cria uma vazia. O nome vem da pessoa (UTF-8); letras que o cartao nao
-// guarda viram a mais parecida. 'nome_cartao' (opcional) recebe o nome final.
-// false = ja existe, nome vazio ou sem cartao.
+// Creates an empty one. The name comes from the person (UTF-8); letters the card
+// cannot store become the closest match. 'nome_cartao' (optional) receives the final name.
+// false = already exists, empty name or no card.
 bool tab5_musica_playlist_criar(const char* nome_utf8, char* nome_cartao, size_t tam);
 bool tab5_musica_playlist_apagar(const char* nome);
-// As faixas, na ordem do arquivo. -1 = nao existe.
+// The tracks, in file order. -1 = does not exist.
 int  tab5_musica_playlist_itens(const char* nome, tab5_musica_faixa_t* out, int max);
-// Poe no fim (a playlist nasce se nao existir) / tira. false = ja estava (por)
-// ou nao estava (tirar).
+// Appends at the end (the playlist is created if missing) / removes. false = already there (add)
+// or was not there (remove).
 bool tab5_musica_playlist_por(const char* nome, const char* caminho);
 bool tab5_musica_playlist_tirar(const char* nome, const char* caminho);
 bool tab5_musica_playlist_tem(const char* nome, const char* caminho);
 
-// ---- duracao ----------------------------------------------------------------------
-// Quanto dura um arquivo (caminho relativo a pasta de musica), em ms, sem
-// decodificar: le o cabecalho (MP3: Xing/VBRI, ou o bitrate e o tamanho; WAV:
-// o cabecalho). Alguns ms de cartao - fora da interface. 0 = nao deu.
-// Lembra o que ja mediu (o mesmo arquivo nao e lido duas vezes).
+// ---- duration ---------------------------------------------------------------------
+// How long a file lasts (path relative to the music folder), in ms, without
+// decoding: reads the header (MP3: Xing/VBRI, or the bitrate and size; WAV:
+// the header). A few ms of card access - outside the interface. 0 = could not.
+// Remembers what it has measured (the same file is not read twice).
 uint32_t tab5_musica_duracao(const char* caminho);
-// So o que ja foi medido, sem tocar no cartao (pode ser da interface).
-// false = ainda nao medido.
+// Only what has already been measured, without touching the card (may be from the interface).
+// false = not measured yet.
 bool tab5_musica_duracao_lembrada(const char* caminho, uint32_t* ms);
 
-// ---- capa -------------------------------------------------------------------------
-// A CAPA DO QUE TOCA. Ao abrir uma musica o servico procura, numa tarefa
-// propria e nesta ordem: a imagem dentro da etiqueta ID3 (APIC), uma
-// cover/folder/capa.jpg na pasta da musica, e - com o Wi-Fi conectado - a
-// busca do iTunes por artista e titulo. O que achar vai para o cache
-// <pasta de musica>/.capas/ (a proxima vez nao busca de novo; a internet so e
-// consultada uma vez por musica).
+// ---- cover ------------------------------------------------------------------------
+// THE COVER OF WHAT IS PLAYING. When a track opens the service looks, on its own
+// task and in this order: the image inside the ID3 tag (APIC), a
+// cover/folder/capa.jpg in the track's folder, and - with Wi-Fi connected - the
+// iTunes search by artist and title. Whatever it finds goes into the cache
+// <music folder>/.capas/ (next time it does not search again; the internet is only
+// queried once per track).
 typedef enum {
-  TAB5_MUSICA_CAPA_NENHUMA = 0,   // nao tem (ou nada tocando)
-  TAB5_MUSICA_CAPA_BUSCANDO,      // procurando (ainda pode aparecer)
-  TAB5_MUSICA_CAPA_PRONTA,        // 'arquivo' = JPEG ou PNG no cartao, caminho absoluto
+  TAB5_MUSICA_CAPA_NENHUMA = 0,   // none (or nothing playing)
+  TAB5_MUSICA_CAPA_BUSCANDO,      // searching (may still appear)
+  TAB5_MUSICA_CAPA_PRONTA,        // 'arquivo' = JPEG or PNG on the card, absolute path
 } tab5_musica_capa_t;
-// Pode ser da interface (so copia o estado). 'versao' muda a cada capa nova
-// (troca de musica, a busca terminou): quem desenha recarrega quando mudar.
+// May be from the interface (only copies the state). 'versao' changes on every new cover
+// (track change, search finished): whoever draws reloads when it changes.
 tab5_musica_capa_t tab5_musica_capa(char* arquivo, size_t tam, uint32_t* versao);
-// Le o arquivo da capa ('arquivo' de tab5_musica_capa) inteiro para a PSRAM
-// (JPEG ou PNG; ate 3 MB). Le o cartao: chamar FORA da interface. Quem
-// chamou libera com heap_caps_free. nullptr = nao abriu ou grande demais.
+// Reads the cover file ('arquivo' from tab5_musica_capa) whole into PSRAM
+// (JPEG or PNG; up to 3 MB). Reads the card: call OUTSIDE the interface. The
+// caller frees with heap_caps_free. nullptr = did not open or too big.
 uint8_t* tab5_musica_capa_ler(const char* arquivo, size_t* n);
 
-// ---- nome para mostrar ----------------------------------------------------------
-// O titulo (e o artista, se o nome trouxer) a partir do nome de um arquivo:
-// "Artista - Titulo (Video).mp3" -> "Titulo" e "Artista". Sem " - ", o nome
-// todo e o titulo; '_' vira espaco; sem extensao e sem trechos entre
-// parenteses/colchetes. 'artista' pode ser nullptr (so o titulo).
+// ---- name for display -----------------------------------------------------------
+// The title (and the artist, if the name has one) from a file name:
+// "Artista - Titulo (Video).mp3" -> "Titulo" and "Artista". Without " - ", the whole
+// name is the title; '_' becomes a space; no extension and no bits in
+// parentheses/brackets. 'artista' may be nullptr (title only).
 void tab5_musica_titulo_do_arquivo(const char* nome, char* titulo, size_t tt, char* artista, size_t ta);

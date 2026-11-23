@@ -82,7 +82,7 @@ const medf_mp4_info_t *medf_mp4_demux_info(const medf_mp4_demux_t *demux);
 medf_buffer_t *medf_mp4_demux_buffer(medf_mp4_demux_t *demux);
 
 bool medf_mp4_demux_read(medf_mp4_demux_t *demux, medf_mp4_packet_t *packet, bool want_audio);
-/* M5tabOS: ignora a faixa de video (ver medf_mp4_demux.c). */
+/* M5tabOS: ignores the video track (see medf_mp4_demux.c). */
 void medf_mp4_demux_drop_video(medf_mp4_demux_t *demux);
 bool medf_mp4_demux_seek(medf_mp4_demux_t *demux, int64_t pts_us, int64_t *landed_us);
 bool medf_mp4_demux_keyframe_before(const medf_mp4_demux_t *demux, int64_t pts_us, int64_t *key_us);

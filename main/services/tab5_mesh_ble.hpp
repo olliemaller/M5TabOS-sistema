@@ -1,52 +1,52 @@
-// ENLACE BLE COM O NO MESHTASTIC.
+// BLE LINK TO THE MESHTASTIC NODE.
 //
-// A outra via, alem do cabo Grove. O protocolo e o MESMO - ToRadio e
-// FromRadio em protobuf - so muda o transporte:
+// The other path, besides the Grove cable. The protocol is the SAME - ToRadio
+// and FromRadio in protobuf - only the transport changes:
 //
-//   serial (Grove):  cada mensagem vai num frame 0x94 0xC3 <tamanho> <corpo>
-//   BLE:             cada mensagem e UM valor de caracteristica, sem frame
-//                      toRadio   (escrita)  - o que o Tab5 manda
-//                      fromRadio (leitura)  - uma mensagem por leitura; vazia = acabou
-//                      fromNum   (notifica) - "tem coisa nova em fromRadio"
+//   serial (Grove):  each message goes in a frame 0x94 0xC3 <length> <body>
+//   BLE:             each message is ONE characteristic value, no frame
+//                      toRadio   (write)    - what the Tab5 sends
+//                      fromRadio (read)     - one message per read; empty = done
+//                      fromNum   (notify)   - "there is something new in fromRadio"
 //
-// Por isso o servico Mesh (tab5_mesh.cpp) nao sabe de BLE: ele entrega o corpo
-// do ToRadio e recebe o corpo do FromRadio, e quem enquadra (serial) ou escreve
-// na caracteristica (aqui) e o enlace.
+// That is why the Mesh service (tab5_mesh.cpp) knows nothing of BLE: it hands
+// over the ToRadio body and receives the FromRadio body, and the link is what
+// frames it (serial) or writes it to the characteristic (here).
 //
-// Com o C6L no Bluetooth o Grove fica livre - e o GPS pode ir nele, com a
-// posicao indo para a malha (ajustes_mesh_posicao).
+// With the C6L on Bluetooth the Grove port is free - and the GPS can go on it,
+// with the position going out to the mesh (ajustes_mesh_posicao).
 #pragma once
 
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
 
-// Sobe a tarefa do enlace: procura o no (o endereco guardado em ajustes, ou o
-// primeiro Meshtastic que aparecer), conecta, pareia com o PIN e fica
-// entregando o que chega. Reconecta sozinho se cair. Quem chama ja ligou o
-// Bluetooth (tab5_ble_ligar, tarefa de interface).
+// Starts the link task: looks for the node (the address saved in settings, or
+// the first Meshtastic that shows up), connects, pairs with the PIN and keeps
+// delivering what arrives. Reconnects by itself if dropped. The caller has
+// already turned Bluetooth on (tab5_ble_ligar, interface task).
 bool mesh_ble_iniciar(void);
-// Para e desconecta. Espera a tarefa sair (ate 6 s).
+// Stops and disconnects. Waits for the task to exit (up to 6 s).
 bool mesh_ble_parar(void);
-// A tarefa do enlace existe e ainda nao saiu (quem vai derrubar a pilha BLE
-// pergunta antes: ela nao pode sumir debaixo de uma conexao em curso).
+// The link task exists and has not exited yet (whoever is about to tear down
+// the BLE stack asks first: it must not vanish under a connection in progress).
 bool mesh_ble_rodando(void);
 
-// Enfileira um ToRadio (corpo, sem o 0x94 0xC3). false sem conexao.
+// Queues a ToRadio (body, without the 0x94 0xC3). false with no connection.
 bool mesh_ble_enviar(const uint8_t* corpo, size_t n);
-// Proximo FromRadio que chegou (corpo), esperando ate 'espera_ms'. 0 = nada.
+// Next FromRadio that arrived (body), waiting up to 'espera_ms'. 0 = nothing.
 size_t mesh_ble_receber(uint8_t* buf, size_t max, uint32_t espera_ms);
-// true UMA vez por conexao nova: e a deixa para pedir a configuracao ao no.
+// true ONCE per new connection: the cue to request the configuration from the node.
 bool mesh_ble_conectou_agora(void);
 
 bool        mesh_ble_conectado(void);
 const char* mesh_ble_descricao(void);
 
-// PIN NA HORA: o no pediu o PIN e o enlace esta esperando alguem digitar (o
-// no com PIN aleatorio mostra um novo a cada pareamento). Ajustes > Meshtastic
-// abre o teclado sozinho; mesh_ble_digitar_pin entrega (tem ~30 s).
+// PIN ON THE SPOT: the node asked for the PIN and the link is waiting for
+// someone to type it (a node with a random PIN shows a new one on every pairing).
+// Settings > Meshtastic opens the keyboard by itself; mesh_ble_digitar_pin delivers it (~30 s).
 bool mesh_ble_esperando_pin(void);
 bool mesh_ble_digitar_pin(uint32_t pin);
-// Depois de um PIN recusado o enlace para e espera: isto recomeca ja (o
-// proximo pareamento pergunta o PIN na hora).
+// After a rejected PIN the link stops and waits: this restarts it now (the
+// next pairing asks for the PIN on the spot).
 void mesh_ble_tentar_de_novo(void);

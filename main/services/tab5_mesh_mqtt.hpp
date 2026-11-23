@@ -1,33 +1,33 @@
-// ENLACE PELA INTERNET (MQTT) - a malha Meshtastic sem o no de radio.
+// INTERNET LINK (MQTT) - the Meshtastic mesh without the radio node.
 //
-// O terceiro enlace do servico Mesh, ao lado da serial (Grove) e do BLE. Os
-// nos com internet (gateways) publicam num servidor MQTT o que ouvem pelo
-// radio, e descem para o radio o que chega por la. Falando o mesmo protocolo,
-// o Tab5 conversa com a malha usando so o Wi-Fi: sem o C6L ligado, as
-// mensagens continuam chegando, e numa emergencia com internet ainda da para
-// escrever.
+// The Mesh service's third link, alongside serial (Grove) and BLE. Nodes
+// with internet (gateways) publish to an MQTT server what they hear over the
+// radio, and pass down to the radio what arrives from there. Speaking the same
+// protocol, the Tab5 talks to the mesh using only Wi-Fi: with the C6L off,
+// messages keep arriving, and in an emergency with internet you can still
+// write.
 //
-// PARA O SERVICO, ISTO E UM RADIO. Ele entrega FromRadio e recebe ToRadio,
-// como o BLE; por dentro faz a traducao:
-//   recebendo: ServiceEnvelope{packet, channel_id} -> decifra o payload com a
-//              chave do canal -> FromRadio{packet: MeshPacket{decoded, ...}};
-//   enviando:  ToRadio{packet} -> cifra o Data -> ServiceEnvelope -> publica
-//              em <raiz>/2/e/<canal>/!<no>;
-//   want_config: responde sozinho com o nosso numero, os canais conhecidos e
-//              o fim da configuracao.
+// TO THE SERVICE, THIS IS A RADIO. It hands over FromRadio and takes ToRadio,
+// like BLE; inside it does the translation:
+//   receiving: ServiceEnvelope{packet, channel_id} -> decrypts the payload with
+//              the channel key -> FromRadio{packet: MeshPacket{decoded, ...}};
+//   sending:   ToRadio{packet} -> encrypts the Data -> ServiceEnvelope -> publishes
+//              to <raiz>/2/e/<canal>/!<no>;
+//   want_config: answers by itself with our number, the known channels and
+//              the end of the configuration.
 //
-// A CONFIGURACAO VEM DO NO. Canais (nome e chave), regiao e servidor MQTT sao
-// aprendidos do dump do C6L quando ele esta conectado (mesh_mqtt_aprender_*)
-// e guardados na NVS: o modo internet usa exatamente o que o no usa. Sem
-// nada aprendido: servidor do Mesh Brasil (raiz meshdev), canal LongFast com a
-// chave padrao. Um servidor ESCOLHIDO pela pessoa (a lista abaixo) vale por
-// cima do que o no ensinou.
+// THE CONFIGURATION COMES FROM THE NODE. Channels (name and key), region and MQTT
+// server are learnt from the C6L's dump when it is connected (mesh_mqtt_aprender_*)
+// and stored in NVS: internet mode uses exactly what the node uses. With
+// nothing learnt: the Mesh Brasil server (root meshdev), LongFast channel with the
+// default key. A server CHOSEN by the person (the list below) takes precedence
+// over what the node taught.
 //
-// LIMITES (ver tab5_mesh.hpp): so mensagens de CANAL - a mensagem direta
-// cifrada com chave publica (PKI) nao e decifrada aqui; no servidor publico o
-// que chega da internet nao e repetido pela malha (zero saltos), entao o
-// alcance e quem esta no MQTT e os nos de radio perto de um gateway com
-// downlink ligado.
+// LIMITS (see tab5_mesh.hpp): CHANNEL messages only - a direct message
+// encrypted with a public key (PKI) is not decrypted here; on the public server
+// what arrives from the internet is not repeated by the mesh (zero hops), so the
+// reach is whoever is on MQTT plus the radio nodes near a gateway with
+// downlink on.
 #pragma once
 
 #include <stdint.h>
@@ -35,122 +35,122 @@
 #include <stdbool.h>
 #include "ajustes.h"   // ajustes_mqtt_srv_t
 
-// Conecta ao servidor (o Wi-Fi ja tem que estar conectado). Assincrono.
+// Connects to the server (Wi-Fi must already be connected). Asynchronous.
 bool mesh_mqtt_iniciar(void);
 void mesh_mqtt_parar(void);
-bool mesh_mqtt_ativo(void);       // iniciado (conectado ou tentando)
-bool mesh_mqtt_conectado(void);   // sessao com o servidor de pe
-bool mesh_mqtt_conectou_agora(void);   // true UMA vez por conexao nova
+bool mesh_mqtt_ativo(void);       // started (connected or trying)
+bool mesh_mqtt_conectado(void);   // session with the server up
+bool mesh_mqtt_conectou_agora(void);   // true ONCE per new connection
 
-// Mesmo contrato do enlace BLE: corpo de ToRadio/FromRadio, sem frame.
+// Same contract as the BLE link: ToRadio/FromRadio body, no frame.
 bool   mesh_mqtt_enviar(const uint8_t* toradio, size_t n);
 size_t mesh_mqtt_receber(uint8_t* buf, size_t max, uint32_t espera_ms);
 
 // "internet: conectado a mqtt.meshtastic.org (msh/BR_902)" etc.
 const char* mesh_mqtt_descricao(void);
 
-// Quem somos na malha: o numero do nosso no (o do C6L, se ja conhecido - a
-// mesma identidade pelos dois caminhos) e os nomes que vao no NodeInfo.
+// Who we are on the mesh: our node number (the C6L's, if already known - the
+// same identity over both paths) and the names that go in the NodeInfo.
 void mesh_mqtt_definir_no(uint32_t num, const char* curto, const char* longo);
 
-// OS SERVIDORES QUE A PESSOA PODE ESCOLHER para o modo internet (Ajustes >
-// Meshtastic, a pagina "No" do app Mesh e o assistente de boas-vindas). E a
-// LISTA DELA, guardada nos ajustes: adiciona, edita e apaga - nada de lista
-// fixa no codigo. O indice e o mesmo de ajustes_mqtt_servidor(): 0 =
-// automatico (o do no, ou o brasileiro), 1..n-1 = os salvos. Escolher um
-// diferente de 0 vale por cima do que o no ensinou. Trocar:
-// ajustes_definir_mqtt_servidor() e reiniciar o servico (o cliente pega o
-// novo ao reconectar).
+// THE SERVERS THE PERSON CAN CHOOSE for internet mode (Settings >
+// Meshtastic, the Mesh app's "No" (Node) page and the welcome wizard). It is
+// THEIR LIST, stored in settings: add, edit and delete - no list fixed
+// in code. The index is the same as ajustes_mqtt_servidor(): 0 =
+// automatic (the node's, or the Brazilian one), 1..n-1 = the saved ones. Choosing one
+// other than 0 takes precedence over what the node taught. To switch:
+// ajustes_definir_mqtt_servidor() and restart the service (the client picks up the
+// new one on reconnecting).
 //
-//   nome  "Meshtastic Europa"       srv   "mqtt.meshtastic.org" ou "host:porta"
-//   usr / pwd (podem ser vazios)    raiz  "msh/EU_868" (vazia = "msh")
+//   nome  "Meshtastic Europa"       srv   "mqtt.meshtastic.org" or "host:porta"
+//   usr / pwd (may be empty)        raiz  "msh/EU_868" (empty = "msh")
 typedef ajustes_mqtt_srv_t mesh_mqtt_servidor_t;
-int         mesh_mqtt_n_servidores(void);                    // inclui o 0 (automatico)
-bool        mesh_mqtt_servidor(int i, mesh_mqtt_servidor_t* out);   // 0: so o nome "Automático"
+int         mesh_mqtt_n_servidores(void);                    // includes 0 (automatic)
+bool        mesh_mqtt_servidor(int i, mesh_mqtt_servidor_t* out);   // 0: only the name "Automático"
 const char* mesh_mqtt_servidor_nome(uint8_t escolha);
-bool        mesh_mqtt_pode_adicionar(void);                  // a lista ainda tem vaga
-// Grava o servidor i (1..n-1) ou, com i = 0, um NOVO. Endereco vazio e
-// recusado; nome vazio vira o endereco. Devolve o indice dele (1..), 0 = nao
-// gravou (sem endereco, ou lista cheia).
+bool        mesh_mqtt_pode_adicionar(void);                  // the list still has room
+// Writes server i (1..n-1) or, with i = 0, a NEW one. An empty address is
+// refused; an empty name becomes the address. Returns its index (1..), 0 = not
+// written (no address, or list full).
 int         mesh_mqtt_salvar_servidor(int i, const mesh_mqtt_servidor_t* s);
-// Apaga o i (1..n-1). Se era o escolhido, a escolha volta ao automatico.
+// Deletes i (1..n-1). If it was the chosen one, the choice goes back to automatic.
 void        mesh_mqtt_apagar_servidor(int i);
 
-// AS OPERACOES DA PESSOA SOBRE O SERVIDOR (os apps - Ajustes e a pagina "No"
-// do Mesh - so desenham e chamam estas; a regra e uma so).
-// Escolher o servidor (0 = automatico, 1..n-1) e reiniciar o servico do Mesh:
-// o cliente MQTT reconecta no novo.
+// THE PERSON'S OPERATIONS ON THE SERVER (the apps - Settings and the Mesh "No"
+// page - only draw and call these; there is one rule).
+// Choose the server (0 = automatic, 1..n-1) and restart the Mesh service:
+// the MQTT client reconnects to the new one.
 void        mesh_mqtt_usar_servidor(uint8_t escolha);
-// Grava (ver mesh_mqtt_salvar_servidor) e, se gravou, passa a usar e
-// reconecta. Devolve o indice dele; 0 = nao gravou e nada mudou.
+// Writes (see mesh_mqtt_salvar_servidor) and, if written, starts using it and
+// reconnects. Returns its index; 0 = not written and nothing changed.
 int         mesh_mqtt_salvar_e_usar(int i, const mesh_mqtt_servidor_t* s);
-// Apaga o i (1..n-1). Se era o em uso, volta ao automatico e reconecta
-// (devolve true); senao nada reconecta (false).
+// Deletes i (1..n-1). If it was the one in use, goes back to automatic and reconnects
+// (returns true); otherwise nothing reconnects (false).
 bool        mesh_mqtt_apagar_e_reconectar(int i);
-// Abre o editor: i = 0 comeca um servidor NOVO pelo primeiro modelo; 1..n-1
-// carrega o salvo. false = o indice nao existe.
+// Opens the editor: i = 0 starts a NEW server from the first template; 1..n-1
+// loads the saved one. false = the index does not exist.
 bool        mesh_mqtt_para_editar(int i, mesh_mqtt_servidor_t* p);
-// Num servidor novo, troca para o modelo seguinte e preenche os campos.
-// Recebe o modelo atual e devolve o novo.
+// On a new server, switches to the next template and fills in the fields.
+// Takes the current template and returns the new one.
 int         mesh_mqtt_proximo_modelo(int atual, mesh_mqtt_servidor_t* p);
-// Os cinco campos do formulario, na ordem da tela: 0 nome, 1 endereco,
-// 2 usuario, 3 senha, 4 raiz. Devolve o texto e o tamanho do buffer.
+// The form's five fields, in screen order: 0 name, 1 address,
+// 2 user, 3 password, 4 root. Returns the text and the buffer size.
 char*       mesh_mqtt_campo(mesh_mqtt_servidor_t* p, int k, size_t* tam);
 
-// MODELOS para preencher um servidor novo (os servidores conhecidos e suas
-// raizes por regiao; o ultimo e "em branco"). So preenchem os campos - a
-// pessoa ajusta e salva.
+// TEMPLATES to fill in a new server (the known servers and their
+// roots per region; the last is "blank"). They only fill in the fields - the
+// person adjusts and saves.
 int                         mesh_mqtt_n_modelos(void);
 const mesh_mqtt_servidor_t* mesh_mqtt_modelo(int i);
 
-// Aprendidos do dump do no (chamados pelo servico). So gravam quando mudam.
+// Learnt from the node's dump (called by the service). Only written when they change.
 void mesh_mqtt_aprender_canal(int idx, int papel, const char* nome, const uint8_t* psk, size_t n_psk);
 void mesh_mqtt_aprender_regiao(int regiao);
 void mesh_mqtt_aprender_servidor(const char* endereco, const char* usuario,
                                  const char* senha, const char* raiz);
 
 // ---------------------------------------------------------------------------
-// MQTT CLIENT PROXY - o mesmo cliente, no outro papel
+// MQTT CLIENT PROXY - the same client, in the other role
 // ---------------------------------------------------------------------------
-// Com ModuleConfig.mqtt.proxy_to_client_enabled ligado, o NO nao abre conexao
-// propria: entrega ao cliente conectado (FromRadio 14, MqttClientProxyMessage
-// {1 topic, 2 data, 3 text, 4 retained}) o que publicaria, e recebe do cliente
-// (ToRadio 6, a mesma mensagem) o que chegar nos topicos assinados. E o "MQTT
-// pelo app" do celular. Aqui o Tab5 faz o papel do app: o no vira um gateway
-// completo - o que ele ouve no radio sobe, o que vem da internet desce para a
-// malha - sem ligar o Wi-Fi dele (no C6L, Wi-Fi e Bluetooth nao convivem).
+// With ModuleConfig.mqtt.proxy_to_client_enabled on, the NODE does not open its
+// own connection: it hands to the connected client (FromRadio 14, MqttClientProxyMessage
+// {1 topic, 2 data, 3 text, 4 retained}) what it would publish, and receives from the
+// client (ToRadio 6, the same message) whatever arrives on the subscribed topics. It is the
+// phone's "MQTT via the app". Here the Tab5 plays the app's role: the node becomes a full
+// gateway - what it hears on the radio goes up, what comes from the internet goes down to
+// the mesh - without turning its Wi-Fi on (on the C6L, Wi-Fi and Bluetooth cannot coexist).
 //
-// DIFERENCA PARA O MODO INTERNET: aqui o Tab5 NAO cifra nem decifra nada. O
-// no publica o envelope pronto; o Tab5 so carrega bytes. Por isso a mensagem
-// direta com PKI funciona (quem decifra e o no), e o servidor e o do NO
-// (endereco vazio = mqtt.meshtastic.org, o padrao do firmware), nao o padrao
-// do modo internet.
+// DIFFERENCE FROM INTERNET MODE: here the Tab5 does NOT encrypt or decrypt anything. The
+// node publishes the finished envelope; the Tab5 just carries bytes. That is why direct
+// messages with PKI work (the node decrypts), and the server is the NODE's
+// (empty address = mqtt.meshtastic.org, the firmware default), not the internet
+// mode default.
 //
-// Os dois modos dividem o cliente e sao exclusivos: proxy so com o no
-// conectado; internet so sem ele (ou com a via Internet). Quem escolhe e o
-// laco do servico (tab5_mesh.cpp). A chave e a do proprio no
-// (proxy_to_client_enabled), mexida na pagina "No" do app Mesh: ligada e
-// confirmada no dump, o Tab5 empresta a internet.
+// The two modes share the client and are exclusive: proxy only with the node
+// connected; internet only without it (or with the Internet path). The service
+// loop decides (tab5_mesh.cpp). The switch is the node's own
+// (proxy_to_client_enabled), toggled on the Mesh app's "No" page: on and
+// confirmed in the dump, the Tab5 lends its internet.
 
-// Do dump do no: ModuleConfig.mqtt (1 enabled, 9 proxy_to_client_enabled,
-// 7 tls_enabled) e ChannelSettings.downlink_enabled (6) de cada canal. So RAM:
-// o proxy so existe com o no conectado, e o dump vem a cada conexao.
+// From the node's dump: ModuleConfig.mqtt (1 enabled, 9 proxy_to_client_enabled,
+// 7 tls_enabled) and ChannelSettings.downlink_enabled (6) of each channel. RAM only:
+// the proxy only exists with the node connected, and the dump comes on every connection.
 void mesh_mqtt_aprender_no_mqtt(bool ligado, bool proxy, bool tls);
 void mesh_mqtt_aprender_downlink(int idx, bool downlink);
-bool mesh_mqtt_no_tem_proxy(void);   // o no veio com mqtt e proxy ligados
-// ChannelSettings.uplink_enabled (5): so para o diagnostico (console 'mesh').
+bool mesh_mqtt_no_tem_proxy(void);   // the node came with mqtt and proxy on
+// ChannelSettings.uplink_enabled (5): only for diagnostics (console 'mesh').
 void mesh_mqtt_aprender_uplink(int idx, bool uplink);
-// O MQTT DO NO em texto, para o console: ligado, proxy, servidor e raiz, e o
-// sobe/desce de cada canal ativo. Envio que chega ao servidor e resposta que
-// nao volta e, quase sempre, o canal com uplink e sem downlink.
+// The NODE'S MQTT as text, for the console: on, proxy, server and root, and the
+// up/down of each active channel. A send that reaches the server with a reply that
+// never comes back is, almost always, the channel with uplink and without downlink.
 void mesh_mqtt_no_resumo(char* out, size_t tam);
 
-bool mesh_mqtt_iniciar_proxy(void);  // o Wi-Fi ja tem que estar conectado
-bool mesh_mqtt_em_proxy(void);       // o cliente de pe esta no papel de proxy
+bool mesh_mqtt_iniciar_proxy(void);  // Wi-Fi must already be connected
+bool mesh_mqtt_em_proxy(void);       // the client that is up is in the proxy role
 
-// SUBIDA: o que o no mandou publicar. Chamada da tarefa do servico.
+// UPLINK: what the node asked to publish. Called from the service task.
 bool   mesh_mqtt_proxy_publicar(const char* topico, const uint8_t* d, size_t n, bool retido);
-// DESCIDA: o proximo ToRadio{ mqttClientProxyMessage } pronto para o no;
-// 0 = nada na fila. Chamada da tarefa do servico, sem espera.
+// DOWNLINK: the next ToRadio{ mqttClientProxyMessage } ready for the node;
+// 0 = nothing queued. Called from the service task, without waiting.
 size_t mesh_mqtt_proxy_receber(uint8_t* buf, size_t max);
 void   mesh_mqtt_proxy_contadores(uint32_t* subiu, uint32_t* desceu, uint32_t* perdeu);

@@ -5,7 +5,7 @@
 #include <string.h>
 
 static Trava  s_trava;
-static char*  s_buf = nullptr;   // PSRAM, TRANSF_MAX bytes, criado na primeira copia
+static char*  s_buf = nullptr;   // PSRAM, TRANSF_MAX bytes, created on the first copy
 static size_t s_n   = 0;
 
 static size_t corte_utf8(const char* s, size_t n) { return (size_t)tab5_utf8_corte(s, (int)n); }

@@ -1,7 +1,7 @@
-// Vigia do Grove (kernel/grove.cpp): sonda o cabo no boot, quando o modulo
-// muda e, sem nada conclusivo, mais duas vezes. Nunca na tarefa de interface.
+// Grove watcher (kernel/grove.cpp): probes the cable at boot, when the module
+// changes and, with nothing conclusive, twice more. Never on the UI task.
 #pragma once
 
-void grove_iniciar(void);           // uma vez, da tarefa de interface, antes do loop
-void grove_pedir_sondagem(void);    // de qualquer tarefa; nao bloqueia
-bool grove_sondando(void);          // do pedido ate a sondagem terminar
+void grove_iniciar(void);           // once, from the UI task, before the loop
+void grove_pedir_sondagem(void);    // from any task; does not block
+bool grove_sondando(void);          // from the request until the probe finishes

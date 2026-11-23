@@ -1,6 +1,6 @@
-// SHELL - a home: as paginas, a ordem dos icones (gravada na NVS), mover e
-// remover icone, as bolinhas de pagina e o desenho dos icones. Partido de
-// shell.cpp; o que as partes compartilham esta em shell_interno.hpp.
+// SHELL - the home screen: the pages, the icon order (saved in NVS), moving and
+// removing icons, the page dots and drawing the icons. Split out of
+// shell.cpp; what the parts share lives in shell_interno.hpp.
 
 #include "esp_attr.h"
 #include "bloqueio_anim.hpp"
@@ -24,29 +24,29 @@
 
 static const char *TAG = "shell";
 
-// GEOMETRIA DA HOME (px). De cima para baixo: o cartao do relogio, a grade de
-// icones (cada um com o rotulo embaixo) e a faixa das bolinhas de pagina.
-// Colunas e linhas por pagina saem do espaco livre (home_por_pagina), nao de
-// numeros fixos.
-static const int CARTAO_Y   = TEMA_ESPACO_4;    // do topo da area ate o cartao
-static const int CARTAO_PAD = 28;               // respiro dentro do cartao
-static const int CARTAO_A   = 2 * CARTAO_PAD + TEMA_LETRA_GRANDE + 4 + TEMA_LETRA_CORPO;   // hora + data
-static const int GRADE_TOPO = CARTAO_Y + CARTAO_A + TEMA_ESPACO_5;   // onde comeca a 1a linha de icones
+// HOME SCREEN GEOMETRY (px). Top to bottom: the clock card, the icon grid
+// (each with its label underneath) and the page-dot strip.
+// Columns and rows per page come from the free space (home_por_pagina), not
+// from fixed numbers.
+static const int CARTAO_Y   = TEMA_ESPACO_4;    // from the top of the area to the card
+static const int CARTAO_PAD = 28;               // breathing room inside the card
+static const int CARTAO_A   = 2 * CARTAO_PAD + TEMA_LETRA_GRANDE + 4 + TEMA_LETRA_CORPO;   // time + date
+static const int GRADE_TOPO = CARTAO_Y + CARTAO_A + TEMA_ESPACO_5;   // where the 1st row of icons starts
 
-// Rotulo (nome do app): 10 px abaixo do icone, letra de 24 px. A reserva e o
-// que a linha ocupa alem do quadrado do icone; entre uma linha e a outra
-// sobram ESPACO_LINHAS.
+// Label (app name): 10 px below the icon, 24 px lettering. The reserve is what
+// the row takes beyond the icon square; between one row and the next there is
+// ESPACO_LINHAS left over.
 static const int ROTULO_ESPACO  = 10;
 static const int ROTULO_LETRA   = 24;
 static const int ROTULO_LETRA_MIN = 20;
 static const int ROTULO_RESERVA = ROTULO_ESPACO + ROTULO_LETRA;
 static const int ESPACO_LINHAS  = 28;
 
-// Faixa embaixo dos icones para as bolinhas de pagina.
+// Strip under the icons for the page dots.
 static const int HOME_BOLINHAS_A = 32;
 
-// Vao horizontal entre icones: a grade ocupa a largura menos a margem dos dois
-// lados, e o que sobra se reparte entre as colunas.
+// Horizontal gap between icons: the grid takes the width minus the margin on
+// both sides, and what is left is shared among the columns.
 static int vao_colunas(const area_t& a)
 {
   const int cols = icone_cols(a);
@@ -63,12 +63,12 @@ static void celula_do_icone(int i, const area_t& a, int* px, int* py)
 }
 
 // ---------------------------------------------------------------------------
-// PAGINAS DA HOME
+// HOME SCREEN PAGES
 // ---------------------------------------------------------------------------
-// A pagina p mostra os apps [p*por_pagina, (p+1)*por_pagina). celula_do_icone()
-// continua recebendo o indice DENTRO da pagina, entao desenho e toque (que
-// usam a mesma funcao) seguem sempre de acordo. Nada de apps.cpp muda: o
-// numero de paginas sai de SISTEMA_NUM_APPS.
+// Page p shows apps [p*por_pagina, (p+1)*por_pagina). celula_do_icone()
+// still receives the index WITHIN the page, so drawing and touch (which
+// use the same function) always stay in agreement. Nothing in apps.cpp changes: the
+// number of pages comes from SISTEMA_NUM_APPS.
 static int s_pagina_home = 0;
 
 static int home_por_pagina(const area_t& a)
@@ -95,17 +95,17 @@ bool home_mudar_pagina(int delta)
   int nova = s_pagina_home + delta;
   if (nova < 0 || nova >= n) { return false; }
   s_pagina_home = nova;
-  s_sujo_layout = true;   // mudou a POSICAO dos icones: repintura completa
+  s_sujo_layout = true;   // the icons' POSITION changed: full repaint
   return true;
 }
 
 // ---------------------------------------------------------------------------
-// ORDEM DOS ICONES (ver sistema_home_app em app.h)
+// ICON ORDER (see sistema_home_app in app.h)
 // ---------------------------------------------------------------------------
-// s_ordem[pos] = indice em SISTEMA_APPS. Desenho e toque leem daqui; so
-// mover/carregar escrevem, e sempre dentro de s_ordem_mux - o console mexe de
-// outra tarefa. Ler sem trava e seguro: cada entrada e um byte, e o pior caso
-// e um quadro com a ordem velha, logo repintado (mover pede redesenho).
+// s_ordem[pos] = index into SISTEMA_APPS. Drawing and touch read from here; only
+// move/load write, and always inside s_ordem_mux - the console changes it from
+// another task. Reading without the lock is safe: each entry is one byte, and the worst case
+// is one frame with the old order, soon repainted (moving requests a redraw).
 #define HOME_APPS_MAX 64
 static uint8_t s_ordem[HOME_APPS_MAX];
 static int     s_n_ordem = 0;
@@ -125,15 +125,15 @@ int sistema_home_posicao(const app_t* app)
   return -1;
 }
 
-// Monta a ordem a partir dos nomes: os conhecidos na ordem dada (repetido
-// vale uma vez), e depois os que faltaram na ordem de apps.cpp.
+// Builds the order from the names: the known ones in the given order (a repeat
+// counts once), and then those missing in apps.cpp order.
 static void ordem_de_nomes(const char* nomes)
 {
   uint8_t nova[HOME_APPS_MAX];
   bool usado[HOME_APPS_MAX] = {};
   const int total = SISTEMA_NUM_APPS < HOME_APPS_MAX ? SISTEMA_NUM_APPS : HOME_APPS_MAX;
   if (SISTEMA_NUM_APPS > HOME_APPS_MAX) {
-    ESP_LOGE(TAG, "%d apps, a home so ordena %d (HOME_APPS_MAX)", SISTEMA_NUM_APPS, HOME_APPS_MAX);
+    ESP_LOGE(TAG, "%d apps, the home screen only orders %d (HOME_APPS_MAX)", SISTEMA_NUM_APPS, HOME_APPS_MAX);
   }
   int n = 0;
   const char* p = nomes ? nomes : "";
@@ -142,7 +142,7 @@ static void ordem_de_nomes(const char* nomes)
     const size_t len = fim ? (size_t)(fim - p) : strlen(p);
     for (int i = 0; i < total; ++i) {
       const char* nome = SISTEMA_APPS[i]->nome;
-      if (SISTEMA_APPS[i]->fora_da_home) { continue; }   // nao tem icone (app.h)
+      if (SISTEMA_APPS[i]->fora_da_home) { continue; }   // has no icon (app.h)
       if (!usado[i] && strlen(nome) == len && strncasecmp(nome, p, len) == 0) {
         usado[i] = true; nova[n++] = (uint8_t)i; break;
       }
@@ -158,9 +158,9 @@ static void ordem_de_nomes(const char* nomes)
   taskEXIT_CRITICAL(&s_ordem_mux);
 }
 
-// UM buffer para gravar e para carregar a ordem (os dois so rodam na
-// interface, nunca ao mesmo tempo): eram dois de 1 KB na RAM interna.
-EXT_RAM_BSS_ATTR static char s_ordem_nomes[1024];   // so a interface (PSRAM: ver main/linker.lf)
+// ONE buffer for saving and for loading the order (both only run in the
+// UI, never at the same time): there used to be two of 1 KB in internal RAM.
+EXT_RAM_BSS_ATTR static char s_ordem_nomes[1024];   // UI only (PSRAM: see main/linker.lf)
 
 static void ordem_gravar(void)
 {
@@ -186,7 +186,7 @@ void home_ordem_carregar(void)
   ordem_de_nomes(s_ordem_nomes);
 }
 
-// Tira o app de 'de' e encaixa em 'para'; os do meio andam uma casa.
+// Takes the app out of 'de' and slots it into 'para'; those in between shift one place.
 static void ordem_mover(int de, int para)
 {
   taskENTER_CRITICAL(&s_ordem_mux);
@@ -216,10 +216,10 @@ void sistema_home_ordem_padrao(void)
   sistema_pedir_redesenho_completo();
 }
 
-// Que posicao (na ordem) esta sob o dedo, na pagina atual; -1 = nenhuma.
-// Sem folga e o quadrado do icone (o clique). Com folga a celula inteira,
-// rotulo e meio vao incluidos, e uma celula vazia no fim da ultima pagina
-// vale a ultima posicao - e o alvo do arraste, que nao pode cair em buraco.
+// Which position (in the order) is under the finger, on the current page; -1 = none.
+// Without slack it is the icon square (the click). With slack, the whole cell,
+// label and gap included, and an empty cell at the end of the last page
+// counts as the last position - it is the drag target, which must not land in a hole.
 int home_pos_em(const area_t& a, int tx, int ty, bool folga)
 {
   const int por_pagina = home_por_pagina(a);
@@ -240,32 +240,32 @@ int home_pos_em(const area_t& a, int tx, int ty, bool folga)
 }
 
 // ---------------------------------------------------------------------------
-// MOVER ICONE (segurar e arrastar) - ver home_segurar em internal.hpp
+// MOVE ICON (hold and drag) - see home_segurar in internal.hpp
 // ---------------------------------------------------------------------------
-// Repinta a home so quando o icone TROCA de casa, nunca a cada amostra do
-// dedo: cada repintura completa sao ~70KB por icone (ver desenhar_home).
-// Para outra pagina: segurar o dedo na beirada lateral por HOME_BORDA_MS.
+// Repaints the home screen only when the icon CHANGES place, never on every finger
+// sample: each full repaint is ~70KB per icon (see desenhar_home).
+// To another page: hold the finger at the side edge for HOME_BORDA_MS.
 #define HOME_SEGURAR_MS 600
 #define HOME_BORDA_PX   60
 #define HOME_BORDA_MS   700
 
-static int      s_mover = -1;          // posicao do icone levantado; -1 = nenhum
+static int      s_mover = -1;          // position of the lifted icon; -1 = none
 static bool     s_mover_mudou = false;
 static uint32_t s_borda_desde = 0;
 
-// REMOVER UM APP DE FORA (script do cartao): com o icone dele levantado,
-// aparece uma faixa no topo; soltar nela pede confirmacao. Os apps do sistema
-// nao mostram a faixa (sistema_apps_de_fora_removivel). Quem remove de fato e
-// o dono dos apps de fora - o kernel so pergunta e pede.
+// REMOVING A THIRD-PARTY APP (script from the card): with its icon lifted, a
+// strip appears at the top; dropping on it asks for confirmation. System apps
+// do not show the strip (sistema_apps_de_fora_removivel). The one that actually
+// removes is the owner of the third-party apps - the kernel only asks and requests.
 #define HOME_REMOVER_A  110
-static bool         s_sobre_remover = false;   // o dedo esta na faixa
-const app_t* s_remover_app = nullptr;   // esperando o "Remover" da confirmacao
+static bool         s_sobre_remover = false;   // the finger is on the strip
+const app_t* s_remover_app = nullptr;   // waiting for the confirmation's "Remover"
 static area_t       s_rem_bt_sim = {}, s_rem_bt_nao = {};
 
 bool home_segurar(int tx, int ty, uint32_t agora, uint32_t segurando_ms, int desvio)
 {
   const area_t a = sistema_area();
-  ty -= TOQUE_DY;   // a mesma correcao do clique (tratar_toque)
+  ty -= TOQUE_DY;   // the same correction as the click (tratar_toque)
 
   if (s_mover < 0) {
     if (segurando_ms < HOME_SEGURAR_MS || desvio > ROLAGEM_ARRASTE_MIN) { return false; }
@@ -275,11 +275,11 @@ bool home_segurar(int tx, int ty, uint32_t agora, uint32_t segurando_ms, int des
     s_mover_mudou = false;
     s_borda_desde = 0;
     s_sujo_layout = true;
-    ESP_LOGI(TAG, "movendo '%s' (posicao %d)", sistema_home_app(pos)->nome, pos + 1);
+    ESP_LOGI(TAG, "moving '%s' (position %d)", sistema_home_app(pos)->nome, pos + 1);
     return true;
   }
 
-  // Na faixa de remover o icone nao troca de casa: so acende a faixa.
+  // On the remove strip the icon does not change place: it only lights the strip.
   const bool sobre = ty < a.y + HOME_REMOVER_A && sistema_apps_de_fora_removivel(sistema_home_app(s_mover));
   if (sobre != s_sobre_remover) { s_sobre_remover = sobre; s_sujo_layout = true; }
   if (sobre) { s_borda_desde = 0; return true; }
@@ -290,10 +290,10 @@ bool home_segurar(int tx, int ty, uint32_t agora, uint32_t segurando_ms, int des
   if (lado) {
     if (!s_borda_desde) { s_borda_desde = agora; return true; }
     if (agora - s_borda_desde < HOME_BORDA_MS) { return true; }
-    s_borda_desde = agora;   // segurando ali, a proxima pagina vem depois de outro prazo
+    s_borda_desde = agora;   // holding there, the next page comes after another timeout
     const int pp = home_por_pagina(a);
     s_pagina_home += lado;
-    // Entra pela beirada de onde veio: indo para a direita, primeira casa.
+    // Enters from the edge it came from: going right, the first slot.
     int para = (lado > 0) ? s_pagina_home * pp : (s_pagina_home + 1) * pp - 1;
     if (para >= home_n()) { para = home_n() - 1; }
     ordem_mover(s_mover, para);
@@ -322,7 +322,7 @@ bool home_soltar(void)
     s_sobre_remover = false;
   }
   if (s_mover_mudou) {
-    ESP_LOGI(TAG, "'%s' agora na posicao %d", sistema_home_app(s_mover)->nome, s_mover + 1);
+    ESP_LOGI(TAG, "'%s' now at position %d", sistema_home_app(s_mover)->nome, s_mover + 1);
     ordem_gravar();
   }
   s_mover = -1;
@@ -330,8 +330,8 @@ bool home_soltar(void)
   return true;
 }
 
-// Indicador de pagina: pontos centrados na faixa acima da barra de navegacao.
-// A pagina atual e uma pilula de 28x8; as outras, pontos de 8x8.
+// Page indicator: dots centred in the strip above the navigation bar.
+// The current page is a 28x8 pill; the others, 8x8 dots.
 static void desenhar_bolinhas(lgfx::LovyanGFX& d, const area_t& a)
 {
   const int n = home_paginas(a);
@@ -349,17 +349,17 @@ static void desenhar_bolinhas(lgfx::LovyanGFX& d, const area_t& a)
 }
 
 // ---------------------------------------------------------------------------
-// CARTAO DO RELOGIO (topo da home)
+// CLOCK CARD (top of the home screen)
 // ---------------------------------------------------------------------------
-// A esquerda a hora e a data por extenso; a direita duas pilulas com o estado
-// do Wi-Fi e do Mesh. Tudo vem dos servicos que ja existem (tab5_hora,
-// tab5_wifi, tab5_mesh): aqui so se le e se desenha.
-static const int PILULA_A = 40;   // altura de cada pilula
+// On the left the time and the date written out; on the right two pills with the
+// Wi-Fi and Mesh state. Everything comes from existing services (tab5_hora,
+// tab5_wifi, tab5_mesh): here we only read and draw.
+static const int PILULA_A = 40;   // height of each pill
 
-static char s_cartao_chave[96] = "";   // o que o cartao mostra agora (ver home_cartao_atualizar)
+static char s_cartao_chave[96] = "";   // what the card shows now (see home_cartao_atualizar)
 
-// Os textos das duas pilulas. 'mesh' fica vazio quando o servico nao esta ativo
-// (a pilula some). 'wifi_ok' diz se o ponto e verde.
+// The texts of the two pills. 'mesh' is empty when the service is not active
+// (the pill disappears). 'wifi_ok' says whether the dot is green.
 static void cartao_textos(char* wifi, size_t nw, bool* wifi_ok, char* mesh, size_t nm)
 {
   *wifi_ok = (tab5_wifi_estado() == TAB5_WIFI_CONECTADO) && tab5_wifi_ssid() && tab5_wifi_ssid()[0];
@@ -369,8 +369,8 @@ static void cartao_textos(char* wifi, size_t nw, bool* wifi_ok, char* mesh, size
   else                           { mesh[0] = 0; }
 }
 
-// Uma pilula encostada na direita (x_dir), com o pontinho colorido e o texto
-// cortado para caber em 'larg_max'.
+// A pill flush right (x_dir), with the coloured dot and the text
+// cut to fit in 'larg_max'.
 static void desenhar_pilula(lgfx::LovyanGFX& d, int x_dir, int y, int larg_max, uint16_t cor_ponto, const char* txt)
 {
   const int pad = 16, ponto = 12, espaco = 10;
@@ -388,7 +388,7 @@ static void desenhar_pilula(lgfx::LovyanGFX& d, int x_dir, int y, int larg_max, 
   d.drawString(t, x + pad + ponto + espaco, y + PILULA_A / 2);
 }
 
-// A chave resume o que o cartao mostra: se nao mudou, nao ha o que repintar.
+// The key sums up what the card shows: if it has not changed, there is nothing to repaint.
 static void cartao_chave(char* out, size_t n)
 {
   char hora[8], wifi[48], mesh[48];
@@ -406,7 +406,7 @@ static void desenhar_cartao_relogio(lgfx::LovyanGFX& d, const area_t& a)
   const int cx = a.x + TEMA_MARGEM, cy = a.y + CARTAO_Y, cl = a.largura - 2 * TEMA_MARGEM;
   d.fillRoundRect(cx, cy, cl, CARTAO_A, TEMA_RAIO_G, TEMA_SUPERFICIE);
 
-  // Hora e data. Sem a hora acertada: "--:--" e sem data.
+  // Time and date. Without the time set: "--:--" and no date.
   char hora[8], data[48] = "";
   hora_agora(hora, sizeof(hora));
   const uint32_t t = tab5_hora_epoch();
@@ -425,7 +425,7 @@ static void desenhar_cartao_relogio(lgfx::LovyanGFX& d, const area_t& a)
   d.drawString(data, cx + CARTAO_PAD, cy + CARTAO_PAD + TEMA_LETRA_GRANDE + 4);
   const int larg_esq = (int)d.textWidth(data);
 
-  // As pilulas, no que sobra a direita do texto, centradas na altura do cartao.
+  // The pills, in what is left to the right of the text, centred on the card's height.
   char wifi[48], mesh[48];
   bool wifi_ok;
   cartao_textos(wifi, sizeof(wifi), &wifi_ok, mesh, sizeof(mesh));
@@ -442,10 +442,10 @@ static void desenhar_cartao_relogio(lgfx::LovyanGFX& d, const area_t& a)
 
 void desenhar_home(lgfx::LovyanGFX& d, const area_t& a)
 {
-  // PAPEL DE PAREDE (Ajustes > Tela). So nesta passada - a home e estatica e
-  // so e desenhada inteira, com a area recem-limpa. A semente e tirada uma
-  // vez por boot - e de novo quando o usuario volta a escolher "Sorteio" -,
-  // entao o desenho nao muda a cada volta para a home.
+  // WALLPAPER (Settings > Display). Only in this pass - the home screen is static and
+  // is only drawn whole, with the area freshly cleared. The seed is taken once
+  // per boot - and again when the user picks "Sorteio" (Random) again -,
+  // so the drawing does not change every time you return to the home screen.
   static uint32_t s_semente_parede = 0;
   static uint8_t  s_parede_ant = 0xFF;
   const uint8_t parede = ajustes_parede();
@@ -457,7 +457,7 @@ void desenhar_home(lgfx::LovyanGFX& d, const area_t& a)
                      ? (int)(s_semente_parede % AJUSTES_PAREDE_ESTILOS) : parede - 1;
     bq_fundo_parede(d, a, estilo, s_semente_parede);
   } else {
-    // Sem papel de parede: o fundo do tema (em faixas, ver tab5_tela_limpar).
+    // No wallpaper: the theme background (in bands, see tab5_tela_limpar).
     tab5_tela_limpar(a.x, a.y, a.largura, a.altura, TEMA_FUNDO);
   }
 
@@ -466,19 +466,19 @@ void desenhar_home(lgfx::LovyanGFX& d, const area_t& a)
   const int por_pagina = home_por_pagina(a);
   if (s_pagina_home >= home_paginas(a)) { s_pagina_home = 0; }
   const int primeiro = s_pagina_home * por_pagina;
-  // Largura que o rotulo pode usar: o icone e o vao ate o vizinho, com uma
-  // folga de 8 px para dois nomes lado a lado nao se encostarem.
+  // Width the label may use: the icon and the gap to the neighbour, with
+  // 8 px of slack so two names side by side do not touch.
   const int largura_disponivel = ICONE_LADO + vao_colunas(a) - 8;
   for (int k = 0; k < por_pagina && primeiro + k < home_n(); ++k) {
     int px, py;
     celula_do_icone(k, a, &px, &py);
 
-    // RESPIRO ENTRE ICONES: o desenho de cada icone e do app (app_t.icone); a
-    // pausa entre eles, se precisar, e do loop do sistema - quem escreve app
-    // desenha UM icone e nao precisa saber disso.
+    // BREATHING ROOM BETWEEN ICONS: each icon's drawing belongs to the app (app_t.icone); the
+    // pause between them, if needed, belongs to the system loop - whoever writes an app
+    // draws ONE icon and does not need to know about this.
     const app_t* app = sistema_home_app(primeiro + k);
-    // O ICONE LEVANTADO (segurar e arrastar): moldura em volta, no vao entre
-    // icones - o desenho do icone em si nao muda.
+    // THE LIFTED ICON (hold and drag): a frame around it, in the gap between
+    // icons - the icon drawing itself does not change.
     if (primeiro + k == s_mover) {
       for (int e = 0; e < 4; ++e) {
         d.drawRoundRect(px - 8 + e, py - 8 + e, ICONE_LADO + 16 - 2 * e, ICONE_LADO + 16 - 2 * e,
@@ -488,7 +488,7 @@ void desenhar_home(lgfx::LovyanGFX& d, const area_t& a)
     if (app->icone) {
       app->icone(d, px, py, ICONE_LADO);
     } else {
-      // App sem icone proprio: quadrado na cor do app com a inicial.
+      // App without its own icon: a square in the app's colour with its initial.
       d.fillRoundRect(px, py, ICONE_LADO, ICONE_LADO, TEMA_RAIO_ICONE, app->cor);
       char inicial[2] = { app->nome[0], 0 };
       d.setFont(tab5_fonte_suave(true, TEMA_LETRA_GRANDE));
@@ -498,11 +498,11 @@ void desenhar_home(lgfx::LovyanGFX& d, const area_t& a)
       d.drawString(inicial, px + ICONE_LADO / 2, py + ICONE_LADO / 2);
     }
 
-    // NOME DO APP: Roboto regular, centrado abaixo do icone. SEM COR DE FUNDO:
-    // com ela o nome saia numa tarja por cima do papel de parede.
-    // LARGURA MEDIDA DE VERDADE: se nao couber, a letra desce de 2 em 2 px (ate
-    // ROTULO_LETRA_MIN) em alturas nativas - e melhor que cortar o nome, que
-    // deixaria de identificar o app.
+    // APP NAME: regular Roboto, centred below the icon. NO BACKGROUND COLOUR:
+    // with it the name came out on a band over the wallpaper.
+    // WIDTH ACTUALLY MEASURED: if it does not fit, the lettering drops 2 px at a time (down
+    // to ROTULO_LETRA_MIN) in native heights - better than cutting the name, which
+    // would stop identifying the app.
     int alt_nome = ROTULO_LETRA;
     d.setFont(tab5_fonte_suave(false, alt_nome));
     d.setTextSize(1);
@@ -517,7 +517,7 @@ void desenhar_home(lgfx::LovyanGFX& d, const area_t& a)
   }
   desenhar_bolinhas(d, a);
 
-  // A FAIXA DE REMOVER, com um app de fora levantado.
+  // THE REMOVE STRIP, with a third-party app lifted.
   if (s_mover >= 0 && sistema_apps_de_fora_removivel(sistema_home_app(s_mover))) {
     d.fillRoundRect(a.x + TEMA_MARGEM, a.y + 8, a.largura - 2 * TEMA_MARGEM, HOME_REMOVER_A - 16, TEMA_RAIO_G,
                     s_sobre_remover ? TEMA_PERIGO : TEMA_SUPERFICIE_ALTA);
@@ -528,7 +528,7 @@ void desenhar_home(lgfx::LovyanGFX& d, const area_t& a)
                  a.x + a.largura / 2, a.y + HOME_REMOVER_A / 2);
     tab5_fonte_corpo(d);
   }
-  // A CONFIRMACAO, depois de soltar na faixa.
+  // THE CONFIRMATION, after dropping on the strip.
   if (s_remover_app) {
     const int bl = a.largura - 80, bh = 330, bx = a.x + 40, by = a.y + (a.altura - bh) / 2;
     d.fillRoundRect(bx, by, bl, bh, TEMA_RAIO_G, TEMA_SUPERFICIE);
@@ -553,10 +553,10 @@ void desenhar_home(lgfx::LovyanGFX& d, const area_t& a)
   }
 }
 
-// Chamada pelo loop principal no tique da barra de status: se a hora (minuto),
-// o Wi-Fi ou o Mesh mudaram desde a ultima pintura, repinta SO o cartao do
-// relogio. Nao faz nada fora da home limpa (app aberto, bloqueio, central de
-// avisos, icone levantado ou confirmacao na tela).
+// Called by the main loop on the status bar tick: if the time (minute),
+// the Wi-Fi or the Mesh changed since the last paint, repaints ONLY the clock
+// card. Does nothing outside a clean home screen (app open, lock screen, notification
+// centre, icon lifted or confirmation on screen).
 void home_cartao_atualizar(void)
 {
   if (s_app || s_bloqueado || s_painel_avisos || s_mover >= 0 || s_remover_app) { return; }
@@ -568,15 +568,15 @@ void home_cartao_atualizar(void)
   tela_virtual().endWrite();
 }
 
-// O toque com a confirmacao de remover na tela: Remover remove; qualquer outro
-// lugar cancela.
+// Touch with the remove confirmation on screen: Remover removes; anywhere
+// else cancels.
 void home_remover_tocar(int tx, int ty)
 {
   const app_t* app = s_remover_app;
   s_remover_app = nullptr;
   s_sujo_layout = true;
   if (tab5_dentro(tx, ty, s_rem_bt_sim.x, s_rem_bt_sim.y, s_rem_bt_sim.largura, s_rem_bt_sim.altura)) {
-    ESP_LOGI(TAG, "removendo '%s'", app->nome);
+    ESP_LOGI(TAG, "removing '%s'", app->nome);
     sistema_apps_de_fora_remover(app);
   }
 }

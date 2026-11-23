@@ -1,31 +1,31 @@
-// O HEAP DA PSRAM NO BOOT - guarda, sentinela e checagem (tab5_heap_psram.cpp).
+// THE PSRAM HEAP AT BOOT - guard, sentinel and check (tab5_heap_psram.cpp).
 //
-// Problema em aberto (2026-10-21): raramente (~1 em 65 boots na 0.8.0) o
-// cabecalho do heap da PSRAM aparece estragado e o M5.begin() cai ao alocar o
-// quadro da tela (Load/Store access fault em tlsf_*). O que foi lido no lugar
-// do ponteiro heap_data era o proprio contador free_bytes do heap.
-// Acontece DENTRO do M5.begin, entre o primeiro e o segundo quadro de 1,8 MB
-// do esp_lcd (num_fbs = 2): por isso toda reserva grande na PSRAM e toda
-// sincronia grande de cache tambem conferem (tab5_heap_psram_checar, pelos
-// --wrap do main/CMakeLists.txt). Com essa conferencia o defeito sumiu (0 em
-// 44 boots num build que caia em 30%) - mais um sinal de que depende de
-// leiaute/tempo, e de que a causa segue em aberto.
+// Open problem (2026-10-21): rarely (~1 in 65 boots on 0.8.0) the
+// PSRAM heap header turns up corrupted and M5.begin() crashes while allocating
+// the screen frame (Load/Store access fault in tlsf_*). What was read in place
+// of the heap_data pointer was the heap's own free_bytes counter.
+// It happens INSIDE M5.begin, between the first and second 1.8 MB frame
+// of esp_lcd (num_fbs = 2): that is why every large PSRAM allocation and every
+// large cache sync also checks (tab5_heap_psram_checar, via the
+// --wrap in main/CMakeLists.txt). With that check the defect vanished (0 in
+// 44 boots on a build that crashed 30% of the time) - one more sign that it depends on
+// layout/timing, and that the cause is still open.
 #pragma once
 
 #include <stdint.h>
 
-// Confere o cabecalho do heap da PSRAM contra o retrato tirado logo depois da
-// montagem. Estragado: escreve no console e reinicia limpo (esp_restart, que
-// para os DMAs) em vez de deixar o M5.begin() dar panico. No maximo 3 vezes
-// seguidas - depois segue, e o panico (com core dump) volta a ser a resposta.
-// Chamar ANTES do M5.begin().
+// Checks the PSRAM heap header against the snapshot taken right after
+// mounting. Corrupted: writes to the console and restarts cleanly (esp_restart, which
+// stops the DMAs) instead of letting M5.begin() panic. At most 3 times
+// in a row - after that it carries on, and the panic (with core dump) is the answer again.
+// Call BEFORE M5.begin().
 void tab5_heap_psram_conferir(void);
 
-// Quantos reinicios limpos seguidos a checagem fez antes deste boot (0 = nenhum).
-// O tab5_log escreve no log do cartao, que so existe depois do app_main.
+// How many consecutive clean restarts the check did before this boot (0 = none).
+// tab5_log writes to the card log, which only exists after app_main.
 uint32_t tab5_heap_psram_reinicios(void);
 
-// Teste do mecanismo, pelo console ('mem estresse [voltas] [linha]'): grava
-// uma linha de cache na PSRAM, zera 1,8 MB e confere a linha. 'zerar' false =
-// so a linha, sem varrer o cache (o controle do teste).
+// Test of the mechanism, from the console ('mem estresse [voltas] [linha]'): writes
+// a cache line in PSRAM, zeroes 1.8 MB and checks the line. 'zerar' false =
+// only the line, without sweeping the cache (the test's control).
 void tab5_heap_psram_estresse(int voltas, bool zerar);

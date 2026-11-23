@@ -1,4 +1,4 @@
-// Modulo Berry 'musica' - o tocador do sistema. Ver berry_apps.cpp (o motor) e
+// Berry module 'musica' - the system player. See berry_apps.cpp (the engine) and
 // berry_interno.hpp.
 
 #include <stdio.h>
@@ -10,14 +10,14 @@
 #include "berry_interno.hpp"
 
 // ---------------------------------------------------------------------------
-// MODULO 'musica' - o tocador do sistema (services/tab5_musica)
+// MODULE 'musica' - the system player (services/tab5_musica)
 // ---------------------------------------------------------------------------
-// O script e so a interface: o servico acha a pasta, lista, toca em fundo,
-// mostra na barra e no miniplayer, tem o X para parar, encerra pausado por
-// 15 min e calcula o espectro. Nenhuma linha de audio em Berry - nem deveria:
-// decodificar MP3 num script seria ~100x lento demais.
+// The script is only the interface: the service finds the folder, lists, plays in the background,
+// shows on the bar and in the mini player, has the X to stop, ends after being paused for
+// 15 min and calculates the spectrum. Not one line of audio in Berry - nor should there be:
+// decoding MP3 in a script would be ~100x too slow.
 
-// pasta() - o nome da pasta de musica ("Música"), ou nil sem cartao.
+// pasta() - the name of the music folder ("Música"), or nil with no card.
 static int mu_pasta(bvm* vm)
 {
   char p[160];
@@ -29,8 +29,8 @@ static int mu_pasta(bvm* vm)
   be_return(vm);
 }
 
-// pendrive() - o nome do pendrive do USB-A, ou nil sem pendrive. As musicas
-// dele: lista("/usb"), tocar("/usb", i) - o pendrive inteiro e a "pasta".
+// pendrive() - the name of the USB-A flash drive, or nil with no flash drive. Its
+// songs: lista("/usb"), tocar("/usb", i) - the whole flash drive is the "folder".
 static int mu_pendrive(bvm* vm)
 {
   if (!tab5_usb_presente()) { be_return_nil(vm); }
@@ -40,8 +40,8 @@ static int mu_pendrive(bvm* vm)
   be_return(vm);
 }
 
-// lista([sub]) - [{nome, titulo, pasta}] da subpasta (pastas primeiro);
-// nil = sem cartao ou a pasta nao existe. 'titulo' = o nome sem a extensao.
+// lista([sub]) - [{nome, titulo, pasta}] of the subfolder (folders first);
+// nil = no card or the folder does not exist. 'titulo' = the name without the extension.
 static int mu_lista(bvm* vm)
 {
   tab5_musica_item_t* it = (tab5_musica_item_t*)heap_caps_malloc(
@@ -66,7 +66,7 @@ static int mu_lista(bvm* vm)
     m_txt(vm, "nome", u);
     m_txt(vm, "titulo", tu);
     m_bool(vm, "pasta", it[i].pasta);
-    m_txt(vm, "caminho", cam);   // como no cartao: o que playlist_por() e duracao() recebem
+    m_txt(vm, "caminho", cam);   // as on the card: what playlist_por() and duracao() receive
     fim(vm);
     be_data_push(vm, -2);
     be_pop(vm, 1);
@@ -76,7 +76,7 @@ static int mu_lista(bvm* vm)
   be_return(vm);
 }
 
-// tocar(sub, i) - toca a subpasta a partir do item i de lista(sub). true = foi.
+// tocar(sub, i) - plays the subfolder starting from item i of lista(sub). true = done.
 static int mu_tocar(bvm* vm)
 {
   const char* dono = C->app ? C->app->nome : nullptr;
@@ -117,7 +117,7 @@ static int mu_estado(bvm* vm)
   be_return(vm);
 }
 
-// aleatorio([sim]) - embaralhar a fila; devolve como ficou.
+// aleatorio([sim]) - shuffle the queue; returns the result.
 static int mu_aleatorio(bvm* vm)
 {
   if (be_top(vm) >= 1 && be_isbool(vm, 1)) { tab5_musica_definir_aleatorio(be_tobool(vm, 1)); }
@@ -125,7 +125,7 @@ static int mu_aleatorio(bvm* vm)
   be_return(vm);
 }
 
-// repetir([r]) - 0 nao (para no fim), 1 a fila toda, 2 a mesma musica.
+// repetir([r]) - 0 no (stops at the end), 1 the whole queue, 2 the same song.
 static int mu_repetir(bvm* vm)
 {
   if (be_top(vm) >= 1 && be_isint(vm, 1)) {
@@ -136,8 +136,8 @@ static int mu_repetir(bvm* vm)
   be_return(vm);
 }
 
-// playlists() - [{nome, id}]: 'nome' para mostrar, 'id' para as outras
-// funcoes (o nome como no cartao). nil = sem cartao.
+// playlists() - [{nome, id}]: 'nome' for display, 'id' for the other
+// functions (the name as on the card). nil = no card.
 static int mu_playlists(bvm* vm)
 {
   tab5_musica_item_t* it = (tab5_musica_item_t*)heap_caps_malloc(sizeof(tab5_musica_item_t) * 64, MALLOC_CAP_SPIRAM);
@@ -160,7 +160,7 @@ static int mu_playlists(bvm* vm)
   be_return(vm);
 }
 
-// playlist(id) - [{caminho, titulo}] na ordem do arquivo; nil = nao existe.
+// playlist(id) - [{caminho, titulo}] in file order; nil = does not exist.
 static int mu_playlist(bvm* vm)
 {
   tab5_musica_faixa_t* fx = (tab5_musica_faixa_t*)heap_caps_malloc(sizeof(tab5_musica_faixa_t) * TAB5_MUSICA_FILA_MAX, MALLOC_CAP_SPIRAM);
@@ -187,7 +187,7 @@ static int mu_playlist(bvm* vm)
   be_return(vm);
 }
 
-// playlist_criar(nome) - o id da nova (o nome como ficou no cartao); nil = nao deu.
+// playlist_criar(nome) - the new one's id (the name as it ended up on the card); nil = failed.
 static int mu_playlist_criar(bvm* vm)
 {
   char id[TAB5_MUSICA_NOME_MAX];
@@ -200,7 +200,7 @@ static int mu_playlist_apagar(bvm* vm) { be_pushbool(vm, tab5_musica_playlist_ap
 static int mu_playlist_por(bvm* vm)    { be_pushbool(vm, tab5_musica_playlist_por(arg_txt(vm, 1), arg_txt(vm, 2))); be_return(vm); }
 static int mu_playlist_tirar(bvm* vm)  { be_pushbool(vm, tab5_musica_playlist_tirar(arg_txt(vm, 1), arg_txt(vm, 2))); be_return(vm); }
 
-// playlist_tocar(id, [i]) - toca a playlist a partir da faixa i (sem i: do comeco).
+// playlist_tocar(id, [i]) - plays the playlist from track i (without i: from the start).
 static int mu_playlist_tocar(bvm* vm)
 {
   const char* dono = C->app ? C->app->nome : nullptr;
@@ -208,7 +208,7 @@ static int mu_playlist_tocar(bvm* vm)
   be_return(vm);
 }
 
-// capa() - o arquivo da capa do que toca (JPEG ou PNG), ou nil.
+// capa() - the cover art file of what is playing (JPEG or PNG), or nil.
 static int mu_capa(bvm* vm)
 {
   char arq[200];
@@ -217,11 +217,11 @@ static int mu_capa(bvm* vm)
   be_return(vm);
 }
 
-// duracao(caminho) - ms, sem tocar (le o cabecalho); 0 = nao deu.
+// duracao(caminho) - ms, without playing (reads the header); 0 = failed.
 static int mu_duracao(bvm* vm) { be_pushint(vm, (bint)tab5_musica_duracao(arg_txt(vm, 1))); be_return(vm); }
 
-// espectro() - as 32 faixas (0..255, graves primeiro) do que sai agora; nil =
-// nada saindo. Ler liga o calculo; parar de ler (janela fechada) desliga.
+// espectro() - the 32 bands (0..255, bass first) of what is coming out now; nil =
+// nothing playing. Reading turns the calculation on; stopping reading (window closed) turns it off.
 static int mu_espectro(bvm* vm)
 {
   uint8_t f[TAB5_MUSICA_FAIXAS];
@@ -232,7 +232,7 @@ static int mu_espectro(bvm* vm)
   be_return(vm);
 }
 
-// cor(c) - a cor de destaque do tocador (a pastilha da barra e o miniplayer).
+// cor(c) - the player's accent colour (the bar chip and the mini player).
 static int mu_cor(bvm* vm)
 {
   if (be_top(vm) >= 1 && be_isnumber(vm, 1)) { tab5_musica_definir_cor((uint16_t)arg_int(vm, 1, 0)); }

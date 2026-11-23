@@ -1041,7 +1041,7 @@ medf_mp4_demux_t *medf_mp4_demux_open(const char *path, const medf_arena_t *aren
     if (!error) error = &ignored;
     *error = NULL;
 
-    /* M5tabOS: na PSRAM primeiro (a SRAM interna do P4 e disputada pelo Wi-Fi). */
+    /* M5tabOS: PSRAM first (the P4's internal SRAM is contended by Wi-Fi). */
     medf_mp4_demux_t *demux = heap_caps_calloc(1, sizeof(*demux), MALLOC_CAP_SPIRAM);
     if (!demux) demux = heap_caps_calloc(1, sizeof(*demux), MALLOC_CAP_DEFAULT);
     if (!demux) {
@@ -1175,9 +1175,9 @@ bool medf_mp4_demux_read(medf_mp4_demux_t *demux, medf_mp4_packet_t *packet, boo
     }
 }
 
-/* M5tabOS: so o audio. Quem toca so o som (o tocador de musica, enquanto o
-   video le o mesmo arquivo por conta propria) nao le os quadros de video: as
-   leituras e os saltos passam a seguir so a faixa de audio. */
+/* M5tabOS: audio only. A caller that only plays the sound (the music player,
+   while the video reads the same file on its own) does not read the video
+   frames: reads and seeks follow only the audio track. */
 void medf_mp4_demux_drop_video(medf_mp4_demux_t *demux) {
     if (!demux) return;
     demux->have_video = false;

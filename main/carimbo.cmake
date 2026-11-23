@@ -1,7 +1,7 @@
-# Escreve o carimbo de compilacao (main/CMakeLists.txt roda isto a cada build).
-# Precisao de MINUTO, e so reescreve quando o texto muda: dois builds no mesmo
-# minuto nao recompilam nada, e o "Compilado em" de Ajustes > Sobre nunca fica
-# para tras.
+# Writes the build stamp (main/CMakeLists.txt runs this on every build).
+# MINUTE precision, and it only rewrites when the text changes: two builds in the same
+# minute recompile nothing, and the "Compilado em" (built on) in Settings > About never
+# falls behind.
 string(TIMESTAMP M5_QUANDO "%d/%m/%Y %H:%M")
 set(M5_TXT "// Gerado por main/carimbo.cmake a cada build - nao editar.\nconst char* const m5tabos_compilado = \"${M5_QUANDO}\";\n")
 if(EXISTS "${OUT}")

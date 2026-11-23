@@ -1,20 +1,20 @@
-// RECURSOS - o que cada um esta usando, para o SISTEMA decidir a suspensao.
+// RESOURCES - what each one is using, so the SYSTEM can decide on suspension.
 //
-// A REGRA (docs/SUSPENSAO_2026-11-05.md): quem e DONO do hardware declara o
-// que esta usando, dentro do proprio liga/desliga - a camera ao ligar o
-// sensor, o servidor web ao subir, o Mesh ao abrir a UART. O app (em C ou em
-// Berry) nunca segura a suspensao: usar o servico ja basta, e o script que
-// liga a camera aparece aqui porque a camera se declarou.
+// THE RULE (docs/SUSPENSAO_2026-11-05.md): whoever OWNS the hardware declares what
+// it is using, inside its own on/off - the camera when turning on the
+// sensor, the web server when coming up, Mesh when opening the UART. The app (in C or in
+// Berry) never holds off suspension: using the service is enough, and the script that
+// turns on the camera appears here because the camera declared itself.
 //
-// O QUE A SUSPENSAO PRESERVA para cada recurso esta numa tabela so
-// (POLITICA, em recursos.cpp): sono leve,
-// receptor do Wi-Fi, o Wi-Fi contra o cochilo, a tela acesa. O kernel junta as
-// politicas de tudo que esta em uso e aplica - os mecanismos de baixo
-// (travas de PM, bits do Wi-Fi) sao detalhe dele.
+// WHAT SUSPENSION PRESERVES for each resource is in a single table
+// (POLITICA, in recursos.cpp): light sleep,
+// Wi-Fi receiver, Wi-Fi against napping, screen on. The kernel combines the
+// policies of everything in use and applies them - the mechanisms below
+// (PM locks, Wi-Fi bits) are its detail.
 //
-// Antes eram sete mecanismos, cada um com a sua lista de bits, e consertos de
-// hardware morando em app (o gancho de camera que faltou no navegador e
-// derrubou o Tab5 ao acordar).
+// There used to be seven mechanisms, each with its own list of bits, and hardware fixes
+// living in apps (the camera hook that was missing in the browser and
+// brought the Tab5 down on waking).
 #pragma once
 
 #include <stdint.h>
@@ -22,45 +22,45 @@
 #include <stddef.h>
 
 typedef enum {
-  RECURSO_CAMERA = 0,      // sensor, ISP e PPA rodando
-  RECURSO_SOM,             // I2S tocando (a Musica)
-  RECURSO_PROCESSAMENTO,   // conta pesada que nao pode andar a 40 MHz (o TLS de um comando)
-  RECURSO_REDE,            // um servico atendendo a rede (servidor web)
-  RECURSO_RADIO_ESCUTA,    // o receptor do Wi-Fi ligado (ESP-NOW conversando, CSI, farejo)
-  RECURSO_SERIAL_GROVE,    // a UART do Grove (o no Meshtastic)
-  RECURSO_USB_HOST,        // um aparelho no USB-A
-  RECURSO_CARTAO,          // gravacao longa no cartao (copiar, mover)
-  RECURSO_ENERGIA_EXTERNA, // na tomada: economizar nao compensa a resposta mais lenta
-  RECURSO_TELA_ACESA,      // alguem precisa da tela acesa (o PC usando o cartao)
+  RECURSO_CAMERA = 0,      // sensor, ISP and PPA running
+  RECURSO_SOM,             // I2S playing (Music)
+  RECURSO_PROCESSAMENTO,   // heavy maths that cannot run at 40 MHz (a command's TLS)
+  RECURSO_REDE,            // a service answering the network (web server)
+  RECURSO_RADIO_ESCUTA,    // the Wi-Fi receiver on (ESP-NOW chatting, CSI, sniffing)
+  RECURSO_SERIAL_GROVE,    // the Grove UART (the Meshtastic node)
+  RECURSO_USB_HOST,        // a device on USB-A
+  RECURSO_CARTAO,          // long write to the card (copy, move)
+  RECURSO_ENERGIA_EXTERNA, // on mains power: saving is not worth the slower response
+  RECURSO_TELA_ACESA,      // someone needs the screen on (the PC using the card)
   RECURSO_N
 } recurso_t;
 
-// DECLARA ('usando' = true) ou SOLTA o uso de 'r' por 'quem' ("navegador",
-// "Meshtastic", o nome do app). Por par (recurso, quem): chamar de novo com o
-// mesmo valor nao faz nada - quem le um estado periodicamente pode repassa-lo
-// sem contar. De qualquer tarefa, sem bloquear (as travas de PM e do Wi-Fi
-// mudam na hora). O teto do clock no repouso e fixo, do kernel (core.cpp).
-// 'quem' e copiado. false = sem vaga (RECURSOS_MAX usos ao mesmo tempo).
+// DECLARES ('usando' = true) or RELEASES the use of 'r' by 'quem' ("navegador",
+// "Meshtastic", the app name). Per (resource, who) pair: calling again with the
+// same value does nothing - whoever reads a state periodically can pass it on
+// without counting. From any task, without blocking (the PM and Wi-Fi locks
+// change immediately). The idle clock ceiling is fixed, the kernel's (core.cpp).
+// 'quem' is copied. false = no slot (RECURSOS_MAX uses at the same time).
 bool sistema_recurso(recurso_t r, const char* quem, bool usando);
 static inline bool sistema_recurso_usar(recurso_t r, const char* quem)   { return sistema_recurso(r, quem, true); }
 static inline void sistema_recurso_soltar(recurso_t r, const char* quem) { sistema_recurso(r, quem, false); }
 
-// QUEM USA O QUE, agora (console 'energia quem', Tarefas, Berry
-// sistema.recursos()). Devolve quantos.
+// WHO USES WHAT, now (console 'energia quem', Tasks, Berry
+// sistema.recursos()). Returns how many.
 #define RECURSOS_MAX 24
 typedef struct {
   recurso_t r;
   char      quem[24];
-  uint32_t  desde_ms;   // tab5_agora_ms de quando declarou
+  uint32_t  desde_ms;   // tab5_agora_ms of when it declared
 } recurso_uso_t;
 int sistema_recursos(recurso_uso_t* out, int max);
 
 const char* sistema_recurso_nome(recurso_t r);   // "camera", "som"...
-// Alguem esta usando 'r' agora? (o pendrive pergunta se ha cabo.)
+// Is anyone using 'r' now? (flash drive mode asks whether there is a cable.)
 bool sistema_recurso_em_uso(recurso_t r);
-// 'quem' esta usando 'r' agora? (o repouso pergunta se o app aberto usa a camera.)
+// Is 'quem' using 'r' now? (idle asks whether the open app uses the camera.)
 bool sistema_recurso_de(recurso_t r, const char* quem);
 
-// ---- para o kernel ----------------------------------------------------------
-// Em uma linha, para o log do repouso: "camera(navegador) rede(servidor web)".
+// ---- for the kernel ---------------------------------------------------------
+// In one line, for the idle log: "camera(navegador) rede(servidor web)".
 void recursos_resumo(char* out, size_t n);

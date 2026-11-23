@@ -1,5 +1,5 @@
-// Modulos Berry 'espnow' (texto em difusao) e 'mesh' (Meshtastic). Ver
-// berry_apps.cpp (o motor) e berry_interno.hpp.
+// Berry modules 'espnow' (broadcast text) and 'mesh' (Meshtastic). See
+// berry_apps.cpp (the engine) and berry_interno.hpp.
 
 #include <stdint.h>
 #include "idioma.h"
@@ -12,13 +12,13 @@
 #include "berry_interno.hpp"
 
 // ---------------------------------------------------------------------------
-// MODULO 'espnow' - texto em difusao ou direto, no canal do ESP-NOW
+// MODULE 'espnow' - text broadcast or direct, on the ESP-NOW channel
 // ---------------------------------------------------------------------------
 static int e_pronto(bvm* vm) { be_pushbool(vm, tab5_espnow_pronto()); be_return(vm); }
 static int e_enviar(bvm* vm) { be_pushbool(vm, tab5_espnow_enviar(arg_txt(vm, 1))); be_return(vm); }
 
-// enviar_para(mac, texto) - direto para um MAC ("AA:BB:CC:DD:EE:01"); false se o
-// MAC e invalido ou o envio foi recusado.
+// enviar_para(mac, texto) - direct to a MAC ("AA:BB:CC:DD:EE:01"); false if the
+// MAC is invalid or sending was refused.
 static int e_enviar_para(bvm* vm)
 {
   uint8_t mac[6];
@@ -27,8 +27,8 @@ static int e_enviar_para(bvm* vm)
   be_return(vm);
 }
 
-// enviar_todos(texto [, mac]) - em todos os canais (1 a 13); sem mac, difusao.
-// O Wi-Fi cai por alguns segundos durante a varredura e volta sozinho.
+// enviar_todos(texto [, mac]) - on all channels (1 to 13); without mac, broadcast.
+// Wi-Fi drops for a few seconds during the sweep and comes back by itself.
 static int e_enviar_todos(bvm* vm)
 {
   uint8_t mac[6];
@@ -43,9 +43,9 @@ static int e_n(bvm* vm)      { be_pushint(vm, tab5_espnow_n()); be_return(vm); }
 static int e_total(bvm* vm)  { be_pushint(vm, (bint)tab5_espnow_total()); be_return(vm); }
 static int e_canal(bvm* vm)  { be_pushint(vm, tab5_espnow_canal()); be_return(vm); }
 
-// estado() - {codigo, texto}: 3 = no ar; 2 = ligando; 1 = sem enlace com o C6
-// (Wi-Fi nunca ligado neste boot); 4 = radio parado; 0 = C6 sem o firmware
-// nosso. 'texto' diz o que fazer (vazio quando esta no ar).
+// estado() - {codigo, texto}: 3 = on air; 2 = turning on; 1 = no link with the C6
+// (Wi-Fi never turned on this boot); 4 = radio stopped; 0 = C6 without our
+// firmware. 'texto' says what to do (empty when on air).
 static int e_estado(bvm* vm)
 {
   int est;
@@ -76,25 +76,25 @@ static int e_mac(bvm* vm)
   be_return(vm);
 }
 static int e_vistos(bvm* vm)      { be_pushint(vm, tab5_espnow_vistos()); be_return(vm); }
-// ultimo() - ms desde a ultima recebida, ou -1 se nada chegou ainda.
+// ultimo() - ms since the last one received, or -1 if nothing has arrived yet.
 static int e_ultimo(bvm* vm)
 {
   const uint32_t ms = tab5_espnow_ms_desde_rx();
   be_pushint(vm, ms == UINT32_MAX ? -1 : (bint)ms);
   be_return(vm);
 }
-// canal_fixo() - 0 = segue o roteador; fixar_canal(c) - 0, ou 1 a 13.
+// canal_fixo() - 0 = follows the router; fixar_canal(c) - 0, or 1 to 13.
 static int e_canal_fixo(bvm* vm)  { be_pushint(vm, tab5_espnow_canal_fixo()); be_return(vm); }
 static int e_fixar_canal(bvm* vm) { be_pushbool(vm, tab5_espnow_definir_canal((uint8_t)arg_int(vm, 1, 0))); be_return(vm); }
-// janela(true) ao abrir a conversa: o servico mantem o receptor ligado e o
-// que chega nao vira aviso na barra. janela(false) ao fechar.
+// janela(true) on opening the conversation: the service keeps the receiver on and
+// what arrives does not become a notice on the bar. janela(false) on closing.
 static int e_janela(bvm* vm)       { tab5_espnow_janela(be_top(vm) < 1 || be_tobool(vm, 1)); be_return_nil(vm); }
 static int e_nao_lidas(bvm* vm)    { be_pushint(vm, tab5_espnow_nao_lidas()); be_return(vm); }
 static int e_marcar_lidas(bvm* vm) { tab5_espnow_marcar_lidas(); be_return_nil(vm); }
 
-// msg(i) - {texto, minha, quando, de, envio, espressif}: 0 = a mais antiga
-// guardada, n()-1 a ultima. envio (as minhas): 1 saindo, 2 saiu pela antena
-// (difusao nao tem confirmacao de quem recebeu), 3 falhou.
+// msg(i) - {texto, minha, quando, de, envio, espressif}: 0 = the oldest
+// kept, n()-1 the latest. envio (mine): 1 sending, 2 went out over the antenna
+// (broadcast has no confirmation of who received it), 3 failed.
 static int e_msg(bvm* vm)
 {
   espnow_msg_t m;
@@ -113,12 +113,12 @@ static int e_msg(bvm* vm)
 }
 
 // ---------------------------------------------------------------------------
-// MODULO 'mesh' - leitura, e uma escrita so, com limites
+// MODULE 'mesh' - reading, and only one write, with limits
 // ---------------------------------------------------------------------------
-// Um script nao sai falando num canal publico: mesh.enviar so manda mensagem
-// DIRETA para UM no (nunca difusao, nunca para si mesmo), com o limite de
-// texto do Meshtastic, e no maximo uma a cada 10 s no sistema inteiro (de
-// qualquer app) - um erro de script nao pode virar enxurrada na malha.
+// A script does not go chatting on a public channel: mesh.enviar only sends a
+// DIRECT message to ONE node (never broadcast, never to itself), with Meshtastic's
+// text limit, and at most one every 10 s across the whole system (from
+// any app) - a script bug must not become a flood on the mesh.
 static int h_estado(bvm* vm)
 {
   mapa_novo(vm);
@@ -135,7 +135,7 @@ static int h_n_msgs(bvm* vm)  { be_pushint(vm, tab5_mesh_num_msgs()); be_return(
 static int h_total(bvm* vm)   { be_pushint(vm, (bint)tab5_mesh_total_msgs()); be_return(vm); }
 static int h_meu(bvm* vm)     { be_pushint(vm, (bint)tab5_mesh_meu_numero()); be_return(vm); }
 
-// mesh.no(i): um no da tabela (0 = o nosso, depois os ouvidos pelo ar), ou nil.
+// mesh.no(i): a node from the table (0 = ours, then those heard over the air), or nil.
 static int h_no(bvm* vm)
 {
   mesh_no_t n;
@@ -146,8 +146,8 @@ static int h_no(bvm* vm)
   m_txt(vm, "nome", n.longo);
   m_txt(vm, "curto", n.curto);
   m_real(vm, "snr", n.snr);
-  m_int(vm, "idade", n.idade_s);              // segundos desde o ultimo pacote (-1 = nunca)
-  m_int(vm, "bateria", n.bateria);            // 0-100; 101 = na tomada
+  m_int(vm, "idade", n.idade_s);              // seconds since the last packet (-1 = never)
+  m_int(vm, "bateria", n.bateria);            // 0-100; 101 = on mains
   m_int(vm, "saltos", n.saltos);
   m_bool(vm, "mqtt", n.via_mqtt);
   m_bool(vm, "favorito", n.favorito);
@@ -156,7 +156,7 @@ static int h_no(bvm* vm)
   be_return(vm);
 }
 
-// mesh.msg(i): uma das mensagens recentes (0 = a mais nova), ou nil.
+// mesh.msg(i): one of the recent messages (0 = the newest), or nil.
 static int h_msg(bvm* vm)
 {
   mesh_msg_t m;
@@ -177,20 +177,20 @@ static int h_msg(bvm* vm)
   be_return(vm);
 }
 
-// O intervalo minimo entre dois mesh.enviar, no sistema inteiro.
+// The minimum interval between two mesh.enviar calls, across the whole system.
 static const uint32_t ENVIO_INTERVALO_MS = 10000;
 
-// mesh.enviar(numero, texto) - mensagem DIRETA para o no 'numero' (o 'num' de
-// mesh.no(i)). true = entrou na fila de envio do servico (o andamento, como
-// qualquer mensagem nossa, aparece em mesh.msg com 'minha'). false = recusou:
-// numero 0, difusao (0xFFFFFFFF) ou o proprio no; texto vazio ou maior que
-// MESH_PAYLOAD_MAX; ultimo envio ha menos de 10 s; ou o servico nao aceitou.
-// Direta usa o canal 0, como o app Mesh.
+// mesh.enviar(numero, texto) - DIRECT message to node 'numero' (the 'num' from
+// mesh.no(i)). true = it entered the service's send queue (progress, like
+// any of our messages, appears in mesh.msg with 'minha'). false = refused:
+// number 0, broadcast (0xFFFFFFFF) or our own node; text empty or longer than
+// MESH_PAYLOAD_MAX; last send less than 10 s ago; or the service did not accept it.
+// Direct uses channel 0, like the Mesh app.
 static int h_enviar(bvm* vm)
 {
-  static bool     enviou = false;   // ja saiu algum neste boot
-  static uint32_t ultimo_ms = 0;    // quando (tab5_agora_ms)
-  const uint32_t no = arg_u32(vm, 1, 0);   // -1 do Berry = 0xFFFFFFFF (ver arg_u32)
+  static bool     enviou = false;   // something has already gone out this boot
+  static uint32_t ultimo_ms = 0;    // when (tab5_agora_ms)
+  const uint32_t no = arg_u32(vm, 1, 0);   // Berry's -1 = 0xFFFFFFFF (see arg_u32)
   const char* texto = arg_txt(vm, 2);
   const size_t n = strlen(texto);
   const uint32_t agora = tab5_agora_ms();

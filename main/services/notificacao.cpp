@@ -12,14 +12,14 @@ static const char *TAG = "notif";
 
 typedef struct {
   const char*   nome;
-  const char*   app;                    // ver notif_associar_app()
+  const char*   app;                    // see notif_associar_app()
   int           quantidade;
   notif_nivel_t nivel;
   char          resumo[NOTIF_RESUMO];
   bool          usada;
-  bool          silenciada;             // ver notif_silenciar()
-  int           quantidade_no_ultimo_beep;  // ver notif_houve_novidade_sonora()
-  uint32_t      mudou_em;               // s_versao da ultima mudanca (desempate do destaque)
+  bool          silenciada;             // see notif_silenciar()
+  int           quantidade_no_ultimo_beep;  // see notif_houve_novidade_sonora()
+  uint32_t      mudou_em;               // s_versao of the last change (tie-breaker for the highlight)
 } fonte_t;
 
 static fonte_t          s_fontes[NOTIF_MAX_FONTES];
@@ -35,13 +35,13 @@ int notif_registrar(const char* nome)
   if (!nome) { nome = "?"; }
   travar();
   int id = -1;
-  // Mesmo nome = mesma fonte: a vaga volta, zerada (ver o .hpp).
+  // Same name = same source: the slot comes back, zeroed (see the .hpp).
   for (int i = 0; i < s_n; ++i) {
     if (s_fontes[i].usada && strcmp(s_fontes[i].nome, nome) == 0) { id = i; break; }
   }
   if (id >= 0) {
-    // A VAGA VOLTA COM O ESTADO DELA (ver o .h). Zerar aqui era o aviso do
-    // Mesh sumindo a cada vez que o servico subia de novo por outra via.
+    // THE SLOT COMES BACK WITH ITS STATE (see the .h). Zeroing here was the Mesh
+    // notice vanishing every time the service started again by another route.
     destravar();
     return id;
   }
@@ -49,13 +49,13 @@ int notif_registrar(const char* nome)
     id = s_n++;
     memset(&s_fontes[id], 0, sizeof(s_fontes[id]));
     s_fontes[id].nome  = nome;
-    s_fontes[id].app   = nome;   // padrao: o app de mesmo nome (notif_associar_app)
+    s_fontes[id].app   = nome;   // default: the app of the same name (notif_associar_app)
     s_fontes[id].usada = true;
   }
   destravar();
 
-  if (id < 0) { ESP_LOGE(TAG, "sem vaga para '%s' (limite %d)", nome, NOTIF_MAX_FONTES); }
-  else        { ESP_LOGI(TAG, "'%s' pode mandar notificacoes (vaga %d)", nome, id); }
+  if (id < 0) { ESP_LOGE(TAG, "no slot for '%s' (limit %d)", nome, NOTIF_MAX_FONTES); }
+  else        { ESP_LOGI(TAG, "'%s' may send notifications (slot %d)", nome, id); }
   return id;
 }
 
@@ -68,9 +68,9 @@ void notif_publicar(int id, int quantidade, notif_nivel_t nivel, const char* res
   travar();
   fonte_t* f = &s_fontes[id];
   if (f->usada) {
-    // Versao so muda quando algo REALMENTE mudou. Sem esta comparacao, um
-    // servico que republica o mesmo estado a cada segundo faria a barra de
-    // status repintar a cada segundo - o piscar de volta, por um caminho novo.
+    // The version only changes when something REALLY changed. Without this comparison, a
+    // service that republishes the same state every second would make the status
+    // bar repaint every second - the flicker back again, by a new route.
     mudou = (f->quantidade != quantidade)
          || (f->nivel != nivel)
          || (strncmp(f->resumo, resumo ? resumo : "", NOTIF_RESUMO) != 0);
@@ -84,14 +84,14 @@ void notif_publicar(int id, int quantidade, notif_nivel_t nivel, const char* res
   }
   destravar();
 
-  // PRIMEIRO PRODUTOR ATIVO DA QUEUE DE EVENTOS - Etapa 2 do docs/ARQUITETURA.md
-  // . "mudou" e conferido FORA da secao travada de proposito:
-  // sistema_acordar_interface() so poe um evento numa queue diferente e nunca
-  // bloqueia, mas nao ha motivo para segurar o mutex deste modulo emprestado
-  // por outro (evitar qualquer ordem de trava entre os dois, mesmo que hoje
-  // nenhum dos dois pudesse causar problema). Mesh e Trilha (os unicos dois
-  // servicos que chamam notif_publicar() hoje) ganham isto de graca, sem
-  // precisar saber que esta queue existe.
+  // FIRST ACTIVE PRODUCER OF THE EVENT QUEUE - Stage 2 of docs/ARQUITETURA.md
+  // . "mudou" (changed) is checked OUTSIDE the locked section on purpose:
+  // sistema_acordar_interface() only puts an event on a different queue and never
+  // blocks, but there is no reason to hold this module's mutex lent
+  // to another (avoiding any lock ordering between the two, even though today
+  // neither of them could cause a problem). Mesh and Trilha (the only two
+  // services that call notif_publicar() today) get this for free, without
+  // needing to know this queue exists.
   if (mudou) { sistema_acordar_interface(); }
 }
 
@@ -126,12 +126,12 @@ bool notif_houve_novidade_sonora(void)
   for (int i = 0; i < s_n; ++i) {
     fonte_t* f = &s_fontes[i];
     if (!f->usada) { continue; }
-    // Compara SEMPRE contra o ultimo valor visto por ESTA funcao - nao o
-    // total agregado (isso viveu em kernel/core.cpp, e nao
-    // dava para saber qual fonte tinha mudado). Atualiza o "ultimo visto"
-    // de toda fonte usada, silenciada ou nao: assim, se o usuario religar o
-    // som de uma fonte que subiu enquanto estava muda, isso NAO conta como
-    // novidade retroativa - so o que subir DAQUI PARA FRENTE toca.
+    // ALWAYS compares against the last value seen by THIS function - not the
+    // aggregated total (that lived in kernel/core.cpp, and there was no
+    // way to tell which source had changed). Updates the "last seen"
+    // of every source in use, muted or not: that way, if the user turns the
+    // sound back on for a source that went up while muted, it does NOT count as
+    // retroactive news - only what goes up FROM HERE ON plays.
     if (f->quantidade > f->quantidade_no_ultimo_beep && !f->silenciada) {
       tocar = true;
     }
@@ -141,7 +141,7 @@ bool notif_houve_novidade_sonora(void)
   return tocar;
 }
 
-// 'a' vem antes de 'b' na barra? Mais grave primeiro; no empate, a mais recente.
+// Does 'a' come before 'b' in the bar? Most severe first; on a tie, the most recent.
 static bool antes(const fonte_t* a, const fonte_t* b)
 {
   if (a->nivel != b->nivel) { return a->nivel > b->nivel; }
@@ -166,7 +166,7 @@ int notif_listar(notif_item_t* saida, int max)
   for (int k = 0; k < s_n; ++k) {
     const fonte_t* f = &s_fontes[k];
     if (!f->usada || f->quantidade <= 0) { continue; }
-    // Insercao ordenada: oito fontes no maximo, nao vale um qsort.
+    // Sorted insertion: eight sources at most, not worth a qsort.
     int j = n++;
     while (j > 0 && antes(f, &s_fontes[ordem[j - 1]])) { ordem[j] = ordem[j - 1]; --j; }
     ordem[j] = k;

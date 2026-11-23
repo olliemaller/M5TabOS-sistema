@@ -1,34 +1,34 @@
-// ENSAIO DE CONSUMO - quanto cada servico custa com a tela apagada.
+// POWER CONSUMPTION TEST - how much each service costs with the screen off.
 //
-// Nasceu da analise de bateria de 2026-10-16: em repouso o aparelho puxava
-// 75-100 mA (17 h de cheio a vazio), com patamares de ~46, ~68, ~76, ~97, ~112
-// e ~140 mA conforme o que estava ligado. Pela serial nao da para medir: o
-// cabo USB carrega a bateria e o INA226 so ve a diferenca. O ensaio roda
-// sozinho, NA BATERIA, e grava o resultado no cartao.
+// Born from the battery analysis of 2026-10-16: when idle the device drew
+// 75-100 mA (17 h from full to empty), with plateaus of ~46, ~68, ~76, ~97, ~112
+// and ~140 mA depending on what was on. It can't be measured over serial: the
+// USB cable charges the battery and the INA226 only sees the difference. The test runs
+// on its own, ON BATTERY, and writes the result to the SD card.
 //
-// COMO USAR: 'energia ensaio' no console, tirar o cabo, deixar a tela apagar e
-// esperar ~45 min sem mexer. Ao ligar o cabo de novo, 'energia ensaio' mostra
-// a tabela (tambem em Sistema/ensaio_energia.csv e no log).
+// HOW TO USE: 'energia ensaio' in the console, unplug the cable, let the screen go off and
+// wait ~45 min without touching it. When the cable is plugged in again, 'energia ensaio' shows
+// the table (also in Sistema/ensaio_energia.csv and in the log).
 //
-// AS FASES SAO CUMULATIVAS - cada uma desliga mais um servico, e a diferenca
-// para a anterior e o custo dele:
-//   0 base (como esta)   1 sem Mesh pela internet   2 sem o 5V do Grove
-//   3 sem Bluetooth      4 sem Wi-Fi (o C6 segue alimentado)
-// Cada fase: 2 min de acomodacao + N min medindo, contando SO os segundos em
-// repouso e descarregando (acordar a tela ou ligar o cabo pausa a contagem).
-// No fim (ou em 'energia ensaio parar') tudo volta como estava.
+// THE STAGES ARE CUMULATIVE - each one switches off one more service, and the difference
+// from the previous one is its cost:
+//   0 baseline (as is)   1 without Mesh over the internet   2 without the Grove 5V
+//   3 without Bluetooth  4 without Wi-Fi (the C6 stays powered)
+// Each stage: 2 min of settling + N min measuring, counting ONLY the seconds
+// idle and discharging (waking the screen or plugging in the cable pauses the count).
+// At the end (or on 'energia ensaio parar') everything goes back as it was.
 //
-// Os ajustes mexidos vao para a NVS (e o caminho que os servicos obedecem).
-// Se o aparelho desligar no meio, os valores originais estao no log ("ensaio:
-// originais ...") para devolver na mao.
+// The settings changed go to NVS (it is the path the services obey).
+// If the device shuts down midway, the original values are in the log ("ensaio:
+// originals ...") for restoring by hand.
 #pragma once
 
 #include <stddef.h>
 #include <stdbool.h>
 
-bool tab5_ensaio_comecar(int min_por_fase, int fases = 5);   // false = ja ha um rodando; fases 1 = so a base
-void tab5_ensaio_parar(void);                 // devolve os ajustes (na proxima volta da interface)
-void tab5_ensaio_imprimir(void);              // estado + tabela, no stdout (console)
+bool tab5_ensaio_comecar(int min_por_fase, int fases = 5);   // false = one is already running; fases 1 = baseline only
+void tab5_ensaio_parar(void);                 // restores the settings (on the next UI round)
+void tab5_ensaio_imprimir(void);              // status + table, on stdout (console)
 
-// 1 Hz, na tarefa de interface (mexe no expansor I2C), logo depois da medida.
+// 1 Hz, in the UI task (touches the I2C expander), right after the measurement.
 void tab5_ensaio_vigiar(void);

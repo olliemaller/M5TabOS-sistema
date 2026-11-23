@@ -177,8 +177,8 @@ bool h264_parse_sps_standalone(bits_t *b, sps_t *out, uint8_t *id) {
     if (bits_u1(b)) {
         const uint32_t l = bits_ue(b), r = bits_ue(b), t = bits_ue(b), bo = bits_ue(b);
         const uint32_t unit_y = frame_mbs_only ? 2 : 4;
-        /* M5tabOS: valores enormes faziam (l + r) * 2 dar a volta em 32 bits e
-           passar no teste abaixo (crop_left perto de 65280). */
+        /* M5tabOS: huge values made (l + r) * 2 wrap around in 32 bits and
+           pass the test below (crop_left near 65280). */
         if (l > 8192 || r > 8192 || t > 8192 || bo > 8192) return false;
         if ((l + r) * 2 >= mb_w * 16 || (t + bo) * unit_y >= sps.mb_height * 16u) return false;
         sps.crop_left = (uint16_t)(l * 2);

@@ -19,31 +19,31 @@
 #include <ctime>
 
 // ---------------------------------------------------------------------------
-// MEDIDAS - as do app Mesh, calibradas em hardware ao longo de setembro (ver
-// os avisos de TAM_MSG/TAM_ESCRITA/LINHA_STEP em app_mesh/app_mesh.cpp). Os
-// STEP sao pixels fixos que acompanham o tamanho da fonte: mexeu num, mexa no
-// outro ("altura do glifo (tamanho*8) + ~4px de respiro").
+// MEASUREMENTS - the Mesh app's, calibrated on hardware throughout September
+// (see the notes on TAM_MSG/TAM_ESCRITA/LINHA_STEP in app_mesh/app_mesh.cpp).
+// The STEPs are fixed pixel values that follow the font size: change one,
+// change the other ("glyph height (size*8) + ~4px of breathing room").
 // ---------------------------------------------------------------------------
 static const float TAM_MSG     = 3.8f;
 static const float TAM_NOME    = 2.415f;
 static const float TAM_META    = 1.955f;
 static const float TAM_ESCRITA = 3.2f;
-static const int   LINHA_STEP  = 34;    // acompanha TAM_MSG
-static const int   DIVISOR_A   = 52;    // acompanha TAM_DIVISOR (pilula de 42 px)
-static const float TAM_DIVISOR = 2.4f;  // "HOJE": 1,7 era pequeno demais (pedido do usuario)
+static const int   LINHA_STEP  = 34;    // follows TAM_MSG
+static const int   DIVISOR_A   = 52;    // follows TAM_DIVISOR (42 px pill)
+static const float TAM_DIVISOR = 2.4f;  // "HOJE" (TODAY): 1.7 was too small (user request)
 static const int   VAO_BALAO   = 8;
-// A HORA EMBAIXO DO BALAO ("14:32"), do lado de quem falou. So quando a
-// mensagem tem data de verdade - sem ela (relogio nao acertado) nao ha o que
-// dizer, e a faixa nem existe.
-static const float TAM_HORA    = 2.3f;  // 1,7 era pequeno demais (pedido do usuario)
-static const int   HORA_A      = 28;    // acompanha TAM_HORA (glifo ~19 px + respiro)
+// THE TIME UNDER THE BUBBLE ("14:32"), on the speaker's side. Only when the
+// message has a real date - without one (clock not set) there is nothing to
+// say, and the strip does not even exist.
+static const float TAM_HORA    = 2.3f;  // 1.7 was too small (user request)
+static const int   HORA_A      = 28;    // follows TAM_HORA (glyph ~19 px + breathing room)
 static const int   ESCRITA_A   = 80;
-static const int   ENV_L       = 110;   // botao de enviar + margem
-static const int   MARCA_L     = 26;    // marca de envio, a esquerda do balao
+static const int   ENV_L       = 110;   // send button + margin
+static const int   MARCA_L     = 26;    // send mark, to the left of the bubble
 static const int   CAP_MAX     = 256;
 
 struct conversa_balao_s {
-  uint32_t assin;               // texto+nome+meta+lado+largura da ultima medida (ver medir)
+  uint32_t assin;               // text+name+meta+side+width of the last measurement (see medir)
   int16_t  bl, ba, altura, nome_a, meta_a;
   uint16_t cor_nome, cor_meta;
   bool     minha, inicio_dia;
@@ -55,14 +55,14 @@ struct conversa_balao_s {
 };
 typedef struct conversa_balao_s balao_t;
 
-// Fundo da area de conversa: o da area do app (o sistema sabe qual e), para os
-// baloes combinarem com o que esta embaixo mesmo em app ainda no preto.
+// Background of the conversation area: the app area's own (the system knows
+// which it is), so the bubbles match what is beneath them even in an app still on black.
 static uint16_t fundo(lgfx::LovyanGFX&)               { return sistema_cor_fundo(); }
-// Balao meu em destaque suave; o dos outros numa superficie um degrau acima do fundo.
+// My bubble in a soft highlight; others' on a surface one step above the background.
 static uint16_t cor_balao(lgfx::LovyanGFX&, bool m)   { return m ? TEMA_DESTAQUE_SUAVE : TEMA_SUPERFICIE_ALTA; }
 
 // ---------------------------------------------------------------------------
-// QUEBRA DE LINHAS
+// LINE WRAPPING
 // ---------------------------------------------------------------------------
 int conversa_quebrar_linhas(lgfx::LovyanGFX& d, const char* txt, int largura_px,
                             char linhas[][CONVERSA_LINHA_BYTES], int max_linhas)
@@ -71,8 +71,8 @@ int conversa_quebrar_linhas(lgfx::LovyanGFX& d, const char* txt, int largura_px,
   char atual[CONVERSA_LINHA_BYTES] = "";
   const char* p = txt;
   while (*p && n < max_linhas) {
-    // LINHA NOVA no texto (Shift+Enter, a tecla de nova linha): fecha a linha
-    // aqui, mesmo vazia.
+    // NEW LINE in the text (Shift+Enter, the new-line key): close the line
+    // here, even if empty.
     if (*p == '\n') {
       snprintf(linhas[n++], CONVERSA_LINHA_BYTES, "%s", atual);
       atual[0] = 0;
@@ -82,9 +82,9 @@ int conversa_quebrar_linhas(lgfx::LovyanGFX& d, const char* txt, int largura_px,
     const char* fim = p;
     while (*fim && *fim != ' ' && *fim != '\n') { ++fim; }
     size_t tam = (size_t)(fim - p);
-    // Palavra maior que o buffer de uma linha: entra so o que couber (sem
-    // partir um caractere UTF-8), e o resto volta pelo loop como "a proxima
-    // palavra" - nada e descartado.
+    // Word longer than a line's buffer: only what fits goes in (without
+    // splitting a UTF-8 character), and the rest comes back round the loop as
+    // "the next word" - nothing is discarded.
     const bool cortada = tam >= CONVERSA_LINHA_BYTES;
     if (cortada) {
       tam = CONVERSA_LINHA_BYTES - 1;
@@ -94,12 +94,12 @@ int conversa_quebrar_linhas(lgfx::LovyanGFX& d, const char* txt, int largura_px,
     memcpy(palavra, p, tam);
     palavra[tam] = 0;
 
-    // O LIMITE E A LARGURA, NUNCA O BUFFER. Antes o teste montava "atual +
-    // palavra" num buffer do tamanho de uma linha: quando os BYTES acabavam
-    // antes dos pixels (acento e emoji ocupam 2-4 bytes), o snprintf cortava,
-    // o texto cortado "cabia", e o fim da palavra sumia - a linha terminava no
-    // meio da tela e o resto nao aparecia em lugar nenhum. Agora o que nao
-    // cabe no buffer simplesmente vai para a linha de baixo.
+    // THE LIMIT IS THE WIDTH, NEVER THE BUFFER. Previously the test built
+    // "current + word" in a buffer one line long: when the BYTES ran out
+    // before the pixels (accents and emoji take 2-4 bytes), snprintf truncated,
+    // the truncated text "fitted", and the end of the word vanished - the line
+    // ended mid-screen and the rest appeared nowhere. Now whatever does not
+    // fit in the buffer simply moves to the line below.
     const size_t usado = strlen(atual);
     const bool cabe_bytes = usado + (usado ? 1 : 0) + tam < CONVERSA_LINHA_BYTES;
     char teste[CONVERSA_LINHA_BYTES];
@@ -113,12 +113,12 @@ int conversa_quebrar_linhas(lgfx::LovyanGFX& d, const char* txt, int largura_px,
       p = fim;
       while (*p == ' ') { ++p; }
     } else if (!atual[0]) {
-      // Linha vazia e nem assim coube: corta por caractere (nunca no meio de
-      // um UTF-8) e avanca SO o que entrou - o resto da palavra segue adiante.
+      // Empty line and it still did not fit: cut by character (never in the
+      // middle of a UTF-8 sequence) and advance ONLY what went in - the rest of the word carries on.
       memcpy(atual, palavra, tam + 1);
       tab5_cortar_ao_caber(d, atual, largura_px);
       size_t consumido = strlen(atual);
-      if (consumido == 0) {   // nem 1 caractere coube: avanca 1 mesmo assim (nunca trava)
+      if (consumido == 0) {   // not even 1 character fitted: advance 1 anyway (never stalls)
         const unsigned char c0 = (unsigned char)palavra[0];
         consumido = ((c0 & 0xE0) == 0xC0) ? 2 : ((c0 & 0xF0) == 0xE0) ? 3 : ((c0 & 0xF8) == 0xF0) ? 4 : 1;
       }
@@ -133,7 +133,7 @@ int conversa_quebrar_linhas(lgfx::LovyanGFX& d, const char* txt, int largura_px,
 }
 
 // ---------------------------------------------------------------------------
-// DIVISOR DE DIA - "HOJE", "ONTEM", "DD/MM" (no fuso local)
+// DAY DIVIDER - "HOJE", "ONTEM", "DD/MM" (today, yesterday; local time zone)
 // ---------------------------------------------------------------------------
 static int dia_local(uint32_t epoch)
 {
@@ -169,7 +169,7 @@ static void desenhar_divisor(lgfx::LovyanGFX& d, int x0, int larg, int y, uint32
   d.setTextDatum(top_left);
 }
 
-// Marca de envio, ao lado do balao: tres pontos (saindo), visto (foi), X (falhou).
+// Send mark, beside the bubble: three dots (sending), tick (sent), X (failed).
 static void marca_envio(lgfx::LovyanGFX& d, int cx, int cy, uint8_t envio)
 {
   d.fillRect(cx - MARCA_L / 2, cy - 12, MARCA_L, 24, fundo(d));
@@ -181,14 +181,14 @@ static void marca_envio(lgfx::LovyanGFX& d, int cx, int cy, uint8_t envio)
     d.drawLine(cx - 3, cy + 6, cx + 8, cy - 7, TEMA_SUCESSO);
     d.drawLine(cx - 3, cy + 7, cx + 8, cy - 6, TEMA_SUCESSO);
   } else if (envio == CONVERSA_ENVIO_OUVIDO) {
-    // O mesmo visto, em cinza: saiu e a rede ouviu, mas quem devia
-    // confirmar (o destinatario) ainda nao confirmou.
+    // The same tick, in grey: it went out and the network heard it, but the
+    // one who should confirm (the recipient) has not confirmed yet.
     d.drawLine(cx - 8, cy, cx - 3, cy + 6, TEMA_TEXTO_3);
     d.drawLine(cx - 8, cy + 1, cx - 3, cy + 7, TEMA_TEXTO_3);
     d.drawLine(cx - 3, cy + 6, cx + 8, cy - 7, TEMA_TEXTO_3);
     d.drawLine(cx - 3, cy + 7, cx + 8, cy - 6, TEMA_TEXTO_3);
   } else if (envio == CONVERSA_ENVIO_SEM_RESPOSTA) {
-    // Cinza, circulo e "?": nao e falha, e nao saber.
+    // Grey, circle and "?": not a failure, just not knowing.
     d.drawCircle(cx, cy, 9, TEMA_TEXTO_3);
     d.drawCircle(cx, cy, 8, TEMA_TEXTO_3);
     const auto e = d.getTextStyle();
@@ -207,21 +207,21 @@ static void marca_envio(lgfx::LovyanGFX& d, int cx, int cy, uint8_t envio)
 }
 
 // ---------------------------------------------------------------------------
-// MEDIR - uma vez por mudanca, nunca por frame
+// MEASURE - once per change, never per frame
 // ---------------------------------------------------------------------------
-// So o que mudou e re-medido. Mensagem chegando ou confirmacao de entrega
-// (que so troca a marca) re-media TODOS os baloes - ate 256, quebrando linha
-// palavra a palavra - na tarefa de interface: se caia no meio da digitacao,
-// aquele quadro atrasava e a tecla engasgava. Cada balao guarda a assinatura
-// do que o define (texto, nome, meta, lado, largura); igual, so os campos
-// baratos (marca, data) sao atualizados. Indice deslocado (historico que
-// rolou) da assinatura diferente e e re-medido - nunca reaproveita errado.
+// Only what changed is re-measured. An incoming message or a delivery
+// confirmation (which only swaps the mark) used to re-measure ALL bubbles - up
+// to 256, wrapping word by word - on the UI task: if it landed mid-typing,
+// that frame was late and the key stuttered. Each bubble keeps the signature
+// of what defines it (text, name, meta, side, width); if equal, only the cheap
+// fields (mark, date) are updated. A shifted index (history that scrolled)
+// gives a different signature and is re-measured - never wrongly reused.
 //
-// Devolve true quando a ESTRUTURA mudou (quantidade ou altura de algum balao):
-// ai a lista inteira se reorganiza. Senao, so os baloes que mudaram (a marca
-// de envio, tipicamente) sao anotados para repintar.
-// O TAMANHO DA LETRA dos baloes (conversa_t.escala; 0 = 1). O passo de linha
-// acompanha a fonte, como manda a regra das MEDIDAS acima.
+// Returns true when the STRUCTURE changed (count or height of some bubble):
+// then the whole list re-lays out. Otherwise, only the bubbles that changed
+// (typically the send mark) are noted for repainting.
+// The TEXT SIZE of the bubbles (conversa_t.escala; 0 = 1). The line step
+// follows the font, as the MEASUREMENTS rule above requires.
 static float esc(const conversa_t* c)        { return c->escala > 0 ? c->escala : 1.0f; }
 static float tam_msg(const conversa_t* c)    { return TAM_MSG * esc(c); }
 static float tam_nome(const conversa_t* c)   { return TAM_NOME * esc(c); }
@@ -237,7 +237,7 @@ static uint32_t assinatura(const conversa_msg_t* m, int larg)
   mais(m->texto); mais(m->nome); mais(m->meta);
   h = (h ^ (uint32_t)m->minha) * 16777619u;
   h = (h ^ (uint32_t)larg) * 16777619u;
-  return h | 1u;   // 0 = nunca medido
+  return h | 1u;   // 0 = never measured
 }
 
 static bool medir(conversa_t* c, lgfx::LovyanGFX& d, int larg)
@@ -265,7 +265,7 @@ static bool medir(conversa_t* c, lgfx::LovyanGFX& d, int larg)
 
   bool estrutura = (n != n_antes);
   int dia_ant = 0;
-  static conversa_msg_t m;   // 300+ bytes: fora da stack da interface
+  static conversa_msg_t m;   // 300+ bytes: kept off the UI task's stack
   for (int i = 0; i < n; ++i) {
     balao_t* b = &c->bal[i];
     memset(&m, 0, sizeof(m));
@@ -277,9 +277,9 @@ static bool medir(conversa_t* c, lgfx::LovyanGFX& d, int larg)
     b->quando = m.quando;
     b->cor_nome = m.cor_nome;
     b->cor_meta = m.cor_meta;
-    const uint32_t as = assinatura(&m, larg ^ ((int)(esc(c) * 100) << 16));   // a escala tambem mede
+    const uint32_t as = assinatura(&m, larg ^ ((int)(esc(c) * 100) << 16));   // the scale is part of the measurement too
     if (i < n_antes && b->assin == as) {
-      // Mesmo conteudo: medidas valem. So o divisor de dia, que depende do vizinho.
+      // Same content: measurements stand. Only the day divider, which depends on the neighbour.
       b->inicio_dia = false;
       if (tab5_hora_valida(b->quando)) {
         const int dia = dia_local(b->quando);
@@ -296,7 +296,7 @@ static bool medir(conversa_t* c, lgfx::LovyanGFX& d, int larg)
     snprintf(b->nome, sizeof(b->nome), "%s", m.nome);
     snprintf(b->meta, sizeof(b->meta), "%s", m.meta);
 
-    // Teto de largura: 38% a minha (ao lado da marca), 60% a recebida.
+    // Width cap: 38% for mine (beside the mark), 60% for received ones.
     const int pct = (int)(larg * (b->minha ? 0.38f : 0.60f));
     const int teto = (pct < larg - 28 - MARCA_L) ? pct : (larg - 28 - MARCA_L);
 
@@ -327,8 +327,8 @@ static bool medir(conversa_t* c, lgfx::LovyanGFX& d, int larg)
     b->bl = (int16_t)bl;
     b->ba = (int16_t)(24 + b->n_linhas * linha_step(c) + b->nome_a + b->meta_a);
 
-    // Divisor antes da primeira mensagem de cada dia. Sem data (relogio nao
-    // acertado quando ela chegou) nao abre dia - senao virava 31/12/1969.
+    // Divider before the first message of each day. No date (clock not
+    // set when it arrived) opens no day - otherwise it would become 31/12/1969.
     b->inicio_dia = false;
     if (tab5_hora_valida(b->quando)) {
       const int dia = dia_local(b->quando);
@@ -359,12 +359,12 @@ static void balao_desenhar(lgfx::LovyanGFX& d, int i, int x0, int y, int larg, v
 
   const int bx = b->minha ? (x0 + larg - b->bl - 16) : (x0 + 16);
   const uint16_t cor = cor_balao(d, b->minha);
-  // Balao alto leva o canto grande; o baixo (uma linha) o medio, para nao virar pilula.
+  // A tall bubble gets the large corner; a short one (one line) the medium, so it does not become a pill.
   const int raio = (b->ba >= 4 * TEMA_RAIO_G) ? TEMA_RAIO_G : TEMA_RAIO_M;
   d.fillRoundRect(bx, y, b->bl, b->ba, raio, cor);
 
-  // Recorte no proprio balao (dentro do da faixa): um emoji no fim da linha
-  // nao pinta o vao ate o proximo.
+  // Clip to the bubble itself (inside the strip's clip): an emoji at the end of
+  // the line does not paint the gap up to the next one.
   int32_t cx, cy, cl, ca;
   d.getClipRect(&cx, &cy, &cl, &ca);
   const int rx0 = (bx > cx) ? bx : cx;
@@ -411,12 +411,12 @@ static void balao_desenhar(lgfx::LovyanGFX& d, int i, int x0, int y, int larg, v
 }
 
 // ---------------------------------------------------------------------------
-// CICLO DE VIDA
+// LIFE CYCLE
 // ---------------------------------------------------------------------------
 void conversa_abrir(conversa_t* c, pintura_t* p, conversa_contar_t contar, conversa_ler_t ler,
                     conversa_enviar_t enviar, void* ctx)
 {
-  balao_t* bal = c->bal;   // o cache sobrevive a reabrir (mesmo app)
+  balao_t* bal = c->bal;   // the cache survives reopening (same app)
   const int cap = c->cap;
   memset(c, 0, sizeof(*c));
   c->bal = bal; c->cap = cap;
@@ -439,7 +439,7 @@ void conversa_escala(conversa_t* c, float escala)
 {
   if (escala == c->escala) { return; }
   c->escala = escala;
-  c->medir = true;   // a assinatura de cada balao leva a escala: todos re-medem
+  c->medir = true;   // each bubble's signature includes the scale: all re-measure
   if (c->p) { pintura_pedir(c->p); }
   sistema_pedir_redesenho_completo();
 }
@@ -448,11 +448,11 @@ bool conversa_teclado_aberto(const conversa_t* c) { return tecvirt_aberto(&c->kb
 
 void conversa_area_teclado(conversa_t* c, const area_t& ka) { c->tec = ka; }
 
-// O retangulo do teclado: o que o app deu, ou o da propria conversa.
+// The keyboard rectangle: the one the app gave, or the conversation's own.
 static const area_t& area_tec(const conversa_t* c) { return c->tec.largura > 0 ? c->tec : c->ret; }
 
-// Reposiciona tudo (teclado abriu/fechou): passada completa, pelas duas vias
-// que a regra da repintura exige (pintura do app + agenda do sistema).
+// Reposition everything (keyboard opened/closed): full pass, through both paths
+// the repaint rule requires (app paint + system schedule).
 static void pedir_completo(conversa_t* c)
 {
   if (c->p) { pintura_pedir(c->p); }
@@ -477,7 +477,7 @@ void conversa_trocar(conversa_t* c)
 }
 
 // ---------------------------------------------------------------------------
-// EDICAO DO RASCUNHO - sempre no cursor, sempre em fronteira de caractere UTF-8
+// DRAFT EDITING - always at the cursor, always on a UTF-8 character boundary
 // ---------------------------------------------------------------------------
 static int utf8_anterior(const char* s, int i) { return tab5_utf8_anterior(s, i); }
 static int utf8_seguinte(const char* s, int i) { return tab5_utf8_seguinte(s, i); }
@@ -493,17 +493,17 @@ static void inserir(conversa_t* c, const char* t, size_t n)
 {
   cursor_ajustar(c);
   const size_t len = strlen(c->rascunho);
-  const size_t pedido = n;   // 't' tem EXATAMENTE n bytes - nao e uma string terminada
+  const size_t pedido = n;   // 't' has EXACTLY n bytes - it is not a terminated string
   size_t teto = sizeof(c->rascunho) - 1;
   if (c->limite > 0 && (size_t)c->limite < teto) { teto = (size_t)c->limite; }
   if (len >= teto) { return; }
   if (len + n > teto) { n = teto - len; }
-  // Nunca corta no meio de um caractere: recua ate a fronteira. So olha
-  // dentro dos 'pedido' bytes recebidos. Antes isto era strlen(t) - e a
-  // tecla do teclado virtual chega como UM char solto na pilha, sem o zero
-  // no fim: strlen lia o lixo depois dele, e quando o byte seguinte calhava
-  // de parecer continuacao de UTF-8 (0x80-0xBF) a letra era descartada.
-  // Dependia do que tinha sobrado na pilha - por isso "do nada".
+  // Never cut in the middle of a character: back off to the boundary. Only
+  // looks within the 'pedido' bytes received. This used to be strlen(t) - and
+  // the virtual keyboard key arrives as ONE loose char on the stack, with no
+  // terminating zero: strlen read the garbage after it, and when the next byte
+  // happened to look like a UTF-8 continuation (0x80-0xBF) the letter was
+  // discarded. It depended on what was left on the stack - hence "out of nowhere".
   while (n > 0 && n < pedido && ((unsigned char)t[n] & 0xC0) == 0x80) { --n; }
   if (!n) { return; }
   memmove(c->rascunho + c->cursor + n, c->rascunho + c->cursor, len - c->cursor + 1);
@@ -526,20 +526,20 @@ static void enviar_rascunho(conversa_t* c)
   if (c->enviar(c->rascunho, c->ctx)) {
     c->rascunho[0] = 0;
     c->cursor = 0;
-    lista_ao_inicio(&c->lista);   // a mensagem nova aparece embaixo: vai ate ela
+    lista_ao_inicio(&c->lista);   // the new message appears at the bottom: go to it
   }
   sistema_pedir_redesenho();
 }
 
 // ---------------------------------------------------------------------------
-// QUEBRA DA BARRA DE ESCRITA, com deslocamentos
+// WRAPPING THE COMPOSE BAR, with offsets
 // ---------------------------------------------------------------------------
-// Diferente de conversa_quebrar_linhas (que devolve textos e engole os
-// espacos), esta devolve ONDE cada linha comeca no texto original: o toque no
-// campo precisa transformar "x, y" em posicao de cursor, e o cursor precisa de
-// um lugar exato mesmo entre espacos. As linhas particionam o texto - o
-// espaco que sobra no fim de uma linha pertence a ela.
-// ini[k] e o inicio da linha k; ini[n] = fim do texto. Devolve n (>= 1).
+// Unlike conversa_quebrar_linhas (which returns strings and swallows the
+// spaces), this returns WHERE each line starts in the original text: a touch on
+// the field must turn "x, y" into a cursor position, and the cursor needs an
+// exact place even between spaces. The lines partition the text - the space
+// left over at the end of a line belongs to it.
+// ini[k] is the start of line k; ini[n] = end of text. Returns n (>= 1).
 static int quebrar_offsets(lgfx::LovyanGFX& d, const char* s, int largura_px, int16_t* ini, int max)
 {
   const int len = (int)strlen(s);
@@ -547,7 +547,7 @@ static int quebrar_offsets(lgfx::LovyanGFX& d, const char* s, int largura_px, in
   int i = 0;
   ini[n++] = 0;
   while (i < len && n < max) {
-    // Cresce a linha palavra a palavra; 'bom' = fim da ultima que coube.
+    // Grow the line word by word; 'bom' = end of the last word that fitted.
     int bom = i;
     int j = i;
     for (;;) {
@@ -564,13 +564,13 @@ static int quebrar_offsets(lgfx::LovyanGFX& d, const char* s, int largura_px, in
         memcpy(teste, s + i, tam); teste[tam] = 0;
         cabe = (int)d.textWidth(teste) <= largura_px;
       }
-      // A linha nova (o \n) termina a linha e fica nela.
+      // The new line (the \n) ends the line and stays in it.
       if (cabe && s[fim] == '\n') { bom = fim + 1; break; }
       if (cabe) { bom = prox; j = prox; if (!s[prox]) { break; } }
       else { break; }
     }
     if (bom == i) {
-      // Nem a primeira palavra coube: corta por caractere.
+      // Not even the first word fitted: cut by character.
       int e = i;
       char teste[CONVERSA_LINHA_BYTES];
       for (;;) {
@@ -582,25 +582,25 @@ static int quebrar_offsets(lgfx::LovyanGFX& d, const char* s, int largura_px, in
         e = nx;
         if (!s[e]) { break; }
       }
-      if (e == i) { e = utf8_seguinte(s, i); }   // nunca trava
+      if (e == i) { e = utf8_seguinte(s, i); }   // never stalls
       bom = e;
     }
     i = bom;
     if (i < len) { ini[n++] = (int16_t)i; }
   }
-  // Texto terminando em \n: o cursor do fim fica numa linha nova, vazia.
+  // Text ending in \n: the end cursor sits on a new, empty line.
   if (len > 0 && s[len - 1] == '\n' && n < max) { ini[n++] = (int16_t)len; }
   ini[n] = (int16_t)len;
   return n;
 }
 
 // ---------------------------------------------------------------------------
-// DESENHO
+// DRAWING
 // ---------------------------------------------------------------------------
-// BOTAO DE ENVIAR: circulo com o aviao de papel (seta para a direita com o
-// entalhe atras), como nos mensageiros de celular. Aceso so com rascunho: sem
-// texto nao ha o que enviar, e o botao apagado diz isso antes do toque.
-// Desenho por primitivas - a fonte do sistema nao tem o glifo.
+// SEND BUTTON: circle with the paper plane (arrow pointing right with the
+// notch behind), as in phone messengers. Lit only with a draft: with no text
+// there is nothing to send, and the dimmed button says so before the touch.
+// Drawn with primitives - the system font does not have the glyph.
 static void botao_enviar(lgfx::LovyanGFX& d, int x, int y, int l, int a, uint16_t cor,
                          bool aceso, uint16_t fundo)
 {
@@ -609,13 +609,13 @@ static void botao_enviar(lgfx::LovyanGFX& d, int x, int y, int l, int a, uint16_
   const int cx = x + l / 2, cy = y + a / 2;
   d.fillCircle(cx, cy, raio, aceso ? cor : (uint16_t)TEMA_SUPERFICIE_ALTA);
   const uint16_t tinta = aceso ? (uint16_t)TEMA_SOBRE_DESTAQUE : (uint16_t)TEMA_TEXTO_3;
-  // Proporcoes em fracao do raio; a ponta puxa o desenho 1/12 para a direita
-  // para ele parecer centrado (o peso visual fica atras, no entalhe).
+  // Proportions as fractions of the radius; the tip pulls the drawing 1/12 to
+  // the right so it looks centred (the visual weight sits behind, in the notch).
   const int ox = cx + raio / 12;
-  const int px = ox + raio * 11 / 20;               // ponta
-  const int tx = ox - raio * 10 / 20;               // cauda (as duas asas)
-  const int ty = raio * 10 / 20;                    // meia altura das asas
-  const int nx = ox - raio * 4 / 20;                // fundo do entalhe
+  const int px = ox + raio * 11 / 20;               // tip
+  const int tx = ox - raio * 10 / 20;               // tail (the two wings)
+  const int ty = raio * 10 / 20;                    // half height of the wings
+  const int nx = ox - raio * 4 / 20;                // bottom of the notch
   d.fillTriangle(px, cy, tx, cy - ty, nx, cy, tinta);
   d.fillTriangle(px, cy, nx, cy, tx, cy + ty, tinta);
 }
@@ -645,21 +645,21 @@ void conversa_desenhar(conversa_t* c, lgfx::LovyanGFX& d, const area_t& r,
     d.setTextDatum(top_left);
   }
 
-  // ---- barra de escrita: so repinta o que mudou ----------------------------
+  // ---- compose bar: only repaints what changed -----------------------------
   const char* fonte = !pode_escrever ? (motivo ? motivo : "")
                     : c->rascunho[0] ? c->rascunho
-                    // A dica diz a verdade do caso: com teclado encaixado o toque
-                    // nao abre nada (nao rouba meia tela).
+                    // The hint tells the truth of the case: with a keyboard docked the touch
+                    // opens nothing (does not steal half the screen).
                     : (tab5_teclado_presente() ? tr("digite no teclado; ENTER envia") : tr("toque para escrever"));
   const int campo_l = r.largura - 24 - ENV_L;
   const bool eh_rascunho = pode_escrever && c->rascunho[0];
   c->disp = &d;
   cursor_ajustar(c);
 
-  // A QUEBRA SO E REFEITA QUANDO O TEXTO OU A LARGURA MUDAM. Antes cada
-  // passada re-quebrava e re-media o rascunho inteiro - e uma passada acontece
-  // ao descer o dedo na tecla, ao soltar e a cada letra, ou seja, tres vezes
-  // por letra digitada.
+  // THE WRAP IS ONLY REDONE WHEN THE TEXT OR THE WIDTH CHANGES. Previously
+  // every pass re-wrapped and re-measured the whole draft - and a pass happens
+  // when the finger goes down on the key, on release and on each letter, that
+  // is, three times per letter typed.
   const pintura_t* p = c->p;
   const bool m_txt  = pintura_mudou_s(p, c->barra_txt, sizeof(c->barra_txt), fonte);
   const bool m_larg = pintura_mudou_i(p, &c->barra_larg, campo_l);
@@ -669,8 +669,8 @@ void conversa_desenhar(conversa_t* c, lgfx::LovyanGFX& d, const area_t& r,
   }
   c->bar_rascunho = eh_rascunho;
 
-  // Linha do cursor e janela de DUAS linhas que a contem. A janela so anda
-  // quando o cursor sai dela - editar no meio do texto nao faz a barra pular.
+  // Cursor line and a TWO-line window containing it. The window only moves
+  // when the cursor leaves it - editing mid-text does not make the bar jump.
   int lc = c->bar_n - 1;
   if (eh_rascunho) {
     lc = 0;
@@ -692,8 +692,8 @@ void conversa_desenhar(conversa_t* c, lgfx::LovyanGFX& d, const area_t& r,
   const bool m7 = pintura_mudou_i(p, &c->barra_topo, topo);
   const bool m8 = pintura_mudou_i(p, &c->barra_env, eh_rascunho);
   if (m1 || m2 || m_txt || m_larg || m6 || m7 || m8 || completo) {
-    // O botao de enviar so e refeito quando a barra se mexe ou quando o
-    // rascunho passa de vazio a cheio (ou o contrario) - nao a cada letra.
+    // The send button is only redrawn when the bar moves or when the draft
+    // goes from empty to filled (or the reverse) - not on every letter.
     const bool tudo = m1 || m2 || completo;
     const bool env  = tudo || m8;
     if (tudo) { tab5_tela_limpar(r.x, base, r.largura, ESCRITA_A, FUNDO); }
@@ -703,9 +703,9 @@ void conversa_desenhar(conversa_t* c, lgfx::LovyanGFX& d, const area_t& r,
     tab5_texto(d, TAM_ESCRITA);
     d.setTextDatum(top_left);
     d.setTextColor(pode_escrever ? (uint16_t)TEMA_TEXTO : (uint16_t)TEMA_TEXTO_3, pode_escrever ? (uint16_t)TEMA_SUPERFICIE_ALTA : FUNDO);
-    // Linhas centradas no campo pela altura REAL da fonte (uma linha so fica
-    // no meio; duas dividem o campo) - o passo fixo antigo deixava a segunda
-    // encostada na borda de baixo.
+    // Lines centred in the field by the font's REAL height (a single line sits
+    // in the middle; two split the field) - the old fixed step left the second
+    // touching the bottom edge.
     const int fa = d.fontHeight();
     const int passo = fa + 4;
     const int y0 = base + 6 + (ESCRITA_A - 12 - (nl * passo - 4)) / 2;
@@ -717,7 +717,7 @@ void conversa_desenhar(conversa_t* c, lgfx::LovyanGFX& d, const area_t& r,
       const int ini = c->bar_ini[topo + k], fim = c->bar_ini[topo + k + 1];
       int tam = fim - ini;
       if (tam >= CONVERSA_LINHA_BYTES) { tam = CONVERSA_LINHA_BYTES - 1; }
-      while (tam > 0 && fonte[ini + tam - 1] == '\n') { --tam; }   // a linha nova nao se desenha
+      while (tam > 0 && fonte[ini + tam - 1] == '\n') { --tam; }   // the new line is not drawn
       memcpy(lin, fonte + ini, tam); lin[tam] = 0;
       d.drawString(lin, r.x + 24, y0 + k * passo);
     }
@@ -733,43 +733,43 @@ void conversa_desenhar(conversa_t* c, lgfx::LovyanGFX& d, const area_t& r,
       if (cx > r.x + 12 + campo_l - 6) { cx = r.x + 12 + campo_l - 6; }
       d.fillRect(cx, y0 + k * passo, 3, fa, TEMA_DESTAQUE);
     }
-    // Sem botao de enviar quando nao da para enviar: um botao que nao funciona e pior que
-    // a ausencia dele.
+    // No send button when sending is not possible: a button that does not work is worse than
+    // not having one.
     if (pode_escrever && env) {
       botao_enviar(d, r.x + r.largura - ENV_L, base + 6, ENV_L - 14, ESCRITA_A - 12,
                    c->cor_enviar ? c->cor_enviar : (uint16_t)TEMA_DESTAQUE, eh_rascunho, FUNDO);
     }
   }
 
-  // ---- teclado virtual (do sistema: ele sabe o que repintar) ---------------
+  // ---- virtual keyboard (the system's: it knows what to repaint) -----------
   tecvirt_posicionar(&c->kb, area_tec(c));
   tecvirt_pintar(&c->kb, d, completo);
 }
 
 // ---------------------------------------------------------------------------
-// TECLAS
+// KEYS
 // ---------------------------------------------------------------------------
-// O teclado olha o texto antes do cursor para armar a maiuscula de inicio de
-// frase: chamado sempre que o texto ou o cursor mudam com ele aberto.
+// The keyboard looks at the text before the cursor to arm the sentence-start
+// capital: called whenever the text or the cursor changes while it is open.
 static void contexto(conversa_t* c) { tecvirt_contexto(&c->kb, c->rascunho, c->cursor); }
 
 static void aplicar_tecla(conversa_t* c, int acao)
 {
   if (acao > 0) {
-    char u[4];   // codepoint ja com o shift (o teclado aplica)
+    char u[4];   // codepoint with shift already applied (the keyboard applies it)
     inserir(c, u, (size_t)tecvirt_utf8(acao, u));
     contexto(c);
     sistema_pedir_redesenho();
     return;
   }
   if (acao == TECVIRT_APAGAR) { apagar_antes(c); contexto(c); sistema_pedir_redesenho(); return; }
-  // A tecla de acao e NOVA LINHA, como no WhatsApp: quem envia e o botao da barra.
+  // The action key is NEW LINE, as in WhatsApp: the bar's button is what sends.
   if (acao == TECVIRT_LINHA)  { inserir(c, "\n", 1); contexto(c); sistema_pedir_redesenho(); return; }
   if (acao == TECVIRT_ENVIAR) { enviar_rascunho(c); }
   if (acao == TECVIRT_ENVIAR || acao == TECVIRT_FECHAR) { fechar_teclado(c); }
 }
 
-// O toque em coordenadas de TELA, e relativo ao retangulo (o que o teclado usa).
+// The touch in SCREEN coordinates, and relative to the rectangle (what the keyboard uses).
 static void para_tela(int x, int y, int* xs, int* ys)
 {
   const area_t a = sistema_area();
@@ -777,14 +777,14 @@ static void para_tela(int x, int y, int* xs, int* ys)
   *ys = a.y + y;
 }
 
-// Onde comeca a barra de escrita (tela): sobe junto com o teclado aberto.
+// Where the compose bar starts (screen): it rises together with an open keyboard.
 static int base_escrita(const conversa_t* c)
 {
   return c->ret.y + c->ret.altura - ESCRITA_A - (tecvirt_aberto(&c->kb) ? tecvirt_altura(area_tec(c)) : 0);
 }
 
-// COLAR: o texto da area de transferencia entra no cursor. A quebra de linha
-// fica (a conversa tem linhas); tabulacao e os outros controles viram espaco.
+// PASTE: the clipboard text goes in at the cursor. Line breaks stay (the
+// conversation has lines); tabs and other control characters become spaces.
 static void colar(conversa_t* c)
 {
   char t[CONVERSA_TEXTO];
@@ -797,7 +797,7 @@ static void colar(conversa_t* c)
   sistema_pedir_redesenho();
 }
 
-// SEGURAR: num balao copia o texto da mensagem; na barra de escrita, cola.
+// HOLD: on a bubble copies the message text; on the compose bar, pastes.
 static void segurar(conversa_t* c, int x, int y)
 {
   int xs, ys;
@@ -808,7 +808,7 @@ static void segurar(conversa_t* c, int x, int y)
     if (c->pode_escrever) { colar(c); }
     return;
   }
-  static conversa_msg_t m;   // so a tarefa de interface
+  static conversa_msg_t m;   // UI task only
   const int i = lista_item_em(&c->lista, x, y, nullptr);
   if (i >= 0 && c->ler(i, &m, c->ctx) && m.texto[0]) {
     transf_copiar(m.texto);
@@ -816,8 +816,8 @@ static void segurar(conversa_t* c, int x, int y)
   }
 }
 
-// O teclado (dedos, retorno da tecla, soltura) e do sistema: aqui so se
-// aplicam as teclas que ele confirmou nesta amostra.
+// The keyboard (fingers, key feedback, release) belongs to the system: here we
+// only apply the keys it confirmed in this sample.
 void conversa_tocar_nivel(conversa_t* c, int x, int y, bool pressionado)
 {
   int acoes[8];
@@ -825,13 +825,13 @@ void conversa_tocar_nivel(conversa_t* c, int x, int y, bool pressionado)
   for (int i = 0; i < n && tecvirt_aberto(&c->kb); ++i) { aplicar_tecla(c, acoes[i]); }
   if (toque_longo(&c->lp, x, y, pressionado)) { segurar(c, x, y); }
 
-  // Rolagem dos baloes (a janela da lista ja termina acima da barra e do teclado).
+  // Scrolling the bubbles (the list window already ends above the bar and the keyboard).
   if (lista_arrastar(&c->lista, x, y, pressionado)) { sistema_pedir_redesenho(); }
 }
 
-// TOQUE NO TEXTO: leva o cursor para o caractere mais proximo do dedo, sem
-// apagar nada. Usa as posicoes da ULTIMA pintura da barra (bar_x0/bar_y0/
-// bar_passo e as linhas visiveis) e mede com a mesma fonte dela.
+// TOUCH ON THE TEXT: moves the cursor to the character nearest the finger,
+// without deleting anything. Uses the positions from the LAST paint of the bar
+// (bar_x0/bar_y0/bar_passo and the visible lines) and measures with its font.
 static void cursor_no_toque(conversa_t* c, int xs, int ys)
 {
   if (!c->bar_rascunho || !c->disp || c->bar_nl <= 0 || c->bar_passo <= 0) { return; }
@@ -841,9 +841,9 @@ static void cursor_no_toque(conversa_t* c, int xs, int ys)
   const int lin = c->bar_topo + k;
   const int ini = c->bar_ini[lin];
   int fim = c->bar_ini[lin + 1];
-  // Nas linhas que nao sao a ultima, o espaco de quebra e da linha mas o
-  // cursor depois dele seria desenhado na linha de baixo: para no ultimo
-  // caractere visivel.
+  // On lines other than the last, the wrap space belongs to the line but a
+  // cursor after it would be drawn on the line below: stop at the last
+  // visible character.
   if (lin + 1 < c->bar_n) { while (fim > ini && (c->rascunho[fim - 1] == ' ' || c->rascunho[fim - 1] == '\n')) { --fim; } }
 
   lgfx::LovyanGFX& d = *c->disp;
@@ -870,19 +870,19 @@ void conversa_tocar(conversa_t* c, int x, int y)
   para_tela(x, y, &xs, &ys);
   const area_t& r = c->ret;
 
-  // Teclado aberto: a faixa dele e so dele. O clique aqui e so a rede para um
-  // toque rapido demais para o nivel ter visto (senao daria letra dupla).
+  // Keyboard open: its strip belongs to it alone. The click here is just the
+  // safety net for a touch too quick for the level to have seen (otherwise it would double a letter).
   if (tecvirt_contem(&c->kb, xs, ys)) {
     const int ac = tecvirt_clique(&c->kb, xs, ys);
     if (ac) { aplicar_tecla(c, ac); }
     return;
   }
 
-  // O fim de uma rolagem nao e clique em nada.
+  // The end of a scroll is not a click on anything.
   if (lista_item_tocado(&c->lista, x, y, nullptr) == LISTA_ARRASTE) { return; }
 
-  // Barra de escrita: o botao da seta envia; o campo abre o teclado virtual (so sem o
-  // fisico encaixado - com ele, nao roubamos meia tela).
+  // Compose bar: the arrow button sends; the field opens the virtual keyboard (only
+  // without the physical one docked - with it, we do not steal half the screen).
   const int base = base_escrita(c);
   if (ys >= base && ys < base + ESCRITA_A && c->pode_escrever) {
     if (xs >= r.x + r.largura - ENV_L) {
@@ -891,18 +891,18 @@ void conversa_tocar(conversa_t* c, int x, int y)
     } else if (tecvirt_aberto(&c->kb)) {
       cursor_no_toque(c, xs, ys);
     } else if (!tab5_teclado_presente()) {
-      tecvirt_abrir(&c->kb, TECVIRT_PARAGRAFO);   // nova linha na tecla verde; envia pelo botao da barra
-      cursor_no_toque(c, xs, ys);       // o mesmo toque que abre ja posiciona o cursor
-      contexto(c);                      // rascunho vazio: ja abre com a maiuscula armada
+      tecvirt_abrir(&c->kb, TECVIRT_PARAGRAFO);   // new line on the green key; send via the bar's button
+      cursor_no_toque(c, xs, ys);       // the same touch that opens it already positions the cursor
+      contexto(c);                      // empty draft: opens with the capital already armed
       pedir_completo(c);
     }
   }
 }
 
 // ---------------------------------------------------------------------------
-// CURSOR PELO TECLADO FISICO
+// CURSOR FROM THE PHYSICAL KEYBOARD
 // ---------------------------------------------------------------------------
-// Del: apaga o caractere DEPOIS do cursor (o Backspace apaga o de antes).
+// Del: deletes the character AFTER the cursor (Backspace deletes the one before).
 static void apagar_depois(conversa_t* c)
 {
   cursor_ajustar(c);
@@ -911,8 +911,8 @@ static void apagar_depois(conversa_t* c)
   memmove(c->rascunho + c->cursor, c->rascunho + b, strlen(c->rascunho) - b + 1);
 }
 
-// Ctrl + seta: pula uma palavra (os espacos e depois a palavra, como em
-// qualquer editor).
+// Ctrl + arrow: jump a word (the spaces and then the word, as in any
+// editor).
 static void palavra(conversa_t* c, bool frente)
 {
   const char* r = c->rascunho;
@@ -927,7 +927,7 @@ static void palavra(conversa_t* c, bool frente)
   c->cursor = i;
 }
 
-// Quantos CARACTERES (nao bytes) ha de 'ini' ate 'fim'.
+// How many CHARACTERS (not bytes) there are from 'ini' to 'fim'.
 static int n_caracteres(const char* s, int ini, int fim)
 {
   int n = 0;
@@ -935,16 +935,16 @@ static int n_caracteres(const char* s, int ini, int fim)
   return n;
 }
 
-// Seta para cima/baixo: a linha de cima/baixo da barra, na mesma coluna (em
-// caracteres). Usa a quebra da ULTIMA pintura (bar_ini) - a barra e repintada
-// a cada tecla, entao ela e a do texto de agora. Ja na primeira linha, cima
-// vai ao inicio; na ultima, baixo vai ao fim.
+// Up/down arrow: the bar line above/below, in the same column (in
+// characters). Uses the wrap from the LAST paint (bar_ini) - the bar is
+// repainted on every key, so it matches the current text. Already on the
+// first line, up goes to the start; on the last, down goes to the end.
 static void linha_vizinha(conversa_t* c, bool baixo)
 {
   cursor_ajustar(c);
   const int len = (int)strlen(c->rascunho);
   const int n = c->bar_n;
-  if (!c->bar_rascunho || n <= 0 || c->bar_ini[n] != len) {   // quebra velha ou ausente
+  if (!c->bar_rascunho || n <= 0 || c->bar_ini[n] != len) {   // stale or missing wrap
     c->cursor = baixo ? len : 0;
     return;
   }
@@ -956,8 +956,8 @@ static void linha_vizinha(conversa_t* c, bool baixo)
   const int col = n_caracteres(c->rascunho, c->bar_ini[k], c->cursor);
   int i = c->bar_ini[alvo];
   int fim = c->bar_ini[alvo + 1];
-  // O espaco da quebra pertence a linha mas o cursor depois dele cairia na
-  // linha de baixo: para no ultimo caractere visivel (como no toque).
+  // The wrap space belongs to the line but a cursor after it would fall on
+  // the line below: stop at the last visible character (as with touch).
   if (alvo + 1 < n) { while (fim > i && (c->rascunho[fim - 1] == ' ' || c->rascunho[fim - 1] == '\n')) { --fim; } }
   for (int k2 = 0; k2 < col && i < fim; ++k2) { i = utf8_seguinte(c->rascunho, i); }
   c->cursor = i;
@@ -968,13 +968,13 @@ void conversa_teclar(conversa_t* c, const char* texto, uint8_t codigo, uint8_t m
   if (!c->pode_escrever) { return; }
   const bool ctrl = (mod & TAB5_TECLA_CTRL) != 0;
   switch (codigo) {
-    // Enter envia (como no PC); Shift+Enter e linha nova.
+    // Enter sends (as on a PC); Shift+Enter is a new line.
     case TAB5_TECLA_ENTER:
       if (mod & TAB5_TECLA_SHIFT) { inserir(c, "\n", 1); contexto(c); sistema_pedir_redesenho(); return; }
       enviar_rascunho(c); fechar_teclado(c); return;
     case TAB5_TECLA_APAGAR: apagar_antes(c);  sistema_pedir_redesenho(); return;
     case TAB5_TECLA_DEL:    apagar_depois(c); sistema_pedir_redesenho(); return;
-    // Esc limpa o rascunho inteiro (o cursor volta ao comeco).
+    // Esc clears the whole draft (the cursor goes back to the start).
     case TAB5_TECLA_ESC:    c->rascunho[0] = 0; c->cursor = 0; sistema_pedir_redesenho(); return;
     case TAB5_TECLA_ESQUERDA:
       cursor_ajustar(c);
@@ -986,7 +986,7 @@ void conversa_teclar(conversa_t* c, const char* texto, uint8_t codigo, uint8_t m
       if (ctrl) { palavra(c, true); } else { c->cursor = utf8_seguinte(c->rascunho, c->cursor); }
       sistema_pedir_redesenho();
       return;
-    // Ctrl + cima/baixo: comeco/fim do texto de uma vez.
+    // Ctrl + up/down: start/end of the text in one go.
     case TAB5_TECLA_CIMA:
       if (ctrl) { c->cursor = 0; } else { linha_vizinha(c, false); }
       sistema_pedir_redesenho();
@@ -995,14 +995,14 @@ void conversa_teclar(conversa_t* c, const char* texto, uint8_t codigo, uint8_t m
       if (ctrl) { c->cursor = (int)strlen(c->rascunho); } else { linha_vizinha(c, true); }
       sistema_pedir_redesenho();
       return;
-    case TAB5_TECLA_TAB:    return;   // nada a fazer numa mensagem
+    case TAB5_TECLA_TAB:    return;   // nothing to do in a message
     default: break;
   }
-  // Com Ctrl ou Alt e atalho, nao texto: um "Ctrl+c" nao pode virar um "c".
+  // With Ctrl or Alt it is a shortcut, not text: a "Ctrl+c" must not become a "c".
   if (ctrl && texto && (texto[0] == 'v' || texto[0] == 'V')) { colar(c); return; }
   if (mod & (TAB5_TECLA_CTRL | TAB5_TECLA_ALT)) { return; }
-  // Controle nao vira caractere. Uma sequencia acentuada vem com mais de um
-  // byte e entra inteira (ou nao entra) - inserir() nunca corta no meio dela.
+  // Control keys do not become characters. An accented sequence arrives as more
+  // than one byte and goes in whole (or not at all) - inserir() never cuts it in half.
   char limpo[16];
   size_t n = 0;
   for (const char* ch = texto; ch && *ch && n < sizeof(limpo) - 1; ++ch) {

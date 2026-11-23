@@ -1,4 +1,4 @@
-// Servidor web do sistema - ver tab5_web.hpp.
+// System web server - see tab5_web.hpp.
 #include "tab5_web.hpp"
 
 #include <atomic>
@@ -9,7 +9,7 @@
 #include "esp_timer.h"
 #include "freertos/semphr.h"
 #include "lwip/sockets.h"
-#include <unistd.h>   // close (o socket que o httpd entrega no close_fn)
+#include <unistd.h>   // close (the socket httpd hands over in close_fn)
 #include "mbedtls/base64.h"
 #include "app.h"
 #include "notificacao.h"
@@ -22,43 +22,43 @@
 
 static const char* TAG = "web";
 
-#define ROTAS_MAX 12   // por parte
+#define ROTAS_MAX 12   // per part
 
 typedef enum { WEB_PARADO = 0, WEB_SUBINDO, WEB_LIGADO, WEB_PARANDO } estado_t;
 
-// UMA PARTE = um app aberto no servidor. A tabela e trocada pela interface
-// (abrir/fechar), pelo relogio (prazo) e pela parada; o despacho a le na
-// tarefa do httpd. Tudo sob s_trava, e o despacho so COPIA o que precisa
-// (as rotas sao vetores estaticos de quem abriu: o ponteiro vale sempre).
+// ONE PART = one app open on the server. The table is changed by the UI
+// (open/close), by the timer (deadline) and by the stop; dispatch reads it on the
+// httpd task. All under s_trava, and dispatch only COPIES what it needs
+// (the routes are static arrays of whoever opened: the pointer is always valid).
 typedef struct {
-  const char*            dono;      // nullptr = vaga livre
+  const char*            dono;      // nullptr = free slot
   char                   prefixo[16];
   const tab5_web_rota_t* rotas;
   int                    n;
-  uint32_t               ultimo_ms; // ultimo pedido a ESTA parte (o prazo e por parte)
-  uint32_t               ordem;     // quando abriu (a raiz lista nesta ordem)
+  uint32_t               ultimo_ms; // last request to THIS part (the deadline is per part)
+  uint32_t               ordem;     // when it opened (the root lists in this order)
 } parte_t;
 
 static std::atomic<int>       s_estado{WEB_PARADO};
 static httpd_handle_t         s_srv = nullptr;
 static parte_t                s_partes[WEB_PARTES_MAX];
 static uint32_t               s_ordem = 0;
-static const char*            s_ultimo_dono = nullptr;   // o aviso da barra abre este
-static SemaphoreHandle_t      s_trava = nullptr;         // criada no primeiro abrir (heap interno)
+static const char*            s_ultimo_dono = nullptr;   // the status-bar notice opens this one
+static SemaphoreHandle_t      s_trava = nullptr;         // created on the first open (internal heap)
 static char                   s_senha[8];
-static int                    s_erros = 0;          // senhas erradas neste ligar (so a tarefa do httpd)
+static int                    s_erros = 0;          // wrong passwords this session (httpd task only)
 static std::atomic<uint32_t>  s_ultimo_ms{0};
 static char                   s_ultimo_ip[TAB5_REDE_IP_TXT];
 static esp_timer_handle_t     s_relogio = nullptr;
 static int                    s_notif = -1;
-static TaskHandle_t           s_tarefa = nullptr;   // a do httpd (registrada no tab5_donos)
-static char                   s_donos_txt[64];      // "Editor, Mesh": o dono da tarefa no Tarefas
+static TaskHandle_t           s_tarefa = nullptr;   // httpd's (registered in tab5_donos)
+static char                   s_donos_txt[64];      // "Editor, Mesh": the task owner in Tasks
 
-// AS CONEXOES WEBSOCKET abertas: de que parte cada uma e (o despacho dos
-// quadros e o prazo). Sob s_trava.
+// THE OPEN WEBSOCKET CONNECTIONS: which part each belongs to (frame dispatch
+// and the deadline). Under s_trava.
 #define WS_MAX 6
 typedef struct {
-  int         fd;                               // -1 = livre
+  int         fd;                               // -1 = free
   const char* dono;
   esp_err_t (*fn)(httpd_req_t*);
   void      (*fechou)(int fd);
@@ -71,10 +71,10 @@ static void travar(void)    { xSemaphoreTake(s_trava, portMAX_DELAY); }
 static void destravar(void) { xSemaphoreGive(s_trava); }
 
 // ---------------------------------------------------------------------------
-// O PORTEIRO
+// THE GATEKEEPER
 // ---------------------------------------------------------------------------
-// Quem pede, em texto; true = da rede local (a sub-rede do IPv4 do aparelho,
-// ou IPv6 link-local).
+// The requester, as text; true = from the local network (the subnet of the device's
+// IPv4, or IPv6 link-local).
 static bool da_rede_local(httpd_req_t* req, char* ip, size_t n)
 {
   ip[0] = 0;
@@ -91,7 +91,7 @@ static bool da_rede_local(httpd_req_t* req, char* ip, size_t n)
       inet_ntop(AF_INET6, b, ip, n);
       return b[0] == 0xfe && (b[1] & 0xc0) == 0x80;
     }
-    memcpy(&ip4, b + 12, 4);   // IPv4 numa conexao IPv6 (::ffff:a.b.c.d)
+    memcpy(&ip4, b + 12, 4);   // IPv4 over an IPv6 connection (::ffff:a.b.c.d)
   } else {
     return false;
   }
@@ -102,7 +102,7 @@ static bool da_rede_local(httpd_req_t* req, char* ip, size_t n)
   return mascara && (ip4 & mascara) == (meu & mascara);
 }
 
-// O Host e o IP do aparelho (com ou sem :80), ou um IPv6 entre colchetes.
+// The Host is the device's IP (with or without :80), or an IPv6 in brackets.
 static bool host_certo(httpd_req_t* req)
 {
   char h[64];
@@ -117,7 +117,7 @@ static bool host_certo(httpd_req_t* req)
   return tab5_rede_ip(&eu) && eu.conectado && !strcmp(h, eu.ip);
 }
 
-// Comparacao sem atalho: o tempo da resposta nao diz quantas letras acertou.
+// Comparison without shortcut: the response time does not reveal how many letters matched.
 static bool iguais(const char* a, const char* b)
 {
   const size_t na = strlen(a), nb = strlen(b);
@@ -126,7 +126,7 @@ static bool iguais(const char* a, const char* b)
   return d == 0;
 }
 
-// 1 = senha certa, 0 = nao mandou senha, -1 = mandou errada.
+// 1 = correct password, 0 = no password sent, -1 = wrong one sent.
 static int autenticado(httpd_req_t* req)
 {
   char h[96];
@@ -136,7 +136,7 @@ static int autenticado(httpd_req_t* req)
   size_t n = 0;
   if (mbedtls_base64_decode(dec, sizeof(dec) - 1, &n, (const unsigned char*)h + 6, strlen(h + 6)) != 0) { return -1; }
   dec[n] = 0;
-  const char* dp = strchr((const char*)dec, ':');   // "usuario:senha" - o usuario nao importa
+  const char* dp = strchr((const char*)dec, ':');   // "user:password" - the user does not matter
   return dp && iguais(dp + 1, s_senha) ? 1 : -1;
 }
 
@@ -147,16 +147,16 @@ static esp_err_t recusar(httpd_req_t* req, const char* status, const char* msg)
   return httpd_resp_sendstr(req, msg);
 }
 
-// O caminho do pedido, sem a query: "/mesh/api/msgs".
+// The request path, without the query: "/mesh/api/msgs".
 static void caminho(httpd_req_t* req, char* out, size_t n)
 {
   const size_t k = strcspn(req->uri, "?");
   snprintf(out, n, "%.*s", (int)k, req->uri);
 }
 
-// A ROTA DE UM CAMINHO ("/mesh/api/msgs"), sob a trava: a parte aberta com
-// aquele prefixo e a rota relativa com o metodo (e o tipo: WebSocket ou nao).
-// 'so_pasta' = o caminho e so a pasta, sem a barra ("/mesh").
+// THE ROUTE FOR A PATH ("/mesh/api/msgs"), under the lock: the open part with
+// that prefix and the relative route with the method (and the type: WebSocket or not).
+// 'so_pasta' = the path is just the folder, without the slash ("/mesh").
 static const tab5_web_rota_t* achar_rota(const char* c, httpd_method_t metodo, bool ws,
                                          const char** dono, bool* so_pasta)
 {
@@ -166,7 +166,7 @@ static const tab5_web_rota_t* achar_rota(const char* c, httpd_method_t metodo, b
     if (!p->dono) { continue; }
     const size_t k = strlen(p->prefixo);
     if (c[0] != '/' || strncmp(c + 1, p->prefixo, k) != 0) { continue; }
-    const char* resto = c + 1 + k;   // "" , "/" ou "/api/x"
+    const char* resto = c + 1 + k;   // "" , "/" or "/api/x"
     if (!resto[0]) { *so_pasta = true; return nullptr; }
     if (resto[0] != '/') { continue; }
     for (int r = 0; r < p->n; ++r) {
@@ -180,7 +180,7 @@ static const tab5_web_rota_t* achar_rota(const char* c, httpd_method_t metodo, b
   return nullptr;
 }
 
-// Um QUADRO de uma conexao WebSocket ja aceita: vai a rota da parte dela.
+// A FRAME from an already accepted WebSocket connection: goes to its part's route.
 static esp_err_t quadro_ws(httpd_req_t* req, int fd)
 {
   esp_err_t (*fn)(httpd_req_t*) = nullptr;
@@ -193,12 +193,12 @@ static esp_err_t quadro_ws(httpd_req_t* req, int fd)
     }
   }
   destravar();
-  return fn ? fn(req) : ESP_FAIL;   // de ninguem: o servidor fecha
+  return fn ? fn(req) : ESP_FAIL;   // nobody's: the server closes it
 }
 
-// A ORIGEM do pedido e a do proprio Tab5 ("http://<ip>")? E o que segura uma
-// pagina de outro site de abrir um WebSocket aqui com a senha que o navegador
-// guardou (o WebSocket nao leva cabecalho proprio como o X-Tab5).
+// Is the request ORIGIN the Tab5's own ("http://<ip>")? That is what stops a
+// page from another site opening a WebSocket here with the password the browser
+// stored (WebSocket does not carry its own header like X-Tab5).
 static bool origem_certa(httpd_req_t* req)
 {
   char o[80], h[64];
@@ -209,15 +209,15 @@ static bool origem_certa(httpd_req_t* req)
   return !strcmp(o, esperado);
 }
 
-// O APERTO DE MAO do WebSocket: o mesmo porteiro (sem a janela de senha - o
-// navegador ja autenticou na pagina) mais a origem; aceita, a conexao entra
-// na tabela da parte. ESP_FAIL = o servidor recusa e fecha.
+// The WebSocket HANDSHAKE: the same gatekeeper (without the password dialog - the
+// browser already authenticated on the page) plus the origin; once accepted, the
+// connection goes into the part's table. ESP_FAIL = the server refuses and closes.
 static esp_err_t pre_aperto(httpd_req_t* req)
 {
   if (s_estado.load() != WEB_LIGADO) { return ESP_FAIL; }
   char ip[TAB5_REDE_IP_TXT];
   if (!da_rede_local(req, ip, sizeof(ip)) || !host_certo(req) || autenticado(req) <= 0 || !origem_certa(req)) {
-    ESP_LOGW(TAG, "WebSocket recusado (%s)", ip);
+    ESP_LOGW(TAG, "WebSocket refused (%s)", ip);
     return ESP_FAIL;
   }
   char c[160];
@@ -233,16 +233,16 @@ static esp_err_t pre_aperto(httpd_req_t* req)
     aceito = true;
   }
   destravar();
-  if (!aceito) { ESP_LOGW(TAG, "WebSocket %s: %s", c, r ? "sem vaga" : "nenhuma parte aberta com ele"); return ESP_FAIL; }
+  if (!aceito) { ESP_LOGW(TAG, "WebSocket %s: %s", c, r ? "no free slot" : "no open part has it"); return ESP_FAIL; }
   snprintf(s_ultimo_ip, sizeof(s_ultimo_ip), "%s", ip);
   s_ultimo_ms = tab5_agora_ms();
   sistema_avisar(AVISO_WEB);
-  ESP_LOGI(TAG, "WebSocket aberto: %s (%s, fd %d)", c, dono, fd);
+  ESP_LOGI(TAG, "WebSocket open: %s (%s, fd %d)", c, dono, fd);
   return ESP_OK;
 }
 
-// Toda conexao que fecha passa aqui (o httpd chama): a WebSocket sai da
-// tabela e a parte fica sabendo.
+// Every connection that closes comes through here (httpd calls it): a WebSocket leaves
+// the table and the part is told.
 static void ao_fechar_socket(httpd_handle_t, int fd)
 {
   void (*fechou)(int) = nullptr;
@@ -259,25 +259,25 @@ static void ao_fechar_socket(httpd_handle_t, int fd)
 
 static esp_err_t porteiro(httpd_req_t* req)
 {
-  // Conexao WebSocket ja aceita: e um quadro (o porteiro ja passou no aperto de mao).
+  // Already accepted WebSocket connection: this is a frame (the gatekeeper ran at the handshake).
   const int fd = httpd_req_to_sockfd(req);
   if (httpd_ws_get_fd_info(req->handle, fd) == HTTPD_WS_CLIENT_WEBSOCKET) { return quadro_ws(req, fd); }
   if (s_estado.load() != WEB_LIGADO) { return recusar(req, "503 Service Unavailable", "desligado"); }
   char ip[TAB5_REDE_IP_TXT];
   if (!da_rede_local(req, ip, sizeof(ip))) {
-    ESP_LOGW(TAG, "recusado: %s nao e da rede local", ip);
+    ESP_LOGW(TAG, "refused: %s is not on the local network", ip);
     return recusar(req, "403 Forbidden", "local network only");
   }
   if (!host_certo(req)) { return recusar(req, "403 Forbidden", "open it by the Tab5's IP address"); }
   const int a = autenticado(req);
   if (a <= 0) {
     if (a < 0) {
-      // Errou: espera um pouco (a tarefa e uma so - quem tenta adivinhar fica
-      // na fila) e, passando do limite, fecha a porta.
-      ESP_LOGW(TAG, "senha errada de %s (%d)", ip, s_erros + 1);
+      // Wrong: wait a little (there is only one task - whoever tries guessing
+      // waits in the queue) and, past the limit, close the door.
+      ESP_LOGW(TAG, "wrong password from %s (%d)", ip, s_erros + 1);
       vTaskDelay(pdMS_TO_TICKS(400));
       if (++s_erros >= WEB_ERROS_MAX) {
-        ESP_LOGW(TAG, "senhas erradas demais: desligando");
+        ESP_LOGW(TAG, "too many wrong passwords: turning off");
         tab5_web_desligar();
         return recusar(req, "403 Forbidden", "desligado");
       }
@@ -291,8 +291,8 @@ static esp_err_t porteiro(httpd_req_t* req)
   snprintf(s_ultimo_ip, sizeof(s_ultimo_ip), "%s", ip);
   s_ultimo_ms = tab5_agora_ms();
 
-  // O DESPACHO: as rotas da raiz (o portal), ou /<prefixo>/<rota relativa>
-  // da parte aberta.
+  // DISPATCH: the root routes (the portal), or /<prefixo>/<relative route>
+  // of the open part.
   char c[160];
   caminho(req, c, sizeof(c));
   int nr = 0;
@@ -309,7 +309,7 @@ static esp_err_t porteiro(httpd_req_t* req)
   const tab5_web_rota_t* rota = achar_rota(c, (httpd_method_t)req->method, false, &dono, &so_pasta);
   esp_err_t (*fn)(httpd_req_t*) = rota ? rota->fn : nullptr;
   destravar();
-  if (so_pasta) {   // "/mesh" sem a barra: as rotas da pagina sao relativas a pasta
+  if (so_pasta) {   // "/mesh" without the slash: the page routes are relative to the folder
     char l[40];
     snprintf(l, sizeof(l), "%s/", c);
     httpd_resp_set_status(req, "302 Found");
@@ -317,8 +317,8 @@ static esp_err_t porteiro(httpd_req_t* req)
     return httpd_resp_send(req, nullptr, 0);
   }
   if (!fn) {
-    // A PAGINA de um app fechado (ou de nenhum): o portal, que mostra o que ha
-    // e abre com um clique. Chamada de API de parte fechada: 404 de verdade.
+    // The PAGE of a closed app (or of none): the portal, which shows what there is
+    // and opens it with one click. An API call to a closed part: a real 404.
     if (req->method == HTTP_GET && !strstr(c, "/api/") && !strstr(c, "/ws")) {
       httpd_resp_set_status(req, "302 Found");
       httpd_resp_set_hdr(req, "Location", "/");
@@ -331,9 +331,9 @@ static esp_err_t porteiro(httpd_req_t* req)
 }
 
 // ---------------------------------------------------------------------------
-// ABRIR, FECHAR, LIGAR E DESLIGAR
+// OPEN, CLOSE, START AND STOP
 // ---------------------------------------------------------------------------
-// O aviso da barra e o dono da tarefa no Tarefas: os abertos, juntos. Sob a trava.
+// The status-bar notice and the task owner in Tasks: the open ones, together. Under the lock.
 static void publicar(void)
 {
   if (s_notif < 0) {
@@ -357,13 +357,13 @@ static void publicar(void)
   notif_publicar(s_notif, n, NOTIF_INFO, r);
 }
 
-// A cada 15 s: a parte que ninguem pediu nada ha WEB_OCIOSO_MS fecha; o
-// Wi-Fi caiu, desliga tudo.
+// Every 15 s: a part nobody has asked anything of for WEB_OCIOSO_MS closes; if
+// Wi-Fi dropped, turn everything off.
 static void ao_relogio(void*)
 {
   if (s_estado.load() != WEB_LIGADO) { return; }
   if (tab5_wifi_estado() != TAB5_WIFI_CONECTADO) {
-    ESP_LOGI(TAG, "sem Wi-Fi: desligando");
+    ESP_LOGI(TAG, "no Wi-Fi: turning off");
     tab5_web_desligar();
     return;
   }
@@ -373,27 +373,27 @@ static void ao_relogio(void*)
   travar();
   for (int i = 0; i < WEB_PARTES_MAX; ++i) {
     if (!s_partes[i].dono || agora - s_partes[i].ultimo_ms <= WEB_OCIOSO_MS) { continue; }
-    bool conectada = false;   // pagina aberta com WebSocket: e uso, mesmo sem tecla
+    bool conectada = false;   // page open with a WebSocket: that is use, even without keystrokes
     for (int w = 0; w < WS_MAX; ++w) { conectada |= s_ws[w].fd >= 0 && s_ws[w].dono == s_partes[i].dono; }
     if (!conectada) { fechar[nf++] = s_partes[i].dono; }
   }
   destravar();
   for (int i = 0; i < nf; ++i) {
-    ESP_LOGI(TAG, "%s sem uso: fechando a parte dele", fechar[i]);
+    ESP_LOGI(TAG, "%s unused: closing its part", fechar[i]);
     tab5_web_fechar(fechar[i]);
   }
 }
 
 static void sortear_senha(void)
 {
-  static const char LETRAS[] = "abcdefghjkmnpqrstuvwxyz23456789";   // sem i, l, o, 0, 1
+  static const char LETRAS[] = "abcdefghjkmnpqrstuvwxyz23456789";   // no i, l, o, 0, 1
   for (int i = 0; i < 6; ++i) { s_senha[i] = LETRAS[esp_random() % (sizeof(LETRAS) - 1)]; }
   s_senha[6] = 0;
 }
 
-// Sobe o httpd: UM manipulador para cada metodo, que pega tudo ("/*") - o
-// despacho e do porteiro, pela tabela de partes. Assim abrir e fechar uma
-// parte nao mexe no httpd rodando.
+// Starts httpd: ONE handler per method, catching everything ("/*") - dispatch
+// is done by the gatekeeper, via the parts table. That way opening and closing a
+// part does not touch the running httpd.
 static bool subir(void)
 {
   s_erros = 0;
@@ -402,14 +402,14 @@ static bool subir(void)
   sortear_senha();
   httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
   cfg.stack_size       = WEB_PILHA;
-  cfg.task_priority    = 3;            // abaixo da interface (4)
+  cfg.task_priority    = 3;            // below the UI (4)
   cfg.max_uri_handlers = 2;
-  cfg.max_open_sockets = 6;            // CONFIG_LWIP_MAX_SOCKETS (16) menos as 3 do httpd, com folga
-  cfg.close_fn         = ao_fechar_socket;   // a tabela das WebSocket
-  cfg.lru_purge_enable = true;         // o navegador abre varias e larga abertas
+  cfg.max_open_sockets = 6;            // CONFIG_LWIP_MAX_SOCKETS (16) minus httpd's 3, with headroom
+  cfg.close_fn         = ao_fechar_socket;   // the WebSocket table
+  cfg.lru_purge_enable = true;         // the browser opens several and leaves them open
   cfg.uri_match_fn     = httpd_uri_match_wildcard;
   if (httpd_start(&s_srv, &cfg) != ESP_OK) {
-    ESP_LOGE(TAG, "o httpd nao subiu");
+    ESP_LOGE(TAG, "httpd did not start");
     s_srv = nullptr;
     return false;
   }
@@ -419,15 +419,15 @@ static bool subir(void)
     u.uri     = "/*";
     u.method  = m;
     u.handler = porteiro;
-    // O GET "pega tudo" e tambem a porta do WebSocket: pedido normal vai ao
-    // porteiro; pedido de upgrade passa antes pelo pre_aperto.
+    // The catch-all GET is also the WebSocket door: a normal request goes to the
+    // gatekeeper; an upgrade request goes through pre_aperto first.
     u.is_websocket = (m == HTTP_GET);
     u.ws_pre_handshake_cb = (m == HTTP_GET) ? pre_aperto : nullptr;
     httpd_register_uri_handler(s_srv, &u);
   }
-  // NO TAREFAS, como os donos rodando de fundo ("APPS EM FUNDO: Editor,
-  // Mesh"), e nao como uma tarefa anonima do sistema. O httpd nao devolve o
-  // handle; a tarefa dele se chama "httpd".
+  // IN TASKS, like the owners running in the background ("APPS EM FUNDO: Editor,
+  // Mesh"), and not as an anonymous system task. httpd does not return the
+  // handle; its task is called "httpd".
   s_tarefa = xTaskGetHandle("httpd");
   if (!s_relogio) {
     const esp_timer_create_args_t a = { .callback = ao_relogio, .arg = nullptr,
@@ -445,8 +445,8 @@ bool tab5_web_abrir(const char* dono, const char* prefixo, const tab5_web_rota_t
   if (!dono || !prefixo || n > ROTAS_MAX || tab5_wifi_estado() != TAB5_WIFI_CONECTADO) { return false; }
   if (!s_trava) { s_trava = xSemaphoreCreateMutex(); }
   if (!s_trava) { return false; }
-  // O servidor: de pe, ou sobe agora. Parando (a ultima parte acabou de
-  // fechar): nao da para pegar carona - tente de novo em instantes.
+  // The server: up, or starts now. Stopping (the last part has just
+  // closed): cannot hitch a ride - try again in a moment.
   int esperado = WEB_PARADO;
   if (s_estado.compare_exchange_strong(esperado, WEB_SUBINDO)) {
     if (!subir()) { s_estado = WEB_PARADO; return false; }
@@ -469,17 +469,17 @@ bool tab5_web_abrir(const char* dono, const char* prefixo, const tab5_web_rota_t
     publicar();
   }
   destravar();
-  if (!p) { ESP_LOGW(TAG, "sem vaga para %s (%d partes)", dono, WEB_PARTES_MAX); return false; }
+  if (!p) { ESP_LOGW(TAG, "no free slot for %s (%d parts)", dono, WEB_PARTES_MAX); return false; }
   sistema_avisar(AVISO_WEB);
-  ESP_LOGI(TAG, "aberto: %s em /%s/ (%d rotas)", dono, prefixo, n);
+  ESP_LOGI(TAG, "opened: %s at /%s/ (%d routes)", dono, prefixo, n);
   return true;
 }
 
 static void parar(void*)
 {
   if (s_relogio) { esp_timer_stop(s_relogio); }
-  if (s_tarefa) { tab5_dono_esquecer(s_tarefa); s_tarefa = nullptr; }   // antes de ela morrer
-  if (s_srv) { httpd_stop(s_srv); s_srv = nullptr; }   // espera o pedido em curso
+  if (s_tarefa) { tab5_dono_esquecer(s_tarefa); s_tarefa = nullptr; }   // before it dies
+  if (s_srv) { httpd_stop(s_srv); s_srv = nullptr; }   // waits for the request in progress
   s_senha[0] = 0;
   travar();
   memset(s_partes, 0, sizeof(s_partes));
@@ -489,19 +489,19 @@ static void parar(void*)
   sistema_recurso(RECURSO_REDE, "servidor web", false);
   s_estado = WEB_PARADO;
   sistema_avisar(AVISO_WEB);
-  ESP_LOGI(TAG, "desligado");
+  ESP_LOGI(TAG, "turned off");
 }
 
 void tab5_web_desligar(void)
 {
   int esperado = WEB_LIGADO;
   if (!s_estado.compare_exchange_strong(esperado, WEB_PARANDO)) { return; }
-  // De dentro de um pedido (senha errada demais) parar ali seria esperar a si
-  // mesmo; de qualquer outra tarefa, nao segurar quem chamou. Numa vaga.
+  // From inside a request (too many wrong passwords) stopping there would mean waiting
+  // for itself; from any other task, do not hold up the caller. On a pool slot.
   if (!pool_criar(nullptr, parar, nullptr, "web_parar", 3072, 3)) { parar(nullptr); }
 }
 
-// Derruba as WebSocket de 'dono' (nullptr = todas). O httpd fecha na tarefa dele.
+// Drops the WebSockets of 'dono' (nullptr = all). httpd closes them on its task.
 static void fechar_ws_de(const char* dono)
 {
   int fds[WS_MAX], n = 0;
@@ -527,8 +527,8 @@ void tab5_web_fechar(const char* dono)
   destravar();
   if (!achou) { return; }
   fechar_ws_de(dono);
-  ESP_LOGI(TAG, "fechado: %s", dono);
-  if (!restam) { tab5_web_desligar(); return; }   // a ultima: o servidor cai
+  ESP_LOGI(TAG, "closed: %s", dono);
+  if (!restam) { tab5_web_desligar(); return; }   // the last one: the server goes down
   sistema_avisar(AVISO_WEB);
 }
 
@@ -549,7 +549,7 @@ int tab5_web_abertos(const char** out, int max)
   if (!s_trava || !tab5_web_ligado()) { return 0; }
   int n = 0;
   travar();
-  // Na ordem em que abriram.
+  // In the order they opened.
   for (uint32_t o = 1; o <= s_ordem && n < max; ++o) {
     for (int i = 0; i < WEB_PARTES_MAX; ++i) { if (s_partes[i].dono && s_partes[i].ordem == o) { out[n++] = s_partes[i].dono; } }
   }
@@ -594,7 +594,7 @@ void tab5_web_ultimo(char* quem, size_t n, uint32_t* quando_ms)
 }
 
 // ---------------------------------------------------------------------------
-// PARA AS ROTAS
+// FOR THE ROUTES
 // ---------------------------------------------------------------------------
 bool tab5_web_ws_enviar(int fd, const void* d, size_t n, bool texto)
 {
@@ -605,8 +605,8 @@ bool tab5_web_ws_enviar(int fd, const void* d, size_t n, bool texto)
   q.type    = texto ? HTTPD_WS_TYPE_TEXT : HTTPD_WS_TYPE_BINARY;
   q.payload = (uint8_t*)d;
   q.len     = n;
-  // Da propria tarefa do servidor (respondendo a um quadro), o send_data
-  // esperaria por ela mesma: ai manda direto no socket.
+  // From the server's own task (answering a frame), send_data would
+  // wait for itself: in that case send straight to the socket.
   if (s_tarefa && xTaskGetCurrentTaskHandle() == s_tarefa) { return httpd_ws_send_frame_async(srv, fd, &q) == ESP_OK; }
   return httpd_ws_send_data(srv, fd, &q) == ESP_OK;
 }

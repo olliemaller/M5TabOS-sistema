@@ -1,99 +1,99 @@
-// TOCADOR DE VIDEO DO SISTEMA - toca do cartao (ou do pendrive):
-//   - .mp4/.m4v/.mov com H.264 (o video do celular e da internet), com o som
-//     AAC de dentro do arquivo;
-//   - .avi MJPEG, com o som de um .mp3 de MESMO NOME ao lado
+// SYSTEM VIDEO PLAYER - plays from the SD card (or the USB flash drive):
+//   - .mp4/.m4v/.mov with H.264 (phone and internet video), with the AAC
+//     audio inside the file;
+//   - .avi MJPEG, with the audio from a .mp3 of the SAME NAME next to it
 //     ("filme.avi" + "filme.mp3").
 //
-// QUEM USA E SO INTERFACE. O app Video (main/app_video) lista, pede para
-// abrir, mostra o quadro e os botoes. Nenhum deles le o cartao, decodifica ou
-// toca som: o servico faz tudo, numa tarefa propria ("video").
+// USERS ARE UI ONLY. The Video app (main/app_video) lists, asks to open,
+// shows the frame and the buttons. None of them reads the card, decodes or
+// plays sound: the service does everything, in its own task ("video").
 //
-// COMO FUNCIONA
-//   - ABRIR e rapido (so sobe a tarefa). A tarefa abre o arquivo pelo leitor
-//     de tab5_volumes, le o indice do AVI (idx1; sem ele, varre o 'movi'),
-//     liga o decodificador JPEG POR HARDWARE do P4 e, se houver o .mp3, pede
-//     ao tocador de musica (services/tab5_musica) que o toque.
-//   - O SOM MANDA NO TEMPO. O relogio do video e a posicao do som no
-//     alto-falante (tab5_musica_estado.pos_ms): o quadro mostrado e o que
-//     corresponde a ela. Se a decodificacao atrasa, PULA quadros (conta em
-//     'perdidos') em vez de atrasar o resto. Sem .mp3, o relogio e o
-//     esp_timer; se o som acaba antes do video, o video segue sozinho.
-//   - O QUADRO PRONTO e RGB565 em dois buffers (duplo buffer). Quem mostra
-//     recebe o aviso AVISO_VIDEO (quadro novo, pausa, fim, erro) e pede o
-//     quadro; o app nao precisa de relogio.
-//   - ESCALAR E COPIAR PARA A TELA e do servico (tab5_video_pintar, pelo PPA):
-//     o app so diz em que retangulo da superficie de DMA (sistema_superficie)
-//     o video deve aparecer.
+// HOW IT WORKS
+//   - OPENING is quick (it only starts the task). The task opens the file through
+//     the tab5_volumes reader, reads the AVI index (idx1; without it, scans 'movi'),
+//     starts the P4's HARDWARE JPEG decoder and, if the .mp3 exists, asks the
+//     music player (services/tab5_musica) to play it.
+//   - THE AUDIO RULES THE CLOCK. The video clock is the audio position at the
+//     speaker (tab5_musica_estado.pos_ms): the frame shown is the one that
+//     matches it. If decoding falls behind, it SKIPS frames (counted in
+//     'perdidos') instead of delaying the rest. Without a .mp3, the clock is
+//     esp_timer; if the audio ends before the video, the video carries on alone.
+//   - THE READY FRAME is RGB565 in two buffers (double buffering). The displayer
+//     receives the AVISO_VIDEO notice (new frame, pause, end, error) and asks for
+//     the frame; the app needs no clock.
+//   - SCALING AND COPYING TO THE SCREEN is the service's job (tab5_video_pintar, via
+//     the PPA): the app only says in which rectangle of the DMA surface
+//     (sistema_superficie) the video should appear.
 //
-// MP4: o decodificador H.264 e da CPU (services/tab5_h264): 360p fluido,
-// 720p e 1080p aos pedacos (a politica de atraso pula quadros para o video
-// nunca se atrasar do som). Um 1080p com muitos quadros de referencia nao
-// cabe na PSRAM (erro "pesado demais para a memoria"). Ver "O MP4" no .cpp.
+// MP4: the H.264 decoder runs on the CPU (services/tab5_h264): 360p smooth,
+// 720p and 1080p choppy (the lateness policy skips frames so the video never
+// falls behind the audio). A 1080p with many reference frames does not fit
+// in PSRAM (error "too heavy for memory"). See "O MP4" (THE MP4) in the .cpp.
 //
-// LIMITES DO AVI: so MJPEG (fccHandler 'MJPG'); quadro ate TAB5_VIDEO_L_MAX x
-// TAB5_VIDEO_A_MAX; o primeiro segmento RIFF (AVI OpenDML maior que 1 GB toca
-// so o primeiro). O .avi bem feito (idx1) abre na hora; sem indice, a varredura
-// le o arquivo todo (segundos a minutos).
+// AVI LIMITS: MJPEG only (fccHandler 'MJPG'); frames up to TAB5_VIDEO_L_MAX x
+// TAB5_VIDEO_A_MAX; the first RIFF segment (an OpenDML AVI larger than 1 GB plays
+// only the first). A well-made .avi (idx1) opens instantly; without an index, the
+// scan reads the whole file (seconds to minutes).
 //
-// TAREFAS: tudo daqui pode ser chamado de qualquer tarefa (interface, console).
-// Os controles so marcam um pedido; quem atende e a tarefa do video.
+// TASKS: everything here can be called from any task (UI, console).
+// The controls only flag a request; the video task is the one that handles it.
 #pragma once
 
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
 
-#define TAB5_VIDEO_L_MAX        1920          // maior largura aceita (pixels)
-#define TAB5_VIDEO_A_MAX        1088          // maior altura aceita (pixels)
-#define TAB5_VIDEO_QUADRO_MAX   (2u << 20)    // maior quadro JPEG aceito (bytes); maior que isso repete o anterior
-#define TAB5_VIDEO_QUADROS_MAX  1000000u      // quadros na tabela (8 bytes cada, na PSRAM)
+#define TAB5_VIDEO_L_MAX        1920          // largest accepted width (pixels)
+#define TAB5_VIDEO_A_MAX        1088          // largest accepted height (pixels)
+#define TAB5_VIDEO_QUADRO_MAX   (2u << 20)    // largest accepted JPEG frame (bytes); anything larger repeats the previous one
+#define TAB5_VIDEO_QUADROS_MAX  1000000u      // frames in the table (8 bytes each, in PSRAM)
 
-// As extensoes que o tocador abre, no formato do filtro de tab5_arq_listar.
+// The extensions the player opens, in the tab5_arq_listar filter format.
 #define TAB5_VIDEO_EXTENSOES    ".avi;.mp4;.m4v;.mov"
 
-// A extensao e uma das de cima (maiuscula ou minuscula)? Nao toca no disco.
+// Is the extension one of the above (upper or lower case)? Does not touch the disk.
 bool tab5_video_suportado(const char* nome);
 
-// ABRE 'caminho' (absoluto: "/sdcard/Videos/filme.mp4") e comeca a tocar, com
-// o som de dentro (MP4) ou de "filme.mp3" na mesma pasta (AVI). Fecha o que
-// estava aberto. false = extensao que nao toca ou sem memoria; um arquivo que
-// nao abre ou nao e de um formato aceito aparece depois em
+// OPENS 'caminho' (absolute: "/sdcard/Videos/filme.mp4") and starts playing, with
+// the audio inside (MP4) or from "filme.mp3" in the same folder (AVI). Closes
+// whatever was open. false = an extension it does not play or out of memory; a file
+// that does not open or is not in an accepted format shows up later in
 // tab5_video_estado().erro.
 bool tab5_video_abrir(const char* caminho);
 
-void tab5_video_pausar_tocar(void);   // pausa; no fim do video, toca de novo do comeco
-void tab5_video_ir_ms(uint32_t ms);   // vai para o ponto (o som vai junto)
-void tab5_video_fechar(void);         // para tudo e solta o disco e a memoria; para o som
+void tab5_video_pausar_tocar(void);   // pause; at the end of the video, plays again from the start
+void tab5_video_ir_ms(uint32_t ms);   // seeks to the point (the audio follows)
+void tab5_video_fechar(void);         // stops everything and releases the disk and memory; stops the audio
 
 typedef struct {
-  bool     aberto;      // ha um video aberto (inclusive abrindo ou com erro)
-  bool     tocando;     // false = pausado, no fim ou com erro
-  bool     com_som;     // o relogio e o do .mp3
-  bool     fim;         // chegou ao fim
-  bool     erro;        // nao deu (erro_txt diz por que)
-  uint32_t pos_ms;      // onde esta
-  uint32_t dur_ms;      // quanto dura (0 = ainda abrindo)
-  uint32_t quadros;     // quadros no arquivo
-  uint32_t mostrados;   // quadros decodificados e publicados
-  uint32_t perdidos;    // quadros pulados porque o relogio ja passou deles
-  int      l, a;        // tamanho do quadro (0 = ainda abrindo)
-  float    fps;         // quadros mostrados por segundo (ultimo segundo)
-  char     nome[64];    // nome do arquivo, sem a extensao
+  bool     aberto;      // a video is open (including opening or with an error)
+  bool     tocando;     // false = paused, at the end or with an error
+  bool     com_som;     // the clock is the .mp3's
+  bool     fim;         // reached the end
+  bool     erro;        // it failed (erro_txt says why)
+  uint32_t pos_ms;      // where it is
+  uint32_t dur_ms;      // how long it lasts (0 = still opening)
+  uint32_t quadros;     // frames in the file
+  uint32_t mostrados;   // frames decoded and published
+  uint32_t perdidos;    // frames skipped because the clock had already passed them
+  int      l, a;        // frame size (0 = still opening)
+  float    fps;         // frames shown per second (last second)
+  char     nome[64];    // file name, without the extension
   char     erro_txt[64];
 } tab5_video_estado_t;
 void tab5_video_estado(tab5_video_estado_t* e);
 
-// O QUADRO PRONTO MAIS NOVO (RGB565 do painel). 'passo' = pixels por linha do
-// buffer (a largura arredondada para 16); a imagem util e l x a. false = nao ha
-// quadro novo desde o ultimo pegar. O buffer fica do chamador ate
-// tab5_video_soltar_quadro() (um por vez).
+// THE NEWEST READY FRAME (panel RGB565). 'passo' = pixels per line of the
+// buffer (the width rounded up to 16); the useful image is l x a. false = no
+// new frame since the last take. The buffer belongs to the caller until
+// tab5_video_soltar_quadro() (one at a time).
 bool tab5_video_pegar_quadro(const uint16_t** px, int* l, int* a, int* passo);
 void tab5_video_soltar_quadro(void);
 
-// ESCALA o quadro para caber no retangulo (x, y, l, a) de uma superficie RGB565
-// 'pic_l' x 'pic_a' (sistema_superficie) - mantendo a proporcao e centrado,
-// pelo PPA, sem a CPU - e deixa preto o resto do retangulo. 'so_se_novo' =
-// false repinta o ultimo quadro (voltou do repouso, a area foi limpa). Chamar
-// da tarefa de interface. true = pintou (avise sistema_superficie_mudou).
+// SCALES the frame to fit the rectangle (x, y, l, a) of an RGB565 surface
+// 'pic_l' x 'pic_a' (sistema_superficie) - keeping the aspect ratio and centred,
+// via the PPA, without the CPU - and blacks out the rest of the rectangle.
+// 'so_se_novo' = false repaints the last frame (back from idle, the area was
+// cleared). Call from the UI task. true = painted (notify sistema_superficie_mudou).
 bool tab5_video_pintar(void* destino, size_t destino_bytes, int pic_l, int pic_a,
                        int x, int y, int l, int a, bool so_se_novo);

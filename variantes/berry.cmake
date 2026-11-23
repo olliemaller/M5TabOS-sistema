@@ -1,6 +1,6 @@
-# menu: apps do sistema + apps Berry (.be no cartao)
-# VARIANTE BERRY - os apps do sistema em C mais apps em Berry (.be no cartao,
-# instalados sem compilar - ver docs/BERRY.md).
+# menu: system apps + Berry apps (.be on the SD card)
+# BERRY VARIANT - the system apps in C plus apps in Berry (.be on the SD card,
+# installed without compiling - see docs/BERRY.md).
 #     ./gravar.sh berry
 set(M5_BERRY ON)
 set(M5_SO_SISTEMA ON)

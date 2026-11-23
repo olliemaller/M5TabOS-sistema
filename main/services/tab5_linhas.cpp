@@ -4,16 +4,16 @@
 #include "esp_heap_caps.h"
 #include <cstring>
 
-// Quanto pedir ao leitor por vez. O leitor ja guarda blocos de 64 KB; este
-// pedaco so evita uma chamada por byte.
+// How much to ask the reader for at a time. The reader already keeps 64 KB blocks; this
+// chunk just avoids one call per byte.
 #define LINHAS_BLOCO 1024
 
 struct tab5_linhas {
   tab5_leitor_t* leitor;
   char           buf[LINHAS_BLOCO];
-  int            pos;    // proximo byte de buf a entregar
-  int            n;      // bytes validos em buf
-  bool           fim;    // o leitor nao tem mais nada
+  int            pos;    // next byte of buf to hand over
+  int            n;      // valid bytes in buf
+  bool           fim;    // the reader has nothing more
 };
 
 tab5_linhas_t* tab5_linhas_abrir(const char* caminho)
@@ -26,7 +26,7 @@ tab5_linhas_t* tab5_linhas_abrir(const char* caminho)
   return l;
 }
 
-// Proximo byte do arquivo, ou -1 no fim.
+// Next byte of the file, or -1 at the end.
 static int proximo_byte(tab5_linhas_t* l)
 {
   if (l->pos >= l->n) {
@@ -50,17 +50,17 @@ bool tab5_linhas_proxima(tab5_linhas_t* l, char* out, size_t tam, bool* cortada)
     leu_algo = true;
     if (c == '\n') { break; }
     if (c == '\r') { continue; }
-    if (k + 1 < tam) { out[k++] = (char)c; }   // alem do limite: descarta o resto da linha
+    if (k + 1 < tam) { out[k++] = (char)c; }   // beyond the limit: discards the rest of the line
     else if (cortada) { *cortada = true; }
   }
   out[k] = '\0';
-  return leu_algo;   // a ultima linha sem '\n' tambem conta
+  return leu_algo;   // the last line without '\n' counts too
 }
 
 bool tab5_linhas_ir(tab5_linhas_t* l, uint64_t pos)
 {
   if (!l || !tab5_leitor_ir(l->leitor, pos)) { return false; }
-  l->pos = 0;   // o pedaco guardado e do lugar antigo: descarta
+  l->pos = 0;   // the stored chunk is from the old position: discard it
   l->n = 0;
   l->fim = false;
   return true;
@@ -68,7 +68,7 @@ bool tab5_linhas_ir(tab5_linhas_t* l, uint64_t pos)
 
 uint64_t tab5_linhas_pos(const tab5_linhas_t* l)
 {
-  // O leitor ja andou ate o fim do pedaco; recua o que ainda nao foi entregue.
+  // The reader has already moved to the end of the chunk; step back over what hasn't been handed over yet.
   return l ? tab5_leitor_pos(l->leitor) - (uint64_t)(l->n - l->pos) : 0;
 }
 

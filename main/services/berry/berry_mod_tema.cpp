@@ -1,35 +1,35 @@
-// Modulo Berry 'tema' - as cores e medidas do tema central (tab5_tema.hpp)
-// para os apps em Berry. Sao so constantes: o script escreve tema.FUNDO em vez
-// de um numero de cor, e acompanha sozinho quando a paleta do sistema mudar.
+// Berry module 'tema' - the colours and measurements of the central theme (tab5_tema.hpp)
+// for Berry apps. They are only constants: the script writes tema.FUNDO instead
+// of a colour number, and follows along by itself when the system palette changes.
 //
 //   tela.limpar(tema.FUNDO)
 //   tela.arredondado(x, y, l, a, tema.RAIO_M, tema.SUPERFICIE)
 //
-// Ver berry_apps.cpp (o registro) e berry_interno.hpp (membro_t).
+// See berry_apps.cpp (the registration) and berry_interno.hpp (membro_t).
 
 #include "tab5_tema.hpp"
 #include "berry_interno.hpp"
 
 const membro_t BERRY_MOD_TEMA[] = {
-  // superficies
+  // surfaces
   { "FUNDO", nullptr, TEMA_FUNDO },
   { "SUPERFICIE", nullptr, TEMA_SUPERFICIE },
   { "SUPERFICIE_ALTA", nullptr, TEMA_SUPERFICIE_ALTA },
   { "LINHA", nullptr, TEMA_LINHA },
-  // texto
+  // text
   { "TEXTO", nullptr, TEMA_TEXTO },
   { "TEXTO_2", nullptr, TEMA_TEXTO_2 },
   { "TEXTO_3", nullptr, TEMA_TEXTO_3 },
-  // destaque
+  // accent
   { "DESTAQUE", nullptr, TEMA_DESTAQUE },
   { "DESTAQUE_SUAVE", nullptr, TEMA_DESTAQUE_SUAVE },
   { "SOBRE_DESTAQUE", nullptr, TEMA_SOBRE_DESTAQUE },
-  // estados
+  // states
   { "SUCESSO", nullptr, TEMA_SUCESSO },
   { "ALERTA", nullptr, TEMA_ALERTA },
   { "PERIGO", nullptr, TEMA_PERIGO },
   { "INFO", nullptr, TEMA_INFO },
-  // cores de app
+  // app colours
   { "APP_AZUL", nullptr, TEMA_APP_AZUL },
   { "APP_CIANO", nullptr, TEMA_APP_CIANO },
   { "APP_VERDE", nullptr, TEMA_APP_VERDE },
@@ -40,7 +40,7 @@ const membro_t BERRY_MOD_TEMA[] = {
   { "APP_ROSA", nullptr, TEMA_APP_ROSA },
   { "APP_ROXO", nullptr, TEMA_APP_ROXO },
   { "APP_GRAFITE", nullptr, TEMA_APP_GRAFITE },
-  // cantos, espacos e letras
+  // corners, spacing and lettering
   { "RAIO_P", nullptr, TEMA_RAIO_P },
   { "RAIO_M", nullptr, TEMA_RAIO_M },
   { "RAIO_G", nullptr, TEMA_RAIO_G },

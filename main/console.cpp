@@ -17,35 +17,35 @@
 
 static const char *TAG = "console";
 
-// CEDE A CPU NAS LISTAGENS LONGAS. O console tem prioridade acima da IDLE, e
-// imprimir uma lista grande sem nunca bloquear prende o nucleo: com ~200 nos
-// do Mesh vindos pelo MQTT, o 'mesh' segurou o nucleo 0 por mais de 5 s e o
-// watchdog reclamou da IDLE0. Um tick a cada 8 itens nao se nota na tela e
-// deixa a IDLE (e quem mais estiver esperando) rodar.
+// YIELD THE CPU DURING LONG LISTINGS. The console has priority above IDLE, and
+// printing a long list without ever blocking holds the core: with ~200 Mesh
+// nodes coming via MQTT, 'mesh' held core 0 for more than 5 s and the
+// watchdog complained about IDLE0. One tick every 8 items is not noticeable on screen and
+// lets IDLE (and whoever else is waiting) run.
 void ceder(int i)
 {
   if ((i & 7) == 7) { fflush(stdout); vTaskDelay(1); }
 }
 
 // ---------------------------------------------------------------------------
-// Comandos dos apps
+// App commands
 // ---------------------------------------------------------------------------
-// A ideia: o que o app mostra na tela, o console mostra em texto. Nao e
-// duplicacao - e o mesmo dado por dois caminhos, e o do console e o unico que
-// funciona com o aparelho na bancada, sem ninguem olhando para a tela.
+// The idea: what the app shows on screen, the console shows as text. It is not
+// duplication - it is the same data by two paths, and the console's is the only one that
+// works with the device on the bench, with nobody looking at the screen.
 
 
 // ---------------------------------------------------------------------------
-// SESSAO (console.hpp): quem digita - a serial ou o Terminal na tela. As
-// duas rodam AO MESMO TEMPO (um ping longo no Terminal nao trava a serial),
-// cada uma na sua tarefa: a sessao e achada pela tarefa que pergunta.
+// SESSION (console.hpp): who is typing - the serial port or the Terminal on screen. The
+// two run AT THE SAME TIME (a long ping in the Terminal does not lock the serial port),
+// each on its own task: the session is found from the task asking.
 // ---------------------------------------------------------------------------
-// A serial pergunta lendo a propria porta: quem roda o comando e a tarefa do
-// console, a mesma que le os bytes. O que chegou ate o prazo fica em
-// s_ser_linha para a proxima chamada (o shell do ssh pergunta em fatias).
+// The serial port asks by reading its own port: whoever runs the command is the
+// console task, the same one that reads the bytes. What arrived by the deadline stays in
+// s_ser_linha for the next call (the ssh shell asks in slices).
 static char   s_ser_linha[192];
 static size_t s_ser_n = 0;
-static bool   s_ser_perguntou = false;   // a pergunta desta linha ja saiu
+static bool   s_ser_perguntou = false;   // the question for this line has already gone out
 
 static int serial_ler_linha(const char* pergunta, char* out, size_t n, bool oculto, uint32_t espera_ms)
 {
@@ -66,7 +66,7 @@ static int serial_ler_linha(const char* pergunta, char* out, size_t n, bool ocul
       printf("\n");
       s_ser_linha[s_ser_n] = 0;
       snprintf(out, n, "%s", s_ser_linha);
-      memset(s_ser_linha, 0, sizeof(s_ser_linha));   // pode ser uma senha
+      memset(s_ser_linha, 0, sizeof(s_ser_linha));   // it may be a password
       s_ser_n = 0;
       s_ser_perguntou = false;
       return 1;
@@ -86,7 +86,7 @@ static console_sessao_t s_serial = { "/sdcard", nullptr, serial_ler_linha };
 static struct { TaskHandle_t t; console_sessao_t* s; } s_ativas[SESSOES_MAX];
 static portMUX_TYPE s_ativas_mux = portMUX_INITIALIZER_UNLOCKED;
 
-// A sessao da tarefa que pergunta; fora de console_executar(), a da serial.
+// The session of the task asking; outside console_executar(), the serial one.
 console_sessao_t* sessao(void)
 {
   const TaskHandle_t eu = xTaskGetCurrentTaskHandle();
@@ -106,9 +106,9 @@ int console_ler_linha(const char* pergunta, char* out, size_t n, bool oculto, ui
   return s->ler_linha(pergunta, out, n, oculto, espera_ms);
 }
 
-// Caminho do jeito do shell: absoluto como veio, relativo a partir da pasta
-// atual da sessao ("/sdcard" no comeco), com "." e ".." resolvidos. Poupa
-// digitar o prefixo em todo comando de arquivo ('ler apps/Sistema/x.txt').
+// Shell-style path: absolute as given, relative from the session's current
+// folder ("/sdcard" at the start), with "." and ".." resolved. Saves
+// typing the prefix on every file command ('ler apps/Sistema/x.txt').
 void resolver(const char* c, char* out, size_t n)
 {
   char tmp[TAB5_ARQ_CAMINHO_MAX];
@@ -134,18 +134,18 @@ const char* caminho_sd(const char* c, char* buf, size_t n)
 
 
 // ===========================================================================
-// OS COMANDOS, EM TABELA
+// THE COMMANDS, IN A TABLE
 // ===========================================================================
-// Cada comando e uma linha da tabela COMANDOS (mais abaixo): nome, grupo, uma
-// frase de resumo, as formas de chamar e um paragrafo de para que serve. O
-// 'help' e gerado dela - e por isso nao tem como ficar desatualizado: comando
-// que nao esta na tabela nao roda, e o que esta aparece na ajuda.
+// Each command is a row of the COMANDOS table (further down): name, group, a
+// summary sentence, the ways to call it and a paragraph on what it is for. The
+// 'help' is generated from it - which is why it cannot go out of date: a command
+// not in the table does not run, and one that is appears in the help.
 //
-// A versao anterior era um if/else de 40 ramos e um texto de ajuda escrito a
-// parte. Os dois andavam separados: comando sem linha na ajuda, linha no grupo
-// errado, subcomando que so existia no fonte.
+// The previous version was a 40-branch if/else and a help text written
+// separately. The two drifted apart: commands with no help line, a line in the wrong
+// group, a subcommand that only existed in the source.
 
-// argv[de..] numa frase so, com um espaco entre as palavras.
+// argv[de..] as a single sentence, with a space between the words.
 void juntar(char* out, size_t n, int argc, char** argv, int de)
 {
   out[0] = 0;
@@ -157,7 +157,7 @@ void juntar(char* out, size_t n, int argc, char** argv, int de)
 
 
 // ---------------------------------------------------------------------------
-// AJUDA
+// HELP
 // ---------------------------------------------------------------------------
 
 typedef enum { G_SISTEMA, G_SHELL, G_TELA, G_CARTAO, G_REDE, G_MESH, G_BANCADA, G_TESTES, G_APPS, G_N, G_OCULTO } grupo_t;
@@ -187,27 +187,27 @@ static const char* const GRUPO_TITULO[G_N] = {
 
 typedef struct {
   const char* nome;
-  const char* apelidos;   // separados por espaco; aceitos, mas fora da lista
+  const char* apelidos;   // space-separated; accepted, but not in the list
   grupo_t     grupo;
-  const char* resumo;     // a linha do 'help'
-  const char* uso;        // uma forma por linha: "forma\to que faz"
-  const char* detalhe;    // para que serve e cuidados - so no 'help <comando>'
+  const char* resumo;     // the 'help' line
+  const char* uso;        // one form per line: "form\twhat it does"
+  const char* detalhe;    // what it is for and caveats - only in 'help <command>'
   void (*fn)(int argc, char** argv);
-  const char* exemplos;   // linhas prontas para copiar: "linha\to que faz"
+  const char* exemplos;   // ready-to-copy lines: "line\twhat it does"
 } comando_t;
 
 static void c_ajuda(int argc, char** argv);
 static void imprimir_colunas(const char* texto, const char* prefixo, bool traduzir = false);
 
 // ---------------------------------------------------------------------------
-// COMANDOS DOS APPS - 'app <app> <comando> ...' (app_comando_t, kernel/app.h)
+// APP COMMANDS - 'app <app> <command> ...' (app_comando_t, kernel/app.h)
 // ---------------------------------------------------------------------------
-// O nome do app na frente e obrigatorio: um app nunca sombreia um comando do
-// sistema nem o de outro app, e o 'help' mostra de quem e cada um.
-
-// A proxima letra, minuscula e SEM ACENTO: o console da serial so passa
-// ASCII (o "ú" de "Música" nem chega), entao "musica" tem que achar "Música".
-// Latin-1 em UTF-8 (C3 80..C3 BF) vira a letra base; o resto passa como esta.
+// The app name in front is mandatory: an app never shadows a system command
+// nor another app's, and 'help' shows whose each one is.
+//
+// The next letter, lower case and WITHOUT ACCENT: the serial console only passes
+// ASCII (the "ú" of "Música" does not even arrive), so "musica" has to find "Música".
+// Latin-1 in UTF-8 (C3 80..C3 BF) becomes the base letter; the rest passes as is.
 static char letra_simples(const char*& p)
 {
   static const char BASE[] = "aaaaaaaceeeeiiiidnooooo*ouuuuy*s" "aaaaaaaceeeeiiiidnooooo*ouuuuy*y";
@@ -221,7 +221,7 @@ static char letra_simples(const char*& p)
   return (char)tolower(c);
 }
 
-// "ESP-NOW", "esp-now", "espnow" sao o mesmo app; "Música" e "musica" tambem.
+// "ESP-NOW", "esp-now", "espnow" are the same app; "Música" and "musica" too.
 bool nome_de_app(const char* nome, const char* s)
 {
   for (;;) {
@@ -322,7 +322,7 @@ static const comando_t COMANDOS[] = {
     N_("limpa a tela"), N_("clear\tlimpa o Terminal (e o monitor serial)"), N_("A sequencia ANSI ESC[2J."),
     c_clear, N_("clear\ttela limpa") },
 
-  // --- SISTEMA ---
+  // --- SYSTEM ---
   { "estado", "servicos", G_SISTEMA,
     N_("panorama: versao, tempo ligado, RAM e uma linha por servico"),
     N_("estado\tversao, app aberto, RAM, cartao, wifi, ble, mesh, energia"),
@@ -512,7 +512,7 @@ static const comando_t COMANDOS[] = {
     c_arquivos,
     N_("arquivos cp /usb/Rock /sdcard/Música\tcopia a pasta do pendrive para a Musica") },
 
-  // --- TELA ---
+  // --- SCREEN ---
   { "tela", "", G_TELA,
     N_("painel: quadros, piscada azul, relogio e prioridade"),
     N_("tela\testado do painel e da janela de medida\n"
@@ -606,7 +606,7 @@ static const comando_t COMANDOS[] = {
     c_ui,
     N_("ui\trode duas vezes com a tela travada e compare") },
 
-  // --- CARTAO ---
+  // --- SD CARD ---
   { "cartao", "", G_CARTAO,
     N_("espaco livre e o conteudo de cada pasta de app"),
     N_("cartao\tespaco, gravador do sistema e ate 10 arquivos por pasta"),
@@ -650,7 +650,7 @@ static const comando_t COMANDOS[] = {
     [](int c, char** v) { cmd_receber(c, v); },
     N_("receber Sistema tab5_c6.bin 1397904\tdepois mande o arquivo pela porta") },
 
-  // --- REDE ---
+  // --- NETWORK ---
   { "wifi", "", G_REDE,
     N_("estado, redes em volta e redes guardadas"),
     N_("wifi\testado: rede, IP, sinal\n"
@@ -840,7 +840,7 @@ static const comando_t COMANDOS[] = {
     "mesh msgs 50\tas 50 mensagens mais recentes\n"
     "mesh casa -22.88 -42.79\tgrava a posicao de casa") },
 
-  // --- BANCADA ---
+  // --- BENCH ---
   { "grove", "", G_BANCADA,
     N_("porta Grove: o que esta plugado e quem a usa"),
     N_("grove\tmodulo detectado, energia e dono da porta\n"
@@ -876,7 +876,7 @@ static const comando_t COMANDOS[] = {
     [](int, char**) { cmd_foto(); },
     N_("foto\tdepois: lista apps/Console") },
 
-  // --- TESTES ---
+  // --- TESTS ---
   { "concorrencia", "", G_TESTES,
     N_("segundo leitor de GPS+IMU, fora de qualquer app"),
     N_("concorrencia\testa rodando? quantas leituras\n"
@@ -896,7 +896,7 @@ static const comando_t COMANDOS[] = {
     cmd_simulacao,
     N_("simulacao iniciar\tdepois abra apps de verdade e compare") },
 
-  // --- fora da lista: ajuda e atalhos antigos ---
+  // --- not in the list: help and old shortcuts ---
   { "help",   "ajuda ?", G_OCULTO, "", "", "", c_ajuda },
   { "app",    "", G_OCULTO, "", "", "", c_app },
   { "redes",  "", G_OCULTO, "", "", "", c_redes },
@@ -908,7 +908,7 @@ static const int N_COMANDOS = (int)(sizeof(COMANDOS) / sizeof(COMANDOS[0]));
 static bool casa_nome(const comando_t& c, const char* s)
 {
   if (eh(c.nome, s)) { return true; }
-  // Apelidos: palavras separadas por espaco.
+  // Aliases: space-separated words.
   const size_t n = strlen(s);
   for (const char* a = c.apelidos; *a; ) {
     while (*a == ' ') { ++a; }
@@ -921,19 +921,19 @@ static bool casa_nome(const comando_t& c, const char* s)
 }
 
 // ---------------------------------------------------------------------------
-// OS COMANDOS EM INGLES (06/11/2026) - o sistema vai para o mundo: cada comando
-// e subcomando em portugues tem o nome em ingles ao lado. O QUE APARECE segue
-// o idioma do sistema (pedido do usuario): em portugues, o help e as
-// sugestoes mostram so os nomes em portugues; em ingles, so os em ingles. Ao
-// DIGITAR os dois valem sempre ('estado' e 'status') - trocar o idioma nao
-// quebra o costume nem um script.
+// THE COMMANDS IN ENGLISH (06/11/2026) - the system is going out into the world: every
+// Portuguese command and subcommand has the English name alongside. WHAT IS SHOWN follows
+// the system language (user request): in Portuguese, help and
+// suggestions show only the Portuguese names; in English, only the English ones. When
+// TYPING both always work ('estado' and 'status') - changing the language does not
+// break habits nor a script.
 //
-// SUBCOMANDO SO SE TRADUZ ONDE ELE EXISTE: a palavra em ingles vira a em
-// portugues apenas nas posicoes 1 a 4 e so se o 'uso' do comando tem aquela
-// palavra ali (ver uso_tem). Assim 'mesh enviar to be or not' nao vira 'para
-// be...', e um nome de arquivo ou de rede nunca e trocado.
-// Um nome em ingles pode valer para dois em portugues ('sleep' = sono e
-// dormir): o uso do comando decide qual.
+// A SUBCOMMAND IS ONLY TRANSLATED WHERE IT EXISTS: the English word becomes the
+// Portuguese one only in positions 1 to 4 and only if the command's 'uso' has that
+// word there (see uso_tem). That way 'mesh enviar to be or not' does not become 'para
+// be...', and a file or network name is never swapped.
+// One English name may stand for two Portuguese ones ('sleep' = sono and
+// dormir): the command's usage decides which.
 // ---------------------------------------------------------------------------
 typedef struct { const char* pt; const char* en; } par_t;
 
@@ -992,7 +992,7 @@ static const char* em_ingles(const par_t (&t)[N], const char* pt)
   return nullptr;
 }
 
-// O idioma do sistema nao e o portugues: o help mostra os nomes em ingles.
+// The system language is not Portuguese: help shows the English names.
 static bool help_em_ingles(void)
 {
   const char* c = idioma_codigo(idioma_atual());
@@ -1010,12 +1010,12 @@ static const comando_t* achar(const char* s)
   return nullptr;
 }
 
-// A palavra 'pt' aparece na posicao 'pos' de alguma forma do uso de 'c', com
-// as palavras antes dela batendo com argv (ou sendo um <argumento>)? As formas
-// sao "cmd sub1 sub2 <arg>\t..."; alternativas como "[ligar|desligar]".
+// Does the word 'pt' appear at position 'pos' of some form of 'c''s usage, with
+// the words before it matching argv (or being an <argument>)? The forms
+// are "cmd sub1 sub2 <arg>\t..."; alternatives like "[ligar|desligar]".
 static bool palavra_casa(const char* tok, size_t n, const char* w)
 {
-  // tira [ ] e testa cada alternativa separada por '|'
+  // strip [ ] and test each alternative separated by '|'
   while (n && (*tok == '[')) { ++tok; --n; }
   while (n && (tok[n - 1] == ']')) { --n; }
   if (!n || *tok == '<') { return false; }
@@ -1036,7 +1036,7 @@ static bool uso_tem(const comando_t& c, int pos, const char* pt, char** argv)
     const size_t n = fim ? (size_t)(fim - t) : strlen(t);
     const char* tab = (const char*)memchr(t, '\t', n);
     const char* lim = tab ? tab : t + n;
-    // palavras da forma
+    // words of the form
     const char* w = t;
     bool ok = (*t != '\t');
     for (int k = 0; ok && k <= pos; ++k) {
@@ -1054,8 +1054,8 @@ static bool uso_tem(const comando_t& c, int pos, const char* pt, char** argv)
   return false;
 }
 
-// Troca, nas posicoes 1 a 4, a palavra em ingles pela em portugues que o uso
-// do comando conhece. 'buf' guarda as trocadas (argv aponta para la).
+// Swaps, in positions 1 to 4, the English word for the Portuguese one the command's
+// usage knows. 'buf' holds the swapped ones (argv points there).
 static void traduzir_subcomandos(const comando_t& c, int argc, char** argv, char (*buf)[24])
 {
   for (int pos = 1; pos <= 4 && pos < argc; ++pos) {
@@ -1069,8 +1069,8 @@ static void traduzir_subcomandos(const comando_t& c, int argc, char** argv, char
   }
 }
 
-// Uma linha de uso com os nomes em ingles (o comando e os subcomandos nas
-// posicoes 1 a 4; argumentos e o texto depois do TAB ficam como estao).
+// A usage line with the English names (the command and the subcommands in
+// positions 1 to 4; arguments and the text after the TAB stay as they are).
 static void linha_em_ingles(const char* t, int n, char* out, size_t tam)
 {
   const char* tab = (const char*)memchr(t, '\t', (size_t)n);
@@ -1087,7 +1087,7 @@ static void linha_em_ingles(const char* t, int n, char* out, size_t tam)
       const char* en = em_ingles(CMD_EN, palavra);
       o += (size_t)snprintf(out + o, tam - o, "%s", en ? en : palavra);
     } else if (k <= 4 && palavra[0] != '<') {
-      // "[ligar|desligar]": cada alternativa, mantendo os colchetes e as barras
+      // "[ligar|desligar]": each alternative, keeping the brackets and the bars
       for (const char* q = palavra; *q && o + 1 < tam; ) {
         if (*q == '[' || *q == ']' || *q == '|') { out[o++] = *q++; continue; }
         const char* f = q;
@@ -1101,7 +1101,7 @@ static void linha_em_ingles(const char* t, int n, char* out, size_t tam)
     } else {
       o += (size_t)snprintf(out + o, tam - o, "%s", palavra);
     }
-    // os espacos que vierem
+    // whatever spaces come
     while (e < lim && *e == ' ' && o + 1 < tam) { out[o++] = ' '; ++e; }
     w = e;
   }
@@ -1110,7 +1110,7 @@ static void linha_em_ingles(const char* t, int n, char* out, size_t tam)
   if (tab) { snprintf(out + o, tam - o, "%.*s", (int)(t + n - tab), tab); }
 }
 
-// Texto de varias linhas, cada uma com recuo.
+// Multi-line text, each line indented.
 static void imprimir_recuado(const char* t, const char* recuo)
 {
   while (*t) {
@@ -1121,9 +1121,9 @@ static void imprimir_recuado(const char* t, const char* recuo)
   }
 }
 
-// Linhas "esquerda\tdireita" em duas colunas. A esquerda que nao cabe na
-// coluna fica sozinha, e a explicacao desce para a linha de baixo, alinhada -
-// cortar um caminho de arquivo no meio estragaria o exemplo para copiar.
+// "left\tright" lines in two columns. A left part that does not fit in the
+// column stands alone, and the explanation drops to the line below, aligned -
+// cutting a file path in the middle would spoil the example for copying.
 #define AJUDA_COLUNA 32
 static void imprimir_colunas(const char* texto, const char* prefixo, bool traduzir)
 {
@@ -1148,7 +1148,7 @@ static void imprimir_colunas(const char* texto, const char* prefixo, bool traduz
   }
 }
 
-// As formas de chamar e, logo abaixo, exemplos prontos para copiar.
+// The ways to call it and, just below, ready-to-copy examples.
 static void imprimir_uso(const comando_t& c)
 {
   imprimir_colunas(tr(c.uso), "", true);
@@ -1165,8 +1165,8 @@ void mostrar_uso(const char* nome)
 
 static void ajuda_comando(const comando_t& c)
 {
-  // O NOME NO IDIOMA DO SISTEMA, so ele: em portugues os nomes em portugues,
-  // em ingles os em ingles (o outro continua aceito ao digitar, mas nao aparece).
+  // THE NAME IN THE SYSTEM LANGUAGE, only that: in Portuguese the Portuguese names,
+  // in English the English ones (the other is still accepted when typing, but does not appear).
   const char* en = help_em_ingles() ? em_ingles(CMD_EN, c.nome) : nullptr;
   printf("%s - %s\n\n", en ? en : c.nome, tr(c.resumo));
   imprimir_uso(c);
@@ -1175,8 +1175,8 @@ static void ajuda_comando(const comando_t& c)
   if (c.apelidos[0]) { printf(TXT("  (tambem aceito como: %s)\n", "  (also accepted as: %s)\n"), c.apelidos); }
 }
 
-// Comando desconhecido: sugere os que comecam igual ou contem o que foi
-// digitado. Errar uma letra nao pode virar "leia a lista inteira".
+// Unknown command: suggests those starting the same or containing what was
+// typed. Getting one letter wrong must not turn into "read the whole list".
 static void sugerir(const char* s)
 {
   const size_t n = strlen(s);
@@ -1185,7 +1185,7 @@ static void sugerir(const char* s)
     const comando_t& c = COMANDOS[i];
     if (c.grupo == G_OCULTO) { continue; }
     const char* en = help_em_ingles() ? em_ingles(CMD_EN, c.nome) : nullptr;
-    const char* nome = en ? en : c.nome;   // o nome no idioma do sistema
+    const char* nome = en ? en : c.nome;   // the name in the system language
     const bool parecido = (n >= 2 && strncasecmp(nome, s, 2) == 0) ||
                           (n >= 3 && strcasestr(nome, s) != nullptr);
     if (parecido) { printf(achados++ ? ", %s" : TXT("  talvez: %s", "  maybe: %s"), nome); }
@@ -1194,10 +1194,10 @@ static void sugerir(const char* s)
   printf("%s", TXT("  'help' lista os comandos\n", "  'help' lists the commands\n"));
 }
 
-// O 'help' SEM NADA: os comandos que quem vem do Linux procura, com o nome do
-// Linux (ps, free, cat, ifconfig, curl...). Os do M5tabOS ficam em
-// 'help sistema' - antes vinham todos de uma vez, ~200 linhas, e o 'ls'
-// ficava perdido entre 'piscada' e 'radio 154'.
+// The bare 'help': the commands people coming from Linux look for, with the
+// Linux name (ps, free, cat, ifconfig, curl...). The M5tabOS ones are in
+// 'help sistema' - previously they all came at once, ~200 lines, and 'ls'
+// got lost between 'piscada' and 'radio 154'.
 typedef struct { const char* forma_pt; const char* forma_en; const char* cmd; const char* pt; const char* en; } linux_t;
 static const linux_t LINUX[] = {
   { "ls [pasta]",          "ls [dir]",            "ls",         "lista a pasta",                        "list a folder" },
@@ -1265,11 +1265,11 @@ static void c_ajuda(int argc, char** argv)
     ajuda_comando(*c);
     return;
   }
-  // Agrupado por ASSUNTO, com TODAS as formas de cada comando a vista. Uma
-  // linha so por comando escondia justamente o que se procura ("como mando
-  // mensagem?" ficava atras de 'help mesh').
-  // 'help sistema': os do M5tabOS (o SHELL ja esta no 'help'); 'help tudo':
-  // todos, cada um explicado.
+  // Grouped by SUBJECT, with ALL the forms of each command in view. One
+  // line per command hid exactly what people look for ("how do I send a
+  // message?" was hidden behind 'help mesh').
+  // 'help sistema': the M5tabOS ones (the SHELL ones are already in 'help'); 'help tudo':
+  // all of them, each explained.
   printf(tr("M5tabOS %s - %s\n"), esp_app_get_description()->version,
          TXT("comandos do sistema", "system commands"));
   for (int g = 0; g < G_N; ++g) {
@@ -1280,7 +1280,7 @@ static void c_ajuda(int argc, char** argv)
     for (int i = 0; i < N_COMANDOS; ++i) {
       const comando_t& c = COMANDOS[i];
       if (c.grupo != g) { continue; }
-      if (!primeiro) { printf("\n"); }   // um respiro entre comandos do grupo
+      if (!primeiro) { printf("\n"); }   // a gap between commands in the group
       primeiro = false;
       if (tudo) { ajuda_comando(c); }
       else      { imprimir_uso(c); }
@@ -1294,30 +1294,30 @@ static void c_ajuda(int argc, char** argv)
 }
 
 // ---------------------------------------------------------------------------
-// Leitor de linha proprio, SEM linenoise
+// Our own line reader, WITHOUT linenoise
 // ---------------------------------------------------------------------------
 //
-// A primeira versao usava esp_console_new_repl_uart(), e nao dava para digitar:
-// nada aparecia na tela. O motivo esta no proprio linenoise, em
-// components/console/linenoise/linenoise.c:1191 - no modo "terminal burro" ele
-// so imprime o prompt e NAO ecoa o que voce digita; o comentario la e explicito
-// ("Only erase symbol echoed from stdin"), ou seja, ele conta com o eco local
-// do terminal. O idf.py monitor nao faz eco local, encaminha as teclas cruas.
-// Resultado: voce digita as cegas.
+// The first version used esp_console_new_repl_uart(), and you could not type:
+// nothing appeared on screen. The reason is in linenoise itself, in
+// components/console/linenoise/linenoise.c:1191 - in "dumb terminal" mode it
+// only prints the prompt and does NOT echo what you type; the comment there is explicit
+// ("Only erase symbol echoed from stdin"), i.e. it relies on the terminal's local
+// echo. idf.py monitor does no local echo, it forwards the raw keys.
+// Result: you type blind.
 //
-// Alem disso, cair ou nao no modo burro depende de uma sondagem do terminal que
-// pode dar resultados diferentes em cada monitor. Preferi eliminar a variavel:
-// este loop le byte a byte e ECOA ELE MESMO, entao funciona igual em qualquer
-// terminal - idf.py monitor, screen, minicom, o que for.
+// Besides that, whether it falls into dumb mode depends on a terminal probe that
+// may give different results on each monitor. I preferred to remove the variable:
+// this loop reads byte by byte and ECHOES ITSELF, so it works the same on any
+// terminal - idf.py monitor, screen, minicom, whatever.
 
 static void executar(char* linha)
 {
-  // Quebra em palavras, respeitando aspas para senha com espaco.
+  // Splits into words, respecting quotes for passwords with spaces.
   //
-  // 24 E NAO 8: o "mesh enviar para <no> <texto>" ja gasta quatro posicoes, e
-  // com 8 o texto era truncado em silencio na quinta palavra. 24 cobre a linha
-  // inteira: com 192 caracteres de entrada e o limite de 160 do MESH_TEXTO, o
-  // texto acaba antes das palavras. Custa 64 bytes de stack.
+  // 24 AND NOT 8: "mesh enviar para <node> <text>" already uses four positions, and
+  // with 8 the text was silently truncated at the fifth word. 24 covers the whole
+  // line: with 192 input characters and MESH_TEXTO's limit of 160, the
+  // text runs out before the words do. Costs 64 bytes of stack.
   char* argv[24];
   int argc = 0;
   char* p = linha;
@@ -1345,7 +1345,7 @@ static void executar(char* linha)
     sugerir(argv[0]);
     return;
   }
-  char trad[4][24];   // subcomandos em ingles trocados pelos em portugues (posicoes 1 a 4)
+  char trad[4][24];   // English subcommands swapped for the Portuguese ones (positions 1 to 4)
   traduzir_subcomandos(*c, argc, argv, trad);
   c->fn(argc, argv);
 }
@@ -1354,8 +1354,8 @@ void console_executar(console_sessao_t* sessao, const char* linha)
 {
   char buf[192];
   snprintf(buf, sizeof(buf), "%s", linha ? linha : "");
-  // A sessao desta tarefa enquanto o comando roda. Sem vaga (nao acontece:
-  // sao duas sessoes), roda com a da serial.
+  // This task's session while the command runs. With no free slot (does not happen:
+  // there are two sessions), it runs with the serial one.
   const TaskHandle_t eu = xTaskGetCurrentTaskHandle();
   int k = -1;
   if (sessao && sessao != &s_serial) {
@@ -1386,22 +1386,22 @@ static void vTaskConsole(void*)
 
   for (;;)
   {
-    // BLOQUEIA DE VERDADE, e isso e economia de energia.
+    // IT REALLY BLOCKS, and that is power saving.
     //
-    // Era assim:
+    // It used to be:
     //
     //     int c = fgetc(stdin);
     //     if (c == EOF) { vTaskDelay(pdMS_TO_TICKS(20)); continue; }
     //
-    // O fgetc sobre o VFS devolve EOF quando nao ha byte, entao a tarefa
-    // acordava 50 VEZES POR SEGUNDO, para sempre, mesmo em repouso e mesmo com
-    // ninguem conectado na serial. Cada volta e uma troca de contexto e uma
-    // consulta ao driver para descobrir que nao ha nada.
+    // fgetc over the VFS returns EOF when there is no byte, so the task
+    // woke up 50 TIMES A SECOND, for ever, even when idle and even with
+    // nobody connected to the serial port. Each loop is a context switch and a
+    // driver query to find out there is nothing.
     //
-    // O usb_serial_jtag_read_bytes com portMAX_DELAY dorme no semaphore do
-    // driver: zero acordadas enquanto nao chega tecla. E o mesmo caminho que o
-    // comando `receber` usa, e ele passa ao largo da traducao de fim de linha
-    // do VFS - que aqui nao faz falta, porque o loop abaixo ja trata CR e LF.
+    // usb_serial_jtag_read_bytes with portMAX_DELAY sleeps on the driver's
+    // semaphore: zero wake-ups until a key arrives. It is the same path the
+    // `receber` command uses, and it bypasses the VFS end-of-line translation
+    // - which is not needed here, because the loop below already handles CR and LF.
     uint8_t byte = 0;
 #if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
     if (usb_serial_jtag_read_bytes(&byte, 1, portMAX_DELAY) != 1) { continue; }
@@ -1410,10 +1410,10 @@ static void vTaskConsole(void*)
 #endif
     const int c = (int)byte;
 
-    // Diagnostico enquanto o console nao estiver confiavel: mostra o codigo de
-    // TODO byte que chega. Serve para distinguir dois problemas muito
-    // diferentes - "o monitor nao encaminha o teclado" (nada aparece aqui) de
-    // "chega, mas o filtro descarta" (aparece o codigo e nada mais).
+    // Diagnostics while the console is not reliable: shows the code of
+    // EVERY byte that arrives. It serves to tell apart two very different
+    // problems - "the monitor does not forward the keyboard" (nothing appears here) and
+    // "it arrives, but the filter discards it" (the code appears and nothing else).
     ESP_LOGD(TAG, "rx: 0x%02x", (unsigned)c);
 
     if (c == '\r' || c == '\n')
@@ -1432,7 +1432,7 @@ static void vTaskConsole(void*)
     else if (c >= 32 && c < 127 && n < sizeof(linha) - 1)
     {
       linha[n++] = (char)c;
-      fputc(c, stdout);                   // O ECO QUE FALTAVA
+      fputc(c, stdout);                   // THE MISSING ECHO
       fflush(stdout);
     }
   }
@@ -1440,46 +1440,46 @@ static void vTaskConsole(void*)
 
 void console_iniciar(void)
 {
-  // O driver TEM que ser o do mesmo periferico que o console primario, senao o
-  // stdin fica preso num canal onde ninguem digita - foi exatamente o erro que
-  // deixou o console mudo (ver o comentario no sdkconfig.defaults).
-  // Por isso a escolha e feita pela propria chave do console, e nao fixada.
+  // The driver MUST be for the same peripheral as the primary console, otherwise
+  // stdin is stuck on a channel where nobody types - that was exactly the bug that
+  // left the console mute (see the comment in sdkconfig.defaults).
+  // That is why the choice is made from the console's own key, and not hard-coded.
   //
-  // Em ambos os casos: sem driver instalado a leitura de stdin NAO bloqueia (o
-  // fgetc devolveria EOF para sempre e o loop viraria espera ocupada), e e o
-  // driver que permite ler tecla a tecla em vez de linha inteira.
+  // In both cases: with no driver installed, reading stdin does NOT block (
+  // fgetc would return EOF for ever and the loop would become a busy wait), and it is the
+  // driver that allows reading key by key instead of a whole line.
 #if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
-  // ANEL DE RX GRANDE, e isto NAO e folga preventiva - e correcao.
+  // LARGE RX RING, and this is NOT a precautionary margin - it is a fix.
   //
-  // O padrao do IDF e 256 bytes (USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT), e a
-  // ISR do driver faz assim (usb_serial_jtag.c:150):
+  // The IDF default is 256 bytes (USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT), and the
+  // driver's ISR does this (usb_serial_jtag.c:150):
   //
   //     xRingbufferSendFromISR(rx_ring_buf, buf, rx_fifo_len, &xTaskWoken);
   //
-  // O RETORNO E IGNORADO. Anel cheio = bytes descartados em silencio, sem erro,
-  // sem log, sem nada. Para digitar comando ninguem percebe; mandando 1,4MB de
-  // firmware pelo `receber`, sumiram 2432 bytes no meio e a transferencia
-  // morreu a 99,8%.
+  // THE RETURN VALUE IS IGNORED. Ring full = bytes silently discarded, no error,
+  // no log, nothing. Typing commands nobody notices; sending 1.4MB of
+  // firmware via `receber`, 2432 bytes vanished in the middle and the transfer
+  // died at 99.8%.
   //
-  // 8KB dao ~30ms de folga a velocidade de USB - tempo de sobra para o loop de
-  // leitura voltar mesmo que o escalonador atrase.
+  // 8KB gives ~30ms of margin at USB speed - plenty of time for the read loop
+  // to come back even if the scheduler is late.
   usb_serial_jtag_driver_config_t cfg = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
   cfg.rx_buffer_size = 8192;
   cfg.tx_buffer_size = 2048;
   if (usb_serial_jtag_driver_install(&cfg) != ESP_OK)
   {
-    ESP_LOGE(TAG, "nao consegui instalar o driver do USB-Serial-JTAG");
+    ESP_LOGE(TAG, "could not install the USB-Serial-JTAG driver");
     return;
   }
   usb_serial_jtag_vfs_use_driver();
-  // Enter chega como CR; sem a conversao a linha nunca terminaria. A saida vai
-  // como CRLF para nao sair em escadinha.
+  // Enter arrives as CR; without the conversion the line would never end. Output goes
+  // as CRLF so it does not come out in a staircase.
   usb_serial_jtag_vfs_set_rx_line_endings(ESP_LINE_ENDINGS_CR);
   usb_serial_jtag_vfs_set_tx_line_endings(ESP_LINE_ENDINGS_CRLF);
 #else
   if (uart_driver_install(UART_NUM_0, 256, 0, 0, NULL, 0) != ESP_OK)
   {
-    ESP_LOGE(TAG, "nao consegui instalar o driver da UART0");
+    ESP_LOGE(TAG, "could not install the UART0 driver");
     return;
   }
   uart_vfs_dev_use_driver(UART_NUM_0);
@@ -1487,30 +1487,30 @@ void console_iniciar(void)
   uart_vfs_dev_port_set_tx_line_endings(UART_NUM_0, ESP_LINE_ENDINGS_CRLF);
 #endif
 
-  // stdin sem buffer. O newlib bufferiza por linha por padrao, e ai o fgetc
-  // pode ficar esperando encher o buffer em vez de devolver a tecla na hora -
-  // o eco so apareceria depois do Enter, ou nao apareceria. Todo exemplo de
-  // console do IDF faz isto.
+  // Unbuffered stdin. newlib line-buffers by default, and then fgetc
+  // may wait for the buffer to fill instead of returning the key at once -
+  // the echo would only appear after Enter, or not at all. Every IDF console
+  // example does this.
   setvbuf(stdin, NULL, _IONBF, 0);
 
-  // 12KB, e nao 4096. O 4096 ESTOUROU - "enviar" derrubou o aparelho com
-  // Stack protection fault, e o retrato de tarefas ja avisava: 372 B livres.
+  // 12KB, and not 4096. 4096 OVERFLOWED - "enviar" brought the device down with a
+  // Stack protection fault, and the task snapshot was already warning: 372 B free.
   //
-  // Esta tarefa tem o pior caso do sistema inteiro, porque de um comando ela
-  // alcanca QUALQUER subsistema. So no caminho do "enviar":
+  // This task has the worst case in the whole system, because from a command it
+  // reaches ANY subsystem. Just on the "enviar" path:
   //
-  //   executar()          ~1,3KB de buffers de comando (sub, cam, completo...)
-  //   tab5_mesh_enviar()   656B - data[176]+pkt[224]+frame[256], todos vivos
-  //   guardar_msg()        -> FATFS, que e faminto de stack
-  //   printf com float     -> vfprintf do newlib, mais de 1KB sozinho
+  //   executar()          ~1.3KB of command buffers (sub, cam, completo...)
+  //   tab5_mesh_enviar()   656B - data[176]+pkt[224]+frame[256], all live
+  //   guardar_msg()        -> FATFS, which is stack-hungry
+  //   printf with float    -> newlib's vfprintf, more than 1KB on its own
   //
-  // O "cartao" e o "c6 ota" descem igualmente fundo. Dimensionar pelo caso
-  // tipico aqui e dimensionar para o dia em que nao se usa o comando dificil.
+  // "cartao" and "c6 ota" go just as deep. Sizing for the typical case
+  // here is sizing for the day the hard command is not used.
   //
-  // MEDIDO: dois dias de pilhas-*.csv com uso normal do console, pico de
-  // ~4,0KB (minimo livre 8320 de 12288). 8KB e o dobro do pico - folga para
-  // os comandos fundos que nao aparecem todo dia - e devolve 4KB a RAM
-  // interna. Se um comando novo descer mais, o pilhas-*.csv mostra.
+  // MEASURED: two days of pilhas-*.csv with normal console use, peak of
+  // ~4.0KB (minimum free 8320 of 12288). 8KB is double the peak - margin for
+  // the deep commands that do not show up every day - and gives 4KB back to internal
+  // RAM. If a new command goes deeper, pilhas-*.csv shows it.
   xTaskCreatePinnedToCore(vTaskConsole, "console", 8192, nullptr, 1, nullptr, tskNO_AFFINITY);
-  ESP_LOGI(TAG, "console no ar - digite 'help' no monitor");
+  ESP_LOGI(TAG, "console up - type 'help' in the monitor");
 }

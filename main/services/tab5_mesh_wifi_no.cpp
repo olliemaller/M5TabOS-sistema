@@ -1,4 +1,4 @@
-// Redes do Wi-Fi do no - ver tab5_mesh_wifi_no.hpp.
+// Node Wi-Fi networks - see tab5_mesh_wifi_no.hpp.
 #include "tab5_mesh_wifi_no.hpp"
 
 #include <stdio.h>
@@ -21,24 +21,24 @@ static bool     s_carregado = false;
 static volatile bool s_gravar_pend = false;
 static portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
 
-// Roda na tarefa "cartao" (carona): reescreve o arquivo quando algo mudou.
+// Runs on the "cartao" (SD card) task, piggybacking: rewrites the file when something changed.
 static void na_carona(void)
 {
-  // A lista so e reescrita depois de lida do cartao (ver mesh_wifi_no_salvar).
+  // The list is only rewritten after it has been read from the card (see mesh_wifi_no_salvar).
   if (!s_carregado) { mesh_wifi_no_carregar(); return; }
   if (!s_gravar_pend) { return; }
   s_gravar_pend = false;
-  // Copia da lista com a trava e escreve fora dela (cartao e lento).
+  // Copy the list under the lock and write outside it (the card is slow).
   EXT_RAM_BSS_ATTR static mesh_wifi_rede_t copia[MESH_WIFI_REDES_MAX];
   int n;
   taskENTER_CRITICAL(&s_mux);
   n = s_n;
   memcpy(copia, s_r, sizeof(copia));
   taskEXIT_CRITICAL(&s_mux);
-  // O arquivo inteiro na memoria e UMA troca pela porta do sistema
-  // (tab5_sd_substituir): nunca meio arquivo, e com o cartao emprestado ao
-  // computador vai para o diario. SIGILOSO: as senhas do arquivo antigo sao
-  // zeradas antes de ele sair.
+  // The whole file in memory and ONE swap through the system gate
+  // (tab5_sd_substituir): never half a file, and with the card lent to the
+  // PC it goes to the journal. SENSITIVE: the passwords of the old file are
+  // zeroed before it leaves.
   const size_t cap = 64 + (size_t)MESH_WIFI_REDES_MAX * (sizeof(copia[0].ssid) + TAB5_WIFI_CIFRA_HEX + 2);
   char* txt = (char*)heap_caps_malloc(cap, MALLOC_CAP_SPIRAM);
   if (!txt) { s_gravar_pend = true; memset(copia, 0, sizeof(copia)); return; }
@@ -50,10 +50,10 @@ static void na_carona(void)
     k += (size_t)snprintf(txt + k, cap - k, "%s\n%s\n", copia[i].ssid, hex);
   }
   if (!tab5_sd_substituir(PASTA, ARQ, txt, k < cap ? k : cap - 1, TAB5_SD_SIGILOSO)) {
-    s_gravar_pend = true;   // sem cartao: tenta de novo na proxima volta
+    s_gravar_pend = true;   // no card: try again on the next round
   }
   heap_caps_free(txt);
-  memset(copia, 0, sizeof(copia));   // senhas em texto: nao deixa copia na RAM
+  memset(copia, 0, sizeof(copia));   // plain-text passwords: leave no copy in RAM
 }
 
 void mesh_wifi_no_carregar(void)
@@ -61,8 +61,8 @@ void mesh_wifi_no_carregar(void)
   if (s_carregado) { return; }
   static bool carona = false;
   if (!carona) { carona = tab5_sd_carona(na_carona); }
-  // Sem cartao NAO marca como carregado: a lista vazia da RAM nao pode virar
-  // o arquivo. Tenta de novo na carona, ate o cartao aparecer.
+  // With no card it does NOT mark as loaded: the empty list in RAM must not
+  // become the file. Keep retrying on the piggyback until the card appears.
   if (!tab5_sd_montar()) { return; }
   FILE* f = tab5_sd_abrir(PASTA, ARQ, "r");
   if (f) {
@@ -80,7 +80,7 @@ void mesh_wifi_no_carregar(void)
       memset(&r, 0, sizeof(r));
       snprintf(r.ssid, sizeof(r.ssid), "%s", ssid);
       if (strcmp(hex, "-") == 0) { r.aberta = true; }
-      else if (!tab5_wifi_decifrar_texto(hex, r.senha, sizeof(r.senha))) { continue; }   // outro aparelho: nao decifra
+      else if (!tab5_wifi_decifrar_texto(hex, r.senha, sizeof(r.senha))) { continue; }   // another device: cannot decrypt
       taskENTER_CRITICAL(&s_mux);
       s_r[s_n++] = r;
       taskEXIT_CRITICAL(&s_mux);
@@ -91,7 +91,7 @@ void mesh_wifi_no_carregar(void)
   tab5_sd_desmontar();
   s_carregado = true;
   ++s_versao;
-  ESP_LOGI(TAG, "%d rede(s) guardada(s) para o no", s_n);
+  ESP_LOGI(TAG, "%d network(s) stored for the node", s_n);
 }
 
 int mesh_wifi_no_n(void) { return s_n; }
@@ -105,14 +105,14 @@ bool mesh_wifi_no_rede(int i, mesh_wifi_rede_t* o)
   return ok;
 }
 
-// Poe 'r' no topo, removendo a anterior de mesmo nome. Com a trava tomada.
+// Puts 'r' at the top, removing the previous one with the same name. With the lock held.
 static void topo_locked(const mesh_wifi_rede_t& r)
 {
   int onde = -1;
   for (int i = 0; i < s_n; ++i) { if (strcmp(s_r[i].ssid, r.ssid) == 0) { onde = i; break; } }
   if (onde < 0) {
     if (s_n < MESH_WIFI_REDES_MAX) { onde = s_n++; }
-    else                           { onde = MESH_WIFI_REDES_MAX - 1; }   // cheia: sai a mais antiga
+    else                           { onde = MESH_WIFI_REDES_MAX - 1; }   // full: the oldest goes
   }
   for (int k = onde; k > 0; --k) { s_r[k] = s_r[k - 1]; }
   s_r[0] = r;
@@ -121,8 +121,8 @@ static void topo_locked(const mesh_wifi_rede_t& r)
 bool mesh_wifi_no_salvar(const char* ssid, const char* senha)
 {
   if (!ssid || !ssid[0] || strlen(ssid) > 32 || (senha && strlen(senha) > 64)) { return false; }
-  // A LISTA DO CARTAO PRIMEIRO: mudar uma lista que nao foi lida e grava-la
-  // apagaria as redes guardadas. Sem cartao (ou ele no computador), recusa.
+  // THE CARD'S LIST FIRST: changing a list that has not been read and writing
+  // it would erase the stored networks. No card (or it is lent to the PC): refuse.
   mesh_wifi_no_carregar();
   if (!s_carregado) { return false; }
   mesh_wifi_rede_t r;
@@ -141,7 +141,7 @@ bool mesh_wifi_no_salvar(const char* ssid, const char* senha)
 
 bool mesh_wifi_no_esquecer(int i)
 {
-  if (!s_carregado) { return false; }   // ver mesh_wifi_no_salvar
+  if (!s_carregado) { return false; }   // see mesh_wifi_no_salvar
   bool ok = false;
   taskENTER_CRITICAL(&s_mux);
   if (i >= 0 && i < s_n) {
@@ -165,7 +165,7 @@ int mesh_wifi_no_trazer_do_tab5(void)
     bool ja = false;
     for (int k = 0; k < s_n; ++k) { if (strcmp(s_r[k].ssid, ssid) == 0) { ja = true; break; } }
     if (ja) { continue; }
-    if (s_n >= MESH_WIFI_REDES_MAX) { break; }   // cheia: nao expulsa as do no
+    if (s_n >= MESH_WIFI_REDES_MAX) { break; }   // full: do not evict the node's own
     mesh_wifi_no_salvar(ssid, senha);
     ++novas;
   }

@@ -1,6 +1,6 @@
-// APP Mesh - a CONVERSA: a localizacao dentro de uma mensagem (coordenada
-// virando distancia e rumo) e a conversa em si (baloes, faixa, envio). Partido de
-// app_mesh.cpp (o ciclo do app); o que as partes compartilham esta em
+// APP Mesh - the CONVERSATION: the location inside a message (a coordinate
+// turned into distance and bearing) and the conversation itself (bubbles, strip, sending).
+// Split from app_mesh.cpp (the app cycle); what the parts share is in
 // app_mesh_interno.hpp.
 
 #include "idioma.h"
@@ -14,34 +14,34 @@
 #include "app_mesh_interno.hpp"
 #include "tab5_tema.hpp"
 
-static bool s_eh_canal = false;       // conversa aberta e de canal (rotulo de remetente)
+static bool s_eh_canal = false;       // open conversation is a channel one (sender label)
 
-// ROTULO DE REMETENTE, DENTRO do balao (era ACIMA, fora dele
-// mudou) - so em conversa de CANAL, onde varias pessoas diferentes
-// escrevem no mesmo lugar. Numa conversa direta o lado e a cor do balao ja
-// dizem quem mandou; um rotulo ali so repetiria informacao. A ALTURA
-// reservada para ele (NOME_A) e medida de verdade em desenhar_msgs() - ver o
-// aviso la - nao mais um numero fixo aqui.
+// SENDER LABEL, INSIDE the bubble (it was ABOVE, outside it;
+// changed) - only in a CHANNEL conversation, where several different people
+// write in the same place. In a direct conversation the side and colour of the bubble
+// already say who sent it; a label there would only repeat information. The HEIGHT
+// reserved for it (NOME_A) is actually measured in desenhar_msgs() - see the
+// notice there - no longer a fixed number here.
 
-// Nome do remetente para o rotulo - ver tab5_mesh_nome_exibicao() no servico:
-// shortname primeiro, ID em hexa se o shortname nao prestar (vazio, "?" ou
-// emoji) ou o no ainda nao se apresentou. So um wrapper fino aqui; a regra em
-// si mora no servico porque a conversa direta (tab5_mesh.cpp) precisa da
-// MESMA regra, e duas copias dela e exatamente o tipo de duplicacao que
-// tab5_ui.hpp existe para evitar (ver o aviso no topo daquele arquivo).
+// Sender name for the label - see tab5_mesh_nome_exibicao() in the service:
+// shortname first, ID in hex if the shortname is unusable (empty, "?" or
+// emoji) or the node has not introduced itself yet. Only a thin wrapper here; the
+// rule itself lives in the service because the direct conversation (tab5_mesh.cpp)
+// needs the SAME rule, and two copies of it is exactly the kind of duplication
+// tab5_ui.hpp exists to avoid (see the notice at the top of that file).
 static void nome_do_no(uint32_t num, char* out, size_t out_tam)
 {
   tab5_mesh_nome_exibicao(num, out, out_tam);
 }
 
-// COR POR REMETENTE, so para o rotulo de nome em conversa de CANAL - pedido
-// depois de ver o app oficial do Meshtastic no celular, que
-// pinta cada participante numa cor propria em vez de cinza uniforme igual
-// para todo mundo. Hash simples (o proprio numero do no, modulo o tamanho da
-// paleta): determinismo e tudo que se precisa aqui - a mesma pessoa sempre
-// cai na mesma cor NESTA sessao, e isso basta para o olho aprender a
-// distinguir quem escreveu o que numa janela cheia de gente. Nao precisa
-// sobreviver a reinicio, e so identificacao visual, nao dado gravado.
+// COLOUR PER SENDER, only for the name label in a CHANNEL conversation - requested
+// after seeing the official Meshtastic phone app, which
+// paints each participant in their own colour instead of the same uniform grey
+// for everyone. Simple hash (the node number itself, modulo the palette
+// size): determinism is all that is needed here - the same person always
+// lands on the same colour IN THIS session, and that is enough for the eye to learn to
+// tell who wrote what in a window full of people. It does not need to
+// survive a restart, it is only visual identification, not stored data.
 static uint16_t cor_do_no(uint32_t num)
 {
   static const uint16_t PALETA[] = {
@@ -52,18 +52,18 @@ static uint16_t cor_do_no(uint32_t num)
 }
 
 // -----------------------------------------------------------------------
-// LOCALIZACAO DENTRO DE UMA MENSAGEM
+// LOCATION INSIDE A MESSAGE
 // -----------------------------------------------------------------------
-// Quem compartilha localizacao pelo app do Meshtastic no celular quase
-// sempre manda uma mensagem de TEXTO normal com as coordenadas embutidas
-// (um link tipo "https://maps.google.com/?q=-12.97,-38.50", ou so o par
-// cru) - nao existe um tipo de pacote separado que a conversa precise
-// entender. Entao a deteccao e sobre o TEXTO, nao sobre o protocolo.
+// Whoever shares a location via the Meshtastic phone app almost
+// always sends a normal TEXT message with the coordinates embedded
+// (a link like "https://maps.google.com/?q=-12.97,-38.50", or just the raw
+// pair) - there is no separate packet type the conversation needs to
+// understand. So the detection is about the TEXT, not the protocol.
 //
-// achar_coord() procura, em QUALQUER lugar da string, um par "numero,
-// numero" (com o primeiro cabendo em latitude e o segundo em longitude) -
-// serve tanto para o link quanto para o par cru, sem se importar com o
-// resto do texto ao redor (URL, legenda, o que vier).
+// achar_coord() looks, ANYWHERE in the string, for a "number,
+// number" pair (with the first fitting as latitude and the second as longitude) -
+// it works for both the link and the raw pair, regardless of the
+// rest of the surrounding text (URL, caption, whatever comes).
 static bool achar_coord(const char* txt, float* lat, float* lon)
 {
   for (const char* p = txt; *p; ++p) {
@@ -83,9 +83,9 @@ static bool achar_coord(const char* txt, float* lat, float* lon)
     const double b = strtod(q, &fim2);
     if (fim2 == q) { continue; }
 
-    // O PRIMEIRO numero tem que caber em latitude e o SEGUNDO em longitude -
-    // e o que distingue um par de coordenadas de dois numeros quaisquer
-    // separados por virgula que por acaso apareçam num texto.
+    // The FIRST number has to fit as latitude and the SECOND as longitude -
+    // that is what distinguishes a coordinate pair from any two numbers
+    // separated by a comma that happen to appear in a text.
     if (a < -90.0 || a > 90.0)   { continue; }
     if (b < -180.0 || b > 180.0) { continue; }
 
@@ -96,9 +96,9 @@ static bool achar_coord(const char* txt, float* lat, float* lon)
   return false;
 }
 
-// Distancia (formula de haversine, correta em qualquer escala) e direcao
-// (rumo inicial, arredondado para os 8 pontos cardeais) da posicao de
-// referencia ("casa", ajustes.h) ate a localizacao recebida.
+// Distance (haversine formula, correct at any scale) and direction
+// (initial bearing, rounded to the 8 compass points) from the reference
+// position ("home", ajustes.h) to the received location.
 void distancia_direcao(float lat1, float lon1, float lat2, float lon2,
                               float* dist_km, const char** direcao)
 {
@@ -122,18 +122,18 @@ void distancia_direcao(float lat1, float lon1, float lat2, float lon2,
 }
 
 // ---------------------------------------------------------------------------
-// A CONVERSA - o componente do sistema (kernel/conversa),
+// THE CONVERSATION - the system component (kernel/conversa),
 // ---------------------------------------------------------------------------
-// Baloes, barra de escrita, teclado virtual e rolagem eram uma copia inteira
-// aqui (~700 linhas). O componente nasceu DELES, para o ESP-NOW; agora o Mesh
-// volta a usar o original, e uma correcao no teclado ou no balao vale para os
-// dois. O que e so do Mesh mora nas tres respostas abaixo: rotulo do remetente
-// no canal, "N saltos"/MQTT, coordenada virando distancia e rumo, e as quatro
-// marcas de envio.
-// Fundo da area de mensagens (o mesmo do componente - trilho e colunas usam).
+// Bubbles, compose bar, virtual keyboard and scrolling used to be a whole copy
+// here (~700 lines). The component was born FROM THEM, for ESP-NOW; now Mesh
+// goes back to using the original, and a fix to the keyboard or the bubble applies to
+// both. What is Mesh-only lives in the three answers below: sender label
+// on a channel, "N hops"/MQTT, coordinate turned into distance and bearing, and the four
+// send marks.
+// Background of the messages area (the same as the component - rail and columns use it).
 uint16_t fundo_msg(lgfx::LovyanGFX&) { return TEMA_FUNDO; }
 
-static float s_ref_lat = 0, s_ref_lon = 0;   // referencia de distancia (GPS ou casa)
+static float s_ref_lat = 0, s_ref_lon = 0;   // distance reference (GPS or home)
 static bool  s_tem_ref = false;
 
 void atualizar_eh_canal(void)
@@ -148,8 +148,8 @@ bool conv_ler(int i, conversa_msg_t* o, void*)
   if (!s_hist || i < 0 || i >= s_n_hist) { return false; }
   const mesh_msg_t* m = &s_hist[i];
 
-  // O componente le em ordem, de 0 em diante: a referencia de distancia vale
-  // para a passada inteira (uma leitura do GPS, nao duzentas).
+  // The component reads in order, from 0 onwards: the distance reference holds
+  // for the whole pass (one GPS reading, not two hundred).
   if (i == 0) {
     const nmea_posicao_t fix = tab5_gps_posicao();
     s_tem_ref = false;
@@ -160,7 +160,7 @@ bool conv_ler(int i, conversa_msg_t* o, void*)
   o->minha  = (m->de == tab5_mesh_meu_numero());
   o->quando = m->quando;
 
-  // Coordenada no texto vira "alfinete, lat, lon, distancia e rumo".
+  // A coordinate in the text becomes "pin, lat, lon, distance and bearing".
   float lat, lon;
   if (achar_coord(m->texto, &lat, &lon)) {
     if (s_tem_ref) {
@@ -175,16 +175,16 @@ bool conv_ler(int i, conversa_msg_t* o, void*)
     snprintf(o->texto, sizeof(o->texto), "%s", m->texto);
   }
 
-  // Rotulo so no CANAL (varias pessoas no mesmo lugar), e so na primeira de
-  // uma sequencia do mesmo remetente.
+  // Label only on a CHANNEL (several people in the same place), and only on the first of
+  // a run from the same sender.
   if (s_eh_canal && !o->minha && (i == 0 || s_hist[i - 1].de != m->de)) {
     nome_do_no(m->de, o->nome, sizeof(o->nome));
     o->cor_nome = cor_do_no(m->de);
   }
 
   if (!o->minha) {
-    // Por onde chegou: MQTT (internet) ou quantos saltos de radio. Sem o dado
-    // no pacote, o que a tabela de nos sabe do remetente.
+    // How it arrived: MQTT (internet) or how many radio hops. Without the data
+    // in the packet, what the node table knows about the sender.
     bool via_mqtt = m->via_mqtt;
     uint8_t saltos = m->saltos;
     if (!via_mqtt && saltos == MESH_SALTOS_DESCONHECIDO) {
@@ -199,7 +199,7 @@ bool conv_ler(int i, conversa_msg_t* o, void*)
                 : (saltos <= 1) ? (uint16_t)TEMA_SUCESSO
                 : (saltos <= 3) ? (uint16_t)TEMA_APP_LIMA : (uint16_t)TEMA_ALERTA;
   } else if (m->id != 0) {
-    // O estado vivo do envio (ACK chega depois), ou o que ficou gravado.
+    // The live send state (the ACK arrives later), or what was stored.
     uint8_t erro = 0;
     uint8_t est = tab5_mesh_estado_envio(m->id, &erro);
     if (est == MESH_ENVIO_NA) { est = m->envio; }
@@ -215,17 +215,17 @@ bool conv_ler(int i, conversa_msg_t* o, void*)
 
 bool conv_enviar(const char* texto, void*)
 {
-  // PELA CHAVE: e para quem esta na tela, mesmo que a coluna tenha se
-  // reordenado entre o desenho e o toque em ENVIAR.
+  // BY KEY: it is for whoever is on screen, even if the column was
+  // reordered between the drawing and the tap on SEND.
   if (mesh_s_conv < 0 || !s_ab.ok || !tab5_mesh_servico_ativo()) { return false; }
   const bool ok = tab5_mesh_enviar(s_ab.canal ? 0xFFFFFFFFu : s_ab.no, s_ab.canal ? s_ab.idx : 0, texto);
-  s_hist_pronto = false;          // rele incluindo a que acabou de sair
+  s_hist_pronto = false;          // re-read including the one that just went out
   return ok;
 }
 
-// A FAIXA DE CIMA DA CONVERSA EM PE: VOLTAR, o tipo (canal ou direta) e o
-// nome. Deitado ela nao existe - a coluna ao lado ja diz qual conversa e.
-// Repintada so quando o nome muda (ou na passada completa).
+// THE TOP STRIP OF THE CONVERSATION IN PORTRAIT: BACK, the type (channel or direct) and the
+// name. In landscape it does not exist - the column alongside already says which conversation it is.
+// Repainted only when the name changes (or in the full pass).
 static void desenhar_faixa_frente(lgfx::LovyanGFX& d, const area_t& a, const mesh_conversa_t& c)
 {
   static char s_ant[MESH_NOME_CONVERSA + MESH_NOME_LONGO + 4];
@@ -242,8 +242,8 @@ static void desenhar_faixa_frente(lgfx::LovyanGFX& d, const area_t& a, const mes
   caixa_glifo(d, gx, a.y + 12, gl, gl, c.canal ? GL_DIFUSAO : GL_DIRETO,
               c.canal ? TEMA_DESTAQUE_SUAVE : TEMA_SUPERFICIE_ALTA, TEMA_TEXTO);
 
-  // Nome e, embaixo, o longo (ou "canal N") - cortados por caractere ate
-  // caber, como na coluna.
+  // Name and, below it, the long name (or "channel N") - cut per character until
+  // it fits, as in the column.
   const int tx = gx + gl + 16;
   const int max_l = a.x + a.largura - 16 - tx;
   char nome[MESH_NOME_CONVERSA], sub[MESH_NOME_LONGO];
@@ -268,7 +268,7 @@ void desenhar_msgs(lgfx::LovyanGFX& d, const area_t& a, int x0)
   const int larg = a.x + a.largura - x0;
   if (mesh_s_conv < 0) {
     conversa_fechar_teclado(&s_c);
-    lista_esconder(&s_c.lista);   // sem conversa, nada de baloes para rolar
+    lista_esconder(&s_c.lista);   // no conversation, no bubbles to scroll
     if (TUDO) {
       const uint16_t FUNDO = fundo_msg(d);
       tab5_tela_limpar(x0, a.y, larg, a.altura, FUNDO);
@@ -284,15 +284,15 @@ void desenhar_msgs(lgfx::LovyanGFX& d, const area_t& a, int x0)
   if (tab5_mesh_conversa(mesh_s_conv, &c) && c.nao_lidas > 0) { tab5_mesh_marcar_conversa_lida(mesh_s_conv); }
   if (!s_hist_pronto) { carregar_hist(); }
 
-  // Em pe a conversa esta POR CIMA da coluna: a faixa do VOLTAR ocupa o topo.
+  // In portrait the conversation is ON TOP of the column: the BACK strip takes the top.
   int topo = 0;
   if (em_pe(a)) {
     topo = FRENTE_TOPO_A;
     desenhar_faixa_frente(d, a, c);
   }
 
-  // A conversa e a coluna da direita (deitado) ou a area inteira abaixo da
-  // faixa (em pe); o teclado, a largura inteira da area nos dois casos.
+  // The conversation is the right-hand column (landscape) or the whole area below the
+  // strip (portrait); the keyboard, the full width of the area in both cases.
   const area_t r = { x0, a.y + topo, larg, a.altura - topo };
   conversa_area_teclado(&s_c, a);
   conversa_desenhar(&s_c, d, r, TUDO, tab5_mesh_servico_ativo(),

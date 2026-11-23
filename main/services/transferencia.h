@@ -1,22 +1,22 @@
-// AREA DE TRANSFERENCIA - um texto copiado, para colar em outro lugar.
+// CLIPBOARD - a copied text, to paste somewhere else.
 //
-// Como nos celulares: UM item so, de texto, que a copia seguinte substitui.
-// Nao ha historico. Cabe ate TRANSF_MAX bytes (uma nota inteira); o que
-// passar e cortado na fronteira de um caractere UTF-8. O buffer e da PSRAM
-// e so existe depois da primeira copia - sem copia, custo zero.
+// As on phones: ONE item only, text, which the next copy replaces.
+// There is no history. Holds up to TRANSF_MAX bytes (a whole note); anything
+// beyond is cut at a UTF-8 character boundary. The buffer lives in PSRAM
+// and only exists after the first copy - no copy, zero cost.
 //
-// Quem copia ou cola mostra o recado na barra (sistema_recado, app.h); o
-// servico so guarda. Seguro de qualquer tarefa (Berry incluido).
+// Whoever copies or pastes shows the message in the status bar (sistema_recado, app.h);
+// the service only stores. Safe from any task (Berry included).
 #pragma once
 
 #include <stddef.h>
 #include <stdbool.h>
 
-#define TRANSF_MAX 4096   // com o '\0'
+#define TRANSF_MAX 4096   // including the '\0'
 
-// Copia 'texto' (vazio ou nulo nao muda nada). false = sem memoria.
+// Copies 'texto' (empty or null changes nothing). false = out of memory.
 bool   transf_copiar(const char* texto);
-// O texto copiado em 'out' (com '\0', cortado em 'cap'). Devolve os bytes
-// escritos sem o '\0'; 0 = a area esta vazia.
+// The copied text into 'out' (with '\0', cut at 'cap'). Returns the bytes
+// written without the '\0'; 0 = the clipboard is empty.
 size_t transf_colar(char* out, size_t cap);
 bool   transf_vazia(void);

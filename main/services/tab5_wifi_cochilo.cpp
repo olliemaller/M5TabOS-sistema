@@ -13,35 +13,35 @@
 
 static const char* TAG = "cochilo";
 
-static const int COCHILO_APOS_S = 3 * 60;    // tela apagada por isto antes de desligar
-static const int JANELA_CADA_S  = 15 * 60;   // de quanto em quanto religa sozinho
-static const int JANELA_S       = 60;        // conectado por isto em cada janela
-static const int JANELA_MAX_S   = 120;       // sem conectar ate aqui, desiste da janela
+static const int COCHILO_APOS_S = 3 * 60;    // screen off this long before turning off
+static const int JANELA_CADA_S  = 15 * 60;   // how often it comes back on by itself
+static const int JANELA_S       = 60;        // connected this long in each window
+static const int JANELA_MAX_S   = 120;       // not connected by now: give up on the window
 
 typedef enum { C_NORMAL, C_COCHILANDO, C_JANELA } cochilo_t;
 static cochilo_t s_estado = C_NORMAL;
-static int       s_seg = 0;          // segundos no estado atual (ou em repouso, no NORMAL)
-static int       s_conectado_s = 0;  // segundos conectado dentro da janela
-static uint32_t  s_cochilos = 0;     // quantas vezes desligou (diagnostico)
+static int       s_seg = 0;          // seconds in the current state (or idle, in NORMAL)
+static int       s_conectado_s = 0;  // seconds connected within the window
+static uint32_t  s_cochilos = 0;     // how many times it turned off (diagnostics)
 
-// MESH PELA INTERNET E RECEBER: o MQTT nao guarda nada para quem esta fora -
-// o que chegar com o Wi-Fi desligado se perde (aconteceu: 2026-10-17, uma noite
-// de mensagens perdidas). Com o servico no ar pela internet, a rede fica.
+// MESH OVER THE INTERNET AND RECEIVING: MQTT keeps nothing for whoever is away -
+// whatever arrives while Wi-Fi is off is lost (it happened: 2026-10-17, a night
+// of lost messages). With the service live over the internet, the network stays up.
 static bool mesh_pela_internet(void)
 {
   return tab5_mesh_servico_ativo() && tab5_mesh_via() == AJUSTES_MESH_INTERNET;
 }
 
-// BATIDA DO WI-FI. O SDIO do C6 nao tira o P4 do sono leve: com o Wi-Fi
-// conectado e a tela apagada, em vez de travar o sono (72 mA medidos), o P4
-// dorme e um esp_timer o acorda a cada BATIDA_MS para atender o que o C6
-// juntou. O roteador e o TCP seguram esse atraso; nada se perde.
-static const uint64_t BATIDA_MS       = 100;   // tela apagada
-static const uint64_t BATIDA_DOZE_MS  = 300;   // tela apagada ha DOZE_APOS_S ("Doze" dos celulares)
+// WI-FI HEARTBEAT. The C6's SDIO does not bring the P4 out of light sleep: with Wi-Fi
+// connected and the screen off, instead of blocking sleep (72 mA measured), the P4
+// sleeps and an esp_timer wakes it every BATIDA_MS to handle what the C6
+// has gathered. The router and TCP tolerate that delay; nothing is lost.
+static const uint64_t BATIDA_MS       = 100;   // screen off
+static const uint64_t BATIDA_DOZE_MS  = 300;   // screen off for DOZE_APOS_S (phones' "Doze")
 static const int      DOZE_APOS_S     = 30 * 60;
 static esp_timer_handle_t s_batida = nullptr;
-static uint64_t s_batendo_ms = 0;   // o periodo em curso (0 = parada)
-static void batida_cb(void*) { }   // so acordar ja e o trabalho
+static uint64_t s_batendo_ms = 0;   // the current period (0 = stopped)
+static void batida_cb(void*) { }   // waking up is the whole job
 
 static void batida(uint64_t ms)
 {
@@ -59,9 +59,9 @@ static void batida(uint64_t ms)
 static bool alguem_precisa(void)
 {
   if (tab5_wifi_receptor_pedido()) { return true; }
-  if (tab5_wifi_precisada()) { return true; }   // o servidor web aberto (tab5_wifi_precisar)
+  if (tab5_wifi_precisada()) { return true; }   // the web server open (tab5_wifi_precisar)
   if (mesh_pela_internet()) { return true; }
-  tab5_perfil_t p;               // nada ligado
+  tab5_perfil_t p;               // nothing on
   fundo_somar_perfil(p);
   return p.radio;
 }
@@ -70,23 +70,23 @@ static void desligar(const char* por)
 {
   tab5_wifi_desligar();
   s_estado = C_COCHILANDO; s_seg = 0; ++s_cochilos;
-  ESP_LOGI(TAG, "Wi-Fi cochilando (%s)", por);
+  ESP_LOGI(TAG, "Wi-Fi dozing (%s)", por);
 }
 
 static void religar(const char* por)
 {
   tab5_wifi_ligar();
-  ESP_LOGI(TAG, "Wi-Fi religado (%s)", por);
+  ESP_LOGI(TAG, "Wi-Fi back on (%s)", por);
 }
 
 void tab5_wifi_cochilo_vigiar(void)
 {
   static int64_t ult = 0;
   const int dt = tab5_passou_s(&ult);
-  // Conectado em repouso: o P4 dorme, mas com a batida. O receptor pedido
-  // (ESP-NOW conversando, CSI, farejo) quer resposta na hora: ai segura.
+  // Connected while idle: the P4 sleeps, but with the heartbeat. A requested receiver
+  // (ESP-NOW chatting, CSI, sniffing) wants an immediate answer: then hold it.
   const bool conectado = tab5_wifi_estado() == TAB5_WIFI_CONECTADO;
-  static int s_repouso_s = 0;   // ha quanto tempo a tela esta apagada
+  static int s_repouso_s = 0;   // how long the screen has been off
   s_repouso_s = tab5_power_em_repouso() ? s_repouso_s + dt : 0;
   batida(!(conectado && tab5_power_em_repouso()) ? 0
          : s_repouso_s >= DOZE_APOS_S ? BATIDA_DOZE_MS : BATIDA_MS);
@@ -95,10 +95,10 @@ void tab5_wifi_cochilo_vigiar(void)
   const bool vale = ajustes_wifi_cochilo() && ajustes_wifi();
   const bool repouso = tab5_power_em_repouso();
 
-  // Desligaram o ajuste, acenderam a tela ou alguem precisa: volta ao normal.
+  // The setting was turned off, the screen came on or someone needs it: back to normal.
   if (!vale || !repouso || alguem_precisa()) {
     if (s_estado == C_COCHILANDO && ajustes_wifi()) {
-      religar(!vale ? "ajuste" : !repouso ? "tela acesa" : "pedido");
+      religar(!vale ? "setting" : !repouso ? "screen on" : "request");
     }
     s_estado = C_NORMAL; s_seg = 0;
     return;
@@ -107,10 +107,10 @@ void tab5_wifi_cochilo_vigiar(void)
   s_seg += dt;
   switch (s_estado) {
     case C_NORMAL: {
-      // So desce o que esta de pe: com o Wi-Fi ja parado (o Radar pausa, a
-      // senha errada desistiu) nao ha o que economizar nem o que devolver.
+      // Only take down what is up: with Wi-Fi already stopped (Radar pauses, a
+      // wrong password gave up) there is nothing to save nor to give back.
       const bool de_pe = tab5_wifi_radio_ativo() || tab5_wifi_estado() == TAB5_WIFI_CONECTANDO;
-      if (s_seg >= COCHILO_APOS_S && de_pe) { desligar("tela apagada"); }
+      if (s_seg >= COCHILO_APOS_S && de_pe) { desligar("screen off"); }
       break;
     }
     case C_COCHILANDO:
@@ -121,7 +121,7 @@ void tab5_wifi_cochilo_vigiar(void)
       break;
     case C_JANELA:
       if (tab5_wifi_estado() == TAB5_WIFI_CONECTADO) { s_conectado_s += dt; }
-      if (s_conectado_s >= JANELA_S || s_seg >= JANELA_MAX_S) { desligar("fim da janela"); }
+      if (s_conectado_s >= JANELA_S || s_seg >= JANELA_MAX_S) { desligar("end of window"); }
       break;
   }
 }
@@ -129,22 +129,22 @@ void tab5_wifi_cochilo_vigiar(void)
 void tab5_wifi_cochilo_resumo(char* out, size_t tam)
 {
   if (!ajustes_wifi_cochilo()) {
-    snprintf(out, tam, "conectado economico%s (economia maxima desligada em Ajustes)",
-             s_batendo_ms ? (s_batendo_ms == BATIDA_DOZE_MS ? ", batida de 300 ms (doze)" : ", batida de 100 ms") : "");
+    snprintf(out, tam, "connected, power saving%s (maximum saving off in Settings)",
+             s_batendo_ms ? (s_batendo_ms == BATIDA_DOZE_MS ? ", 300 ms beat (doze)" : ", 100 ms beat") : "");
     return;
   }
   switch (s_estado) {
     case C_NORMAL:
       snprintf(out, tam, "acordado%s%s (cochilou %lu vezes)",
-               !tab5_power_em_repouso() ? "" : mesh_pela_internet() ? " - Mesh pela internet: nao cochila"
-                                          : " - tela apagada, conta para cochilar",
+               !tab5_power_em_repouso() ? "" : mesh_pela_internet() ? " - Mesh over the internet: no napping"
+                                          : " - screen off, counting down to nap",
                s_batendo_ms ? ", batida" : "", (unsigned long)s_cochilos);
       break;
     case C_COCHILANDO:
       snprintf(out, tam, "cochilando ha %d s (janela em %d s)", s_seg, JANELA_CADA_S - s_seg);
       break;
     case C_JANELA:
-      snprintf(out, tam, "janela: %d s conectado de %d", s_conectado_s, JANELA_S);
+      snprintf(out, tam, "window: %d s connected of %d", s_conectado_s, JANELA_S);
       break;
   }
 }

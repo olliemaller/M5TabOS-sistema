@@ -1,4 +1,4 @@
-// tab5_texto: ver o porque no .hpp.
+// tab5_texto: see the .hpp for the why.
 #include "tab5_texto.hpp"
 #include "tab5_volumes.hpp"
 #include "tab5_arquivos.hpp"
@@ -12,17 +12,17 @@
 
 static const char* TAG = "tab5_texto";
 
-#define PONTOS_MAX 256   // quantos pontos de salto o indice guarda
+#define PONTOS_MAX 256   // how many jump points the index keeps
 
 struct tab5_texto {
   char     caminho[TAB5_ARQ_CAMINHO_MAX + 96];
-  int      total;                  // linhas do arquivo
-  int      passo;                  // um ponto de salto a cada 'passo' blocos de linhas
-  uint64_t ponto[PONTOS_MAX];      // onde comeca o bloco k * passo (UINT64_MAX = sem)
+  int      total;                  // lines in the file
+  int      passo;                  // one jump point every 'passo' blocks of lines
+  uint64_t ponto[PONTOS_MAX];      // where block k * passo starts (UINT64_MAX = none)
   bool     csv;
 };
 
-// O CSV quebra no campo: um espaco depois de cada separador.
+// CSV wraps at the field: a space after each separator.
 static void espacar_csv(const char* de, char* para, size_t n)
 {
   size_t k = 0;
@@ -34,21 +34,21 @@ static void espacar_csv(const char* de, char* para, size_t n)
 }
 
 // ---------------------------------------------------------------------------
-// Abrir: conta as linhas e monta o indice
+// Open: count the lines and build the index
 // ---------------------------------------------------------------------------
 tab5_texto_t* tab5_texto_abrir(const char* caminho, bool (*cancelado)(void))
 {
   if (!caminho || strlen(caminho) >= sizeof(((tab5_texto_t*)0)->caminho)) { return nullptr; }
-  // O indice vai para a PSRAM: so existe enquanto o texto esta aberto.
+  // The index goes into PSRAM: it only exists while the text is open.
   tab5_texto_t* t = (tab5_texto_t*)heap_caps_calloc(1, sizeof(tab5_texto_t), MALLOC_CAP_SPIRAM);
   if (!t) { return nullptr; }
   strcpy(t->caminho, caminho);
   t->csv = tab5_arq_extensao_e(caminho, ".csv");
 
   tab5_leitor_t* r = tab5_leitor_abrir(caminho);
-  if (!r) { ESP_LOGW(TAG, "nao consegui abrir '%s'", caminho); heap_caps_free(t); return nullptr; }
+  if (!r) { ESP_LOGW(TAG, "could not open '%s'", caminho); heap_caps_free(t); return nullptr; }
 
-  // Um ponto a cada bloco de linhas; depois o 'passo' reduz a tabela ao que cabe.
+  // One point per block of lines; afterwards 'passo' shrinks the table to what fits.
   uint64_t* fronteira = (uint64_t*)heap_caps_malloc(PONTOS_MAX * sizeof(uint64_t), MALLOC_CAP_SPIRAM);
   if (!fronteira) { tab5_leitor_fechar(r); heap_caps_free(t); return nullptr; }
   int n_fronteiras = 0;
@@ -74,7 +74,7 @@ tab5_texto_t* tab5_texto_abrir(const char* caminho, bool (*cancelado)(void))
       }
     }
     pos += (uint64_t)lidos;
-    // De 64 em 64 KB cede a CPU e confere o cancelamento (nao trava a interface).
+    // Every 64 KB, yield the CPU and check for cancellation (does not freeze the interface).
     if ((++voltas % 16) == 0) {
       if (cancelado && cancelado()) { lidos = -2; break; }
       vTaskDelay(1);
@@ -100,15 +100,15 @@ tab5_texto_t* tab5_texto_abrir(const char* caminho, bool (*cancelado)(void))
 int tab5_texto_linhas(const tab5_texto_t* t) { return t ? t->total : 0; }
 
 // ---------------------------------------------------------------------------
-// Ler um trecho
+// Read a section
 // ---------------------------------------------------------------------------
 int tab5_texto_ler(tab5_texto_t* t, int inicio, int max, char* saida, size_t larg)
 {
   if (!t || !saida || larg < 6 || max <= 0 || inicio < 0) { return -1; }
   tab5_linhas_t* l = tab5_linhas_abrir(t->caminho);
-  if (!l) { ESP_LOGW(TAG, "nao consegui abrir '%s'", t->caminho); return -1; }
+  if (!l) { ESP_LOGW(TAG, "could not open '%s'", t->caminho); return -1; }
 
-  // Salta para o ponto do indice mais perto antes da linha e pula o resto.
+  // Jump to the nearest index point before the line and skip the rest.
   const int casa = (inicio / TAB5_TEXTO_BLOCO) / t->passo;
   int pular = inicio;
   if (casa < PONTOS_MAX && t->ponto[casa] != UINT64_MAX && tab5_linhas_ir(l, t->ponto[casa])) {
@@ -132,7 +132,7 @@ int tab5_texto_ler(tab5_texto_t* t, int inicio, int max, char* saida, size_t lar
     if (cortada) {
       size_t m = strlen(dst);
       if (m > larg - 5) { m = larg - 5; }
-      while (m > 0 && ((unsigned char)dst[m] & 0xC0) == 0x80) { --m; }   // nao parte um caractere UTF-8
+      while (m > 0 && ((unsigned char)dst[m] & 0xC0) == 0x80) { --m; }   // do not split a UTF-8 character
       memcpy(dst + m, " ...", 5);
     }
     n++;

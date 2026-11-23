@@ -9,13 +9,13 @@
 
 static const char *TAG = "tela";
 
-static esp_lcd_panel_handle_t s_handle = nullptr;   // painel com que fomos preparados
+static esp_lcd_panel_handle_t s_handle = nullptr;   // panel we were prepared with
 static void*     s_fb[2]     = { nullptr, nullptr };
 static uint8_t** s_linhas[2] = { nullptr, nullptr };
-static uint8_t** s_nosso     = nullptr;   // o vetor que ALOCAMOS (o outro e do M5GFX)
+static uint8_t** s_nosso     = nullptr;   // the array we ALLOCATED (the other one is M5GFX's)
 static int       s_largura   = 0;
 static int       s_altura    = 0;
-static int       s_frente    = 0;         // qual pagina o DSI esta varrendo
+static int       s_frente    = 0;         // which page the DSI is scanning
 static bool      s_pronto    = false;
 static uint32_t  s_geracao   = 0;
 std::atomic<uint32_t> g_tab5_tela_epoca{0};
@@ -27,21 +27,21 @@ void tab5_tela_definir_alvo(lgfx::LovyanGFX* d) { s_alvo = d; }
 uint32_t tab5_tela_geracao(void) { return s_geracao; }
 
 // ---------------------------------------------------------------------------
-// AS PAGINAS
+// THE PAGES
 // ---------------------------------------------------------------------------
-// O M5GFX so conhece o fb0: o _lines_buffer dele e um vetor de ponteiros de
-// linha para ele. Montamos um gemeo para o fb1 e trocamos qual o M5GFX usa a
-// cada troca de pagina - assim o M5.Display aponta sempre para a pagina
-// VISIVEL. Ninguem deveria desenhar nele (o alvo e a tela virtual), mas se
-// algo desenhar, cai onde se ve, e nao numa pagina que o compositor vai
-// sobrescrever sem aviso.
+// M5GFX only knows fb0: its _lines_buffer is an array of line pointers
+// into it. We build a twin for fb1 and swap which one M5GFX uses on
+// every page switch - so M5.Display always points at the VISIBLE
+// page. Nobody should draw on it (the target is the virtual screen), but if
+// something does, it lands where it can be seen, and not on a page the compositor will
+// overwrite without warning.
 void tab5_tela_encerrar(void)
 {
   auto* p = tab5_painel_dsi_interno();
   if (p && s_linhas[0]) {
-    // SEMPRE devolve o vetor ORIGINAL do M5GFX. O desmontar_tela() do
-    // tab5_power libera o que estiver em _lines_buffer; se fosse o NOSSO,
-    // liberariamos o mesmo bloco duas vezes (o double free).
+    // ALWAYS returns M5GFX's ORIGINAL array. tab5_power's desmontar_tela()
+    // frees whatever is in _lines_buffer; if it were OURS,
+    // we would free the same block twice (the double free).
     p->trocar_lines(s_linhas[0]);
   }
   if (s_nosso) { heap_caps_free(s_nosso); s_nosso = nullptr; }
@@ -62,8 +62,8 @@ bool tab5_tela_iniciar(void)
   esp_lcd_panel_handle_t h = p->pegar_handle();
   if (h == nullptr) { return false; }
 
-  // Painel igual e ja preparado: nada a fazer. Painel DIFERENTE = o repouso
-  // (ou a troca de relogio) destruiu e remontou o DSI.
+  // Same panel and already prepared: nothing to do. A DIFFERENT panel = idle
+  // (or a clock change) destroyed and rebuilt the DSI.
   if (s_pronto && h == s_handle) { return true; }
   if (s_pronto) { tab5_tela_encerrar(); }
 
@@ -71,7 +71,7 @@ bool tab5_tela_iniciar(void)
   void* fb1 = nullptr;
   if (esp_lcd_dpi_panel_get_frame_buffer(h, 2, &fb0, &fb1) != ESP_OK
    || fb0 == nullptr || fb1 == nullptr) {
-    ESP_LOGE(TAG, "o painel nao tem duas paginas");
+    ESP_LOGE(TAG, "the panel does not have two pages");
     return false;
   }
 
@@ -79,15 +79,15 @@ bool tab5_tela_iniciar(void)
   if (doM5 == nullptr) { return false; }
 
   const int altura = p->altura();
-  // Mesma formula do Panel_DSI::init - RGB565, linha alinhada em 4 bytes.
+  // Same formula as Panel_DSI::init - RGB565, line aligned to 4 bytes.
   const size_t passo = ((p->largura() * 16 >> 3) + 3) & ~3u;
 
-  // Vetor de PONTEIROS de linha: so a CPU le (para achar onde desenhar a
-  // linha y); o DMA do DSI le o framebuffer, nunca este vetor. Por isso vai
-  // para a PSRAM - sao 5KB (1280 ponteiros) que saem da SRAM interna.
+  // Array of line POINTERS: only the CPU reads it (to find where to draw
+  // line y); the DSI DMA reads the framebuffer, never this array. That is why it goes
+  // to PSRAM - 5KB (1280 pointers) taken out of internal SRAM.
   uint8_t** meu = (uint8_t**)heap_caps_malloc(altura * sizeof(uint8_t*), MALLOC_CAP_SPIRAM);
   if (meu == nullptr) {
-    ESP_LOGE(TAG, "sem memoria para o vetor de linhas (%d ponteiros)", altura);
+    ESP_LOGE(TAG, "out of memory for the line array (%d pointers)", altura);
     return false;
   }
   uint8_t* linha = (uint8_t*)fb1;
@@ -106,7 +106,7 @@ bool tab5_tela_iniciar(void)
   ++s_geracao;
   ++g_tab5_tela_epoca;
 
-  ESP_LOGI(TAG, "tela com pagina dupla (desenha numa, mostra a outra)");
+  ESP_LOGI(TAG, "display double-buffered (draws on one page, shows the other)");
   tab5_quadro_iniciar(h);
   return true;
 }
@@ -122,8 +122,8 @@ bool tab5_tela_pedir_troca(int y0, int y1)
   auto* p = tab5_painel_dsi_interno();
   if (!s_pronto || p == nullptr || y1 <= y0) { return false; }
   const int atras = 1 - s_frente;
-  // O ponteiro e o proprio framebuffer: o driver so muda o indice, que vale
-  // no proximo fim de frame.
+  // The pointer is the framebuffer itself: the driver only changes the index, which takes
+  // effect at the next end of frame.
   if (esp_lcd_panel_draw_bitmap(s_handle, 0, y0, s_largura, y1, s_fb[atras]) != ESP_OK) { return false; }
   tab5_quadro_armar_espera();
   s_frente = atras;
@@ -132,14 +132,14 @@ bool tab5_tela_pedir_troca(int y0, int y1)
 }
 
 // ---------------------------------------------------------------------------
-// REGIAO SABIDAMENTE LIMPA
+// REGION KNOWN TO BE CLEAR
 // ---------------------------------------------------------------------------
-// Numa repintura completa o sistema limpa a area util e logo em seguida o app
-// pede a mesma limpeza. A regra de dispensar mora AQUI, e nao em cada app:
-// o app pede sempre, sem condicao, e acerta por omissao.
+// On a full repaint the system clears the work area and right afterwards the app
+// asks for the same clear. The rule for skipping it lives HERE, not in each app:
+// the app always asks, unconditionally, and is correct by default.
 //
-// Varias regioes (e nao uma so) porque uma passada limpa areas separadas com
-// cores diferentes - area util, barra de baixo, moldura de cima.
+// Several regions (not just one) because a single pass clears separate areas with
+// different colours - work area, bottom bar, top frame.
 #define LIM_MAX 4
 static struct { int x, y, l, a; uint16_t cor; } s_lim[LIM_MAX];
 static int s_n_lim = 0;
@@ -173,11 +173,11 @@ void tab5_tela_limpar(int x, int y, int largura, int altura, uint16_t cor)
 }
 
 // ---------------------------------------------------------------------------
-// ROLAGEM - reaproveitar pixel em vez de redesenhar
+// SCROLLING - reuse pixels instead of redrawing
 // ---------------------------------------------------------------------------
-// Um copyRect so da area inteira: a tela virtual nao e varrida por ninguem,
-// entao nao ha rajada a espacar nem feixe a vencer. O Panel_Sprite copia linha
-// a linha na ordem certa para origem e destino sobrepostos.
+// A single copyRect of the whole area: the virtual screen isn't scanned by anyone,
+// so there are no bursts to space out and no beam to beat. Panel_Sprite copies line
+// by line in the right order for overlapping source and destination.
 static uint64_t s_rol_px = 0;
 static uint64_t s_rol_us = 0;
 
@@ -191,11 +191,11 @@ bool tab5_tela_rolar(int x, int y, int largura, int altura, int delta, uint16_t 
   const int h = altura - ad;
   const int64_t t0 = esp_timer_get_time();
   if (delta > 0) {
-    d.copyRect(x, y, largura, h, x, y + delta);   // conteudo sobe
-    d.fillRect(x, y + h, largura, ad, cor);       // tira nova embaixo
+    d.copyRect(x, y, largura, h, x, y + delta);   // content moves up
+    d.fillRect(x, y + h, largura, ad, cor);       // new strip at the bottom
   } else {
-    d.copyRect(x, y + ad, largura, h, x, y);      // conteudo desce
-    d.fillRect(x, y, largura, ad, cor);           // tira nova em cima
+    d.copyRect(x, y + ad, largura, h, x, y);      // content moves down
+    d.fillRect(x, y, largura, ad, cor);           // new strip at the top
   }
   s_rol_us += (uint64_t)(esp_timer_get_time() - t0);
   s_rol_px += (uint64_t)largura * h;

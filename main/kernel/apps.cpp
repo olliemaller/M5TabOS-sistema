@@ -1,14 +1,14 @@
-// A TABELA DE APLICATIVOS.
+// THE APPLICATION TABLE.
 //
-// Ninguem edita este arquivo. A lista fixa vem de apps_lista.inc, que o
-// main/CMakeLists.txt gera a cada build a partir das pastas main/app_<nome>/:
-// cada uma vira uma linha APP(APP_<NOME>). Criar um app e criar a pasta e
-// definir nela o 'extern const app_t APP_<NOME>'; tirar e apagar a pasta.
+// Nobody edits this file. The fixed list comes from apps_lista.inc, which
+// main/CMakeLists.txt generates on every build from the main/app_<nome>/ folders:
+// each one becomes a line APP(APP_<NOME>). Creating an app means creating the folder and
+// defining 'extern const app_t APP_<NOME>' in it; removing it means deleting the folder.
 //
-// Depois dos fixos, o boot acrescenta os apps lidos do cartao (os scripts
-// Berry, services/berry_apps) com sistema_apps_registrar() - antes da home
-// montar a ordem dos icones. Depois do boot, so a interface mexe (os apps do
-// cartao relidos ao voltar do pendrive).
+// After the fixed ones, boot adds the apps read from the card (the Berry
+// scripts, services/berry_apps) with sistema_apps_registrar() - before the home screen
+// builds the icon order. After boot, only the UI touches it (the card's apps
+// reread when returning from USB flash drive mode).
 
 #include "app.h"
 

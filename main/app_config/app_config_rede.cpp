@@ -1,7 +1,7 @@
-// APP: Ajustes - as paginas de rede e radio: Wi-Fi, Bluetooth, ESP-NOW,
-// Meshtastic (o PIN) e a malha pela internet (servidores MQTT), cada uma com o
-// desenho e o toque. Partido de app_config.cpp (o app); o que as partes
-// compartilham esta em app_config_interno.hpp.
+// APP: Ajustes (Settings) - the network and radio pages: Wi-Fi, Bluetooth,
+// ESP-NOW, Meshtastic (the PIN) and the mesh over the internet (MQTT servers),
+// each with its drawing and touch handling. Split from app_config.cpp (the
+// app); what the parts share is in app_config_interno.hpp.
 
 #include "tab5_hora.hpp"
 #include "app.h"
@@ -31,20 +31,20 @@ static tab5_ble_visto_t s_bt[TAB5_BLE_VISTOS];
 static char  s_pin_txt[8];
 
 // ---- Wi-Fi -----------------------------------------------------------------
-// Estado, ligar/desligar, procurar, e a LISTA de redes em volta. Tocar numa
-// rede conhecida conecta; numa nova, pede a senha (teclado da tela ou do
-// ExtPort1), guarda cifrada no cartao e conecta. Tocar duas vezes na rede em
-// uso a esquece.
+// Status, on/off, scan, and the LIST of networks around. Tapping a known
+// network connects; a new one asks for the password (on-screen keyboard or
+// the ExtPort1 one), stores it encrypted on the SD card and connects. Tapping
+// the network in use twice forgets it.
 static const int WF_ITEM_A = 92;
 lista_t   s_l_wifi;
 uint32_t  s_wf_ver = 0;
 static int       s_wf_n = 0;
 static tab5_wifi_visto_t s_wf[TAB5_WIFI_MAX_VISTAS];
-bool      s_wf_senha = false;          // editando a senha de s_wf_alvo
+bool      s_wf_senha = false;          // editing the password of s_wf_alvo
 static char      s_wf_alvo[33];
 char      s_wf_txt[65];
-static char      s_wf_campo[70];          // o que esta pintado no campo da senha
-static char      s_wf_esquecer[33];           // 1o toque na rede em uso
+static char      s_wf_campo[70];          // what is painted in the password field
+static char      s_wf_esquecer[33];           // 1st tap on the network in use
 static uint32_t  s_wf_esquecer_ms = 0;
 
 static int wf_y_lista(void) { return CONTEUDO_Y + 84 + (BTN_A + 20) * 4 + 44; }
@@ -61,7 +61,7 @@ void wf_item_desenhar(lgfx::LovyanGFX& d, int i, int x0, int y, int largura, voi
   const tab5_wifi_visto_t& v = s_wf[i];
   d.fillRect(x0, y, largura, WF_ITEM_A, TEMA_FUNDO);
   const bool uso = wf_em_uso(v.ssid);
-  // Sinal em 4 barras, a esquerda.
+  // Signal as 4 bars, on the left.
   const int nb = v.rssi > -55 ? 4 : v.rssi > -65 ? 3 : v.rssi > -75 ? 2 : 1;
   for (int b = 0; b < 4; ++b) {
     const int h = 8 + b * 8;
@@ -85,7 +85,7 @@ static void wf_recarregar(void)
   for (int i = 0; i < n && k < TAB5_WIFI_MAX_VISTAS; ++i) { if (tab5_wifi_vista(i, &s_wf[k])) { ++k; } }
   s_wf_n = k;
   lista_itens_mudaram(&s_l_wifi, s_wf_n);
-  if (deitado(sistema_area())) { sistema_pedir_redesenho_completo(); }   // a pagina mudou de altura
+  if (deitado(sistema_area())) { sistema_pedir_redesenho_completo(); }   // the page changed height
 }
 
 void pag_wifi(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
@@ -100,8 +100,8 @@ void pag_wifi(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
   if (con && r != TAB5_WIFI_RSSI_DESCONHECIDO) { snprintf(det, sizeof(det), tr("%s  ·  %d dBm"), tab5_wifi_ip(), r); }
   else if (con)                                { snprintf(det, sizeof(det), "%s", tab5_wifi_ip()); }
   else                                         { snprintf(det, sizeof(det), tr("%d rede(s) conhecida(s)"), tab5_wifi_n_conhecidas()); }
-  // O texto digitado NAO entra na assinatura: cada letra repintava a pagina
-  // inteira e o teclado junto. Agora a letra repinta so o campo.
+  // The typed text does NOT go into the signature: each letter used to repaint
+  // the whole page and the keyboard with it. Now a letter repaints only the field.
   snprintf(assin, sizeof(assin), "%s|%s|%d|%d|%d|%s|%d|%d", sub, det, (int)ajustes_wifi(), (int)tab5_wifi_procurando(),
            s_wf_n, s_aviso, (int)s_wf_senha, (int)ajustes_wifi_cochilo() | ((int)ajustes_capa_internet() << 1));
   const bool mudou = pintura_mudou_s(&s_cfg_p, s_assin, sizeof(s_assin), assin) || tudo;
@@ -143,11 +143,11 @@ void pag_wifi(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
                     ajustes_wifi() ? TEMA_ALERTA : TEMA_SUCESSO);
     y = botao_largo(d, a, y, tab5_wifi_procurando() ? tr("PROCURANDO...") : tr("PROCURAR REDES"),
                     tab5_wifi_procurando() ? TEMA_TEXTO_3 : TEMA_DESTAQUE);
-    // Economia em repouso (services/tab5_wifi_cochilo): tela apagada, o Wi-Fi
-    // desce e volta ao acender ou 1 min a cada 15.
+    // Idle power saving (services/tab5_wifi_cochilo): with the screen off, Wi-Fi
+    // goes down and comes back when the screen wakes or for 1 min every 15.
     y = botao_largo(d, a, y, ajustes_wifi_cochilo() ? tr("ECONOMIA MÁXIMA: DESLIGA EM REPOUSO") : tr("EM REPOUSO: CONECTADO ECONÔMICO"),
                     ajustes_wifi_cochilo() ? TEMA_ALERTA : TEMA_SUCESSO);
-    // O que vai a internet sem a pessoa pedir: a capa da musica (services/tab5_musica).
+    // What goes to the internet without the user asking: the music cover art (services/tab5_musica).
     y = botao_largo(d, a, y, ajustes_capa_internet() ? tr("CAPAS DE MÚSICA: BUSCA NA INTERNET") : tr("CAPAS DE MÚSICA: SÓ DO CARTÃO"),
                     ajustes_capa_internet() ? TEMA_DESTAQUE : TEMA_TEXTO_3);
     tab5_escrever(d, s_aviso[0] ? s_aviso : (s_wf_n ? tr("Toque numa rede para conectar") : tr("Toque PROCURAR REDES")), a.x + MARGEM, a.y + y, 22, false, cor_sub(d), TEMA_FUNDO);
@@ -155,12 +155,13 @@ void pag_wifi(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
   lista_desenhar(&s_l_wifi, d, janela_da_lista(a, wf_y_lista(), s_wf_n, WF_ITEM_A), TEMA_FUNDO, mudou);
 }
 
-// Gravar no cartao e conectar: no worker (o cartao demora), com a senha
-// numa copia propria que o trabalho apaga ao terminar.
-// ESCOLHER UMA REDE E SAIR DO CANAL FIXO. Com o ESP-NOW em canal fixo o
-// Wi-Fi fica solto do roteador; quem toca numa rede quer o roteador de volta.
-// Sem soltar o canal fixo aqui, o Wi-Fi conectava mas o ESP-NOW seguia achando
-// que o canal era o fixo - e o ajuste salvo soltava o roteador no proximo boot.
+// Writing to the SD card and connecting: on the worker (the card is slow), with
+// the password in a private copy that the job wipes when it finishes.
+// PICKING A NETWORK LEAVES THE FIXED CHANNEL. With ESP-NOW on a fixed channel,
+// Wi-Fi is detached from the router; whoever taps a network wants the router
+// back. Without releasing the fixed channel here, Wi-Fi connected but ESP-NOW
+// kept assuming the channel was the fixed one - and the saved setting dropped
+// the router on the next boot.
 static void conectar_rede(const char* ssid)
 {
   if (tab5_espnow_canal_fixo()) { tab5_espnow_definir_canal(0); }
@@ -172,8 +173,8 @@ typedef struct { char ssid[33]; char senha[65]; bool esquecer; } wf_pedido_t;
 static void wf_trabalho(void* arg)
 {
   wf_pedido_t* p = (wf_pedido_t*)arg;
-  // A gravacao monta o cartao sozinha (e, com ele emprestado ao computador,
-  // vai para o diario - a rede nova nao se perde).
+  // The write mounts the SD card by itself (and, with the card lent to the
+  // computer, it goes into the log - the new network is not lost).
   if (p->esquecer) { tab5_wifi_esquecer(p->ssid); }
   else             { tab5_wifi_gravar_credenciais(p->ssid, p->senha[0] ? p->senha : "-"); }
   if (!p->esquecer) { conectar_rede(p->ssid); }
@@ -191,7 +192,7 @@ static void wf_pedir(const char* ssid, const char* senha, bool esquecer)
   if (!sistema_trabalho_solto(wf_trabalho, p)) { memset(p, 0, sizeof(*p)); free(p); }
 }
 
-// Conectar exige o Wi-Fi ligado: liga (e grava a vontade) se estiver desligado.
+// Connecting requires Wi-Fi on: turns it on (and saves the preference) if off.
 static void wf_ligar_se_preciso(void)
 {
   sistema_wifi(true);
@@ -218,7 +219,7 @@ void wf_tecla(int ac)
 {
   if (ac == TECVIRT_ENVIAR) { wf_enviar_senha(); return; }
   if (ac == TECVIRT_FECHAR) { wf_fechar_senha(); return; }
-  // Senha e ASCII (como no teclado fisico): o acento da pagina de simbolos nao entra.
+  // Passwords are ASCII (as on the physical keyboard): accents from the symbols page are not accepted.
   tecvirt_editar(s_wf_txt, sizeof(s_wf_txt), ac);
   sistema_pedir_redesenho();
 }
@@ -272,7 +273,7 @@ void toque_wifi(int tx, int ty)
   const tab5_wifi_visto_t& v = s_wf[i];
   const uint32_t agora = tab5_agora_ms();
   if (wf_em_uso(v.ssid)) {
-    // Em uso: o primeiro toque avisa, o segundo (em 4 s) esquece a rede.
+    // In use: the first tap warns, the second (within 4 s) forgets the network.
     if (strcmp(s_wf_esquecer, v.ssid) == 0 && agora - s_wf_esquecer_ms < 4000) {
       wf_pedir(v.ssid, nullptr, true);
       snprintf(s_aviso, sizeof(s_aviso), tr("%s esquecida"), v.ssid);
@@ -285,7 +286,7 @@ void toque_wifi(int tx, int ty)
   } else if (v.conhecida || v.aberta) {
     wf_ligar_se_preciso();
     if (v.conhecida) { conectar_rede(v.ssid); }
-    else             { wf_pedir(v.ssid, nullptr, false); }   // aberta: guarda sem senha e conecta
+    else             { wf_pedir(v.ssid, nullptr, false); }   // open: save without a password and connect
     snprintf(s_aviso, sizeof(s_aviso), tr("conectando a %s..."), v.ssid);
   } else {
     snprintf(s_wf_alvo, sizeof(s_wf_alvo), "%s", v.ssid);
@@ -304,7 +305,7 @@ void teclar_wifi(const char* txt, uint8_t codigo)
   if (codigo == TAB5_TECLA_ENTER)  { wf_enviar_senha(); return; }
   if (codigo == TAB5_TECLA_APAGAR) { wf_tecla(TECVIRT_APAGAR); return; }
   if (codigo == TAB5_TECLA_ESC)    { wf_fechar_senha(); return; }
-  // Senha e ASCII: a letra que a tecla morta compos volta a ser as duas teclas.
+  // Passwords are ASCII: the letter composed by the dead key goes back to being the two keys.
   char cru[8];
   tab5_teclado_ascii(txt, cru, sizeof(cru));
   for (const char* c = cru; *c; ++c) { if ((unsigned char)*c >= 0x20) { wf_tecla((unsigned char)*c); } }
@@ -322,8 +323,8 @@ void bt_item_desenhar(lgfx::LovyanGFX& d, int i, int x0, int y, int largura, voi
   d.fillRect(x0, y, largura, BT_ITEM_A, TEMA_FUNDO);
   char end[18], linha[80], dist[12];
   tab5_ble_endereco_txt(v.addr, end);
-  // Rastreador em laranja: e o que se procura quando se quer saber "tem uma
-  // etiqueta perto de mim?".
+  // Trackers in orange: that is what you look for when you want to know "is
+  // there a tag near me?".
   const uint16_t cor = v.meshtastic ? TEMA_SUCESSO
                      : v.classe == TAB5_BLE_RASTREADOR ? TEMA_ALERTA : TEMA_TEXTO;
   char titulo[48];
@@ -343,14 +344,14 @@ void bt_item_desenhar(lgfx::LovyanGFX& d, int i, int x0, int y, int largura, voi
 
 static void bt_recarregar(void)
 {
-  // Meshtastic primeiro, depois por sinal: o que interessa fica no alto.
+  // Meshtastic first, then by signal: what matters sits at the top.
   const int n = tab5_ble_n_vistos();
   int k = 0;
   for (int i = 0; i < n && k < TAB5_BLE_VISTOS; ++i) { if (tab5_ble_visto(i, &s_bt[k])) { ++k; } }
   for (int i = 1; i < k; ++i) {
     tab5_ble_visto_t t = s_bt[i];
     int j = i - 1;
-    // Meshtastic, depois rastreadores, depois o resto - cada grupo por sinal.
+    // Meshtastic, then trackers, then the rest - each group by signal.
     auto grupo = [](const tab5_ble_visto_t& x) {
       return x.meshtastic ? 0 : x.classe == TAB5_BLE_RASTREADOR ? 1 : 2;
     };
@@ -400,8 +401,8 @@ void toque_bt(int tx, int ty)
   const int l = area_pagina().largura - 2 * MARGEM;
   int y = CONTEUDO_Y + 84 + 84;
   if (tab5_dentro(tx, ty, MARGEM, y, l, BTN_A)) {
-    // Descendo: o botao espera a pilha terminar (o toque repetido de quem
-    // achou que nao pegou nao empilha pedidos).
+    // Going down: the button waits for the stack to finish (repeated taps from
+    // someone who thought it did not register do not pile up requests).
     if (tab5_ble_estado() == TAB5_BLE_DESLIGANDO) { return; }
     sistema_bluetooth(tab5_ble_estado() == TAB5_BLE_DESLIGADO);
     s_aviso[0] = 0;
@@ -420,8 +421,8 @@ void toque_bt(int tx, int ty)
   char end[18];
   tab5_ble_endereco_txt(s_bt[i].addr, end);
   const char* nome = s_bt[i].nome[0] ? s_bt[i].nome : end;
-  // Todo toque responde: um aparelho que o sistema nao sabe usar diz isso, em
-  // vez de o toque parecer perdido.
+  // Every tap responds: a device the system does not know how to use says so,
+  // instead of the tap seeming lost.
   if (!s_bt[i].meshtastic) {
     char dist[12];
     tab5_sinal_distancia_txt(s_bt[i].rssi, s_bt[i].p1m ? s_bt[i].p1m : TAB5_SINAL_P1M_BLE, dist, sizeof(dist));
@@ -430,17 +431,17 @@ void toque_bt(int tx, int ty)
     } else {
       snprintf(s_aviso, sizeof(s_aviso), tr("%s a %s: sem uso ainda (só nós Meshtastic)"), nome, dist);
     }
-    ESP_LOGI("ajustes", "bluetooth: %s (%s) nao e Meshtastic - nada a fazer", nome, end);
+    ESP_LOGI("ajustes", "bluetooth: %s (%s) is not Meshtastic - nothing to do", nome, end);
     sistema_pedir_redesenho();
     return;
   }
-  // Meshtastic: vira o no do Mesh, e o Mesh passa para o Bluetooth - tocar e
-  // o pedido de conectar, e a linha "Conexão" acompanha o que acontece.
+  // Meshtastic: it becomes the Mesh node, and Mesh switches to Bluetooth -
+  // tapping is the request to connect, and the "Conexão" row follows what happens.
   ajustes_definir_mesh_ble_endereco(end);
-  // Conectar liga o Bluetooth (e fica gravado) e reinicia o Mesh por ele.
+  // Connecting turns Bluetooth on (and it stays saved) and restarts Mesh over it.
   sistema_mesh_via(AJUSTES_MESH_BLUETOOTH);
   snprintf(s_aviso, sizeof(s_aviso), tr("conectando a %s..."), nome);
-  ESP_LOGI("ajustes", "bluetooth: conectar o Mesh a %s (%s)", nome, end);
+  ESP_LOGI("ajustes", "bluetooth: connect Mesh to %s (%s)", nome, end);
   sistema_pedir_redesenho();
 }
 
@@ -488,15 +489,15 @@ void toque_espnow(int tx, int ty)
 // ---- Meshtastic ------------------------------------------------------------
 static int mesh_y_via(void)    { return CONTEUDO_Y + 30; }
 static int mesh_y_pin(void)    { return mesh_y_via() + BTN_A + 24 + 84 + 84; }
-// A posicao do GPS para a malha saiu daqui: e do grupo Localizacao do app
-// Mesh (Configurar o no), junto do que o NO faz com ela - dois lugares para a
-// mesma coisa deixavam um contradizer o outro.
-static int mesh_y_net(void)    { return mesh_y_pin() + 34 + BTN_A + 24; }   // bloco da internet (MQTT)
+// The GPS position for the mesh moved out of here: it belongs to the Location
+// group of the Mesh app (Configure node), next to what the NODE does with it -
+// two places for the same thing let one contradict the other.
+static int mesh_y_net(void)    { return mesh_y_pin() + 34 + BTN_A + 24; }   // internet block (MQTT)
 
-static bool s_pin_para_no = false;   // o editor abriu porque o no esta pedindo o PIN agora
-static char s_pin_pintado[16];       // o numero que esta na tela
+static bool s_pin_para_no = false;   // the editor opened because the node is asking for the PIN right now
+static char s_pin_pintado[16];       // the number that is on the screen
 
-// O numero do PIN, sozinho: limpa so a faixa dele (ate o botao) e escreve.
+// The PIN number, on its own: clears only its strip (up to the button) and writes.
 static void pin_valor(lgfx::LovyanGFX& d, const area_t& a, bool forcar)
 {
   char pin[16];
@@ -510,7 +511,7 @@ static void pin_valor(lgfx::LovyanGFX& d, const area_t& a, bool forcar)
 
 void pag_mesh(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
 {
-  // O no pediu o PIN (modo aleatorio): o teclado abre sozinho.
+  // The node asked for the PIN (random mode): the keyboard opens by itself.
   if (mesh_ble_esperando_pin() && !s_pin_editando) {
     s_pin_editando = true;
     s_pin_para_no = true;
@@ -523,13 +524,14 @@ void pag_mesh(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
   snprintf(assin, sizeof(assin), "%d|%s|%s|%lu|%u|%d|%s|%d|%s", (int)ajustes_mesh_via(), tab5_mesh_enlace_descricao(), salvo,
            (unsigned long)ajustes_mesh_pin(), 0u, (int)s_pin_editando, "",
            (int)ajustes_mesh_internet(), tab5_mesh_internet_estado());
-  // A memoria da assinatura (s_assin) guarda 159 caracteres: o que muda
-  // depois disso (os estados, que vem no fim) nao repintaria. Vai o HASH da
-  // assinatura inteira (FNV-1a), que cabe e muda com qualquer caractere.
+  // The signature memory (s_assin) holds 159 characters: whatever changes
+  // after that (the states, which come at the end) would not repaint. So the
+  // HASH of the whole signature goes in (FNV-1a), which fits and changes with
+  // any character.
   uint32_t h = 2166136261u;
   for (const char* c = assin; *c; ++c) { h = (h ^ (uint8_t)*c) * 16777619u; }
   snprintf(assin, sizeof(assin), "mesh|%08lx", (unsigned long)h);
-  // O PIN digitado fica FORA da assinatura: a letra repinta so o numero.
+  // The typed PIN stays OUT of the signature: a letter repaints only the number.
   if (s_pin_editando) { tecvirt_posicionar(&s_cfg_kb, a); }
   if (!pintura_mudou_s(&s_cfg_p, s_assin, sizeof(s_assin), assin) && !tudo) {
     if (s_pin_editando) { pin_valor(d, a, false); tecvirt_pintar(&s_cfg_kb, d, false); }
@@ -538,8 +540,8 @@ void pag_mesh(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
   conteudo_limpo(d, a);
   const int l3 = (a.largura - 2 * MARGEM - 32) / 3;
 
-  // TRES VIAS. O Grove ganha sozinho quando o C6L e achado no cabo; depois
-  // disso a escolha aqui vale ate o proximo achado (ver ajustes.h).
+  // THREE PATHS. Grove wins by itself when the C6L is found on the cable; after
+  // that the choice here holds until the next detection (see ajustes.h).
   tab5_escrever(d, tr("Falar com a malha por (o Grove tem prioridade)"), a.x + MARGEM, a.y + CONTEUDO_Y, 22, false, cor_sub(d), TEMA_FUNDO);
   int y = mesh_y_via();
   static const char* const ROTULO[3] = { N_("CABO GROVE"), N_("BLUETOOTH"), N_("INTERNET") };
@@ -569,7 +571,7 @@ void pag_mesh(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
     return;
   }
 
-  // Internet (MQTT pelo Wi-Fi): so roda sem o no; o Grove tem prioridade.
+  // Internet (MQTT over Wi-Fi): only runs without the node; Grove has priority.
   const bool net = ajustes_mesh_internet();
   tab5_escrever(d, tr("Internet também quando faltar o nó (MQTT pelo Wi-Fi)"), a.x + MARGEM, a.y + y, 22, false, cor_sub(d), TEMA_FUNDO);
   y += 34;
@@ -595,13 +597,13 @@ static void aplicar_pin(void)
   if (s_pin_txt[0]) {
     const uint32_t pin = (uint32_t)atol(s_pin_txt);
     if (s_pin_para_no) {
-      // PIN PEDIDO AGORA PELO NO (o que aparece na tela dele): vai so para
-      // este pareamento. Nao e salvo - o no gera outro na proxima vez, e um
-      // numero velho salvo so faria o pareamento seguinte falhar.
+      // PIN REQUESTED NOW BY THE NODE (the one shown on its screen): used only for
+      // this pairing. It is not saved - the node generates another next time, and an
+      // old saved number would only make the next pairing fail.
       if (mesh_ble_esperando_pin()) { mesh_ble_digitar_pin(pin); }
     } else {
-      // PIN FIXO, editado por conta propria (ALTERAR): fica salvo e e tentado
-      // primeiro nas proximas conexoes.
+      // FIXED PIN, edited by the user (ALTERAR/change): it is saved and tried
+      // first on subsequent connections.
       ajustes_definir_mesh_pin(pin);
       ajustes_definir_mesh_pin_na_tela(false);
       mesh_ble_tentar_de_novo();
@@ -675,31 +677,32 @@ void teclar_mesh(const char* txt, uint8_t codigo)
   if (txt && txt[0] >= '0' && txt[0] <= '9' && n < 6) { s_pin_txt[n] = txt[0]; s_pin_txt[n + 1] = 0; sistema_pedir_redesenho(); }
 }
 
-// ---- Malha pela internet (servidores MQTT) -----------------------------------
-// Duas telas: a LISTA (automatico + os servidores da pessoa, cada um com
-// EDITAR, e + ADICIONAR) e o EDITOR de um servidor (modelo, cinco campos -
-// cada um editado no teclado - SALVAR E USAR, APAGAR). A lista e do servico
-// (mesh_mqtt_*); aqui so se desenha e se toca. Escolher reinicia o servico do
-// Mesh: o cliente MQTT reconecta no novo.
-bool  s_mq_ed      = false;     // no editor
-static int   s_mq_i       = 0;         // o servidor no editor: 1..n, 0 = novo
-static int   s_mq_modelo  = 0;         // o modelo aplicado (so num novo)
-int   s_mq_campo   = -1;        // campo em edicao (0..4), -1 = nenhum
+// ---- Mesh over the internet (MQTT servers) -----------------------------------
+// Two screens: the LIST (automatic + the user's servers, each with EDITAR
+// (edit), and + ADICIONAR (add)) and the EDITOR for a server (template, five
+// fields - each edited on the keyboard - SALVAR E USAR (save and use), APAGAR
+// (delete)). The list belongs to the service (mesh_mqtt_*); here we only draw
+// and handle touch. Choosing restarts the Mesh service: the MQTT client
+// reconnects to the new one.
+bool  s_mq_ed      = false;     // in the editor
+static int   s_mq_i       = 0;         // the server in the editor: 1..n, 0 = new
+static int   s_mq_modelo  = 0;         // the template applied (only on a new one)
+int   s_mq_campo   = -1;        // field being edited (0..4), -1 = none
 char  s_mq_txt[64];
-mesh_mqtt_servidor_t s_mq_p;    // a copia sendo editada
-static uint32_t s_mq_apagar_ms = 0;    // 1o toque em APAGAR: confirma em 4 s
+mesh_mqtt_servidor_t s_mq_p;    // the copy being edited
+static uint32_t s_mq_apagar_ms = 0;    // 1st tap on APAGAR: confirm within 4 s
 static const char* const MQ_ROTULO[5] = {
   N_("Nome (como aparece na lista)"), N_("Endereço (host ou host:porta)"), N_("Usuário"), N_("Senha"),
   N_("Raiz dos tópicos (ex.: msh/EU_868)"),
 };
-static const int MQ_EDITAR_L = 170;    // o botao EDITAR na ponta de cada servidor
+static const int MQ_EDITAR_L = 170;    // the EDITAR button at the end of each server
 
 static char* mq_campo(int k, size_t* tam) { return mesh_mqtt_campo(&s_mq_p, k, tam); }
 
 static int mq_y_lista(void) { return CONTEUDO_Y + 110; }
 static const int MQ_PASSO = BTN_A + 12;
 
-// Geometria do editor, num lugar so: desenho e toque leem as mesmas contas.
+// Editor geometry, in one place: drawing and touch read the same maths.
 static int mq_y_campos(void) { return CONTEUDO_Y + 40 + (s_mq_i == 0 ? BTN_A + 20 : 0); }
 static int mq_y_botoes(void) { return mq_y_campos() + 5 * 84 + 12; }
 
@@ -723,7 +726,7 @@ static void mq_abrir_editor(int i)
 
 static void mq_fechar_editor(void)
 {
-  memset(&s_mq_p, 0, sizeof(s_mq_p));   // a senha digitada nao fica na RAM
+  memset(&s_mq_p, 0, sizeof(s_mq_p));   // the typed password does not stay in RAM
   s_mq_ed = false;
   mq_tela();
 }
@@ -747,20 +750,20 @@ void mq_tecla(int ac)
   if (ac == TECVIRT_FECHAR) { mq_fechar_campo(false); return; }
   size_t tam;
   mq_campo(s_mq_campo, &tam);
-  // O nome aceita acento (e so para mostrar); o resto vai para o servidor.
+  // The name accepts accents (it is display-only); the rest goes to the server.
   tecvirt_editar(s_mq_txt, tam < sizeof(s_mq_txt) ? tam : sizeof(s_mq_txt), ac);
   sistema_pedir_redesenho();
 }
 
 void pag_mqtt(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
 {
-  if (s_mq_apagar_ms && tab5_agora_ms() - s_mq_apagar_ms >= 4000) { s_mq_apagar_ms = 0; }   // desistiu
+  if (s_mq_apagar_ms && tab5_agora_ms() - s_mq_apagar_ms >= 4000) { s_mq_apagar_ms = 0; }   // gave up
   char assin[128];
   snprintf(assin, sizeof(assin), "mq|%d|%d|%d|%d|%d|%d|%d|%s", (int)ajustes_mqtt_servidor(), (int)s_mq_ed, s_mq_i,
            s_mq_campo, s_mq_modelo, (int)(s_mq_apagar_ms != 0), mesh_mqtt_n_servidores(), tab5_mesh_internet_estado());
   const bool mudou = pintura_mudou_s(&s_cfg_p, s_assin, sizeof(s_assin), assin) || tudo;
 
-  // EDITANDO UM CAMPO: so ele e o teclado (o mesmo jeito da senha do Wi-Fi).
+  // EDITING A FIELD: only it and the keyboard (the same way as the Wi-Fi password).
   if (s_mq_campo >= 0) {
     const int y_campo = CONTEUDO_Y + 36;
     tecvirt_posicionar(&s_cfg_kb, a);
@@ -851,7 +854,7 @@ void toque_mqtt(int tx, int ty)
   }
   const int l = a.largura - 2 * MARGEM;
   if (s_mq_ed) {
-    // MODELO (so num novo): troca para o proximo e preenche os campos.
+    // TEMPLATE (only on a new one): switches to the next and fills in the fields.
     if (s_mq_i == 0 && tab5_dentro(tx, ty, MARGEM, CONTEUDO_Y + 40, l, BTN_A)) {
       s_mq_modelo = mesh_mqtt_proximo_modelo(s_mq_modelo, &s_mq_p);
       mq_tela();
@@ -863,24 +866,24 @@ void toque_mqtt(int tx, int ty)
         size_t tam;
         snprintf(s_mq_txt, sizeof(s_mq_txt), "%s", mq_campo(k, &tam));
         s_mq_campo = k;
-        // nome: texto livre; senha: senha; servidor, usuario e raiz: ASCII.
+        // name: free text; password: password; server, user and root: ASCII.
         tecvirt_abrir(&s_cfg_kb, k == 0 ? TECVIRT_TEXTO : k == 3 ? TECVIRT_SENHA : TECVIRT_ASCII);
         mq_tela();
         return;
       }
     }
     y = mq_y_botoes();
-    if (tab5_dentro(tx, ty, MARGEM, y, l, BTN_A)) {   // SALVAR E USAR
-      // Grava, passa a usar e reconecta (o servico).
-      if (!mesh_mqtt_salvar_e_usar(s_mq_i, &s_mq_p)) { return; }   // sem endereco (ou lista cheia): o botao ja esta apagado
+    if (tab5_dentro(tx, ty, MARGEM, y, l, BTN_A)) {   // SALVAR E USAR (save and use)
+      // Saves, switches to it and reconnects (the service).
+      if (!mesh_mqtt_salvar_e_usar(s_mq_i, &s_mq_p)) { return; }   // no address (or list full): the button is already greyed out
       mq_fechar_editor();
       return;
     }
     y += BTN_A + 20;
     if (s_mq_i > 0) {
-      if (tab5_dentro(tx, ty, MARGEM, y, l, BTN_A)) {   // APAGAR, com confirmacao
+      if (tab5_dentro(tx, ty, MARGEM, y, l, BTN_A)) {   // APAGAR (delete), with confirmation
         if (s_mq_apagar_ms && tab5_agora_ms() - s_mq_apagar_ms < 4000) {
-          mesh_mqtt_apagar_e_reconectar(s_mq_i);   // era o usado: volta ao automatico
+          mesh_mqtt_apagar_e_reconectar(s_mq_i);   // it was the one in use: back to automatic
           mq_fechar_editor();
         } else {
           s_mq_apagar_ms = tab5_agora_ms();
@@ -890,7 +893,7 @@ void toque_mqtt(int tx, int ty)
       }
       y += BTN_A + 20;
     }
-    if (tab5_dentro(tx, ty, MARGEM, y, l, BTN_A)) { mq_fechar_editor(); }   // VOLTAR
+    if (tab5_dentro(tx, ty, MARGEM, y, l, BTN_A)) { mq_fechar_editor(); }   // VOLTAR (back)
     return;
   }
   const int n = mesh_mqtt_n_servidores();
@@ -898,7 +901,7 @@ void toque_mqtt(int tx, int ty)
   for (int i = 0; i < n; ++i, y += MQ_PASSO) {
     if (!tab5_dentro(tx, ty, MARGEM, y, l, BTN_A)) { continue; }
     const int bl = i ? l - MQ_EDITAR_L - 12 : l;
-    if (i && tx >= MARGEM + bl) { mq_abrir_editor(i); return; }   // EDITAR (e o vao antes dele)
+    if (i && tx >= MARGEM + bl) { mq_abrir_editor(i); return; }   // EDITAR (edit) (and the gap before it)
     if (i != ajustes_mqtt_servidor()) { mq_aplicar((uint8_t)i); }
     return;
   }

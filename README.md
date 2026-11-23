@@ -8,7 +8,8 @@ M5GFX.
 > The interface starts in English (Portuguese is still one tap away in
 > Settings > Language), the documentation is in English, and the fork adds
 > its own fixes and features - see [CHANGELOG.md](CHANGELOG.md). Code
-> identifiers and most code comments are still in Portuguese, as upstream.
+> comments, logs and docs are in English; code identifiers and the Berry API
+> keep their Portuguese names, as upstream.
 
 Current version: see [version.txt](version.txt) and [CHANGELOG.md](CHANGELOG.md).
 
@@ -233,8 +234,8 @@ docs/             documentation (API, architecture, Berry, variants...)
 - The ST7123 and ST7121 screens and the ESP32-P4 v3.x build and take the
   conservative path (sleep only turns off the backlight, factory panel clock),
   but have not been tested on a device yet. Reports are welcome.
-- Code identifiers, code comments and the dated analysis notes in `docs/` are
-  in Portuguese, as upstream. The serial log (`ESP_LOG`) stays in Portuguese.
+- Code identifiers, the Berry API names, the dated analysis notes in `docs/`
+  and the changelog entries up to 0.9.1 are in Portuguese, as upstream.
 - The battery curve (`hal/tab5_power.hpp`) was calibrated on one unit
   (1306.8 mAh measured). Other batteries may need recalibration.
 - Bluetooth is BLE only: the C6 does not do Bluetooth Classic.

@@ -2,9 +2,9 @@
 #include "internal.hpp"   // diag_toque_ligado
 #include "esp_log.h"
 #include <algorithm>
-#include "app.h"   // sistema_area - o toque chega em coordenadas da area
+#include "app.h"   // sistema_area - touch arrives in area coordinates
 
-static const int BARRA_MARGEM = 8;   // rolagem_barra desenha 4px a 8px da borda
+static const int BARRA_MARGEM = 8;   // rolagem_barra draws 4px to 8px from the edge
 static const int BARRA_LARG   = 4;
 
 void lista_definir(lista_t* l, uint8_t ancoragem, int n,
@@ -39,11 +39,11 @@ void lista_itens_mudaram(lista_t* l, int n)
   l->medida_ok = true;
   l->tudo = true;
 
-  // LENDO O HISTORICO QUANDO CHEGA ALGO NOVO EMBAIXO. Numa lista ancorada no
-  // fim, 'atual' conta a partir de baixo: se o conteudo cresce e 'atual' fica
-  // igual, tudo o que voce esta lendo sobe junto. Somando o crescimento, o
-  // que esta na tela fica parado. Colado no fim (atual == 0) continua colado:
-  // a mensagem nova aparece.
+  // READING HISTORY WHEN SOMETHING NEW ARRIVES BELOW. In a list anchored at the
+  // end, 'atual' counts from the bottom: if the content grows and 'atual' stays
+  // the same, everything you are reading moves up with it. Adding the growth, what
+  // is on screen stays put. Stuck to the end (atual == 0) stays stuck:
+  // the new message appears.
   if (l->rol.ancoragem == ROLAGEM_FIM && antes >= 0 && l->rol.atual > 0 && l->total > antes) {
     l->rol.atual += l->total - antes;
     l->rol.no_visor = l->rol.atual;
@@ -68,15 +68,15 @@ void lista_esconder(lista_t* l)
 {
   l->no_ar = false;
   l->rol.ancora = -1;
-  l->tudo = true;   // voltando a aparecer, a janela foi pintada por outra tela
+  l->tudo = true;   // reappearing, the window was painted by another screen
 }
 
-// Onde comeca o item 0, em coordenadas de tela.
+// Where item 0 starts, in screen coordinates.
 static int y_do_primeiro(const lista_t* l, const area_t& j)
 {
   int y0;
   if (l->rol.ancoragem == ROLAGEM_FIM) {
-    if (l->total <= j.altura) { y0 = j.y + j.altura - l->total; }   // pouca coisa: colada embaixo
+    if (l->total <= j.altura) { y0 = j.y + j.altura - l->total; }   // few items: stuck to the bottom
     else                      { y0 = j.y - (l->total - j.altura - l->rol.atual); }
   } else {
     y0 = j.y - l->rol.atual;
@@ -93,12 +93,12 @@ static bool dentro_do_recorte(lgfx::LovyanGFX& d, const area_t& j)
   return j.x >= cx && j.y >= cy && j.x + j.largura <= cx + cl && j.y + j.altura <= cy + ca;
 }
 
-// Desenha os itens que cruzam 'rec' (ja recortado pelo chamador).
+// Draws the items that cross 'rec' (already clipped by the caller).
 static void desenhar_faixa(lista_t* l, lgfx::LovyanGFX& d, const area_t& j, const area_t& faixa, uint16_t fundo)
 {
-  // DENTRO DO RECORTE QUE JA VEM. Com a tela inteira rolando (app deitado), o
-  // sistema recorta o app na area dele; trocar esse recorte pelo da faixa
-  // deixava a janela da lista - que rolou junto - pintar por cima das barras.
+  // INSIDE THE CLIP THAT IS PASSED IN. With the whole screen scrolling (landscape app), the
+  // system clips the app to its area; replacing that clip with the strip's
+  // let the list window - which scrolled with it - paint over the bars.
   int32_t cx, cy, cl, ca;
   d.getClipRect(&cx, &cy, &cl, &ca);
   const int x0 = std::max<int>(faixa.x, cx), y0 = std::max<int>(faixa.y, cy);
@@ -115,10 +115,10 @@ static void desenhar_faixa(lista_t* l, lgfx::LovyanGFX& d, const area_t& j, cons
     const int h = l->altura(i, l->ctx);
     if (y + h > rec.y) {
       l->desenhar(d, i, j.x, y, largura_item(j), l->ctx);
-      // O RECORTE E DA LISTA, nao do item. Primitivo do M5GFX que mexe nele
-      // (drawWideLine troca pela caixa da linha e depois o apaga) soltava
-      // os itens seguintes por cima do cabecalho e do rodape - rastro nas
-      // duas pontas da janela a cada passo de rolagem.
+      // THE CLIP BELONGS TO THE LIST, not the item. An M5GFX primitive that touches it
+      // (drawWideLine swaps it for the line's box and then clears it) let
+      // the following items loose over the header and footer - a trail at both
+      // ends of the window on every scroll step.
       d.setClipRect(rec.x, rec.y, rec.largura, rec.altura);
     }
     y += h;
@@ -127,8 +127,8 @@ static void desenhar_faixa(lista_t* l, lgfx::LovyanGFX& d, const area_t& j, cons
   d.setClipRect(cx, cy, cl, ca);
 }
 
-// So os itens marcados por lista_item_mudou, e so a parte visivel deles. A
-// coluna da barra fica de fora: o item nunca desenha nela.
+// Only the items marked by lista_item_mudou, and only their visible part. The
+// bar column is left out: an item never draws in it.
 static bool desenhar_sujos(lista_t* l, lgfx::LovyanGFX& d, const area_t& j, uint16_t fundo)
 {
   if (l->sujo_de > l->sujo_ate) { return false; }
@@ -157,24 +157,24 @@ bool lista_desenhar(lista_t* l, lgfx::LovyanGFX& d, const area_t& j, uint16_t fu
   if (!l->medida_ok) { lista_itens_mudaram(l, l->n); }
   l->no_ar = true;
 
-  // A janela mudou (o teclado abriu ou fechou, a tela girou): tudo de novo.
+  // The window changed (the keyboard opened or closed, the screen rotated): everything again.
   if (j.x != l->janela_ant.x || j.y != l->janela_ant.y
    || j.largura != l->janela_ant.largura || j.altura != l->janela_ant.altura) {
     l->janela_ant = j;
     tudo = true;
   }
 
-  // O limite depende do total e da janela - e pode puxar 'atual' de volta.
+  // The limit depends on the total and the window - and may pull 'atual' back.
   if (rolagem_limite(&l->rol, l->total, j.altura)) { tudo = true; }
 
   tudo = tudo || l->tudo;
   if (tudo) {
     desenhar_faixa(l, d, j, j, fundo);
     rolagem_sincronizar(&l->rol);
-    l->sujo_de = 1; l->sujo_ate = 0;   // a janela inteira ja cobriu os marcados
+    l->sujo_de = 1; l->sujo_ate = 0;   // the whole window has already covered the marked ones
   } else if (rolagem_pendente(&l->rol) && !dentro_do_recorte(d, j)) {
-    // Mover pixels da janela levaria junto o que esta fora do recorte (as
-    // barras): desenha de novo, recortado.
+    // Moving the window's pixels would take along what is outside the clip (the
+    // bars): draw again, clipped.
     desenhar_faixa(l, d, j, j, fundo);
     rolagem_sincronizar(&l->rol);
     tudo = true;
@@ -182,15 +182,15 @@ bool lista_desenhar(lista_t* l, lgfx::LovyanGFX& d, const area_t& j, uint16_t fu
     const rolagem_passada_t p = rolagem_deslocar(&l->rol, j, fundo);
     if (p.deslocou) { desenhar_faixa(l, d, j, p.exposta, fundo); }
     else            { desenhar_faixa(l, d, j, j, fundo); tudo = true; }
-    desenhar_sujos(l, d, j, fundo);    // depois do deslocamento: posicoes novas
+    desenhar_sujos(l, d, j, fundo);    // after the shift: new positions
   } else {
-    return desenhar_sujos(l, d, j, fundo);   // so valores; a barra nao mudou
+    return desenhar_sujos(l, d, j, fundo);   // values only; the bar has not changed
   }
   l->tudo = false;
 
-  // A BARRA. O deslocamento arrastou os pixels dela junto com o conteudo:
-  // a coluna e sempre reescrita inteira - trilha + bolinha, ou so fundo quando
-  // ela nao deve aparecer (numa lista ancorada no fim, encostada no fim).
+  // THE BAR. The shift dragged its pixels along with the content:
+  // the column is always rewritten in full - track + dot, or just background when
+  // it should not appear (in a list anchored at the end, sitting at the end).
   const area_t col = { j.x + j.largura - BARRA_MARGEM, j.y, BARRA_LARG, j.altura };
   d.fillRect(col.x, col.y, col.largura, col.altura, fundo);
   rolagem_barra(d, &l->rol, j, fundo, BARRA_MARGEM);
@@ -198,9 +198,9 @@ bool lista_desenhar(lista_t* l, lgfx::LovyanGFX& d, const area_t& j, uint16_t fu
 }
 
 // ---------------------------------------------------------------------------
-// TOQUE
+// TOUCH
 // ---------------------------------------------------------------------------
-// A janela guardada e de TELA; o toque chega em coordenadas da AREA do app.
+// The stored window is in SCREEN coordinates; touch arrives in app AREA coordinates.
 static bool na_janela(const lista_t* l, int x, int y, int* ty)
 {
   if (!l->no_ar) { return false; }
@@ -221,8 +221,8 @@ bool lista_arrastar(lista_t* l, int x, int y, bool pressionado)
 int lista_item_tocado(lista_t* l, int x, int y, int* dy)
 {
   const int afastou = l->rol.afastamento;
-  if (rolagem_foi_arraste(&l->rol)) {   // fim de arraste nao e clique
-    if (diag_toque_ligado()) { ESP_LOGI("lista", "toque recusado como arrasto da lista (%d px)", afastou); }
+  if (rolagem_foi_arraste(&l->rol)) {   // the end of a drag is not a click
+    if (diag_toque_ligado()) { ESP_LOGI("lista", "touch rejected as a list drag (%d px)", afastou); }
     return LISTA_ARRASTE;
   }
   return lista_item_em(l, x, y, dy);

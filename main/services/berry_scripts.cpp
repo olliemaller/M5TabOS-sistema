@@ -1,4 +1,4 @@
-// Os scripts Berry no cartao - ver berry_scripts.hpp.
+// The Berry scripts on the card - see berry_scripts.hpp.
 #include "berry_scripts.hpp"
 #include "berry_apps.hpp"
 #include "tab5_sd.hpp"
@@ -7,14 +7,14 @@
 
 int berry_scripts_listar(tab5_arq_item_t* out, int max)
 {
-  // Monta: tab5_sd_pasta so responde com o cartao montado (sem isto, a
-  // primeira lista depois do boot dizia "sem cartao").
+  // Mount: tab5_sd_pasta only answers with the card mounted (without this, the
+  // first listing after boot said "no card").
   if (!tab5_sd_montar()) { return -1; }
   char pasta[96];
   int n = tab5_sd_pasta(BERRY_PASTA, pasta, sizeof(pasta))
         ? tab5_arq_listar(pasta, out, max, nullptr, TAB5_ARQ_ORDEM_NOME, ".be") : -1;
   tab5_sd_desmontar();
-  // A listagem traz as pastas sempre (as de dados dos apps): so os scripts.
+  // The listing always brings folders (the apps' data folders): only the scripts.
   int k = 0;
   for (int i = 0; i < n; ++i) { if (out[i].tipo != TAB5_ARQ_PASTA) { out[k++] = out[i]; } }
   return n > 0 ? k : n;
@@ -28,7 +28,7 @@ berry_ler_t berry_script_ler(const char* arq, char* buf, size_t tam)
   berry_ler_t r = BERRY_LER_FALHOU;
   if (f) {
     const size_t n = fread(buf, 1, tam - 1, f);
-    // Encheu o buffer e ainda tem byte: grande demais. Nada de meio arquivo.
+    // The buffer filled and there are still bytes: too big. No half files.
     if (n == tam - 1 && fgetc(f) != EOF) { buf[0] = 0; r = BERRY_LER_GRANDE; }
     else                                  { buf[n] = 0; r = BERRY_LER_OK; }
     fclose(f);

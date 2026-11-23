@@ -1,20 +1,22 @@
-// APP: Editor - os scripts Berry (os apps .be) escritos no proprio aparelho.
+// APP: Editor - Berry scripts (the .be apps) written on the device itself.
 //
-// Duas telas:
-//   LISTA    os .be de /sdcard/apps/Berry, e "+ Novo" (nasce com um modelo).
-//   EDITOR   o editor do sistema no MODO CODIGO (kernel/editor): fonte
-//            monoespacada, numero de linha, cores do Berry, recuo mantido.
-//            Verificar compila sem rodar e marca a linha do erro; Rodar
-//            salva, verifica e abre o app; Salvar grava; voltar grava.
-//   NO PC    o editor no navegador do PC (services/berry_web): o Tab5 mostra
-//            o endereco e a senha; Desligar fecha a porta. O servidor roda de
-//            fundo (sair do app nao o fecha; cai sozinho sem uso). Enquanto ligado,
-//            o aparelho nao edita (dois editores no mesmo arquivo, um
-//            gravaria por cima do outro).
+// Two screens:
+//   LISTA    the .be files in /sdcard/apps/Berry, and "+ Novo" (new; starts
+//            from a template).
+//   EDITOR   the system editor in CODE MODE (kernel/editor): monospaced
+//            font, line numbers, Berry colours, indentation kept.
+//            Verify compiles without running and marks the error line; Run
+//            saves, verifies and opens the app; Save writes; going back saves.
+//   NO PC    the editor in the PC's browser (services/berry_web): the Tab5
+//            shows the address and password; Desligar (turn off) closes the
+//            port. The server runs in the background (leaving the app does not
+//            close it; it stops by itself when unused). While it is on, the
+//            device does not edit (two editors on the same file, one would
+//            overwrite the other).
 //
-// So interface. O cartao e pelo berry_scripts (portas do tab5_sd), no worker
-// do sistema; a verificacao e do servico do Berry (berry_verificar). So
-// existe na variante com o Berry (main/CMakeLists.txt).
+// UI only. The SD card goes through berry_scripts (tab5_sd's entry points), on
+// the system worker; verification belongs to the Berry service
+// (berry_verificar). Only exists in the Berry variant (main/CMakeLists.txt).
 
 #include "app.h"
 #include "lista.hpp"
@@ -40,19 +42,19 @@
 #include <string.h>
 
 static const int TOPO_A = 96, BT_A = 64, MSG_A = 44, ITEM_A = 88;
-#define APP_EDITOR_NOME "Editor"   // o dono do servidor web (o mesmo de berry_web_ligar)
-// O botao "No PC" da lista, a esquerda do "+ Novo".
+#define APP_EDITOR_NOME "Editor"   // the web server's owner (the same as in berry_web_ligar)
+// The list's "No PC" button, to the left of "+ Novo".
 static const int BT_PC_L = 160;
 #define BT_PC_X(a) ((a).largura - 216 - 16 - BT_PC_L)
-static const int TXT_MAX = BERRY_SCRIPT_MAX;   // o editor guarda o inicio das linhas em int16
+static const int TXT_MAX = BERRY_SCRIPT_MAX;   // the editor stores line starts as int16
 static const int ITENS_MAX = 64;
 
 typedef enum { TELA_LISTA, TELA_EDITOR, TELA_PC } tela_t;
 typedef enum { FEZ_NADA, FEZ_LISTA, FEZ_ABRIR, FEZ_SALVAR, FEZ_VERIFICAR, FEZ_RODAR } fez_t;
 
 static tela_t            s_tela = TELA_LISTA;
-static tab5_arq_item_t*  s_itens = nullptr;   // PSRAM, so com o app aberto
-static int               s_n = 0;             // -1 = sem cartao
+static tab5_arq_item_t*  s_itens = nullptr;   // PSRAM, only while the app is open
+static int               s_n = 0;             // -1 = no SD card
 static lista_t           s_lista;
 static char*             s_txt = nullptr;     // PSRAM, TXT_MAX
 static char              s_arq[TAB5_ARQ_NOME_MAX];
@@ -62,8 +64,8 @@ static bool              s_msg_erro = false;
 static bool              s_forcar = true;
 
 // ---------------------------------------------------------------------------
-// O CARTAO E O BERRY, SO NO WORKER. Um trabalho por vez; o resultado volta
-// por AVISO_TRABALHO com 's_fez' dizendo o que terminou.
+// THE SD CARD AND BERRY, ONLY ON THE WORKER. One job at a time; the result
+// comes back via AVISO_TRABALHO with 's_fez' saying what finished.
 // ---------------------------------------------------------------------------
 static bool             s_ocupado = false;
 static std::atomic<int> s_fez{FEZ_NADA};
@@ -82,7 +84,7 @@ static void trab_abrir(void*)
 {
   const berry_ler_t l = berry_script_ler(s_arq, s_txt, TXT_MAX);
   s_res_ok = l == BERRY_LER_OK;
-  s_res_linha = l;   // o motivo, para o recado
+  s_res_linha = l;   // the reason, for the message
   s_fez = FEZ_ABRIR;
 }
 
@@ -102,7 +104,7 @@ static void trab_rodar(void*)
   s_res_ok = salvar();
   if (!s_res_ok) { snprintf(s_res_msg, sizeof(s_res_msg), "%s", tr("não salvou (cartão?)")); s_fez = FEZ_RODAR; return; }
   s_res_ok = verificar();
-  // Script novo ou nome trocado: a pasta e relida (o icone aparece na home).
+  // New script or renamed: the folder is re-read (the icon appears on the home screen).
   if (s_res_ok) { berry_apps_reler(); }
   s_fez = FEZ_RODAR;
 }
@@ -129,7 +131,7 @@ static void trocar_tela(tela_t t)
 }
 
 // ---------------------------------------------------------------------------
-// LISTA
+// LIST
 // ---------------------------------------------------------------------------
 static int item_altura(int, void*) { return ITEM_A; }
 
@@ -217,7 +219,7 @@ static void abrir_editor(void)
 
 static void script_novo(void)
 {
-  // O primeiro nome livre: novo_1.be, novo_2.be...
+  // The first free name: novo_1.be, novo_2.be...
   for (int k = 1; k < 1000; ++k) {
     snprintf(s_arq, sizeof(s_arq), "novo_%d.be", k);
     bool existe = false;
@@ -229,15 +231,15 @@ static void script_novo(void)
   *strrchr(nome, '.') = 0;
   snprintf(s_txt, TXT_MAX, MODELO, nome);
   abrir_editor();
-  s_ed.mudou = true;   // nasce para ser salvo
+  s_ed.mudou = true;   // created to be saved
 }
 
 // ---------------------------------------------------------------------------
-// NO PC - o editor no navegador (services/berry_web)
+// NO PC - the editor in the browser (services/berry_web)
 // ---------------------------------------------------------------------------
-// "No PC" da lista: a tela do painel. Ligado por este app, ja esta no ar;
-// desligado ou de outro app, o painel oferece o botao.
-static bool s_pc_ligado = false;   // o servidor estava no ar para o Editor (tela do PC)
+// The list's "No PC": the panel screen. If turned on by this app, it is
+// already live; if off or owned by another app, the panel offers the button.
+static bool s_pc_ligado = false;   // the server was live for the Editor (PC screen)
 static bool web_meu(void)
 {
   return tab5_web_aberto(APP_EDITOR_NOME);
@@ -252,8 +254,8 @@ static void ligar_pc(void)
   trocar_tela(TELA_PC);
 }
 
-// A tela do PC: o titulo e o painel do sistema (kernel/painel_web), que
-// mostra endereco, senha e o Desligar.
+// The PC screen: the title and the system panel (kernel/painel_web), which
+// shows the address, the password and Desligar (turn off).
 static void desenhar_pc(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
 {
   if (!tudo) { return; }
@@ -270,12 +272,12 @@ static void desenhar_pc(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
 static void voltar_da_web(void)
 {
   trocar_tela(TELA_LISTA);
-  pedir(trab_listar);   // o PC pode ter criado ou mudado scripts
+  pedir(trab_listar);   // the PC may have created or changed scripts
 }
 
 static void tocar_pc(int x, int y)
 {
-  // Desligar: a volta a lista vem pelo AVISO_WEB.
+  // Desligar (turn off): the return to the list comes via AVISO_WEB.
   const area_t a = sistema_area();
   painel_web_tocar(0, TOPO_A, a.largura, a.altura - TOPO_A, x, y, APP_EDITOR_NOME, berry_web_ligar);
 }
@@ -299,9 +301,9 @@ static void tocar_lista(int x, int y)
 // ---------------------------------------------------------------------------
 // EDITOR
 // ---------------------------------------------------------------------------
-// Os botoes do alto: < Scripts a esquerda; Salvar, Rodar e Verificar a direita.
+// The top buttons: < Scripts on the left; Save, Run and Verify on the right.
 static const int BT_VOLTAR_L = 180, BT_L = 160;
-static int bt_x(const area_t& a, int k) { return a.largura - 16 - (k + 1) * BT_L - k * 12; }   // 0 = o mais a direita
+static int bt_x(const area_t& a, int k) { return a.largura - 16 - (k + 1) * BT_L - k * 12; }   // 0 = the rightmost
 
 static void desenhar_editor(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
 {
@@ -312,7 +314,7 @@ static void desenhar_editor(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
     tab5_botao(d, a.x + bt_x(a, 0), by, BT_L, BT_A, tr("Salvar"), TEMA_SUPERFICIE_ALTA, TEMA_TEXTO);
     tab5_botao(d, a.x + bt_x(a, 1), by, BT_L, BT_A, tr("Rodar"), TEMA_SUCESSO);
     tab5_botao(d, a.x + bt_x(a, 2), by, BT_L, BT_A, tr("Verificar"), TEMA_DESTAQUE);
-    // O nome do arquivo (e um ponto se ha mudanca sem salvar) e a mensagem.
+    // The file name (and a dot if there are unsaved changes) and the message.
     tab5_fonte_corpo(d);
     tab5_texto(d, 2.4f);
     d.setTextDatum(middle_left);
@@ -355,7 +357,7 @@ static void tocar_editor(int x, int y)
   editor_tocar(&s_ed, x, y);
 }
 
-// O resultado da verificacao: a mensagem e a linha do erro marcada.
+// The verification result: the message and the error line marked.
 static void mostrar_verificacao(bool ok, const char* pronto)
 {
   if (ok) { editor_marcar_erro(&s_ed, 0); mensagem(pronto, false); return; }
@@ -367,7 +369,7 @@ static void mostrar_verificacao(bool ok, const char* pronto)
 }
 
 // ---------------------------------------------------------------------------
-// SISTEMA
+// SYSTEM
 // ---------------------------------------------------------------------------
 static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
 {
@@ -382,8 +384,9 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
 static void ao_aviso(uint32_t avisos)
 {
   if ((avisos & AVISO_WEB) && s_tela == TELA_PC) {
-    // Estava no ar para o Editor e caiu (Desligar, sem uso): de volta a lista -
-    // o PC pode ter mudado scripts. Sem ter ligado (sem Wi-Fi), o painel fica.
+    // It was live for the Editor and went down (Desligar, unused): back to the
+    // list - the PC may have changed scripts. If it never came up (no Wi-Fi), the
+    // panel stays.
     const bool meu = web_meu();
     if (s_pc_ligado && !meu) { s_pc_ligado = false; voltar_da_web(); return; }
     s_pc_ligado = meu;
@@ -407,9 +410,9 @@ static void ao_aviso(uint32_t avisos)
   } else if (fez == FEZ_RODAR) {
     s_ed.mudou = false;
     if (!s_res_ok) { mostrar_verificacao(false, ""); return; }
-    // Salvo e sem erro: abre o app. Cada abertura le o .be de novo - o que
-    // roda e o que esta aqui. Script novo so ganha app depois da releitura,
-    // que a tela inicial aplica.
+    // Saved and error-free: opens the app. Each open reads the .be again - what
+    // runs is what is here. A new script only gets an app after the re-read,
+    // which the home screen applies.
     char nome[48];
     berry_script_nome_app(s_txt, s_arq, nome, sizeof(nome));
     if (!sistema_abrir_app(nome)) {
@@ -438,7 +441,7 @@ static void ao_tocar_nivel(int x, int y, bool pressionado)
 static void ao_teclar(const char* texto, uint8_t codigo, uint8_t mod)
 {
   if (s_tela != TELA_EDITOR) { return; }
-  // Atalhos de desktop: Ctrl+S salva, Ctrl+R roda; Esc volta.
+  // Desktop shortcuts: Ctrl+S saves, Ctrl+R runs; Esc goes back.
   if ((mod & TAB5_TECLA_CTRL) && texto && !s_ocupado) {
     const char c = (char)(texto[0] | 0x20);
     if (c == 's') { pedir(trab_salvar); return; }
@@ -458,15 +461,15 @@ static bool ao_abrir(void)
   s_ocupado = false;
   s_msg[0] = 0;
   lista_definir(&s_lista, ROLAGEM_INICIO, 0, item_altura, item_desenhar, nullptr);
-  // Reaberto com o servidor ligado (o aviso da barra, ou depois de um Rodar
-  // do navegador): direto na tela do PC, onde esta o Desligar.
+  // Reopened with the server on (the status bar notice, or after a Run from
+  // the browser): straight to the PC screen, where Desligar is.
   if (web_meu()) { s_tela = TELA_PC; s_pc_ligado = true; return true; }
   pedir(trab_listar);
   return true;
 }
 
-// GRAVAR AO FECHAR: trabalho SOLTO com uma copia (nome + texto) - o app
-// libera s_txt logo em seguida, antes de o cartao terminar.
+// SAVE ON CLOSE: a DETACHED job with a copy (name + text) - the app frees
+// s_txt right afterwards, before the SD card finishes.
 typedef struct { char arq[TAB5_ARQ_NOME_MAX]; char txt[]; } copia_t;
 static void trab_salvar_copia(void* a)
 {
@@ -501,7 +504,7 @@ static void icone_editor(lgfx::LovyanGFX& d, int x, int y, int lado)
 {
   d.fillRoundRect(x, y, lado, lado, lado / 6, d.color565(24, 30, 48));
   const int m = lado / 6, lh = lado / 9;
-  // Linhas de codigo coloridas, com recuo, e o cursor.
+  // Coloured lines of code, with indentation, and the cursor.
   const uint16_t c[4] = { d.color565(100, 180, 255), d.color565(225, 225, 225), d.color565(230, 170, 100),
                           d.color565(100, 180, 255) };
   const int rec[4] = { 0, 1, 1, 0 }, comp[4] = { 50, 55, 40, 30 };
@@ -516,7 +519,7 @@ extern const app_t APP_EDITOR = {
   .nome  = "Editor",
   .cor   = TFT_SKYBLUE,
   .perfil = { },
-  .usa_sd = false,     // o worker monta o cartao quando precisa
+  .usa_sd = false,     // the worker mounts the SD card when needed
   .exige_sd = false,
   .ao_abrir  = ao_abrir,
   .ao_fechar = ao_fechar,
@@ -531,5 +534,5 @@ extern const app_t APP_EDITOR = {
   .comandos = nullptr,
   .fora_da_home = false,
   .no_pc = berry_web_ligar,
-  .fundo_tema = true,   // o sistema limpa a area com TEMA_FUNDO
+  .fundo_tema = true,   // the system clears the area with TEMA_FUNDO
 };

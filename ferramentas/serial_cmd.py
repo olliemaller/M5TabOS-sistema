@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
-# Manda comandos ao console do Tab5 pela serial e devolve o que ele respondeu.
-# Feito para medir sem o idf.py monitor (e para os agentes do Claude usarem).
+# Sends commands to the Tab5 console over serial and returns what it answered.
+# Made for measuring without idf.py monitor (and for Claude agents to use).
 #
 #   ferramentas/serial_cmd.py musica
-#   ferramentas/serial_cmd.py "musica" "@10" "musica"       <- @10 = escuta 10 s
+#   ferramentas/serial_cmd.py "musica" "@10" "musica"       <- @10 = listen for 10 s
 #   ferramentas/serial_cmd.py --filtro "secou|musica" --log /tmp/x.txt @60
-#   ferramentas/serial_cmd.py --reset @15                     <- reinicia e pega o boot
+#   ferramentas/serial_cmd.py --reset @15                     <- restarts and captures the boot
 #
-# Cada argumento e uma linha de comando do console, ou uma pausa "@<segundos>"
-# (escutando o log o tempo todo). Depois de cada comando espera a resposta
-# assentar (--assentar, 1,5 s sem nada novo; no maximo --max s).
+# Each argument is a console command line, or a pause "@<seconds>"
+# (listening to the log the whole time). After each command it waits for the answer
+# to settle (--assentar, 1.5 s with nothing new; at most --max s).
 #
-#   --log ARQ      grava TUDO o que chegou (o stdout pode vir filtrado)
-#   --filtro RE    no stdout so as linhas que casam (o --log continua inteiro)
-#   --reset        reinicia o Tab5 antes (como o esptool faz no USB-Serial-JTAG)
+#   --log ARQ      writes EVERYTHING that arrived (stdout may be filtered)
+#   --filtro RE    on stdout only the matching lines (--log stays complete)
+#   --reset        restarts the Tab5 first (as esptool does on USB-Serial-JTAG)
 #
-# FECHE O MONITOR ANTES: a porta e de um processo so.
-# Comandos que GRAVAM na NVS (ble ligar, espnow canal, energia sono...) ficam
-# gravados - devolva o valor do usuario depois do teste.
+# CLOSE THE MONITOR FIRST: the port belongs to a single process.
+# Commands that WRITE to NVS (ble ligar, espnow canal, energia sono...) stay
+# written - restore the user's value after the test.
 
 import sys, os, glob, time, re, argparse
 
@@ -29,7 +29,7 @@ except ImportError:
         if os.path.exists(py) and os.environ.get("_SERIAL_REEXEC") != "1":
             os.environ["_SERIAL_REEXEC"] = "1"
             os.execv(py, [py, os.path.abspath(__file__)] + sys.argv[1:])
-    sys.exit("Falta o pyserial (venv do IDF: ~/.m5tabos/idf-5.5-venv).")
+    sys.exit("pyserial is missing (IDF venv: ~/.m5tabos/idf-5.5-venv).")
 
 ap = argparse.ArgumentParser()
 ap.add_argument("passos", nargs="*")
@@ -43,18 +43,18 @@ a = ap.parse_args()
 
 portas = [a.porta] if a.porta else sorted(glob.glob("/dev/cu.usbmodem*") + glob.glob("/dev/ttyACM*"))
 if not portas:
-    sys.exit("Nenhuma porta USB do Tab5. Ele esta ligado e conectado?")
+    sys.exit("No Tab5 USB port. Is it switched on and connected?")
 try:
     s = serial.Serial(portas[0], 115200, timeout=0.2)
 except Exception as e:
-    sys.exit(f"Nao abriu {portas[0]}: {e} (o monitor esta aberto?)")
+    sys.exit(f"Could not open {portas[0]}: {e} (is the monitor open?)")
 
 filtro = re.compile(a.filtro) if a.filtro else None
 log = open(a.log, "w", encoding="utf-8") if a.log else None
 resto = ""
 
 def ler(segundos, assentar=None):
-    """Le ate 'segundos'; com 'assentar', para antes se ficar quieto esse tempo."""
+    """Reads for up to 'segundos'; with 'assentar', stops early if it stays quiet that long."""
     global resto
     fim = time.time() + segundos
     quieto = time.time()
@@ -73,12 +73,12 @@ def ler(segundos, assentar=None):
 
 if a.reset:
     s.dtr = False; s.rts = True; time.sleep(0.2); s.rts = False
-    print(">>> reiniciado", flush=True)
+    print(">>> restarted", flush=True)
 else:
-    ler(0.5, 0.3)   # o que estava no meio do caminho
+    ler(0.5, 0.3)   # whatever was already in transit
 for p in a.passos:
     if p.startswith("@"):
-        print(f">>> escutando {p[1:]} s", flush=True)
+        print(f">>> listening for {p[1:]} s", flush=True)
         ler(float(p[1:]))
         continue
     print(f">>> {p}", flush=True)

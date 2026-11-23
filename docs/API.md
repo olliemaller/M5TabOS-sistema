@@ -1,471 +1,488 @@
-# API do M5tabOS
+# M5tabOS API
 
-A referência do que o sistema oferece a um aplicativo: a função, o que ela faz
-e **de qual tarefa ela pode ser chamada**. O app [`Exemplo`](../main/app_exemplo/app_exemplo.cpp)
-usa cada uma destas áreas num cartão próprio. Abra-o no aparelho e leia o
-código lado a lado.
+The reference for what the system offers an app: the function, what it does
+and **which task it may be called from**. The [`Exemplo`](../main/app_exemplo/app_exemplo.cpp)
+app (shown as "Example") exercises each of these areas on a card of its own.
+Open it on the device and read the code alongside.
 
-Para o *como pensar* (as regras de desenho, o porquê de cada uma, os erros que
-já cometemos) o guia é o [ESCREVENDO_APPS.md](ESCREVENDO_APPS.md). Este arquivo
-é o *o quê*.
+For *how to think* (the design rules, the reason behind each one, the mistakes
+we have already made) the guide is [ESCREVENDO_APPS.md](ESCREVENDO_APPS.md)
+(writing apps). This file is the *what*.
 
 ---
 
-## Por que passar pela API
+## Why go through the API
 
-Nada impede um app de falar direto com o hardware: `M5.Imu`, `Wire`, `fopen`,
-`xTaskCreate`, `M5.Display.fillRect` em tela cheia. Funciona na bancada e
-quebra no uso, longe da causa. Cada API abaixo existe porque o caminho direto
-já quebrou assim:
+Nothing stops an app from talking to the hardware directly: `M5.Imu`, `Wire`,
+`fopen`, `xTaskCreate`, a full-screen `M5.Display.fillRect`. It works on the
+bench and breaks in use, far from the cause. Each API below exists because the
+direct route has already broken like this:
 
-| caminho direto | o que acontece | a API |
+| direct route | what happens | the API |
 |---|---|---|
-| ler sensor pelo I2C interno de outra tarefa | o `I2C_Class` do M5Unified não tem trava: duas tarefas intercalam e leem o **registrador errado, sem erro** | `tab5_imu_ultima`, `tab5_power_ultima` (cópia, sem I2C) |
-| desenhar de uma tarefa do app | o LovyanGFX não é seguro para concorrência: ponteiro corrompido, *exception* | mude o dado, chame `sistema_pedir_redesenho()` |
-| `fopen(..., "a")` para gravar | com o cartão emprestado ao computador (modo pendrive), corrompe o FAT ou perde o dado | `tab5_sd_anexar` / `_acrescentar` / `_substituir` |
-| `xTaskCreate` + `vTaskDelete` | a tarefa morta segurando um semáforo deixa o recurso preso para sempre | `tarefa_app_criar` / `tarefa_app_encerrar` |
-| `M5.Speaker.tone()` | o codec é desligado ocioso; o primeiro bip sai **mudo** | `sistema_beep` |
-| `fillRect` grande | rajada na PSRAM, o painel fica sem dado e a tela **pisca azul** | `tab5_tela_limpar` |
-| ligar hardware no `ao_abrir` com `tab5_power_*` | desliga de baixo de outro app ou fica ligado depois de fechar | `app_t.perfil` (o sistema soma e desfaz) |
+| reading a sensor over the internal I2C from another task | M5Unified's `I2C_Class` has no lock: two tasks interleave and read the **wrong register, with no error** | `tab5_imu_ultima`, `tab5_power_ultima` (a copy, no I2C) |
+| drawing from an app task | LovyanGFX is not safe for concurrency: corrupted pointer, *exception* | change the data, call `sistema_pedir_redesenho()` |
+| `fopen(..., "a")` to write | with the card lent to the computer (USB flash drive mode), it corrupts the FAT or loses the data | `tab5_sd_anexar` / `_acrescentar` / `_substituir` |
+| `xTaskCreate` + `vTaskDelete` | a task killed while holding a semaphore leaves the resource stuck forever | `tarefa_app_criar` / `tarefa_app_encerrar` |
+| `M5.Speaker.tone()` | the codec is powered off when idle; the first beep comes out **silent** | `sistema_beep` |
+| a large `fillRect` | a burst on the PSRAM starves the panel of data and the screen **flashes blue** | `tab5_tela_limpar` |
+| switching hardware on in `ao_abrir` with `tab5_power_*` | switches off under another app or stays on after closing | `app_t.perfil` (the system adds it up and undoes it) |
 
-**A regra das três tarefas**, que decide quase todas as colunas "de onde" abaixo:
+**The three-task rule**, which decides almost every "from" column below:
 
-- **interface**: a única que desenha e a única que fala no I2C interno. É nela
-  que rodam `ao_abrir`, `ao_fechar`, `desenhar`, `ao_tocar*`, `ao_teclar`,
-  `ao_aviso`. Nada nela pode bloquear (cartão, rede, espera longa).
-- **tarefas do app** (`tarefa_app`), **worker** (`sistema_trabalho`), **fundo**
-  (`fundo.h`) e **console**: fazem o trabalho lento, mudam dado (atômico, fila
-  ou com trava) e pedem redesenho.
-- **serviços do sistema** (Mesh, ESP-NOW, WiFi, GPS...): têm tarefa própria e
-  entregam por cópia (`tab5_*_msg`, `tab5_*_posicao`) e por aviso (`AVISO_*`).
+- **interface**: the only task that draws and the only one that talks on the
+  internal I2C. It runs `ao_abrir` (on open), `ao_fechar` (on close),
+  `desenhar` (draw), `ao_tocar*` (on touch), `ao_teclar` (on key) and
+  `ao_aviso` (on notice). Nothing in it may block (card, network, long wait).
+- **app tasks** (`tarefa_app`), **worker** (`sistema_trabalho`), **background**
+  (`fundo.h`) and **console**: do the slow work, change data (atomically, via
+  a queue or under a lock) and request a redraw.
+- **system services** (Mesh, ESP-NOW, Wi-Fi, GPS...): have their own task and
+  deliver by copy (`tab5_*_msg`, `tab5_*_posicao`) and by notice (`AVISO_*`).
 
-Na coluna **de onde**: **UI** = só da tarefa de interface; **qualquer** =
-qualquer tarefa; **fora da UI** = qualquer uma, menos a interface (bloqueia).
+In the **from** column: **UI** = only from the interface task; **any** = any
+task; **off UI** = any task except the interface (it blocks).
 
 ---
 
-## 1. O app: `kernel/app.h`
+## 1. The app: `kernel/app.h`
 
-Um app é uma pasta `main/app_<nome>/` que define `extern const app_t APP_<NOME>`.
-O build gera a lista sozinho (`main/CMakeLists.txt`). Não há tabela para editar.
+An app is a folder `main/app_<nome>/` that defines `extern const app_t APP_<NOME>`.
+The build generates the list by itself (`main/CMakeLists.txt`). There is no
+table to edit.
 
-| campo | para quê |
+| field | what for |
 |---|---|
-| `nome`, `cor`, `icone` | identidade na tela inicial (`icone` opcional: desenha o seu) |
-| `perfil` | o hardware que **este** app precisa ligado (`imu`, `alto_falante`, `microfone`, `camera`, `grove_5v`, `usb_a_5v`). O resto fica desligado com ele na tela |
-| `usa_sd` / `exige_sd` | o sistema monta o cartão antes do `ao_abrir` / não abre o app sem o cartão |
-| `orientacao` | `ORI_EM_PE`, `ORI_DEITADO`, `ORI_SEGUE_IMU` |
-| `ao_abrir` / `ao_fechar` | criar / destruir **tudo**. App fechado custa zero |
-| `ao_repouso` / `ao_retomar` | o que é do app antes de a tela apagar (gravar a nota aberta). Hardware e suspensão são do sistema: ver `kernel/recursos.h` |
-| `desenhar(tela, area)` | a única função que desenha |
-| `ao_tocar(x, y)` | clique (na soltura), coordenadas relativas à área |
-| `ao_tocar_nivel(x, y, pressionado)` | a cada ciclo, com o dedo na tela (jogo, arraste, lista) |
-| `ao_teclar(texto, codigo, mod)` | teclado físico já decodificado (UTF-8) |
-| `periodo_ms` / `periodo_agora` | redesenho periódico (prefira 0 e avisos) |
-| `avisos` / `ao_aviso` | máscara de `AVISO_*`: o serviço avisa, o app redesenha na hora |
-| `altura_conteudo` | maior que a área: o sistema rola a área inteira |
-| `ao_girar` | a tela girou (`ORI_SEGUE_IMU`) |
-| `comandos` | comandos de console do app (seção 12) |
+| `nome`, `cor`, `icone` | identity on the home screen (name, colour, icon; `icone` is optional: draw your own) |
+| `perfil` | the hardware **this** app needs switched on (`imu`, `alto_falante` = speaker, `microfone`, `camera`, `grove_5v`, `usb_a_5v`). Everything else stays off while it is on screen |
+| `usa_sd` / `exige_sd` | the system mounts the card before `ao_abrir` / will not open the app without the card |
+| `orientacao` | `ORI_EM_PE` (portrait), `ORI_DEITADO` (landscape), `ORI_SEGUE_IMU` (follows the IMU) |
+| `ao_abrir` / `ao_fechar` | create / destroy **everything**. A closed app costs nothing |
+| `ao_repouso` / `ao_retomar` | the app's own business before the screen goes off (save the open note). Hardware and suspend belong to the system: see `kernel/recursos.h` |
+| `desenhar(tela, area)` | the only function that draws |
+| `ao_tocar(x, y)` | tap (on release), coordinates relative to the area |
+| `ao_tocar_nivel(x, y, pressionado)` | every cycle while the finger is on the screen (game, drag, list) |
+| `ao_teclar(texto, codigo, mod)` | physical keyboard, already decoded (UTF-8) |
+| `periodo_ms` / `periodo_agora` | periodic redraw (prefer 0 and notices) |
+| `avisos` / `ao_aviso` | mask of `AVISO_*`: the service sends a notice, the app redraws straight away |
+| `altura_conteudo` | taller than the area: the system scrolls the whole area |
+| `ao_girar` | the screen rotated (`ORI_SEGUE_IMU`) |
+| `comandos` | the app's console commands (section 12) |
 
 ---
 
-## 2. Redesenho e geometria: `kernel/app.h`
+## 2. Redraw and geometry: `kernel/app.h`
 
-| função | de onde | o que faz |
+| function | from | what it does |
 |---|---|---|
-| `sistema_pedir_redesenho()` | qualquer | um **valor** mudou: redesenha no próximo ciclo |
-| `sistema_pedir_redesenho_completo()` | UI | a **tela** mudou (página, layout): limpa e repinta sem piscar |
-| `sistema_area_foi_limpa()` | UI, no `desenhar` | `true` = a área chegou limpa (abertura, volta do repouso): repinte tudo |
-| `sistema_area()` | UI | a área do app; **nunca** recalcule com constantes de barra |
-| `sistema_quadro_dt()` | UI, no `desenhar` | segundos que este quadro representa (animação por tempo) |
-| `sistema_avisar(AVISO_*)` | qualquer | publica um aviso (serviço → apps que o declararam) |
-| `sistema_acordar_interface()` | qualquer | tira a interface da espera do repouso agora |
-| `sistema_superficie(r, &s)` / `_mudou(r)` | UI | buffer RGB565 para quem escreve imagem por DMA (câmera) |
-| `sistema_app_atual()`, `sistema_bloqueado()` | qualquer | quem está na tela; tela de bloqueio na frente |
+| `sistema_pedir_redesenho()` | any | a **value** changed: redraw on the next cycle |
+| `sistema_pedir_redesenho_completo()` | UI | the **screen** changed (page, layout): clear and repaint without flicker |
+| `sistema_area_foi_limpa()` | UI, in `desenhar` | `true` = the area arrived clean (opening, back from idle): repaint everything |
+| `sistema_area()` | UI | the app's area; **never** recalculate it from status bar constants |
+| `sistema_quadro_dt()` | UI, in `desenhar` | seconds this frame represents (time-based animation) |
+| `sistema_avisar(AVISO_*)` | any | publishes a notice (service → apps that declared it) |
+| `sistema_acordar_interface()` | any | wakes the interface out of its idle wait now |
+| `sistema_superficie(r, &s)` / `_mudou(r)` | UI | RGB565 buffer for anything that writes an image by DMA (camera) |
+| `sistema_app_atual()`, `sistema_bloqueado()` | any | who is on screen; lock screen in front |
 
-Avisos existentes: `AVISO_MESH_MSG`, `AVISO_MESH_ENVIO`, `AVISO_MESH_NOS`,
+Existing notices: `AVISO_MESH_MSG`, `AVISO_MESH_ENVIO`, `AVISO_MESH_NOS`,
 `AVISO_GPS`, `AVISO_TRILHA`, `AVISO_TRABALHO`, `AVISO_ESPNOW`.
 
-> **Exemplo:** todo cartão chama `sistema_pedir_redesenho()` depois de mudar
-> dado; `.avisos` declara `AVISO_TRABALHO | AVISO_ESPNOW | ...`.
+> **Example:** every card calls `sistema_pedir_redesenho()` after changing
+> data; `.avisos` declares `AVISO_TRABALHO | AVISO_ESPNOW | ...`.
 
 ---
 
-## 3. Desenho
+## 3. Drawing
 
-### `tab5_ui.hpp`: componentes prontos
+### `tab5_ui.hpp`: ready-made components
 
-| função | o que faz |
+| function | what it does |
 |---|---|
-| `tab5_fonte_corpo(d)`, `tab5_fonte_corpo_negrito(d)`, `tab5_titulo(d, px)` | fontes suaves (Roboto com acento) |
-| `tab5_texto(d, n)` | tamanho N (altura N×8 px) na altura nativa mais próxima |
-| `tab5_botao(d, x, y, l, a, txt, cor)` | o botão do sistema; salva e devolve o estilo de texto |
-| `tab5_celula(d, cx, y, rotulo, valor, cor, sub)` | rótulo pequeno + valor grande |
-| `tab5_dentro(x, y, rx, ry, rl, ra)` | teste de toque num retângulo |
-| `tab5_cortar_ao_caber` / `_com_reticencias` | corta texto UTF-8 até caber em N px |
-| `tab5_linha_grossa(d, ...)` | linha suave que respeita o recorte (use no lugar de `drawWideLine`) |
-| `tab5_sprite_novo` / `tab5_sprite_soltar` | sprite sempre na PSRAM (ou `nullptr`) |
-| `SIS_FUNDO`, `SIS_LINHA`, `SIS_BORDA` | a paleta do sistema (`app.h`) |
+| `tab5_fonte_corpo(d)`, `tab5_fonte_corpo_negrito(d)`, `tab5_titulo(d, px)` | smooth fonts (Roboto with accented characters) |
+| `tab5_texto(d, n)` | size N (height N×8 px) at the nearest native height |
+| `tab5_botao(d, x, y, l, a, txt, cor)` | the system button; saves and restores the text style |
+| `tab5_celula(d, cx, y, rotulo, valor, cor, sub)` | small label + large value |
+| `tab5_dentro(x, y, rx, ry, rl, ra)` | touch hit test on a rectangle |
+| `tab5_cortar_ao_caber` / `_com_reticencias` | trims UTF-8 text until it fits in N px (optionally with an ellipsis) |
+| `tab5_linha_grossa(d, ...)` | smooth line that respects the clip rectangle (use instead of `drawWideLine`) |
+| `tab5_sprite_novo` / `tab5_sprite_soltar` | sprite always in PSRAM (or `nullptr`) |
+| `SIS_FUNDO`, `SIS_LINHA`, `SIS_BORDA` | the system palette (background, line, border; `app.h`) |
 
-### Pintura por diferença: `kernel/pintura.hpp`
+### Painting by difference: `kernel/pintura.hpp`
 
-`pintura_iniciar(&p)` no começo do `desenhar`; `pintura_completa(&p)` para o
-que nunca muda; `pintura_mudou_i/_s(&p, &memoria, agora)` para cada valor. Não
-encadeie comparadores com `||` (veja o guia, 2.3).
+`pintura_iniciar(&p)` at the start of `desenhar`; `pintura_completa(&p)` for
+what never changes; `pintura_mudou_i/_s(&p, &memoria, agora)` for each value.
+Do not chain comparisons with `||` (see the guide, 2.3).
 
-### Limpar: `hal/tab5_tela.hpp`
+### Clearing: `hal/tab5_tela.hpp`
 
-`tab5_tela_limpar(x, y, l, a, cor)` (UI): limpa em faixas, sem piscar azul. Use
-para qualquer área que **pode** passar de ~40 linhas da tela.
+`tab5_tela_limpar(x, y, l, a, cor)` (UI): clears in strips, without the blue
+flash. Use it for any area that **may** exceed ~40 lines of the screen.
 
-### Listas: `kernel/lista.hpp`
+### Lists: `kernel/lista.hpp`
 
-A lista rolável do sistema: mede cada item uma vez, rola deslocando pixels e
-repinta só o item que mudou (`lista_item_mudou`). O Exemplo inteiro é uma lista.
+The system's scrolling list: measures each item once, scrolls by shifting
+pixels and repaints only the item that changed (`lista_item_mudou`). The whole
+Example app is one list.
 
 ```c
 lista_definir(&l, ROLAGEM_INICIO, n, altura_de, desenhar_item, ctx);   // ao_abrir
 lista_desenhar(&l, d, area, TFT_BLACK, sistema_area_foi_limpa());       // desenhar
 if (lista_arrastar(&l, x, y, pressionado)) sistema_pedir_redesenho();   // ao_tocar_nivel
-int i = lista_item_tocado(&l, x, y, &dy);   // ao_tocar; <0 = nada ou fim de arraste
+int i = lista_item_tocado(&l, x, y, &dy);   // ao_tocar; <0 = nothing or end of a drag
 ```
 
-### Conversa e teclado virtual: `kernel/conversa.hpp`, `kernel/teclado_virtual.hpp`
+### Conversation and virtual keyboard: `kernel/conversa.hpp`, `kernel/teclado_virtual.hpp`
 
-`conversa_t` é a tela de mensagens pronta (balões, histórico, barra de escrita,
-teclado); o app só diz como contar, ler e enviar. `tecvirt_*` é o teclado na tela
-para quem precisa só dele. Os apps Mesh e ESP-NOW usam os dois. Segurar um
-balão copia a mensagem; segurar a barra de escrita (ou Ctrl+V) cola.
+`conversa_t` is the ready-made messaging screen (bubbles, history, compose bar,
+keyboard); the app only says how to count, read and send. `tecvirt_*` is the
+on-screen keyboard for anyone who needs just that. The Mesh and ESP-NOW apps
+use both. Holding a bubble copies the message; holding the compose bar (or
+Ctrl+V) pastes.
 
-### Editor de texto: `kernel/editor.hpp`
+### Text editor: `kernel/editor.hpp`
 
-`editor_t` é o texto de várias linhas com cursor (o app Notas usa): quebra por
-palavra e por linha, rola com o dedo, teclado virtual e físico, segurar ou
-Ctrl+V cola. O buffer é do app (PSRAM); o editor avisa em `mudou` quando há o
-que gravar.
+`editor_t` is multi-line text with a cursor (used by the Notes app): wraps by
+word and by line, scrolls with the finger, virtual and physical keyboard,
+hold or Ctrl+V to paste. The buffer belongs to the app (PSRAM); the editor
+signals through `mudou` when there is something to save.
 
-### Área de transferência: `services/transferencia.h`
+### Clipboard: `services/transferencia.h`
 
-Um texto só, como nos celulares, de até 4 KB (`TRANSF_MAX`). O buffer na PSRAM
-só existe depois da primeira cópia. Qualquer tarefa pode chamar.
+A single text, as on mobile phones, of up to 4 KB (`TRANSF_MAX`). The PSRAM
+buffer only exists after the first copy. Any task may call it.
 
-| função | o que faz |
+| function | what it does |
 |---|---|
-| `transf_copiar(texto)` | guarda (substitui o anterior) |
-| `transf_colar(out, cap)` | o texto copiado; devolve os bytes (0 = vazia) |
-| `transf_vazia()` | nada copiado ainda |
+| `transf_copiar(texto)` | stores it (replaces the previous one) |
+| `transf_colar(out, cap)` | the copied text; returns the bytes (0 = empty) |
+| `transf_vazia()` | nothing copied yet |
 
-A área de transferência não tem tarefa nem timer: é um buffer com trava,
-chamado por quem copia ou cola.
-| `sistema_recado("Copiado")` | (`kernel/app.h`, UI) a confirmação na barra de status por ~2 s |
+The clipboard has no task and no timer: it is a buffer with a lock, called by
+whoever copies or pastes.
+| `sistema_recado("Copiado")` | (`kernel/app.h`, UI) the confirmation in the status bar for ~2 s ("Copied") |
 
 ---
 
-### Idioma: `services/idioma.h`
+### Language: `services/idioma.h`
 
-Todo texto que aparece na tela passa por `tr("texto em português")`; texto
-guardado numa tabela leva `N_("...")` onde nasce e `tr()` onde é desenhado.
-O console e os logs ficam em português.
+Every piece of text that appears on screen goes through
+`tr("texto em português")` (the Portuguese source text); text stored in a table
+gets `N_("...")` where it is defined and `tr()` where it is drawn. Console
+help and messages follow the interface language too (commands are accepted in
+both English and Portuguese); the serial log (`ESP_LOGx`) is in English.
 
-Cada idioma é um arquivo `.po` (o formato do gettext, que o Poedit abre):
-`idiomas/en.po` vai embutido no firmware; qualquer outro `.po` copiado para
-`/sdcard/apps/Sistema/idiomas/` aparece em Ajustes > Idioma no próximo boot,
-sem compilar nada (um `en.po` ali substitui o embutido).
+Each language is a `.po` file (the gettext format, which Poedit opens):
+`idiomas/en.po` is built into the firmware; any other `.po` copied to
+`/sdcard/apps/Sistema/idiomas/` appears in Settings > Language on the next
+boot, with nothing to compile (an `en.po` there replaces the built-in one).
 
 ```bash
-ferramentas/idiomas.py                       # junta os tr() do código e atualiza idiomas/*.po
-ferramentas/idiomas.py novo fr "Français"    # cria idiomas/fr.po com tudo para traduzir
+ferramentas/idiomas.py                       # gathers the tr() calls from the code and updates idiomas/*.po
+ferramentas/idiomas.py novo fr "Français"    # creates idiomas/fr.po with everything to translate
 ```
 
 ---
 
-## 4. Toque e teclado: `kernel/app.h`, `hal/tab5_teclado.hpp`
+## 4. Touch and keyboard: `kernel/app.h`, `hal/tab5_teclado.hpp`
 
-| função | de onde | o que faz |
+| function | from | what it does |
 |---|---|---|
-| `sistema_toques(out, max)` | UI, no `ao_tocar_nivel` | todos os dedos da amostra (multitoque) |
-| `sistema_consumir_toque()` | UI | o toque já foi tratado por nível: a soltura não vira clique |
-| `toque_longo(&t, x, y, pressionado)` | UI, no `ao_tocar_nivel` | `kernel/toque_longo.hpp`: true uma vez quando o dedo fica parado 550 ms |
-| `sistema_travar_navegacao(b)` | UI | a faixa de navegação vira do app (teclado virtual) |
-| `tab5_teclado_presente()` | qualquer | teclado físico encaixado |
-| `tab5_teclado_ascii(txt, out, n)` | qualquer | texto sem acento, para protocolos ASCII |
+| `sistema_toques(out, max)` | UI, in `ao_tocar_nivel` | every finger in the sample (multi-touch) |
+| `sistema_consumir_toque()` | UI | the touch was already handled through `ao_tocar_nivel`: the release does not become a tap |
+| `toque_longo(&t, x, y, pressionado)` | UI, in `ao_tocar_nivel` | `kernel/toque_longo.hpp`: true once when the finger stays still for 550 ms (long press) |
+| `sistema_travar_navegacao(b)` | UI | the navigation strip is handed to the app (virtual keyboard) |
+| `tab5_teclado_presente()` | any | physical keyboard attached |
+| `tab5_teclado_ascii(txt, out, n)` | any | text without accents, for ASCII protocols |
 
-As teclas chegam por `ao_teclar`. Códigos especiais: `TAB5_TECLA_ENTER`,
-`_APAGAR`, `_DEL`, `_ESC`, `_TAB`, `_ESQUERDA`, `_DIREITA`, `_CIMA`, `_BAIXO`;
-modificadores `TAB5_TECLA_CTRL/SHIFT/ALT`.
+Keys arrive through `ao_teclar`. Special codes: `TAB5_TECLA_ENTER`,
+`_APAGAR` (backspace), `_DEL`, `_ESC`, `_TAB`, `_ESQUERDA` (left), `_DIREITA`
+(right), `_CIMA` (up), `_BAIXO` (down); modifiers `TAB5_TECLA_CTRL/SHIFT/ALT`.
 
 ---
 
-## 5. Trabalho fora da interface
+## 5. Work off the interface
 
-| API | quando | de onde |
+| API | when | from |
 |---|---|---|
-| `tarefa_app_criar(&t, corpo, nome, pilha, prio)` / `tarefa_app_encerrar(&t, ms)` (`kernel/tarefa_app.h`) | laço contínuo enquanto o app está aberto | UI (`ao_abrir`/`ao_fechar`) |
-| `sistema_trabalho(fn, arg)` (`kernel/trabalho.hpp`) | uma operação lenta (ler arquivo, montar lista); fim chega por `AVISO_TRABALHO` | qualquer |
-| `sistema_trabalho_cancelado()` | dentro do trabalho: o app fechou, pare | worker |
-| `sistema_trabalho_solto(fn, arg)` | segundos de trabalho que não podem segurar o fechamento (gravar foto); `arg` é dele | qualquer |
-| `sistema_fundo_iniciar/parar/ativo(&def)` (`kernel/fundo.h`) | trabalho que **continua com o app fechado** (gravar trilha, cronômetro) | UI |
-| `fundo_esperar(f, ms)`, `fundo_ceder(f)`, `fundo_estado(f, n, txt)` | dentro do laço de fundo | fundo |
+| `tarefa_app_criar(&t, corpo, nome, pilha, prio)` / `tarefa_app_encerrar(&t, ms)` (`kernel/tarefa_app.h`) | a continuous loop while the app is open | UI (`ao_abrir`/`ao_fechar`) |
+| `sistema_trabalho(fn, arg)` (`kernel/trabalho.hpp`) | one slow operation (read a file, build a list); completion arrives as `AVISO_TRABALHO` | any |
+| `sistema_trabalho_cancelado()` | inside the job: the app has closed, stop | worker |
+| `sistema_trabalho_solto(fn, arg)` | seconds of work that must not hold up closing (saving a photo); `arg` belongs to it | any |
+| `sistema_fundo_iniciar/parar/ativo(&def)` (`kernel/fundo.h`) | work that **carries on with the app closed** (recording a track, stopwatch) | UI |
+| `fundo_esperar(f, ms)`, `fundo_ceder(f)`, `fundo_estado(f, n, txt)` | inside the background loop | background |
 
-Regras do laço (as três): nunca espere com `portMAX_DELAY` (o pedido de parada
-precisa chegar); não desenhe; memória sua, nunca da janela.
+Loop rules (all three): never wait with `portMAX_DELAY` (the stop request has
+to get through); do not draw; use your own memory, never the window's.
 
-> **Exemplo:** cartões TAREFA (tarefa + fila de 1), TRABALHO (conta arquivos e
-> recebe `AVISO_TRABALHO`) e FUNDO (cronômetro que aparece na barra com o app fechado).
+> **Example:** the TAREFA cards (task + queue of 1), TRABALHO (counts files and
+> receives `AVISO_TRABALHO`) and FUNDO (a stopwatch that shows in the status
+> bar with the app closed).
 
 ---
 
-## 6. Cartão SD: `hal/tab5_sd.hpp`
+## 6. SD card: `hal/tab5_sd.hpp`
 
-Pasta do app: `/sdcard/apps/<Nome>/`, criada sozinha.
+App folder: `/sdcard/apps/<Nome>/`, created automatically.
 
-| função | de onde | o que faz |
+| function | from | what it does |
 |---|---|---|
-| `tab5_sd_anexar(app, arq, linha, cabecalho)` | qualquer | acrescenta uma linha **sem esperar** (gravação em lote) |
-| `tab5_sd_acrescentar(app, arq, dados, n)` | fora da UI | acrescenta um bloco agora |
-| `tab5_sd_substituir(app, arq, dados, n, flags)` | fora da UI | troca o arquivo inteiro (nunca deixa meio arquivo); `TAB5_SD_SIGILOSO` zera o antigo |
-| `tab5_sd_apagar(app, arq)` | fora da UI | apaga o arquivo da pasta do app (mesma trava; recusa com o cartão emprestado) |
-| `tab5_sd_abrir(app, arq, "r")` | fora da UI | **ler** (e arquivo novo grande, com `exige_sd`) |
-| `tab5_sd_pasta(app, buf, n)` | fora da UI | caminho da pasta |
-| `tab5_sd_montado()`, `tab5_sd_espaco(&t, &l)` | qualquer | estado |
+| `tab5_sd_anexar(app, arq, linha, cabecalho)` | any | appends a line **without waiting** (batched writes) |
+| `tab5_sd_acrescentar(app, arq, dados, n)` | off UI | appends a block now |
+| `tab5_sd_substituir(app, arq, dados, n, flags)` | off UI | replaces the whole file (never leaves half a file); `TAB5_SD_SIGILOSO` (confidential) wipes the old one |
+| `tab5_sd_apagar(app, arq)` | off UI | deletes the file from the app's folder (same lock; refuses while the card is lent out) |
+| `tab5_sd_abrir(app, arq, "r")` | off UI | **read** (and large new files, with `exige_sd`) |
+| `tab5_sd_pasta(app, buf, n)` | off UI | folder path |
+| `tab5_sd_montado()`, `tab5_sd_espaco(&t, &l)` | any | status (mounted; total and free space) |
 
-As três portas de gravação guardam no diário da flash quando o cartão está no
-computador e entregam na volta, na ordem. **Só reescreva o que leu.**
+The three write paths keep the data in the flash journal while the card is on
+the computer and deliver it, in order, when it comes back. **Only rewrite what
+you have read.**
 
-> **Exemplo:** cartão CARTÃO (`tab5_sd_anexar` com cabeçalho de CSV).
+> **Example:** the CARTÃO (card) card (`tab5_sd_anexar` with a CSV header).
 
-### Discos e arquivos de qualquer disco: `services/tab5_volumes.hpp`, `services/tab5_arquivos.hpp`
+### Disks and files on any disk: `services/tab5_volumes.hpp`, `services/tab5_arquivos.hpp`
 
-Para o que não é a pasta do próprio app - a música, o pendrive, copiar entre
-discos - tudo por **caminho absoluto** (`/sdcard/...`, `/usb/...`). O serviço
-segura o disco enquanto mexe: quem chama não monta nada.
+For anything outside the app's own folder - music, the USB flash drive,
+copying between disks - everything goes by **absolute path** (`/sdcard/...`,
+`/usb/...`). The service holds the disk while it works: the caller mounts
+nothing.
 
-| função | de onde | o que faz |
+| function | from | what it does |
 |---|---|---|
-| `tab5_volumes_listar(v, max)` | qualquer | os discos de agora (cartão sempre; pendrive quando plugado) |
-| `tab5_volume_ejetar(raiz, espera_ms)` | fora da UI | desmonta o pendrive para tirar com segurança |
-| `tab5_arq_listar(pasta, itens, max, &total, ordem, filtro)` | fora da UI | o que a pasta mostra (pastas primeiro, escondidos fora) |
-| `tab5_arq_percorrer(pasta, visita, ctx)` | fora da UI | cada entrada, sem tabela nem limite (sem tamanho/data) - **não use `opendir`** |
-| `tab5_arq_maior_numero(pasta, "foto_%04lu.bmp")` | fora da UI | o maior número já gravado: o próximo arquivo numerado |
-| `tab5_arq_visivel/gravavel/mexivel(caminho)` | qualquer | as regras: escondido, só leitura (`/sdcard/apps`, menos `apps/Berry`), livre |
-| `tab5_arq_criar_pasta`, `tab5_arq_renomear`, `tab5_arq_apagar` | fora da UI | rápidas; apagar vai para `<raiz>/.Lixeira` |
-| `tab5_arq_copiar(origens, n, destino, mover)` | fora da UI | **começa** um trabalho de fundo; progresso em `tab5_arq_trabalho()` e `AVISO_ARQUIVOS` |
-| `tab5_arq_area_por / tab5_arq_colar` | qualquer / fora da UI | a área de transferência do sistema (Copiar, Recortar, Colar) |
-| `tab5_arq_esvaziar_lixeira(raiz)`, `tab5_arq_cancelar()` | fora da UI / qualquer | |
+| `tab5_volumes_listar(v, max)` | any | the disks present now (card always; flash drive when plugged in) |
+| `tab5_volume_ejetar(raiz, espera_ms)` | off UI | unmounts the flash drive so it can be removed safely |
+| `tab5_arq_listar(pasta, itens, max, &total, ordem, filtro)` | off UI | what the folder shows (folders first, hidden items left out) |
+| `tab5_arq_percorrer(pasta, visita, ctx)` | off UI | every entry, with no table and no limit (no size/date) - **do not use `opendir`** |
+| `tab5_arq_maior_numero(pasta, "foto_%04lu.bmp")` | off UI | the highest number already written: gives the next numbered file |
+| `tab5_arq_visivel/gravavel/mexivel(caminho)` | any | the rules: hidden, read-only (`/sdcard/apps`, except `apps/Berry`), free to change |
+| `tab5_arq_criar_pasta`, `tab5_arq_renomear`, `tab5_arq_apagar` | off UI | quick; delete moves to `<raiz>/.Lixeira` (the Trash) |
+| `tab5_arq_copiar(origens, n, destino, mover)` | off UI | **starts** a background job; progress in `tab5_arq_trabalho()` and `AVISO_ARQUIVOS` |
+| `tab5_arq_area_por / tab5_arq_colar` | any / off UI | the system file clipboard (Copy, Cut, Paste) |
+| `tab5_arq_esvaziar_lixeira(raiz)`, `tab5_arq_cancelar()` | off UI / any | empty the Trash; cancel |
 
-Copiar continua com o app fechado e a tela apagada, mostra `Copiando 45%` na
-barra, e nunca deixa arquivo pela metade (pendrive arrancado, cancelado, disco
-cheio: o arquivo da vez é apagado). Console: `arquivos`, `usb ejetar`.
+Copying carries on with the app closed and the screen off, shows `Copying 45%`
+in the status bar, and never leaves a half-written file (flash drive pulled
+out, cancelled, disk full: the file in progress is deleted). Console: `files`
+(`arquivos`), `usb eject` (`usb ejetar`).
 
 ---
 
-## 7. Notificações: `services/notificacao.h`
+## 7. Notifications: `services/notificacao.h`
 
-Estado, não fila: cada fonte tem **um** estado atual, e publicar de novo substitui.
+State, not a queue: each source has **one** current state, and publishing again
+replaces it.
 
 ```c
-int id = notif_registrar("MeuApp");                 // idempotente pelo nome
-notif_associar_app(id, "MeuApp");                   // tocar no aviso abre o app
-notif_publicar(id, 3, NOTIF_ATENCAO, "3 alertas");  // qualquer tarefa
-notif_limpar(id);                                   // = publicar 0
+int id = notif_registrar("MeuApp");                 // idempotent by name
+notif_associar_app(id, "MeuApp");                   // tapping the notification opens the app
+notif_publicar(id, 3, NOTIF_ATENCAO, "3 alertas");  // any task ("3 alerts")
+notif_limpar(id);                                   // = publish 0
 ```
 
-Níveis: `NOTIF_ESTADO` (atividade), `NOTIF_INFO`, `NOTIF_ATENCAO` (endereçado a
-você), `NOTIF_URGENTE`. A barra pinta pela pior fonte ativa.
+Levels: `NOTIF_ESTADO` (activity), `NOTIF_INFO`, `NOTIF_ATENCAO` (addressed to
+you), `NOTIF_URGENTE`. The status bar is coloured by the worst active source.
 
 ---
 
-## 8. Energia, som e tela
+## 8. Power, sound and display
 
-| função | de onde | o que faz |
+| function | from | what it does |
 |---|---|---|
-| `app_t.perfil` | (declaração) | o que o app precisa ligado; o sistema soma com a preferência do usuário |
-| `sistema_reaplicar_perfil()` | UI | uma preferência mudou: vale na hora |
-| `sistema_manter_acordado(SISTEMA_ACORDADO_APP, b)` | qualquer | a tela não apaga (o sistema solta ao fechar o app) |
-| `tab5_power_ultima()` | qualquer | bateria: volts, mA, mW, % (cópia, sem I2C) |
-| `sistema_beep(hz, ms)` | UI | bip (precisa de `perfil.alto_falante`) |
-| `sistema_som_fluxo_abrir/livre/tocar/calar/fechar` | qualquer, menos UI | som em blocos (música): a interface liga o codec, a tarefa alimenta; ver abaixo |
-| `tab5_painel()`, `tab5_painel_nome()` | qualquer | qual das três telas do Tab5 (ILI9881C, ST7123, ST7121) |
-| `tab5_power_cpu_mhz()` | qualquer | clock agora (360 MHz no P4 v1.x, 400 no v3.x) |
+| `app_t.perfil` | (declaration) | what the app needs switched on; the system combines it with the user's preference |
+| `sistema_reaplicar_perfil()` | UI | a preference changed: applies straight away |
+| `sistema_manter_acordado(SISTEMA_ACORDADO_APP, b)` | any | the screen does not go off (the system releases it when the app closes) |
+| `tab5_power_ultima()` | any | battery: volts, mA, mW, % (a copy, no I2C) |
+| `sistema_beep(hz, ms)` | UI | beep (needs `perfil.alto_falante`) |
+| `sistema_som_fluxo_abrir/livre/tocar/calar/fechar` | any except UI | sound in blocks (music): the interface powers the codec, the task feeds it; see below |
+| `tab5_painel()`, `tab5_painel_nome()` | any | which of the Tab5's three screens (ILI9881C, ST7123, ST7121) |
+| `tab5_power_cpu_mhz()` | any | current clock (360 MHz on P4 v1.x, 400 on v3.x) |
 
-> **Exemplo:** cartões ENERGIA, SOM e ACORDADO.
+> **Example:** the ENERGIA (power), SOM (sound) and ACORDADO (awake) cards.
 
-**O tocador do sistema: `services/tab5_musica.hpp`.** Música é serviço, não
-app: a pasta de música do cartão (`tab5_musica_pasta`), listar
-(`tab5_musica_listar`), tocar uma pasta a partir de um item
-(`tab5_musica_tocar(rel, idx, app)`), os controles, o estado e o espectro
-(`tab5_musica_espectro`, calculado só enquanto alguém lê). Roda como parte de
-fundo do kernel ("Música"): barra, miniplayer e o X que para vêm sozinhos. O
-app Música e o módulo Berry `musica` são duas interfaces dele - nenhum dos
-dois decodifica nem lê o cartão. De qualquer tarefa; os controles só marcam
-um pedido. Também do serviço: **aleatório e repetir**
-(`tab5_musica_definir_aleatorio`, `tab5_musica_definir_repetir` - não, a
-fila toda, a mesma música; guardados nos ajustes), **playlists** em `.m3u`
-na subpasta `Playlists` (`tab5_musica_playlists`, `_playlist_criar`,
-`_playlist_itens`, `_playlist_por`, `_playlist_tirar`, `_playlist_apagar`,
-`tab5_musica_tocar_playlist`; a `Favoritas` é a do coração), a **duração**
-de um arquivo sem tocar (`tab5_musica_duracao`, só o cabeçalho; lembrada) e
-a **capa** do que toca (`tab5_musica_capa`: a da etiqueta ID3, a
-cover/folder.jpg da pasta ou, com Wi-Fi, a busca do iTunes por artista e
-título - guardada em `Music/.capas/`). Todo `rel`/`caminho` aceita também
-caminho ABSOLUTO de um disco (`"/usb/Rock/x.mp3"`): o pendrive do USB-A toca
-direto, e fila e playlists misturam os dois. Formatos: MP3, WAV e AAC em
-`.m4a`/`.mp4` (o som de um vídeo).
+**The system player: `services/tab5_musica.hpp`.** Music is a service, not an
+app: the card's music folder (`tab5_musica_pasta`), listing
+(`tab5_musica_listar`), playing a folder starting from an item
+(`tab5_musica_tocar(rel, idx, app)`), the controls, the status and the spectrum
+(`tab5_musica_espectro`, computed only while someone is reading it). It runs as
+a kernel background part ("Música", shown as "Music"): status bar, mini player
+and the X that stops it come for free. The Music app and the Berry `musica`
+module are two front ends to it - neither of them decodes anything or reads
+the card. Callable from any task; the controls only flag a request. Also part
+of the service: **shuffle and repeat** (`tab5_musica_definir_aleatorio`,
+`tab5_musica_definir_repetir` - off, the whole queue, the same track; kept in
+the settings), **playlists** as `.m3u` in the `Playlists` subfolder
+(`tab5_musica_playlists`, `_playlist_criar`, `_playlist_itens`,
+`_playlist_por`, `_playlist_tirar`, `_playlist_apagar`,
+`tab5_musica_tocar_playlist`; `Favoritas` (Favourites) is the heart one), a
+file's **duration** without playing it (`tab5_musica_duracao`, header only;
+remembered) and the **cover art** of what is playing (`tab5_musica_capa`: the
+one in the ID3 tag, the folder's cover/folder.jpg or, with Wi-Fi, an iTunes
+search by artist and title - stored in `Music/.capas/`). Every `rel`/`caminho`
+also accepts an ABSOLUTE path on a disk (`"/usb/Rock/x.mp3"`): the USB-A flash
+drive plays directly, and the queue and playlists mix the two. Formats: MP3,
+WAV and AAC in `.m4a`/`.mp4` (the audio of a video).
 
-**O tocador de vídeo: `services/tab5_video.hpp`.** `.mp4/.m4v/.mov` com H.264
-(som AAC de dentro, tocado pela Música) e `.avi` MJPEG (som do `.mp3` de mesmo
-nome): `tab5_video_abrir`, os controles, o estado, `tab5_video_pintar` (escala
-pelo PPA para a superfície do app) e `TAB5_VIDEO_EXTENSOES` (o filtro para
-listar). Por baixo: `services/tab5_h264` (o decodificador H.264, com a
-bancada `video h264`) e `services/tab5_midia` (a ponte das bibliotecas
-`components/medf` - leitores de contêiner - e `components/audf` -
-decodificadores de som - com o leitor de arquivos do sistema).
+**The video player: `services/tab5_video.hpp`.** `.mp4/.m4v/.mov` with H.264
+(embedded AAC audio, played by Music) and MJPEG `.avi` (audio from the `.mp3`
+of the same name): `tab5_video_abrir`, the controls, the status,
+`tab5_video_pintar` (scales through the PPA onto the app's surface) and
+`TAB5_VIDEO_EXTENSOES` (the filter for listing). Underneath:
+`services/tab5_h264` (the H.264 decoder, with the `video h264` bench) and
+`services/tab5_midia` (the bridge between the `components/medf` libraries -
+container readers - and `components/audf` - audio decoders - and the system's
+file reader).
 
-**Os discos: `services/tab5_volumes.hpp`.** Cartão (`/sdcard`) e pendrive no
-USB-A (`/usb`, `services/tab5_usb`) por caminho absoluto: `tab5_volumes_listar`,
-`tab5_volume_montar(caminho)`/`_desmontar` (segurar o disco onde o caminho
-mora), `tab5_volume_disponivel` (para quem segura muito tempo: virou `false`,
-solte - cartão emprestado ou pendrive arrancado). Um disco
-entrou ou saiu: `AVISO_VOLUMES` (Berry: `# avisos: volumes`).
+**The disks: `services/tab5_volumes.hpp`.** Card (`/sdcard`) and USB flash
+drive on USB-A (`/usb`, `services/tab5_usb`) by absolute path:
+`tab5_volumes_listar`, `tab5_volume_montar(caminho)`/`_desmontar` (hold the
+disk the path lives on), `tab5_volume_disponivel` (for anything that holds it
+a long time: once it turns `false`, let go - card lent out or flash drive
+pulled out). A disk arrived or left: `AVISO_VOLUMES` (Berry:
+`# avisos: volumes`).
 
-**Som em fluxo** (quem usa é o tocador do sistema, `services/tab5_musica.cpp`):
-`sistema_som_fluxo_abrir(ms)` pede à interface para ligar o alto-falante e
-espera o codec aquecer; depois a tarefa (a parte de fundo) enfileira blocos
-PCM de 16 bits com `sistema_som_fluxo_tocar(pcm, quadros, hz, estereo)`
-sempre que `sistema_som_fluxo_livre()`. O alto-falante guarda dois blocos (o
-que toca e o próximo): use **três** buffers em rodízio, na PSRAM. `tocar`
-devolve `false` quando o fluxo foi fechado por baixo (o modo pendrive tomou
-os pinos) - pare. `calar` descarta a fila (pausa, troca de faixa); `fechar`
-solta o alto-falante. O bip do sistema sai por cima da música, noutro canal.
+**Streamed sound** (used by the system player, `services/tab5_musica.cpp`):
+`sistema_som_fluxo_abrir(ms)` asks the interface to switch the speaker on and
+waits for the codec to warm up; then the task (the background part) queues
+16-bit PCM blocks with `sistema_som_fluxo_tocar(pcm, quadros, hz, estereo)`
+whenever `sistema_som_fluxo_livre()`. The speaker holds two blocks (the one
+playing and the next): use **three** rotating buffers, in PSRAM. `tocar`
+returns `false` when the stream was closed underneath it (USB flash drive mode
+took the pins) - stop. `calar` (mute) discards the queue (pause, track
+change); `fechar` releases the speaker. The system beep plays over the music,
+on another channel.
 
-**Lendo arquivo grande do cartão, use `open`/`read`, não `fread`.** Medido
-no Tab5, lendo 256 KB: `fread` com `setvbuf(_IONBF)` 52 KB/s (a newlib lê
-um byte por chamada ao FAT), `fread` comum 572 KB/s, `read()` 4,6 MB/s - o
-pedido inteiro vai ao FatFs, que faz DMA de vários setores de uma vez.
+**When reading a large file from the card, use `open`/`read`, not `fread`.**
+Measured on the Tab5, reading 256 KB: `fread` with `setvbuf(_IONBF)` 52 KB/s
+(newlib reads one byte per call into FAT), plain `fread` 572 KB/s, `read()`
+4.6 MB/s - the whole request goes to FatFs, which DMAs several sectors at
+once.
 
-**Tocando agora: `kernel/midia.h`.** Quem toca mídia assume a vaga
-(`midia_assumir(fonte, app, &controles)`: a parte de fundo que toca e o app
-que o miniplayer abre) e publica título, tocando/pausado,
-posição e duração (`midia_publicar`, de qualquer tarefa). O sistema mostra
-uma pastilha lilás na barra (convive com a de avisos) e o miniplayer no
-rodapé da central de avisos; os controles (`tocar_pausar`, `proxima`,
-`anterior`, `ir_para`) rodam na interface e só devem marcar um pedido.
-`midia_definir_cor` troca a cor da pastilha e do miniplayer.
+**Now playing: `kernel/midia.h`.** Whatever plays media takes the slot
+(`midia_assumir(fonte, app, &controles)`: the background part that plays and
+the app the mini player opens) and publishes title, playing/paused, position
+and duration (`midia_publicar`, from any task). The system shows a lilac pill
+in the status bar (alongside the notifications pill) and the mini player at
+the foot of the notification centre; the controls (`tocar_pausar`, `proxima`,
+`anterior`, `ir_para`) run on the interface and must only flag a request.
+`midia_definir_cor` changes the colour of the pill and the mini player.
 
-**Gravar nos ajustes (NVS) desliga o cache, e sem cache a PSRAM some**: de
-uma tarefa com a pilha na PSRAM (a do Berry) isso derruba o aparelho. Os
-`ajustes_definir_*` chamáveis de qualquer tarefa gravam pelo caminho adiado
-(na tarefa do `esp_timer`); o `ajustes` recusa, com log de erro, uma gravação
-direta vinda de pilha na PSRAM.
+**Writing to the settings (NVS) disables the cache, and without the cache the
+PSRAM disappears**: from a task whose stack is in PSRAM (Berry's) that brings
+the device down. The `ajustes_definir_*` functions callable from any task
+write through the deferred path (on the `esp_timer` task); `ajustes` refuses,
+with an error log, a direct write coming from a stack in PSRAM.
 
 ---
 
-## 9. Sensores e hora
+## 9. Sensors and time
 
-| função | de onde | o que faz |
+| function | from | what it does |
 |---|---|---|
-| `tab5_imu_ultima(&d)` (`hal/tab5_imu.hpp`) | qualquer | aceleração (g) e giro (°/s); precisa de `perfil.imu` |
-| `tab5_gps_no_ar()`, `tab5_gps_posicao()`, `tab5_gps_tempo()` (`hal/tab5_gps.hpp`) | qualquer | GPS no Grove; lat/lon zerados sem fix |
-| `tab5_gps_assinar(fila)` | qualquer | recebe cada sentença nova numa fila sua |
-| `tab5_sensores_temp(&c)` (`hal/tab5_sensores.hpp`) | qualquer | temperatura interna |
-| `tab5_hora_epoch()` (`services/tab5_hora.hpp`) | qualquer | agora em UTC, ou 0 se o relógio não foi acertado |
-| `tab5_hora_local(epoch, &tm)` | qualquer | para **mostrar** (o fuso que a pessoa escolheu, `ajustes_fuso_min()`); guarde sempre UTC |
-| `tab5_hora_fonte()` | qualquer | de onde veio o acerto (GPS, rede, malha, RTC) |
-| `tab5_agora_ms()` | qualquer | relógio monótono para medir intervalo (compare por diferença) |
+| `tab5_imu_ultima(&d)` (`hal/tab5_imu.hpp`) | any | acceleration (g) and rotation (°/s); needs `perfil.imu` |
+| `tab5_gps_no_ar()`, `tab5_gps_posicao()`, `tab5_gps_tempo()` (`hal/tab5_gps.hpp`) | any | GPS on the Grove port; lat/lon are zero without a fix |
+| `tab5_gps_assinar(fila)` | any | receives every new sentence on a queue of your own |
+| `tab5_sensores_temp(&c)` (`hal/tab5_sensores.hpp`) | any | internal temperature |
+| `tab5_hora_epoch()` (`services/tab5_hora.hpp`) | any | now in UTC, or 0 if the clock has not been set |
+| `tab5_hora_local(epoch, &tm)` | any | for **display** (the time zone the person chose, `ajustes_fuso_min()`); always store UTC |
+| `tab5_hora_fonte()` | any | where the time came from (GPS, network, mesh, RTC) |
+| `tab5_agora_ms()` | any | monotonic clock for measuring intervals (compare by difference) |
 
-> **Exemplo:** cartões HORA, IMU e GPS.
+> **Example:** the HORA (time), IMU and GPS cards.
 
 ---
 
-## 10. Rede
+## 10. Network
 
-### WiFi: `hal/tab5_wifi.hpp`
+### Wi-Fi: `hal/tab5_wifi.hpp`
 
-| função | de onde | o que faz |
+| function | from | what it does |
 |---|---|---|
-| `tab5_wifi_estado()`, `tab5_wifi_descricao()` | qualquer | estado e texto pronto para a tela |
-| `tab5_wifi_ssid()`, `tab5_wifi_ip()`, `tab5_wifi_rssi()` | qualquer | a conexão atual |
-| `tab5_wifi_ligar()` / `_desligar()` | UI | normalmente é o usuário em Ajustes, não o app |
-| `tab5_wifi_procurar()`, `tab5_wifi_vista(i, &v)` | qualquer | varrer redes em volta |
-| `tab5_wifi_gravar_credenciais(ssid, senha)` | fora da UI | guarda rede (senha cifrada) |
+| `tab5_wifi_estado()`, `tab5_wifi_descricao()` | any | status, and text ready for the screen |
+| `tab5_wifi_ssid()`, `tab5_wifi_ip()`, `tab5_wifi_rssi()` | any | the current connection |
+| `tab5_wifi_ligar()` / `_desligar()` | UI | normally the user does this in Settings, not the app |
+| `tab5_wifi_procurar()`, `tab5_wifi_vista(i, &v)` | any | scan the networks around |
+| `tab5_wifi_gravar_credenciais(ssid, senha)` | off UI | saves a network (password encrypted) |
 
-Com o WiFi de pé, o resto é o ESP-IDF normal (`esp_http_client`, sockets, MQTT).
+With Wi-Fi up, the rest is ordinary ESP-IDF (`esp_http_client`, sockets, MQTT).
 
 ### ESP-NOW: `services/tab5_espnow.hpp`
 
-Precisa do firmware nosso no C6 (`c6/`, ver [RADIO_C6.md](RADIO_C6.md)).
+Needs our own firmware on the C6 (`c6/`, see [RADIO_C6.md](RADIO_C6.md)).
 
-| função | de onde | o que faz |
+| function | from | what it does |
 |---|---|---|
-| `tab5_espnow_pronto()`, `tab5_espnow_canal()` | qualquer | no ar, e em que canal |
-| `tab5_espnow_enviar(texto)` | qualquer | difusão; não bloqueia |
-| `tab5_espnow_enviar_para(mac, texto)` | qualquer | direto (unicast); não bloqueia |
-| `tab5_espnow_enviar_todos_canais(mac_ou_null, texto)` | qualquer | canais 1-13; o Wi-Fi cai por alguns segundos |
-| `tab5_espnow_n()`, `tab5_espnow_msg(i, &m)` | qualquer | histórico em RAM (cópia) |
-| `tab5_espnow_janela(b)` | UI | a janela abriu/fechou: receptor ligado com o app na tela |
+| `tab5_espnow_pronto()`, `tab5_espnow_canal()` | any | on air, and on which channel |
+| `tab5_espnow_enviar(texto)` | any | broadcast; does not block |
+| `tab5_espnow_enviar_para(mac, texto)` | any | direct (unicast); does not block |
+| `tab5_espnow_enviar_todos_canais(mac_ou_null, texto)` | any | channels 1-13; Wi-Fi drops for a few seconds |
+| `tab5_espnow_n()`, `tab5_espnow_msg(i, &m)` | any | history in RAM (a copy) |
+| `tab5_espnow_janela(b)` | UI | the window opened/closed: receiver on while the app is on screen |
 
-Aviso: `AVISO_ESPNOW`.
+Notice: `AVISO_ESPNOW`.
 
 ### Mesh (Meshtastic): `services/tab5_mesh.hpp`
 
-Ver [MESHTASTIC.md](MESHTASTIC.md). Serviço do sistema: o rádio, os nós e o
-histórico vivem nele, e o app é só janela.
+See [MESHTASTIC.md](MESHTASTIC.md). A system service: the radio, the nodes and
+the history live in it, and the app is only a window.
 
-| função | de onde | o que faz |
+| function | from | what it does |
 |---|---|---|
-| `tab5_mesh_servico_ativo()`, `tab5_mesh_no_ar()` | qualquer | estado |
-| `tab5_mesh_num_nos()`, `tab5_mesh_no(i, &no)` | qualquer | nós conhecidos (cópia) |
-| `tab5_mesh_num_nos_busca(txt)`, `tab5_mesh_no_busca(txt, i, &no)` | qualquer | os mesmos, só os que batem com o nome/curto/`!id` (sem acento nem maiúscula) |
-| `tab5_mesh_num_msgs()`, `tab5_mesh_msg(i, &m)` | qualquer | mensagens (0 = mais recente) |
-| `tab5_mesh_nao_lidas()` | qualquer | não lidas |
-| `tab5_mesh_enviar(para, canal, texto)` | qualquer | `para = 0xFFFFFFFF` difunde no canal; outro = direta |
-| `tab5_mesh_estado_envio(id, &erro)` | qualquer | ACK, falha |
+| `tab5_mesh_servico_ativo()`, `tab5_mesh_no_ar()` | any | status |
+| `tab5_mesh_num_nos()`, `tab5_mesh_no(i, &no)` | any | known nodes (a copy) |
+| `tab5_mesh_num_nos_busca(txt)`, `tab5_mesh_no_busca(txt, i, &no)` | any | the same, only those matching the long name/short name/`!id` (ignoring accents and case) |
+| `tab5_mesh_num_msgs()`, `tab5_mesh_msg(i, &m)` | any | messages (0 = most recent) |
+| `tab5_mesh_nao_lidas()` | any | unread |
+| `tab5_mesh_enviar(para, canal, texto)` | any | `para = 0xFFFFFFFF` broadcasts on the channel; anything else = direct |
+| `tab5_mesh_estado_envio(id, &erro)` | any | ACK, failure |
 
-Avisos: `AVISO_MESH_MSG`, `AVISO_MESH_ENVIO`, `AVISO_MESH_NOS`.
+Notices: `AVISO_MESH_MSG`, `AVISO_MESH_ENVIO`, `AVISO_MESH_NOS`.
 
-Servidores do modo internet (`services/tab5_mesh_mqtt.hpp`): a lista é da
-pessoa. `mesh_mqtt_n_servidores()` / `mesh_mqtt_servidor(i, &s)` (0 =
-automático), `mesh_mqtt_salvar_servidor(i, &s)` (i = 0: novo),
-`mesh_mqtt_apagar_servidor(i)`, `mesh_mqtt_modelo(i)` para preencher um novo.
-A escolha é `ajustes_mqtt_servidor()`; trocar pede reiniciar o serviço
-(`sistema_mesh_reiniciar()`). Trocar a via: `sistema_mesh_via(via)` (a via
-Bluetooth liga o Bluetooth junto).
+Internet mode servers (`services/tab5_mesh_mqtt.hpp`): the list belongs to
+the person. `mesh_mqtt_n_servidores()` / `mesh_mqtt_servidor(i, &s)` (0 =
+automatic), `mesh_mqtt_salvar_servidor(i, &s)` (i = 0: new),
+`mesh_mqtt_apagar_servidor(i)`, `mesh_mqtt_modelo(i)` to pre-fill a new one.
+The choice is `ajustes_mqtt_servidor()`; changing it requires restarting the
+service (`sistema_mesh_reiniciar()`). Changing the link: `sistema_mesh_via(via)`
+(the Bluetooth link switches Bluetooth on as well).
 
 ### Bluetooth: `hal/tab5_ble.hpp`
 
-`tab5_ble_pronto()`, `tab5_ble_varrer(ms)`, `tab5_ble_visto(i, &v)`. Quem liga e
-desliga é o usuário (`sistema_bluetooth`).
+`tab5_ble_pronto()`, `tab5_ble_varrer(ms)`, `tab5_ble_visto(i, &v)`. The user
+switches it on and off (`sistema_bluetooth`).
 
-**Ligar um serviço** é sempre uma chamada do sistema (`kernel/app.h`), que grava
-a escolha e aplica: `sistema_bluetooth`, `sistema_wifi`, `sistema_grove`,
-`tab5_usb_ligar`. O app não grava o ajuste e mexe no
-hardware por conta própria.
+**Switching a service on** is always a system call (`kernel/app.h`), which
+saves the choice and applies it: `sistema_bluetooth`, `sistema_wifi`,
+`sistema_grove`, `tab5_usb_ligar`. The app does not save the setting and
+drive the hardware on its own.
 
-> **Exemplo:** cartões WIFI, ESP-NOW (com botão de difundir) e MESH (só leitura:
-> um app de exemplo não deve falar num canal público).
+> **Example:** the WIFI, ESP-NOW (with a broadcast button) and MESH cards
+> (read-only: an example app should not talk on a public channel).
 
 ---
 
-## 11. Câmera: `hal/tab5_camera.hpp`
+## 11. Camera: `hal/tab5_camera.hpp`
 
-| função | de onde | o que faz |
+| function | from | what it does |
 |---|---|---|
-| `tab5_camera_iniciar(quem)` / `tab5_camera_parar(quem)` | UI | liga/desliga (contagem de referência: vários usuários convivem); `quem` aparece no recurso CAMERA |
-| `tab5_camera_definir_destino(&d)` | UI | onde cada quadro do preview é escrito (use `sistema_superficie`) |
-| `tab5_camera_pedir_quadro(buf, l, a)`, `tab5_camera_quadro_pronto(buf, &ok)` | qualquer | um quadro no tamanho pedido (a foto: `TAB5_CAM_FOTO_L` x `_A`) |
+| `tab5_camera_iniciar(quem)` / `tab5_camera_parar(quem)` | UI | on/off (reference counted: several users coexist); `quem` (who) appears in the CAMERA resource |
+| `tab5_camera_definir_destino(&d)` | UI | where each preview frame is written (use `sistema_superficie`) |
+| `tab5_camera_pedir_quadro(buf, l, a)`, `tab5_camera_quadro_pronto(buf, &ok)` | any | one frame at the requested size (the photo: `TAB5_CAM_FOTO_L` x `_A`) |
 
-O app não cuida do repouso: com a tela apagada o sistema pausa a câmera do app
-aberto e a religa ao acordar, com o mesmo destino (`tab5_camera_pausar`, chamado
-pelo kernel). Uma foto em captura nessa hora volta com `ok = false`. O app
-Câmera é a referência completa.
+The app does not deal with idle: with the screen off the system pauses the open
+app's camera and restarts it on wake, with the same destination
+(`tab5_camera_pausar`, called by the kernel). A photo being captured at that
+moment comes back with `ok = false`. The Camera app is the complete reference.
 
 ---
 
-## 12. Console do app: `app_t.comandos`
+## 12. App console: `app_t.comandos`
 
-O console serial (`idf.py monitor`, digite `help`) é do sistema, mas um app pode
-oferecer comandos próprios. Eles aparecem num grupo **APPS** do `help sistema` (e em `help app`) e são
-chamados sempre com o nome do app na frente, para nunca colidir:
+The serial console (`idf.py monitor`, type `help`) belongs to the system, but
+an app can offer its own commands. They appear in an **APPS** group of
+`help system` (`help sistema`) (and in `help app`) and are always called with
+the app's name in front, so they never collide:
 
 ```
 app exemplo contar 5
@@ -475,63 +492,67 @@ app exemplo contar 5
 static void cmd_contar(int argc, char** argv) { ... }   // argv[0] = "contar"
 
 static const app_comando_t COMANDOS[] = {
-  { "contar", "[n]\tsoma n no contador", cmd_contar, false },
-  { "zerar",  "\tzera (so com o app aberto)", cmd_zerar, true },
+  { "contar", "[n]\tadds n to the counter", cmd_contar, false },
+  { "zerar",  "\tresets it (only with the app open)", cmd_zerar, true },
   { nullptr },
 };
-// no app_t:  .comandos = COMANDOS,
+// in the app_t:  .comandos = COMANDOS,
 ```
 
-O comando roda na **tarefa de quem digitou**: a do console serial, ou a parte
-de fundo do Terminal. Valem as regras de qualquer tarefa que não é a interface
-(não desenhe, mude dado atômico ou com trava, peça redesenho). Escreva com
-`printf`: o stdout é da tarefa, e o Terminal guarda o que sai. Laço longo
-pergunta `console_interrompido()` (Ctrl+C no Terminal). Caminho relativo vale
-a partir da pasta atual da sessão (`cd`).
-`so_aberto = true` faz o sistema recusar o comando com o app fechado, e é o
-certo para todo comando que toca estado criado no `ao_abrir`.
+The command runs on the **task of whoever typed it**: the serial console's, or
+the Terminal's background part. The rules of any task that is not the
+interface apply (do not draw, change data atomically or under a lock, request
+a redraw). Write with `printf`: stdout belongs to the task, and the Terminal
+keeps what comes out. A long loop checks `console_interrompido()` (Ctrl+C in
+the Terminal). Relative paths start from the session's current folder (`cd`).
+`so_aberto = true` makes the system refuse the command while the app is
+closed, and is the right choice for every command that touches state created
+in `ao_abrir`.
 
-### Ferramentas de rede: `services/tab5_rede.hpp`
+### Network tools: `services/tab5_rede.hpp`
 
-O endereço do aparelho (`tab5_rede_ip`), DNS, a tabela ARP e a varredura da
-rede local, traceroute, teste de porta TCP e HTTP/HTTPS (`tab5_rede_http`
-entrega o corpo aos pedaços; `tab5_rede_http_texto` junta numa string na
-PSRAM). Tudo bloqueia: fora da interface. Os laços longos recebem um
-`parar()` (o Terminal passa `console_interrompido`).
+The device's address (`tab5_rede_ip`), DNS, the ARP table and the local
+network scan, traceroute, TCP port test and HTTP/HTTPS (`tab5_rede_http`
+delivers the body in pieces; `tab5_rede_http_texto` gathers it into a string
+in PSRAM). Everything blocks: off the interface. The long loops take a
+`parar()` (stop) callback (the Terminal passes `console_interrompido`).
 
 ### SSH: `services/tab5_ssh.hpp`
 
-`tab5_ssh_rodar()` conecta, autentica por senha, roda um comando (ou o shell
-linha a linha) e desconecta, entregando a saída por callback. A senha e as
-linhas do shell vêm por `ler_linha` (o console passa `console_ler_linha`).
+`tab5_ssh_rodar()` connects, authenticates by password, runs a command (or the
+shell line by line) and disconnects, delivering the output through a callback.
+The password and the shell lines come through `ler_linha` (the console passes
+`console_ler_linha`).
 
 ### Terminal: `services/tab5_terminal.hpp`
 
-A sessão de comandos da tela (o app Terminal). Os comandos **são** os do
-console (`console.cpp`, uma tabela só, com a ajuda junto); o console tem
-sessões (`console_sessao_t`: a pasta atual e o Ctrl+C de quem digita), e o
-Terminal é uma delas. `tab5_terminal_enviar(linha)` roda numa parte de fundo
-(continua com o app fechado; a pastilha mostra o comando, o X interrompe);
-`tab5_terminal_linha(i, ...)` lê o que saiu. As linhas (~51 KB) ficam na PSRAM
-e só existem depois da primeira abertura. Comando novo entra no `COMANDOS` do
-console e aparece nos dois lugares.
+The on-screen command session (the Terminal app). The commands **are** the
+console's (`console.cpp`, a single table, with the help alongside); the
+console has sessions (`console_sessao_t`: the current folder and the Ctrl+C of
+whoever is typing), and the Terminal is one of them.
+`tab5_terminal_enviar(linha)` runs on a background part (it carries on with
+the app closed; the pill shows the command, the X interrupts it);
+`tab5_terminal_linha(i, ...)` reads what came out. The lines (~51 KB) live in
+PSRAM and only exist after the first opening. A new command goes into the
+console's `COMANDOS` and appears in both places.
 
 ---
 
-## 13. Hardware: o que muda entre aparelhos
+## 13. Hardware: what differs between devices
 
-O mesmo binário roda nas **três telas** do Tab5 (o M5GFX detecta). O sistema
-ajusta sozinho o que difere: vigia do toque, repouso e relógio do painel (veja
-`tab5_painel()` em `hal/tab5_power.hpp`). Um app que desenha pelo `M5.Display`
-e lê o toque pelo `ao_tocar` não precisa saber qual é.
+The same binary runs on all **three screens** of the Tab5 (M5GFX detects
+which). The system adjusts what differs by itself: touch watchdog, idle and
+panel clock (see `tab5_painel()` in `hal/tab5_power.hpp`). An app that draws
+through `M5.Display` and reads touch through `ao_tocar` does not need to know
+which one it is.
 
-O **chip** é outra história: o ESP32-P4 v1.x e o v3.x pedem binários
-diferentes (`sdkconfig.defaults.chip_v1` / `_v3`). O `./gravar.sh` lê a
-revisão do aparelho e escolhe. Para compilar à mão:
+The **chip** is another story: the ESP32-P4 v1.x and v3.x need different
+binaries (`sdkconfig.defaults.chip_v1` / `_v3`). `./gravar.sh` (flash script)
+reads the device's revision and picks. To build by hand:
 
 ```bash
 idf.py -B build_v3 -DM5_CHIP=v3 build
 ```
 
-Código de app não deve depender da revisão. Se precisar mesmo, use
-`CONFIG_ESP32P4_SELECTS_REV_LESS_V3` (v1.x) do `sdkconfig.h`.
+App code should not depend on the revision. If you really must, use
+`CONFIG_ESP32P4_SELECTS_REV_LESS_V3` (v1.x) from `sdkconfig.h`.

@@ -1,10 +1,10 @@
-// TOQUE LONGO - o dedo parado no mesmo lugar por TOQUE_LONGO_MS.
+// LONG PRESS - the finger held still in the same place for TOQUE_LONGO_MS.
 //
-// No ao_tocar_nivel do app, a cada amostra:
-//   if (toque_longo(&s_lp, x, y, pressionado)) { ...acao...; sistema_consumir_toque(); }
-// Devolve true UMA vez por toque. Mexeu mais que TOQUE_LONGO_FOLGA, virou
-// arraste e nao dispara mais ate o dedo sair. O sistema_consumir_toque() faz
-// a soltura nao virar clique.
+// In the app's ao_tocar_nivel, on every sample:
+//   if (toque_longo(&s_lp, x, y, pressionado)) { ...action...; sistema_consumir_toque(); }
+// Returns true ONCE per touch. If it moves more than TOQUE_LONGO_FOLGA, it becomes
+// a drag and does not fire again until the finger lifts. sistema_consumir_toque() stops
+// the release from becoming a click.
 #pragma once
 
 #include "tab5_hora.hpp"

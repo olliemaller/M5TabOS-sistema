@@ -1,23 +1,23 @@
-# Escrevendo aplicativos para o M5tabOS
+# Writing apps for M5tabOS
 
-Este guia é a soma dos erros que a gente já cometeu. Quase toda regra aqui
-existe porque alguma coisa quebrou de um jeito que levou horas para entender —
-e o comentário diz qual, para você não precisar repetir.
+This guide is the sum of the mistakes we have already made. Nearly every rule
+here exists because something broke in a way that took hours to understand —
+and the note says what, so you do not have to repeat it.
 
-> **A referência das APIs** (cada função, o que faz e de qual tarefa pode ser
-> chamada) está no [API.md](API.md). O app [Exemplo](../main/app_exemplo/app_exemplo.cpp)
-> usa cada uma delas num cartão: o jeito mais rápido de começar é copiar a
-> pasta dele.
+> **The API reference** (every function, what it does and which task it may be
+> called from) is in [API.md](API.md). The [Example](../main/app_exemplo/app_exemplo.cpp)
+> app uses each of them on a card: the quickest way to start is to copy its
+> folder.
 
 ---
 
-## 1. O mínimo para existir
+## 1. The minimum to exist
 
-Um aplicativo é **uma pasta dentro de `main/`, com o prefixo `app_`** e um ou
-mais `.cpp` (o prefixo existe, para distinguir apps de
-`main/kernel/`, `main/hal/` e `main/services/` só de olhar o nome da pasta -
-ver a árvore completa no fim desta seção). O `CMakeLists.txt` faz glob
-recursivo: criar a pasta basta, não há nada a registrar no build.
+An app is **a folder inside `main/`, with the `app_` prefix**, and one or
+more `.cpp` files (the prefix is there so you can tell apps apart from
+`main/kernel/`, `main/hal/` and `main/services/` just by the folder name -
+see the full tree at the end of this section). `CMakeLists.txt` globs
+recursively: creating the folder is enough, there is nothing to register in the build.
 
 ```
 main/
@@ -25,110 +25,115 @@ main/
     app_meuapp.cpp
 ```
 
-No fim do arquivo, um descritor:
+At the end of the file, a descriptor:
 
 ```c
 extern const app_t APP_MEUAPP = {
   .nome   = "MeuApp",
-  .cor    = TEMA_APP_LARANJA,   // cor do tema (tab5_tema.hpp), ver seção 2.5
-  .perfil = { },              // o hardware que ELE precisa ligado
+  .cor    = TEMA_APP_LARANJA,   // theme colour (tab5_tema.hpp), see section 2.5
+  .perfil = { },              // the hardware IT needs switched on
   .usa_sd = false,
-  .orientacao = ORI_EM_PE,    // ou ORI_DEITADO, ou ORI_SEGUE_IMU (seção 9)
+  .orientacao = ORI_EM_PE,    // or ORI_DEITADO, or ORI_SEGUE_IMU (section 9)
   .piso_repouso_mhz = 0,
-  .ao_abrir  = ao_abrir,      // pode ser nullptr
-  .ao_fechar = ao_fechar,     // pode ser nullptr
+  .ao_abrir  = ao_abrir,      // may be nullptr
+  .ao_fechar = ao_fechar,     // may be nullptr
   .desenhar  = desenhar,
-  .ao_tocar  = ao_tocar,      // pode ser nullptr
+  .ao_tocar  = ao_tocar,      // may be nullptr
   .periodo_ms = 0,
 };
 ```
 
-> **`extern` é obrigatório.** Em C++, um `const` no escopo de arquivo tem
-> ligação **interna**. Sem o `extern`, o `apps.cpp` não enxerga o símbolo e o
-> erro só aparece no link, como `undefined reference` — longe da causa.
+(The fields are Portuguese: `nome` = name, `cor` = colour, `perfil` = power
+profile, `usa_sd` = uses the SD card, `orientacao` = orientation,
+`piso_repouso_mhz` = minimum clock while idle, `ao_abrir`/`ao_fechar` = on
+open/close, `desenhar` = draw, `ao_tocar` = on touch, `periodo_ms` = redraw period.)
 
-Não há lista para editar: o `main/CMakeLists.txt` gera a tabela a partir das
-pastas `app_*`, e o nome do símbolo segue o da pasta (`app_meuapp` →
-`APP_MEUAPP`). Para tirar um app, apague a pasta.
+> **`extern` is mandatory.** In C++, a `const` at file scope has **internal**
+> linkage. Without the `extern`, `apps.cpp` cannot see the symbol and the
+> error only shows up at link time, as `undefined reference` — far from the cause.
 
-**A árvore completa do sistema, para situar onde cada coisa mora:**
+There is no list to edit: `main/CMakeLists.txt` generates the table from the
+`app_*` folders, and the symbol name follows the folder name (`app_meuapp` →
+`APP_MEUAPP`). To remove an app, delete its folder.
+
+**The full system tree, to show where each thing lives:**
 
 ```
 main/
-  kernel/     core.cpp, shell.cpp, apps.cpp (gerada), tarefa_app.*, pintura.*, app.h
-              (o contrato entre apps e sistema; quem liga/desliga serviço)
+  kernel/     core.cpp, shell.cpp, apps.cpp (generated), tarefa_app.*, pintura.*, app.h
+              (the contract between apps and the system; who starts/stops services)
   hal/        tab5_tela, tab5_power, tab5_grove, tab5_teclado, tab5_sd,
               tab5_sensores, tab5_barramento, tab5_wifi, tab5_gps, nmea
-              (hardware puro - nenhum vive só porque um app está aberto)
+              (pure hardware - none of it lives only because an app is open)
   services/   tab5_mesh, notificacao, ajustes, registro
-              (estado que precisa existir com a tela fechada - ver seção 8)
-  app_*/      cada aplicativo, na própria pasta com o prefixo app_
+              (state that must exist with the screen closed - see section 8)
+  app_*/      each app, in its own folder with the app_ prefix
 ```
 
-Regra de dependência, de baixo para cima: HAL não depende de serviço nem de
-app; serviço não depende de app; kernel não depende de app (só o contrário -
-app inclui `app.h`, nunca o inverso). Um app pode usar kernel, HAL e serviço
-livremente, mas nunca o header de outro app.
+Dependency rule, from the bottom up: the HAL depends on neither services nor
+apps; services do not depend on apps; the kernel does not depend on apps (only
+the reverse - an app includes `app.h`, never the other way round). An app may
+use the kernel, the HAL and services freely, but never another app's header.
 
 ---
 
-## 2. As quatro regras de desenho
+## 2. The four drawing rules
 
-Esta seção é a mais importante do documento. **A maior parte dos bugs visuais
-do projeto veio de violar uma destas quatro.**
+This is the most important section of the document. **Most of the project's
+visual bugs came from breaking one of these four.**
 
-### 2.1. Nunca apague para redesenhar
+### 2.1. Never erase to redraw
 
-O M5GFX escreve direto no framebuffer que o painel está varrendo. Um
-`fillRect` de limpeza seguido de um `drawString` **aparece como piscada**.
+M5GFX writes straight into the framebuffer the panel is scanning out. A
+clearing `fillRect` followed by a `drawString` **shows up as a flicker**.
 
-Escreva **por cima**, com cor de fundo e **largura fixa**:
+Write **over the top**, with a background colour and a **fixed width**:
 
 ```c
-// ERRADO - pisca
+// WRONG - flickers
 d.fillRect(x, y, 200, 30, TFT_BLACK);
 d.drawString(texto, x, y);
 
-// CERTO - sobrescreve
-snprintf(buf, sizeof(buf), "%-20.20s", texto);   // largura fixa!
-d.setTextColor(TEMA_TEXTO, TEMA_FUNDO);          // cor de fundo! (seção 2.5)
+// RIGHT - overwrites
+snprintf(buf, sizeof(buf), "%-20.20s", texto);   // fixed width!
+d.setTextColor(TEMA_TEXTO, TEMA_FUNDO);          // background colour! (section 2.5)
 d.drawString(buf, x, y);
 ```
 
-Se o conteúdo **encolheu** (uma lista com menos itens), limpe **só a faixa que
-sobrou**, nunca a área toda.
+If the content **shrank** (a list with fewer items), clear **only the strip
+that is left over**, never the whole area.
 
-### 2.2. Estado de texto é GLOBAL, não do seu app
+### 2.2. Text state is GLOBAL, not your app's
 
-`setTextDatum`, `setTextSize` e `setTextColor` valem para o display inteiro.
-**Entre dois desenhos do seu app, a barra de status desenha** e deixa o datum
-dela (`middle_right`, da porcentagem de bateria).
+`setTextDatum`, `setTextSize` and `setTextColor` apply to the whole display.
+**Between two of your app's draws, the status bar draws** and leaves its own
+datum behind (`middle_right`, for the battery percentage).
 
-Portanto: **defina datum e tamanho antes de todo `drawString`**, não só na
-primeira passada.
+So: **set datum and size before every `drawString`**, not just on the
+first pass.
 
 ```c
-// ERRADO - o texto sai ancorado onde a barra de status deixou
+// WRONG - the text comes out anchored wherever the status bar left it
 if (primeira_vez) { d.setTextDatum(top_left); }
 d.drawString(buf, x, y);
 
-// CERTO
+// RIGHT
 d.setTextSize(2);
 d.setTextDatum(top_left);
 d.drawString(buf, x, y);
 ```
 
-Se você criar uma função de botão ou caixa que muda o estilo, **salve e
-restaure** — por valor, porque `getTextStyle()` devolve referência para o membro
-interno:
+If you write a button or box function that changes the style, **save and
+restore it** — by value, because `getTextStyle()` returns a reference to the
+internal member:
 
 ```c
-const lgfx::TextStyle estilo = d.getTextStyle();   // cópia, não referência
-...desenha...
+const lgfx::TextStyle estilo = d.getTextStyle();   // a copy, not a reference
+...draw...
 d.setTextStyle(estilo);
 ```
 
-### 2.3. Pinte por diferença, com o `pintura.hpp`
+### 2.3. Paint by difference, with `pintura.hpp`
 
 ```c
 #include "pintura.hpp"
@@ -139,47 +144,51 @@ static char s_ult_nome[24];
 
 static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
 {
-  pintura_iniciar(&s_p);                    // decide se a passada é completa
+  pintura_iniciar(&s_p);                    // decides whether this is a full pass
 
   if (pintura_completa(&s_p)) {
-    ...títulos, molduras, tudo que nunca muda...
+    ...titles, frames, everything that never changes...
   }
 
   if (pintura_mudou_i(&s_p, &s_ult_valor, valor)) {
-    ...desenha só o número...
+    ...draw just the number...
   }
 }
 ```
 
-Três coisas para não errar:
+(`pintura` = painting: `pintura_iniciar` = start, `pintura_completa` = full
+pass, `pintura_mudou_i` = "did this int change".)
 
-**O `pintura_iniciar()` consulta sozinho se o sistema limpou a área.** Sem isso
-(ou com um `s_tudo` feito à mão que esqueça essa consulta), **a tela fica em
-branco ao voltar do repouso** — o app acha que nada mudou, mas tudo foi apagado.
+Three things to get right:
 
-**Não use `||` entre comparadores.** O `||` curto-circuita e os seguintes nem
-são chamados, deixando a memória deles desatualizada — dá o clássico "só
-atualiza uma vez a cada duas":
+**`pintura_iniciar()` checks by itself whether the system cleared the area.**
+Without it (or with a hand-rolled `s_tudo` that forgets that check), **the
+screen stays blank when coming back from idle** — the app thinks nothing
+changed, but everything was erased.
+
+**Do not use `||` between comparators.** `||` short-circuits and the later ones
+are never called, leaving their memory stale — you get the classic "only
+updates every other time":
 
 ```c
-// ERRADO
+// WRONG
 if (pintura_mudou_i(&s_p, &a, x) || pintura_mudou_i(&s_p, &b, y)) { ... }
 
-// CERTO
+// RIGHT
 const bool m1 = pintura_mudou_i(&s_p, &a, x);
 const bool m2 = pintura_mudou_i(&s_p, &b, y);
 if (m1 || m2) { ... }
 ```
 
-**Os comparadores são para decidir DESENHO, não E/S.** Eles devolvem `true` em
-toda passada completa — por construção. Se você usar um para decidir "reler o
-cartão", e a leitura pedir repintura, entra em **loop infinito**. Para decisão
-de E/S, compare na mão.
+**The comparators are for deciding DRAWING, not I/O.** They return `true` on
+every full pass — by design. If you use one to decide "re-read the SD card",
+and the read asks for a repaint, you get an **infinite loop**. For I/O
+decisions, compare by hand.
 
-### 2.4. Área grande se limpa em FAIXAS
+### 2.4. Large areas are cleared in STRIPS
 
-Quando você **precisa** limpar de verdade — trocou de página, o layout mudou —
-não use `fillRect` na área inteira. Use:
+When you really **need** to clear — you changed page, the layout changed —
+do not `fillRect` the whole area. Use:
 
 ```c
 #include "tab5_tela.hpp"
@@ -187,11 +196,11 @@ não use `fillRect` na área inteira. Use:
 tab5_tela_limpar(a.x, a.y, a.largura, a.altura, TFT_BLACK);
 ```
 
-O motivo não é estético, é **banda de memória**. O painel MIPI-DSI puxa
-~110 MB/s contínuos da PSRAM só para manter a imagem viva. Um `fillRect` de
-tela cheia escreve ~1,8 MB na mesma memória, o mais rápido que a CPU consegue.
-Quando as duas rajadas se somam, o FIFO do painel seca — e o frame sai
-**azul**. O driver do IDF descreve o sintoma na própria fonte
+The reason is not aesthetic, it is **memory bandwidth**. The MIPI-DSI panel
+pulls a continuous ~110 MB/s from PSRAM just to keep the image alive. A
+full-screen `fillRect` writes ~1.8 MB to the same memory, as fast as the CPU
+can. When the two bursts add up, the panel's FIFO runs dry — and the frame
+comes out **blue**. The IDF driver describes the symptom in its own source
 (`esp_lcd_panel_dpi.c:113`):
 
 ```c
@@ -200,81 +209,86 @@ ESP_DRAM_LOGE(TAG, "can't fetch data from external memory fast enough,
                     underrun happens");
 ```
 
-O `tab5_tela_limpar()` preenche em faixas e respira entre elas. Custa poucos
-milissegundos numa operação que só acontece ao abrir, fechar ou acordar.
+`tab5_tela_limpar()` fills in strips and pauses between them. It costs a few
+milliseconds on an operation that only happens when opening, closing or waking.
 
-> Esse azul apareceu **ao sair de um app para a tela inicial**, e não ao abrir.
-> A home é quase toda preta, e área preta grande é o preenchimento mais rápido
-> e mais contíguo que existe. Abrir um app escreve o mesmo tanto, mas espalhado
-> em dezenas de operações pequenas — e a rajada nunca se forma.
+> This blue first appeared **when leaving an app for the home screen**, not when
+> opening one. The home screen is almost entirely black, and a large black area
+> is the fastest, most contiguous fill there is. Opening an app writes the same
+> amount, but spread over dozens of small operations — and the burst never forms.
 
-**Para retângulos pequenos — botão, célula, barra — o `fillRect` normal
-continua sendo o certo.** A faixa única sairia igual e ainda pagaria o loop.
+**For small rectangles — a button, a cell, a bar — the normal `fillRect` is
+still the right choice.** A single strip would come out the same and still pay
+for the loop.
 
-**Inclusive o "apaga o que sobrou".** O padrão de limpar só a faixa que a lista
-deixou de ocupar parece pequeno, mas quando a lista encolhe muito ele vira meia
-tela. O azul voltou por isso: o sistema limpava em faixas e os
-apps ainda tinham nove `fillRect` grandes espalhados, cada um capaz de virar a
-rajada sozinho. Se o retângulo **pode** ficar grande, use `tab5_tela_limpar()`.
+**That includes "erase what is left over".** The pattern of clearing only the
+strip the list no longer covers looks small, but when the list shrinks a lot it
+becomes half the screen. That is why the blue came back: the system was clearing
+in strips and the apps still had nine large `fillRect`s scattered about, each
+able to become the burst on its own. If the rectangle **can** get large, use
+`tab5_tela_limpar()`.
 
-**Se você vir azul, procure `lcd.dsi.dpi` no monitor serial.** O driver loga o
-underrun em nível ERROR. Sem essa linha, o azul é outra coisa.
+**If you see blue, look for `lcd.dsi.dpi` in the serial monitor.** The driver
+logs the underrun at ERROR level. Without that line, the blue is something else.
 
 ---
 
-### 2.5. Cores e medidas: o tema central (`tab5_tema.hpp`)
+### 2.5. Colours and sizes: the central theme (`tab5_tema.hpp`)
 
-Desde a repaginação de 2026-11, **nenhum app escreve cor na mão** (`0x18E3`,
-`TFT_LIGHTGREY`, `color565(...)`). A cor se pede pelo **papel** dela:
+Since the 2026-11 redesign, **no app writes a colour by hand** (`0x18E3`,
+`TFT_LIGHTGREY`, `color565(...)`). You ask for a colour by its **role**:
 
 ```c
 #include "tab5_tema.hpp"
 
-d.setTextColor(TEMA_TEXTO, TEMA_FUNDO);                              // texto principal
-d.fillRoundRect(x, y, l, a, TEMA_RAIO_G, TEMA_SUPERFICIE);           // cartão
-d.setTextColor(TEMA_TEXTO_2, TEMA_SUPERFICIE);                       // legenda dentro do cartão
+d.setTextColor(TEMA_TEXTO, TEMA_FUNDO);                              // main text
+d.fillRoundRect(x, y, l, a, TEMA_RAIO_G, TEMA_SUPERFICIE);           // card
+d.setTextColor(TEMA_TEXTO_2, TEMA_SUPERFICIE);                       // caption inside the card
 tab5_botao(d, x, y, l, a, "Salvar", TEMA_DESTAQUE, TEMA_SOBRE_DESTAQUE);
 ```
 
-| Papel | Use para |
+(`"Salvar"` is the translatable key; the English UI shows "Save".)
+
+| Role | Use for |
 |---|---|
-| `TEMA_FUNDO` | o fundo da tela |
-| `TEMA_SUPERFICIE` / `_ALTA` | cartão, painel, linha de lista / botão neutro, campo, cartão sobre cartão |
-| `TEMA_LINHA` | divisória, borda fina, grade |
-| `TEMA_TEXTO` / `_2` / `_3` | texto principal / secundário / desativado ou dica |
-| `TEMA_DESTAQUE` (+ `_SUAVE`, `SOBRE_DESTAQUE`) | a **única** cor forte: botão principal, seleção, ligado |
-| `TEMA_SUCESSO` / `ALERTA` / `PERIGO` / `INFO` | estados — só para comunicar algo, nunca enfeite |
-| `TEMA_APP_*` | 10 tons de mesma luz para categorizar (e o `.cor` do app) |
-| `TEMA_RAIO_*`, `TEMA_ESPACO_*`, `TEMA_LETRA_*` | cantos, espaços e alturas de letra |
+| `TEMA_FUNDO` | the screen background |
+| `TEMA_SUPERFICIE` / `_ALTA` | card, panel, list row / neutral button, field, card on a card |
+| `TEMA_LINHA` | divider, thin border, grid |
+| `TEMA_TEXTO` / `_2` / `_3` | main / secondary / disabled or hint text |
+| `TEMA_DESTAQUE` (+ `_SUAVE`, `SOBRE_DESTAQUE`) | the **only** strong colour: primary button, selection, "on" |
+| `TEMA_SUCESSO` / `ALERTA` / `PERIGO` / `INFO` | states (success / warning / danger / info) — only to communicate something, never decoration |
+| `TEMA_APP_*` | 10 hues of equal lightness for categorising (and the app's `.cor`) |
+| `TEMA_RAIO_*`, `TEMA_ESPACO_*`, `TEMA_LETRA_*` | corner radii, spacing and font heights |
 
-**Ligue `.fundo_tema = true` no `app_t`.** Com ele o sistema limpa a área do
-app com `TEMA_FUNDO` (sem ele, preto, como antes da repaginação) e
-`tab5_escrever`/`tab5_celula` desenham o texto sobre essa cor sozinhos — a
-cor de fundo da área é `sistema_cor_fundo()`. Texto com fundo `TEMA_FUNDO`
-dentro de um cartão `TEMA_SUPERFICIE` faz caixa: passe a cor de **baixo**.
+**Set `.fundo_tema = true` in the `app_t`.** With it the system clears the
+app's area with `TEMA_FUNDO` (without it, black, as before the redesign) and
+`tab5_escrever`/`tab5_celula` draw text over that colour by themselves — the
+area's background colour is `sistema_cor_fundo()`. Text with a `TEMA_FUNDO`
+background inside a `TEMA_SUPERFICIE` card makes a box: pass the colour
+**underneath**.
 
-**Cor de dado não é cor de tema:** linha de gráfico, eixo X/Y/Z, cor ANSI,
-satélite, pixel de imagem continuam com a cor que carrega significado.
+**Data colours are not theme colours:** a graph line, the X/Y/Z axes, an ANSI
+colour, a satellite, an image pixel keep the colour that carries meaning.
 
-No Berry é o módulo `tema` (`tema.FUNDO`, `tema.RAIO_M`...).
+In Berry it is the `tema` module (`tema.FUNDO`, `tema.RAIO_M`...).
 
-## 3. Toque
+## 3. Touch
 
-A assinatura é `void ao_tocar(int x, int y)`, com coordenadas **relativas à
-área do app**. A área em si vem de `sistema_area()` — **nunca reconstrua com
-constantes**:
+The signature is `void ao_tocar(int x, int y)`, with coordinates **relative to
+the app's area**. The area itself comes from `sistema_area()` — **never rebuild
+it from constants**:
 
 ```c
-// ERRADO - as alturas da barra e da navegação são privadas do sistema
+// WRONG - the heights of the status bar and navigation strip are private to the system
 const area_t a = { 0, 0, M5.Display.width(), M5.Display.height() - 64 - 96 };
 
-// CERTO
+// RIGHT
 const area_t a = sistema_area();
 ```
 
-**Não faça E/S bloqueante no toque.** Ler cartão, falar com hardware ou
-qualquer coisa demorada trava a tarefa de interface **antes de qualquer
-desenho**. Marque a intenção e faça o trabalho no `desenhar()`:
+**Do not do blocking I/O in the touch handler.** Reading the SD card, talking
+to hardware or anything slow stalls the UI task **before any drawing**. Record
+the intent and do the work in `desenhar()`:
 
 ```c
 static bool s_precisa_ler = false;
@@ -289,103 +303,107 @@ static void desenhar(...) {
 }
 ```
 
-### Pedindo redesenho
+### Requesting a redraw
 
-| chamada | quando |
+| call | when |
 |---|---|
-| `sistema_pedir_redesenho()` | mudou um **valor** |
-| `sistema_pedir_redesenho_completo()` | mudou a **tela** (página, seleção, layout) |
+| `sistema_pedir_redesenho()` | a **value** changed |
+| `sistema_pedir_redesenho_completo()` | the **screen** changed (page, selection, layout) |
 
-A versão completa limpa a área e passa pelo double buffer, então **não pisca**.
-A incremental escreve direto na página visível — correto para poucos pixels.
+The full version clears the area and goes through the double buffer, so it
+**does not flicker**. The incremental one writes straight to the visible page —
+right for a few pixels.
 
 ---
 
-## 4. Perfil de energia
+## 4. Power profile
 
-O `perfil` diz **o que o seu app precisa ligado**, nunca o que os outros podem
-desligar. O sistema **soma** o que ele mesmo garante:
+The `perfil` says **what your app needs switched on**, never what others may
+switch off. The system **adds** what it guarantees itself:
 
 ```c
-.perfil = { .grove_5v = true },   // este app usa o Grove
+.perfil = { .grove_5v = true },   // this app uses the Grove port
 ```
 
-| campo | quem manda |
+| field | who decides |
 |---|---|
-| `brilho` | **o sistema** (preferência do usuário). Não defina — é ignorado. |
-| `radio` | **o sistema**, se o serviço de WiFi precisar |
-| `grove_5v` | você **soma**; o ajuste do usuário também pode ligar |
-| `imu`, `microfone`, `alto_falante`, `rtc` | fase 1: união de todos os apps no boot |
+| `brilho` (brightness) | **the system** (the user's preference). Do not set it — it is ignored. |
+| `radio` | **the system**, if the Wi-Fi service needs it |
+| `grove_5v` | you **add** it; the user's setting can also switch it on |
+| `imu`, `microfone`, `alto_falante`, `rtc` | phase 1: the union of all apps at boot |
 
-> A regra existe porque a violamos: todo app declarava `radio = false` (o
-> padrão), então **abrir qualquer app cortava a energia do rádio** e derrubava
-> o WiFi no meio de uma conexão.
+> The rule exists because we broke it: every app declared `radio = false` (the
+> default), so **opening any app cut power to the radio** and dropped Wi-Fi in
+> the middle of a connection.
 
-O `piso_repouso_mhz` é a frequência mínima que o app precisa com a tela
-apagada. `0` significa "pode descer ao mínimo".
+`piso_repouso_mhz` is the minimum clock frequency the app needs with the
+screen off. `0` means "may drop to the minimum".
 
-### Tela apagada: o contrato de economia
+### Screen off: the power-saving contract
 
-Com a tela apagada o P4 **dorme entre um evento e outro** (light sleep). O
-software acompanha: quem tem laço periódico escolhe o prazo pelo nível, em vez
-de girar no ritmo de tela acesa (`kernel/app.h`):
+With the screen off the P4 **sleeps between one event and the next** (light
+sleep). The software follows suit: anything with a periodic loop picks its
+timeout by the level, instead of spinning at screen-on pace (`kernel/app.h`):
 
 ```c
-// 1 s acordado, 10 s com a tela apagada; evento na fila acorda na hora
+// 1 s awake, 10 s with the screen off; an event in the queue wakes it at once
 xQueueReceive(fila, &c, pdMS_TO_TICKS(sistema_ritmo_ms(1000, 10000)));
 ```
 
-| função | para quê |
+| function | what for |
 |---|---|
-| `sistema_economia()` | `ECONOMIA_ACORDADO` ou `ECONOMIA_REPOUSO` agora |
-| `sistema_ritmo_ms(acordado, repouso)` | o prazo certo para o nível |
-| `sistema_economia_segurar(bit, sim)` | **impede o sono** enquanto você precisa de resposta rápida (com o seu bit, e solte depois) |
+| `sistema_economia()` | `ECONOMIA_ACORDADO` (awake) or `ECONOMIA_REPOUSO` (idle) right now |
+| `sistema_ritmo_ms(acordado, repouso)` | the right timeout for the level |
+| `sistema_economia_segurar(bit, sim)` | **prevents sleep** while you need a fast response (with your own bit, and release it afterwards) |
 
-Não perde rendimento: interrupção, fila e aviso acordam na hora — só o "olhar de
-novo por via das dúvidas" fica espaçado. O Wi-Fi conectado não segura: o SDIO
-do C6 não acorda o P4, então uma batida de 100 ms atende o que o C6 juntou.
-Segura quem pede o receptor ligado (ESP-NOW conversando, CSI, farejo). Som tocando, Grove com UART e câmera seguram
-sozinhos pelas travas dos próprios drivers. `energia sono` no console mostra o
-estado; meça na bateria com `energia ensaio`.
+No throughput is lost: interrupts, queues and notifications wake it at once —
+only the "check again just in case" gets spaced out. A connected Wi-Fi does not
+hold it awake: the C6's SDIO does not wake the P4, so a 100 ms beat serves
+whatever the C6 has gathered. Whatever asks for the receiver to be on holds it
+(ESP-NOW chatting, CSI, sniffing). Sound playing, Grove with UART and the camera
+hold it by themselves through their own drivers' locks. `power sleep`
+(`energia sono`) in the console shows the state; measure it on battery with
+`power trial` (`energia ensaio`).
 
-### Se o seu app muda uma preferência do sistema
+### If your app changes a system preference
 
-Um app de ajustes (como o app Ajustes) muda algo que atravessa todos os apps. Para
-isso valer **na hora**, não mexa no hardware:
+A settings app (like the Settings app) changes something that cuts across all
+apps. To make it take effect **immediately**, do not touch the hardware:
 
 ```c
-// ERRADO - passa por cima da regra do "app só soma"
+// WRONG - bypasses the "an app only adds" rule
 tab5_power_grove(false);
 
-// CERTO - o sistema remonta o perfil de quem está na tela e aplica
+// RIGHT - the system rebuilds the profile of whatever is on screen and applies it
 ajustes_definir_grove(false);
 sistema_reaplicar_perfil();
 ```
 
-> Isto nasceu de um bug: desligar o 5V do Grove em Ajustes não apagava nada — o
-> trilho só caía ao voltar para a home. O app ligava na mão com
-> `tab5_power_grove(true)` e o sentido contrário não tinha par, então "OFF" na
-> tela e 5 V no fio conviviam.
+> This came from a bug: turning off the Grove 5V in Settings did not switch
+> anything off — the rail only dropped when going back to the home screen. The
+> app switched it on by hand with `tab5_power_grove(true)` and there was no
+> matching call the other way, so "OFF" on screen and 5 V on the wire coexisted.
 >
-> A correção não foi chamar `tab5_power_grove(false)` também. Foi **parar de
-> mexer no hardware a partir do app**: quem sabe montar o estado final é o
-> sistema, porque só ele conhece a regra de que o app soma e nunca subtrai.
+> The fix was not to call `tab5_power_grove(false)` as well. It was to **stop
+> touching the hardware from the app**: the one that knows how to build the
+> final state is the system, because only it knows the rule that an app adds
+> and never subtracts.
 
 ---
 
-## 5. Tarefas
+## 5. Tasks
 
-Se o app precisa de trabalho de fundo, **use o `tarefa_app`**, nunca
-`xTaskCreate` direto:
+If the app needs background work, **use `tarefa_app`** (app task), never
+`xTaskCreate` directly:
 
 ```c
 static tarefa_app_t s_t;
 
 static void meu_laco(tarefa_app_t* t) {
   while (tarefa_app_ativa(t)) {
-    ...trabalho...                      // com esperas LIMITADAS
+    ...work...                          // with BOUNDED waits
   }
-  // aqui devolva o que voce pegou: fclose, xSemaphoreGive, etc.
+  // give back what you took here: fclose, xSemaphoreGive, etc.
 }
 
 static bool ao_abrir(void) {
@@ -393,24 +411,24 @@ static bool ao_abrir(void) {
 }
 
 static void ao_fechar(void) {
-  tarefa_app_encerrar(&s_t, 200);   // pede, espera ate 200ms, so entao segue
+  tarefa_app_encerrar(&s_t, 200);   // asks, waits up to 200ms, only then carries on
 }
 ```
 
-`tarefa_app_encerrar()` sinaliza, aborta o bloqueio pendente
-(`xTaskAbortDelay`) e **espera a tarefa confirmar** antes de você destruir queue
-ou driver - so depois dela voltar e que e seguro liberar o que a tarefa usava.
-Matar tarefa com `vTaskDelete` enquanto ela segura um semaphore ou está dentro
-de um `uart_read_bytes` deixa recurso pendurado para sempre.
+`tarefa_app_encerrar()` signals, aborts the pending block (`xTaskAbortDelay`)
+and **waits for the task to confirm** before you destroy a queue or driver -
+only once it has returned is it safe to free what the task was using. Killing
+a task with `vTaskDelete` while it holds a semaphore or is inside a
+`uart_read_bytes` leaves a resource hanging forever.
 
-### Mais de uma tarefa no mesmo app
+### More than one task in the same app
 
-Sim, e não é exótico — é **um `tarefa_app_t` por tarefa**, cada uma com seu
-próprio corpo. Por exemplo, um leitor de GPS por UART:
+Yes, and it is not exotic — it is **one `tarefa_app_t` per task**, each with
+its own body. For example, a GPS reader over UART:
 
 ```c
-static tarefa_app_t s_t_leitura;   // le a UART, so isso
-static tarefa_app_t s_t_parser;    // interpreta o que a leitura publicou
+static tarefa_app_t s_t_leitura;   // reads the UART, nothing else
+static tarefa_app_t s_t_parser;    // interprets what the reader published
 
 static bool ao_abrir(void) {
   if (!tarefa_app_criar(&s_t_leitura, laco_leitura, "GPSRead",   4096, 3)) { return false; }
@@ -419,83 +437,84 @@ static bool ao_abrir(void) {
 }
 
 static void ao_fechar(void) {
-  tarefa_app_encerrar(&s_t_parser,  200);   // a ORDEM importa: quem consome
-  tarefa_app_encerrar(&s_t_leitura, 200);   // primeiro (senao o produtor
-}                                           // escreve numa fila cujo leitor já foi embora)
+  tarefa_app_encerrar(&s_t_parser,  200);   // ORDER matters: the consumer
+  tarefa_app_encerrar(&s_t_leitura, 200);   // first (otherwise the producer
+}                                           // writes into a queue whose reader has gone)
 ```
 
-Por que duas em vez de uma: **cada tarefa deveria fazer UMA coisa**, no seu
-próprio ritmo. Ler UART é bloqueante e não pode esperar; interpretar o que
-chegou pode ser mais lento sem atrasar a leitura seguinte — as duas com
-prioridades diferentes (`3` e `2` acima) deixam isso explícito. Elas se
-comunicam por **queue** (`xQueueCreate`), nunca por variável global sem trava:
-é a mesma regra de "quem desenha não toca hardware" aplicada a tarefas que
-falam entre si.
+Why two instead of one: **each task should do ONE thing**, at its own pace.
+Reading the UART is blocking and cannot wait; interpreting what arrived can be
+slower without delaying the next read — giving the two different priorities
+(`3` and `2` above) makes that explicit. They communicate through a **queue**
+(`xQueueCreate`), never through an unlocked global variable: it is the same
+"whoever draws does not touch hardware" rule applied to tasks that talk to
+each other.
 
-O orçamento de stack **soma**: duas tarefas de 4096 bytes são 8KB, além da
-UI (10240) e de qualquer serviço do sistema já rodando. Não é motivo para não
-criar a segunda tarefa — é motivo para não criar uma terceira "só porque
-pode": se duas queues resolvem, duas tarefas bastam.
+The stack budget **adds up**: two 4096-byte tasks are 8KB, on top of the UI
+(10240) and any system service already running. That is no reason not to
+create the second task — it is a reason not to create a third "just because
+you can": if two queues solve it, two tasks are enough.
 
 ---
 
-## 6. Cartão SD
+## 6. SD card
 
-O cartão pode estar **no computador** (modo pendrive, Ajustes > USB). Por isso
-gravar e ler têm regras do sistema — siga-as e o seu app não precisa saber se
-o cartão está ou não no Tab5.
+The card may be **on the computer** (USB mass-storage mode, Settings > USB
+(flash drive)). That is why writing and reading follow system rules — follow them and
+your app does not need to know whether the card is in the Tab5 or not.
 
-**Gravar dados: só pelas três portas** (`hal/tab5_sd.hpp`). Elas montam o
-cartão sozinhas e, com ele no computador, guardam no diário da flash interna,
-que chega ao cartão na volta, na ordem certa:
+**Writing data: only through the three doors** (`hal/tab5_sd.hpp`). They mount
+the card by themselves and, while it is on the computer, keep the data in the
+internal flash journal, which reaches the card when it comes back, in the
+right order:
 
 ```c
-// acrescentar uma linha, sem esperar (vai em lote; ótimo para log e histórico)
-tab5_sd_anexar("MeuApp", "dados.csv", linha, "data,valor\n");   // cabeçalho se o arquivo estiver vazio
+// append a line, without waiting (goes in batches; great for logs and history)
+tab5_sd_anexar("MeuApp", "dados.csv", linha, "date,value\n");   // header if the file is empty
 
-// acrescentar um bloco agora (para quem já junta em lote)
+// append a block now (for code that already batches)
 tab5_sd_acrescentar("MeuApp", "dados.bin", bloco, n);
 
-// trocar o arquivo inteiro (nunca deixa meio arquivo)
+// replace the whole file (never leaves half a file)
 tab5_sd_substituir("MeuApp", "config.txt", texto, n);
 ```
 
-`acrescentar` e `substituir` bloqueiam: chame do worker (`sistema_trabalho`),
-nunca da tarefa de interface.
+`acrescentar` (append) and `substituir` (replace) block: call them from the
+worker (`sistema_trabalho`), never from the UI task.
 
-**Só reescreva o que leu.** Se o seu app guarda uma lista no cartão e a
-reescreve inteira com `tab5_sd_substituir`, ele precisa ter lido o arquivo
-antes. Sem cartão na leitura, não reescreva: a lista vazia da RAM apagaria o
-que estava guardado. (É o que as redes Wi-Fi, a NodeDB do Mesh e as conversas
-apagadas fazem.)
+**Only rewrite what you have read.** If your app keeps a list on the card and
+rewrites it whole with `tab5_sd_substituir`, it must have read the file first.
+If there was no card at read time, do not rewrite: the empty list in RAM would
+wipe out what was stored. (This is what the Wi-Fi networks, the Mesh NodeDB and
+the deleted conversations do.)
 
-**Ler:** `tab5_sd_abrir(app, arquivo, "r")` — ele grava antes o que estava
-pendente, então você sempre lê a última versão. Com o cartão no computador ele
-devolve `NULL`, como se o cartão não estivesse lá; trate como "sem dados". Ele
-distingue "arquivo ainda não existe" (normal) de falha real.
+**Reading:** `tab5_sd_abrir(app, arquivo, "r")` — it first writes whatever was
+pending, so you always read the latest version. With the card on the computer
+it returns `NULL`, as if the card were not there; treat that as "no data". It
+distinguishes "file does not exist yet" (normal) from a real failure.
 
-**Declare o que o app precisa:**
+**Declare what the app needs:**
 
-- `.usa_sd = true` — o sistema monta o cartão **antes** do `ao_abrir()` e
-  desmonta **depois** do `ao_fechar()`. Abre mesmo sem cartão.
-- `.exige_sd = true` — sem o cartão o app não tem função (navegar nos
-  arquivos, gravar foto). Com o cartão no computador, **o sistema não abre o
-  app**: mostra o motivo no lugar dele e abre sozinho quando o cartão volta. E
-  o pendrive não começa com ele aberto. O app não precisa tratar "o cartão
-  sumiu no meio".
+- `.usa_sd = true` — the system mounts the card **before** `ao_abrir()` and
+  unmounts it **after** `ao_fechar()`. The app opens even without a card.
+- `.exige_sd = true` — without the card the app has no purpose (browsing
+  files, saving a photo). With the card on the computer, **the system does not
+  open the app**: it shows the reason in its place and opens it by itself when
+  the card comes back. And USB mass-storage mode does not start while the app
+  is open. The app does not need to handle "the card vanished halfway through".
 
-Arquivo novo **grande** (foto, firmware recebido) é o único caso de gravar com
-`tab5_sd_abrir(..., "wb")` direto: ele exige o cartão de verdade, então quem o
-produz declara `.exige_sd = true`.
+A **large** new file (a photo, received firmware) is the only case for writing
+with `tab5_sd_abrir(..., "wb")` directly: it needs the real card, so whatever
+produces it declares `.exige_sd = true`.
 
-Se precisar montar por conta própria (para ler numa tarefa, por exemplo), a
-montagem é contada por referência e **toda montagem precisa da sua
-desmontagem, em todos os caminhos de saída** — inclusive nos de erro.
+If you need to mount it yourself (to read in a task, for example), mounting is
+reference-counted and **every mount needs its unmount, on every exit path** —
+including the error ones.
 
 ```c
-if (!tab5_sd_montar()) { return; }      // false também com o cartão no computador
+if (!tab5_sd_montar()) { return; }      // also false with the card on the computer
 FILE* f = tab5_sd_abrir("MeuApp", "dados.csv", "r");
-if (!f) { tab5_sd_desmontar(); return; }    // <- não esqueça aqui
+if (!f) { tab5_sd_desmontar(); return; }    // <- do not forget this one
 ...
 fclose(f);
 tab5_sd_desmontar();
@@ -503,436 +522,451 @@ tab5_sd_desmontar();
 
 ---
 
-## 7. Recursos exclusivos
+## 7. Exclusive resources
 
-Alguns recursos cabem **um de cada vez** e têm árbitro no sistema. Sempre peça,
-e **respeite o não**:
+Some resources fit **one user at a time** and have an arbiter in the system.
+Always ask, and **respect a no**:
 
 ```c
 if (!tab5_grove_tomar(GROVE_DONO_GPS)) {
-  // Outro dono. Abra assim mesmo se fizer sentido, e EXPLIQUE na tela.
+  // Another owner. Open anyway if it makes sense, and EXPLAIN it on screen.
 }
 ...
-tab5_grove_soltar(GROVE_DONO_GPS);   // no ao_fechar()
+tab5_grove_soltar(GROVE_DONO_GPS);   // in ao_fechar()
 ```
 
-> Recusar abrir sem explicar é a pior saída: o usuário toca o ícone e o
-> aparelho parece não fazer nada.
+(`tomar` = take, `soltar` = release, `DONO` = owner.)
+
+> Refusing to open without explaining is the worst outcome: the user taps the
+> icon and the device seems to do nothing.
 
 ---
 
-## 8. Aplicativo ou serviço?
+## 8. App or service?
 
-Esta é a decisão de projeto mais importante.
+This is the most important design decision.
 
-| | aplicativo | serviço |
+| | app | service |
 |---|---|---|
-| vive enquanto | está na tela | o sistema está ligado |
-| exemplos | Arquivos, Ajustes, Câmera | WiFi, Meshtastic, GPS, registro, teclado |
-| use quando | o trabalho **é** a tela | o estado precisa existir com a tela fechada |
+| lives while | it is on screen | the system is on |
+| examples | Files, Settings, Camera | Wi-Fi, Meshtastic, GPS, logging, keyboard |
+| use when | the work **is** the screen | the state must exist with the screen closed |
 
-Se o recurso precisa **notificar** algo com o app fechado, ele é serviço — e o
-app vira só a **janela** dele. Foi assim que o Meshtastic avisa de mensagem nova
-sem estar aberto - e foi exatamente essa a razão de o GPS deixar de ser lido
-direto por um app: o app Mesh precisou perguntar "onde
-estou" para calcular distância até uma localização recebida, e um app não
-enxerga o estado privado de outro. Promovido a serviço, qualquer app pode
-perguntar - e o app que mostrava o GPS virou só a janela dele, exatamente como
-o Mesh já era para o Meshtastic.
+If the feature needs to **notify** something with the app closed, it is a
+service — and the app becomes just its **window**. That is how Meshtastic
+announces a new message without being open - and it is exactly why the GPS
+stopped being read directly by an app: the Mesh app needed to ask "where am I"
+to work out the distance to a received location, and one app cannot see
+another's private state. Promoted to a service, any app can ask - and the app
+that displayed the GPS became just its window, exactly as Mesh already was for
+Meshtastic.
 
-Serviço mora em `main/services/` (ou em `main/hal/` quando o que ele expõe é
-essencialmente uma leitura de hardware, como o GPS - a linha entre os dois é
-"tem regra de negócio" vs "só entrega o dado cru"), tem tarefa própria criada
-pelo KERNEL (`main/kernel/`) - nunca pelo app - e expõe leitura por cópia,
-nunca ponteiro para estrutura que a tarefa reescreve. Quem liga/desliga por
-causa de troca de módulo no Grove é sempre o kernel (`kernel/core.cpp`), do mesmo
-jeito para Mesh e para GPS - um app nunca chama `_iniciar()`/`_parar()` de
-serviço nenhum diretamente.
+A service lives in `main/services/` (or in `main/hal/` when what it exposes is
+essentially a hardware reading, like the GPS - the line between the two is
+"has business rules" vs "just delivers the raw data"), has its own task created
+by the KERNEL (`main/kernel/`) - never by the app - and exposes reads by copy,
+never a pointer to a structure the task rewrites. Whatever starts/stops because
+the module on the Grove port changed is always the kernel (`kernel/core.cpp`),
+the same way for Mesh and for GPS - an app never calls any service's
+`_iniciar()`/`_parar()` (start/stop) directly.
 
-**Peças prontas para serviço — não reescreva:**
+**Ready-made parts for services — do not rewrite them:**
 
-| precisa de | use | em vez de |
+| you need | use | instead of |
 |---|---|---|
-| parar a própria tarefa com segurança | `kernel/parada.hpp` (`parada_preparar` / `parada_pedida` / `parada_confirmar` / `parada_pedir`) | duas bandeiras + `for (...) vTaskDelay(10)` perguntando se saiu |
-| entregar evento a UM ouvinte | `hal/tab5_ouvinte.hpp` — remover o ouvinte só volta depois da chamada em voo | ponteiro `volatile` e um `vTaskDelay` "para dar tempo" antes de destruir a fila |
-| ler/escrever protobuf do Meshtastic | `services/mesh_pb.hpp` — leitor que nunca soma no ponteiro, escritor que nunca passa do fim | `*p++ = 0x22` e buffer "com folga" |
-| "o relógio já foi acertado?" | `tab5_hora_epoch()` / `tab5_hora_valida()` (`services/tab5_hora.hpp`) | `time(nullptr) > 1600000000` |
+| to stop your own task safely | `kernel/parada.hpp` (`parada_preparar` / `parada_pedida` / `parada_confirmar` / `parada_pedir`) | two flags + `for (...) vTaskDelay(10)` asking whether it has exited |
+| to deliver an event to ONE listener | `hal/tab5_ouvinte.hpp` — removing the listener only returns after the in-flight call | a `volatile` pointer and a `vTaskDelay` "to give it time" before destroying the queue |
+| to read/write Meshtastic protobuf | `services/mesh_pb.hpp` — a reader that never adds to the pointer, a writer that never runs past the end | `*p++ = 0x22` and a buffer "with room to spare" |
+| "has the clock been set yet?" | `tab5_hora_epoch()` / `tab5_hora_valida()` (`services/tab5_hora.hpp`) | `time(nullptr) > 1600000000` |
 
-A regra por trás das quatro: **espere por um evento, não por um prazo.**
-Quem precisa saber que algo terminou recebe um sinal (semáforo, contagem);
-`vTaskDelay` serve para ritmo de hardware documentado (o datasheet pede X
-µs) e para ceder CPU — nunca para "deve ter dado tempo".
+The rule behind all four: **wait for an event, not for a timeout.** Whoever
+needs to know that something finished receives a signal (a semaphore, a
+count); `vTaskDelay` is for documented hardware timing (the datasheet asks for
+X µs) and for yielding the CPU — never for "it should have had time by now".
 
-### 8.1. App com PARTE DE FUNDO: `kernel/fundo.h`
+### 8.1. App with a BACKGROUND PART: `kernel/fundo.h`
 
-Entre "app" e "serviço" existe um terceiro caso: o app cujo trabalho continua
-quando a janela fecha - gravar a trilha, enviar a posição pela internet, um
-cálculo longo. **Não** vire serviço feito à mão por isso: descreva a parte de
-fundo e deixe o kernel rodar.
+Between "app" and "service" there is a third case: the app whose work carries
+on when the window closes - recording a track, sending the position over the
+internet, a long calculation. **Do not** turn it into a hand-made service for
+that: describe the background part (`fundo`) and let the kernel run it.
 
 ```c
 static void meu_laco(fundo_t* f) {
-    while (fundo_esperar(f, 5000)) {          // dorme; false = pediram para parar
-        ...trabalho com esperas LIMITADAS...
-        fundo_estado(f, n, "42 envios");       // o texto da pastilha cinza
+    while (fundo_esperar(f, 5000)) {          // sleeps; false = asked to stop
+        ...work with BOUNDED waits...
+        fundo_estado(f, n, "42 sent");         // the text of the grey pill
     }
 }
 
 const fundo_def_t MEU_FUNDO = {
-    .nome   = "GPS online",                    // tarefa, notificação e listas
+    .nome   = "GPS online",                    // task, notification and lists
     .corpo  = meu_laco,
     .pilha  = 4096,
-    .perfil = { .radio = true },               // SOMA no perfil efetivo enquanto roda
-    .ao_iniciar = preparar,                    // opcional, na interface
-    .ao_parar   = liberar,                     // opcional, depois que o laço saiu
+    .perfil = { .radio = true },               // ADDED to the effective profile while it runs
+    .ao_iniciar = preparar,                    // optional, on the UI task
+    .ao_parar   = liberar,                     // optional, after the loop has exited
 };
 
-// na janela:
+// in the window:
 sistema_fundo_iniciar(&MEU_FUNDO);
-sistema_fundo_parar(&MEU_FUNDO);               // espera o laço sair (até 3 s)
+sistema_fundo_parar(&MEU_FUNDO);               // waits for the loop to exit (up to 3 s)
 bool rodando = sistema_fundo_ativo(&MEU_FUNDO);
 ```
 
-O que o sistema garante sem você escrever nada: tarefa própria em prioridade 1
-(nunca trava o toque), a **pastilha cinza** com o nome enquanto roda (nada roda
-escondido), o **perfil de energia somado** ao da tela, parada que acorda o loop
-na hora, e limpeza quando o loop termina sozinho. No console: `fundo` lista,
-`fundo parar <nome>` para.
+What the system guarantees without you writing anything: its own task at
+priority 1 (never stalls touch), the **grey pill** with the name while it runs
+(nothing runs hidden), the **power profile added** to the screen's, a stop that
+wakes the loop at once, and clean-up when the loop ends by itself. In the
+console: `background` (`fundo`) lists them, `background stop <name>` stops one.
 
-**O usuário pode parar qualquer parte de fundo.** Toda parte de fundo aparece
-na central de avisos (tocar a barra), na faixa **Em segundo plano**, com um X
-que é do sistema: primeiro toque "Parar?", o segundo para. O app não escreve
-nada para ter isso e não pode recusar. Em troca: o loop sai logo depois do
-pedido, e tudo que precisa sobreviver é salvo no `ao_parar()` - ele roda
-sempre, inclusive quando quem parou foi o usuário com a janela fechada. Parte
-de fundo que pode ficar ociosa (música pausada) se encerra sozinha depois de
-um tempo. O contrato completo está no cabeçalho de `kernel/fundo.h`.
+**The user can stop any background part.** Every background part appears in
+the notification centre (tap the status bar), in the **In the background**
+section, with an X that belongs to the system: the first tap shows "Stop?",
+the second stops it. The app writes nothing to get this and cannot refuse. In
+return: the loop exits right after the request, and everything that must
+survive is saved in `ao_parar()` - it always runs, including when it was the
+user who stopped it with the window closed. A background part that can sit
+idle (paused music) shuts itself down after a while. The full contract is in
+the header of `kernel/fundo.h`.
 
-As regras do loop:
+The loop rules:
 
-- **Nunca espere para sempre.** A espera de verdade é `fundo_esperar()`; o
-  resto com prazo, senão o pedido de parada não chega.
-- **Loop de cálculo chama `fundo_ceder(f)` a cada volta** - sem isso o kernel
-  fica tomado, o IDLE não roda, o watchdog dispara e o aparelho não dorme.
-- **O loop não desenha.** Guarda o estado (protegido) e a janela lê por cópia.
-- **A memória do fundo é do fundo** - estática, ou alocada no `ao_iniciar()` e
-  liberada no `ao_parar()`. Nunca um buffer da janela: ela fecha quando quiser.
+- **Never wait forever.** The real wait is `fundo_esperar()`; everything else
+  has a timeout, otherwise the stop request never arrives.
+- **A calculation loop calls `fundo_ceder(f)` on every iteration** - without
+  it the core stays busy, IDLE does not run, the watchdog fires and the device
+  does not sleep.
+- **The loop does not draw.** It keeps the state (protected) and the window
+  reads it by copy.
+- **The background part's memory belongs to the background part** - static,
+  or allocated in `ao_iniciar()` and freed in `ao_parar()`. Never a buffer of
+  the window: it closes whenever it likes.
 
-O exemplo vivo é o cartão FUNDO do app Exemplo: um cronômetro (`laco_fundo`,
-`EXEMPLO_FUNDO`) que continua contando, com a pastilha na barra, depois que a
-janela fecha.
+The live example is the FUNDO (background) card in the Example app: a
+stopwatch (`laco_fundo`, `EXEMPLO_FUNDO`) that keeps counting, with the pill in
+the status bar, after the window closes.
 
-**Quando o trabalho não é do app, é do sistema.** Música é o exemplo: o
-tocador é um serviço (`services/tab5_musica`) que roda como parte de fundo,
-e o app Música é só a interface dele - lista, botões, espectro. Se o seu app
-precisa de algo que outro app (ou um script Berry) também vai querer, peça
-um serviço em vez de escrever o motor dentro da janela. Ver docs/API.md,
-seção 8.
+**When the work is not the app's, it is the system's.** Music is the example:
+the player is a service (`services/tab5_musica`) that runs as a background
+part, and the Music app is just its interface - list, buttons, spectrum. If
+your app needs something another app (or a Berry script) will also want, ask
+for a service instead of writing the engine inside the window. See docs/API.md,
+section 8.
 
-### 8.2. Avisando o usuário: `services/notificacao.h`
+### 8.2. Notifying the user: `services/notificacao.h`
 
-A notificação é **serviço do sistema**: qualquer serviço ou app publica, e a
-barra de status mostra sem saber quem é quem. Ninguém mexe na barra para
-avisar nada.
+Notifications are a **system service**: any service or app publishes, and the
+status bar shows them without knowing who is who. Nobody touches the status
+bar to announce anything.
 
 ```c
 #include "notificacao.h"
 
 static int s_notif = -1;
 
-// Registrar: pode chamar a cada subida/abertura - e idempotente pelo NOME
-// (mesmo nome devolve a mesma vaga, COM o estado que ela tinha). O nome tem
-// que ser literal/estatico.
-s_notif = notif_registrar("Meu servico");
-notif_silenciar(s_notif, !minha_preferencia_de_som);   // opcional, por fonte
-notif_associar_app(s_notif, "MeuApp");   // opcional: o app que o toque abre
+// Register: may be called on every start/open - it is idempotent by NAME
+// (the same name returns the same slot, WITH the state it had). The name must
+// be a literal/static.
+s_notif = notif_registrar("My service");
+notif_silenciar(s_notif, !minha_preferencia_de_som);   // optional, per source
+notif_associar_app(s_notif, "MeuApp");   // optional: the app a tap opens
 
-// Publicar o ESTADO ATUAL (nao um evento). De qualquer tarefa.
-notif_publicar(s_notif, 3, NOTIF_INFO, "3 novas");
-notif_limpar(s_notif);                                 // nada a dizer
+// Publish the CURRENT STATE (not an event). From any task.
+notif_publicar(s_notif, 3, NOTIF_INFO, "3 new");
+notif_limpar(s_notif);                                 // nothing to say
 ```
 
-As regras, e por quê:
+The rules, and why:
 
-- **Estado, não evento.** Publique "tenho 3", nunca "chegou mais 1". Republicar
-  o mesmo estado não custa nada (a barra só repinta quando algo muda).
-- **A quantidade é derivada da sua fonte da verdade**, nunca mantida por
-  aritmética em paralelo. O Mesh mantinha um total à parte das conversas, e os
-  dois se descolaram: mensagem nova sumia da barra. Recalcule a
-  partir do que você guarda, na hora de publicar.
-- **Escolha o nível pelo que ele significa:**
+- **State, not event.** Publish "I have 3", never "1 more arrived".
+  Republishing the same state costs nothing (the status bar only repaints when
+  something changes).
+- **The count is derived from your source of truth**, never kept by parallel
+  arithmetic. Mesh kept a total separate from the conversations, and the two
+  drifted apart: new messages vanished from the status bar. Recalculate from
+  what you store, at publish time.
+- **Choose the level by what it means:**
 
-  | nível | quando | na barra |
+  | level | when | in the status bar |
   |---|---|---|
-  | `NOTIF_ESTADO` | atividade em curso ("gravando trilha") | cinza; só aparece se nada mais tiver o que dizer |
-  | `NOTIF_INFO` | novidade que não exige você (tráfego de canal) | azul |
-  | `NOTIF_ATENCAO` | endereçada a você (mensagem direta) | laranja |
-  | `NOTIF_URGENTE` | exige ação (bateria acabando, cartão cheio) | vermelho |
+  | `NOTIF_ESTADO` | activity in progress ("recording track") | grey; only shows if nothing else has anything to say |
+  | `NOTIF_INFO` | news that does not need you (channel traffic) | blue |
+  | `NOTIF_ATENCAO` | addressed to you (direct message) | orange |
+  | `NOTIF_URGENTE` | needs action (battery running out, card full) | red |
 
-- **A barra mostra UMA fonte em destaque**: a de maior
-  nível e, no empate, a que mudou por último, com o **seu resumo** - então
-  escreva um resumo que se explique sozinho ("1 em LongFast", não "1"). As
-  outras ativas viram um **ponto na cor do nível** ao lado (o que não couber
-  vira "+N").
-- **Central de avisos:** tocar a barra de status abre a lista de TODAS as
-  fontes ativas (`notif_listar`), uma linha por app com nome, resumo e
-  contagem. Tocar a linha abre o app associado - por padrão o app com o
-  **mesmo nome** da fonte; se o nome for outro ("Meshtastic" → app "Mesh"),
-  chame `notif_associar_app()`. A tela de bloqueio mostra a mesma lista (até
-  4 linhas).
-- **Não apague o aviso por reinício.** Registrar de novo não zera mais a
-  fonte, e quem para e sobe o serviço sozinho (troca de via, rede caindo)
-  não deve chamar `notif_limpar()` se ainda há o que ler - o aviso sumia sem
-  o usuário ter aberto nada. Apague quando a coisa foi **vista**.
-- **"Visto" é só com o app visível.** Com a tela bloqueada ou a central
-  aberta o app fica *encoberto* (`sistema_app_encoberto()`): não recebe
-  `ao_aviso`, toque nem tecla - os avisos esperam até ele voltar à frente.
-  Então marcar como lido dentro de `ao_aviso`/`desenhar` é seguro.
-- **O beep** toca quando a quantidade de uma fonte não silenciada **sobe**.
-  Contador de progresso (pontos, bytes) em nível acima de `ESTADO` faria bipar
-  a cada passo - use `ESTADO`, ou silencie a fonte.
-- **App x serviço:** um app só roda aberto, então só avisa enquanto está na
-  tela. Aviso que precisa existir com o app fechado é trabalho de serviço (ver
-  acima). Ao fechar, um app que publicou deve `notif_limpar()`.
+- **The status bar shows ONE source prominently**: the one with the highest
+  level and, on a tie, the one that changed last, with **its summary** - so
+  write a summary that explains itself ("1 on LongFast", not "1"). The other
+  active ones become a **dot in the level's colour** beside it (whatever does
+  not fit becomes "+N").
+- **Notification centre:** tapping the status bar opens the list of ALL active
+  sources (`notif_listar`), one row per app with name, summary and count.
+  Tapping the row opens the associated app - by default the app with the
+  **same name** as the source; if the name differs ("Meshtastic" → the "Mesh"
+  app), call `notif_associar_app()`. The lock screen shows the same list (up
+  to 4 rows).
+- **Do not clear the notification on a restart.** Registering again no longer
+  resets the source, and a service that stops and starts itself (changing
+  transport, network dropping) must not call `notif_limpar()` if there is
+  still something to read - the notification used to vanish without the user
+  having opened anything. Clear it when the thing has been **seen**.
+- **"Seen" only counts with the app visible.** With the screen locked or the
+  notification centre open the app is *covered* (`sistema_app_encoberto()`): it
+  receives no `ao_aviso`, touch or key - notifications wait until it is back in
+  front. So marking as read inside `ao_aviso`/`desenhar` is safe.
+- **The beep** sounds when the count of an unmuted source **goes up**. A
+  progress counter (points, bytes) at a level above `ESTADO` would beep at
+  every step - use `ESTADO`, or mute the source.
+- **App vs service:** an app only runs while open, so it only notifies while
+  it is on screen. A notification that must exist with the app closed is a
+  service's job (see above). On closing, an app that published must call
+  `notif_limpar()`.
 
 ---
 
-## 9. Orientação: em pé, deitado ou seguindo o aparelho
+## 9. Orientation: portrait, landscape or following the device
 
-`.orientacao` escolhe entre os dois estados de tela que existem no sistema:
+`.orientacao` chooses between the two screen states that exist in the system:
 
-| valor | tela | quando |
+| value | screen | when |
 |---|---|---|
-| `ORI_EM_PE` (padrão) | 720×1280, rotação 0 | a maioria dos apps, como a home |
-| `ORI_DEITADO` | 1280×720, rotação 3 | paisagem fixa, ExtPort1 (teclado) embaixo |
-| `ORI_SEGUE_IMU` | um dos dois, conforme o aparelho | apps de mensagem (Mesh, ESP-NOW) |
+| `ORI_EM_PE` (default) | 720×1280, rotation 0 | most apps, like the home screen |
+| `ORI_DEITADO` | 1280×720, rotation 3 | fixed landscape, ExtPort1 (keyboard) at the bottom |
+| `ORI_SEGUE_IMU` | one of the two, following the device | messaging apps (Mesh, ESP-NOW) |
 
-As rotações 1 e 2 nunca são usadas: a tela não vira "para o outro lado".
-O sistema gira ao abrir e volta em pé ao fechar. O `sistema_area()` já devolve
-as dimensões novas.
+Rotations 1 and 2 are never used: the screen does not flip "the other way
+round". The system rotates on opening and returns to portrait on closing.
+`sistema_area()` already returns the new dimensions.
 
-**`ORI_SEGUE_IMU`** (`kernel/orientacao`): com o app aberto, o sistema lê o
-IMU a 5 Hz e gira quando a gravidade fica claramente num dos eixos da tela por
-~0,6 s. Aparelho na mesa ou na diagonal não muda nada (zona morta), e depois de
-girar há 1,5 s de carência. Com o teclado físico encaixado, fica deitado. O
-giro acontece entre dois quadros, nunca com dedo na tela, e vem seguido de
-passada completa. O app precisa:
+**`ORI_SEGUE_IMU`** (`kernel/orientacao`): with the app open, the system reads
+the IMU at 5 Hz and rotates when gravity sits clearly along one of the
+screen's axes for ~0.6 s. A device lying on the table or held diagonally
+changes nothing (dead zone), and after rotating there is a 1.5 s grace period.
+With the physical keyboard docked, it stays in landscape. The rotation happens
+between two frames, never with a finger on the screen, and is followed by a
+full pass. The app must:
 
-- declarar `.perfil = { .imu = true }` (o IMU só existe se algum app pedir);
-- desenhar **sempre** a partir da área que chega — a largura muda com o app
-  aberto. Medida guardada entre quadros tem que ser refeita (a `kernel/lista`
-  e a `kernel/conversa` já fazem isso sozinhas);
-- se tiver layouts diferentes em pé e deitado, trocar no `ao_girar` (opcional):
-  ele é chamado depois de a rotação valer e antes da passada completa.
+- declare `.perfil = { .imu = true }` (the IMU only exists if some app asks for it);
+- **always** draw from the area it is given — the width changes while the app
+  is open. Any measurement kept between frames must be redone (`kernel/lista`
+  and `kernel/conversa` already do this by themselves);
+- if it has different portrait and landscape layouts, switch them in
+  `ao_girar` (on rotate, optional): it is called after the rotation takes
+  effect and before the full pass.
 
-Desenho e toque precisam da **mesma** função de geometria (`area` → posição),
-para concordarem nas duas orientações — o Mesh usa `det_btn_l(a)`,
-`cfg_btn_l(a)` e a grade `COLUNA`/`COLUNA_PE` da tabela de nós.
+Drawing and touch need the **same** geometry function (`area` → position), so
+they agree in both orientations — Mesh uses `det_btn_l(a)`, `cfg_btn_l(a)` and
+the `COLUNA`/`COLUNA_PE` grid of the node table.
 
-Se o seu app põe controle grande perto da borda inferior, trave a navegação
-enquanto ele estiver aberto — o botão INÍCIO fica logo abaixo. Travada, a faixa
-de navegação passa a ser do app: o toque nela chega na última linha da área.
-
-```c
-sistema_travar_navegacao(true);    // ao abrir
-sistema_travar_navegacao(false);   // ao fechar
-```
-
-O teclado virtual já faz isso sozinho (`tecvirt_abrir`/`tecvirt_fechar`). O
-sistema destrava ao fechar qualquer app, como rede de segurança.
-
-Travada, a navegação também não deixa sair por outro caminho: tocar a barra
-de status não abre a central de avisos (uma linha dela abriria outro app), e
-`sistema_simular_abrir` de outro app é recusado.
-
-Para trabalho que a pessoa acompanha sem tocar na tela (uma cópia longa), o
-app pode manter a tela acesa — o repouso por inatividade não acontece:
+If your app puts a large control near the bottom edge, lock navigation while
+it is open — the Home button sits just below it. While locked, the navigation
+strip belongs to the app: a touch there arrives on the last row of the area.
 
 ```c
-sistema_manter_acordado(SISTEMA_ACORDADO_APP, true);    // enquanto precisar
-sistema_manter_acordado(SISTEMA_ACORDADO_APP, false);   // o sistema também solta ao fechar o app
+sistema_travar_navegacao(true);    // on opening
+sistema_travar_navegacao(false);   // on closing
 ```
 
-### Teclado virtual
+The virtual keyboard already does this by itself
+(`tecvirt_abrir`/`tecvirt_fechar`). The system unlocks it when any app closes,
+as a safety net.
 
-Para pedir texto (senha, PIN, mensagem), use o teclado do sistema — o app não
-desenha tecla nem trata dedo:
+While locked, navigation also blocks leaving by another route: tapping the
+status bar does not open the notification centre (one of its rows would open
+another app), and `sistema_simular_abrir` for another app is refused.
+
+For work the user watches without touching the screen (a long copy), the app
+can keep the screen on — the inactivity idle does not happen:
+
+```c
+sistema_manter_acordado(SISTEMA_ACORDADO_APP, true);    // for as long as needed
+sistema_manter_acordado(SISTEMA_ACORDADO_APP, false);   // the system also releases it when the app closes
+```
+
+### Virtual keyboard
+
+To ask for text (password, PIN, message), use the system keyboard
+(`tecvirt`) — the app neither draws keys nor handles fingers:
 
 ```c
 static tecvirt_t s_kb;
-tecvirt_abrir(&s_kb);                        // ao começar a editar
-tecvirt_posicionar(&s_kb, a);                // no desenhar: a área (tela) em cuja base ele abre
-tecvirt_pintar(&s_kb, d, completo);          // TODA passada; sem mudança não desenha nada
-n = tecvirt_nivel(&s_kb, acoes, 8);          // no ao_tocar_nivel: teclas confirmadas
-ac = tecvirt_clique(&s_kb, xs, ys);          // no ao_tocar, se tecvirt_contem(&s_kb, xs, ys)
-tecvirt_fechar(&s_kb);                       // ao terminar e no ao_fechar
+tecvirt_abrir(&s_kb);                        // when editing starts
+tecvirt_posicionar(&s_kb, a);                // in desenhar: the area (screen) at whose bottom it opens
+tecvirt_pintar(&s_kb, d, completo);          // EVERY pass; with no change it draws nothing
+n = tecvirt_nivel(&s_kb, acoes, 8);          // in ao_tocar_nivel: confirmed keys
+ac = tecvirt_clique(&s_kb, xs, ys);          // in ao_tocar, if tecvirt_contem(&s_kb, xs, ys)
+tecvirt_fechar(&s_kb);                       // when finished and in ao_fechar
 ```
 
-As ações são o caractere (>0, o **codepoint** já com o shift — a segunda
-página de símbolos tem os acentos do português), `TECVIRT_APAGAR`,
-`TECVIRT_ENVIAR` e `TECVIRT_FECHAR`. Shift e troca de página são do teclado e
-nunca chegam ao app. Campo sem cursor (senha, nome) não precisa tratar
-caractere nem UTF-8 à mão:
+The actions are the character (>0, the **codepoint** with shift already
+applied — the second symbols page has the Portuguese accents),
+`TECVIRT_APAGAR` (backspace), `TECVIRT_ENVIAR` (send) and `TECVIRT_FECHAR`
+(close). Shift and page switching belong to the keyboard and never reach the
+app. A field without a cursor (password, name) does not need to handle
+characters or UTF-8 by hand:
 
 ```c
 if (ac == TECVIRT_ENVIAR) { ... }
 else if (ac == TECVIRT_FECHAR) { ... }
-else { tecvirt_editar(buf, sizeof(buf), ac, so_ascii); }   // entra no fim / apaga o último
+else { tecvirt_editar(buf, sizeof(buf), ac, so_ascii); }   // appends at the end / deletes the last one
 ```
 
-Texto corrido (mensagem) liga a maiúscula automática com
-`tecvirt_frase(&s_kb, true)` e conta o texto e o cursor ao teclado sempre que
-um dos dois muda: `tecvirt_contexto(&s_kb, texto, cursor)`. A conversa do
-sistema já faz isso. Repinte só o campo quando o texto mudar — nunca a página
-inteira por letra. Exemplo: senha do Wi-Fi em `app_config/app_config.cpp`.
+Running text (a message) turns on automatic capitals with
+`tecvirt_frase(&s_kb, true)` and tells the keyboard the text and cursor
+whenever either changes: `tecvirt_contexto(&s_kb, texto, cursor)`. The system
+conversation component already does this. Repaint only the field when the text
+changes — never the whole page per letter. Example: the Wi-Fi password in
+`app_config/app_config.cpp`.
 
-A altura do teclado **depende da orientação** (em pé as teclas são mais altas,
-porque lá falta largura e sobra altura). Para reservar espaço acima dele,
-pergunte `tecvirt_altura(a)` com a mesma área do `tecvirt_posicionar` — nunca
-guarde um número.
+The keyboard's height **depends on the orientation** (in portrait the keys are
+taller, because there width is short and height is plentiful). To reserve space
+above it, ask `tecvirt_altura(a)` with the same area as `tecvirt_posicionar` —
+never store a number.
 
 ---
 
-## 10. Rolagem por toque
+## 10. Touch scrolling
 
-Se o seu conteúdo não cabe na área, **não encolha a fonte**. Declare a altura
-total e o sistema cuida do resto:
+If your content does not fit the area, **do not shrink the font**. Declare the
+total height and the system takes care of the rest:
 
 ```c
 extern const app_t APP_X = {
   ...
-  .altura_conteudo = 1240,   // maior que a área: rola
+  .altura_conteudo = 1240,   // taller than the area: scrolls
 };
 ```
 
-`0` (o padrão) significa "não rola", e o app enxerga a área visível como
-sempre.
+`0` (the default) means "does not scroll", and the app sees the visible area
+as always.
 
-Com rolagem ligada, o sistema:
+With scrolling on, the system:
 
-- arrasta o dedo e rola, com limite nas duas pontas;
-- **recorta** o desenho na área — sem isso você pintaria por cima da barra de
-  status sem perceber;
-- **soma a rolagem nas coordenadas do `ao_tocar`**, num lugar só;
-- **engole o clique** quando o dedo andou mais de 12 px, para o fim de uma
-  rolagem não apertar o que está embaixo;
-- desenha a barrinha indicadora.
+- follows the finger and scrolls, with a limit at both ends;
+- **clips** drawing to the area — without that you would paint over the status
+  bar without noticing;
+- **adds the scroll offset to the `ao_tocar` coordinates**, in one place only;
+- **swallows the tap** when the finger has moved more than 12 px, so the end of
+  a scroll does not press whatever is underneath;
+- draws the little indicator bar.
 
-O ponto importante é o terceiro: **você compara o toque contra as mesmas
-constantes que usou para desenhar.** O app inteiro vive num sistema de
-coordenadas que começa em 0 e vai até `altura_conteudo`, e nunca soma
-deslocamento nenhum. A alternativa — cada app somar um offset em todo `y` — é a
-receita para o app que esquece de somar em *um* lugar e fica com um botão que
-responde errado depois de rolar.
+The important point is the third: **you compare the touch against the same
+constants you used to draw.** The whole app lives in a coordinate system that
+starts at 0 and goes up to `altura_conteudo` (content height), and never adds
+any offset. The alternative — every app adding an offset to every `y` — is the
+recipe for the app that forgets to add it in *one* place and ends up with a
+button that responds wrongly after scrolling.
 
-> O app Ajustes nasceu sem grade: os elementos eram posicionados no olho, e o valor
-> do tempo de tela (x 264 a 528) passava por cima dos dois botões dele (400 a
-> 490 e 500 a 590). A correção não foi mexer nesses números — foi dar altura
-> conhecida a cada seção e posicionar tudo por deslocamento relativo. Aí não
-> coube mais na tela, e a rolagem deixou de ser um problema.
+> The Settings app was born without a grid: elements were positioned by eye, and
+> the screen-timeout value (x 264 to 528) ran over its two buttons (400 to 490
+> and 500 to 590). The fix was not to touch those numbers — it was to give each
+> section a known height and position everything by relative offset. Then it
+> no longer fitted on the screen, and scrolling stopped being a problem.
 
 ---
 
-## 11. Checklist antes de abrir PR
+## 11. Checklist before opening a PR
 
-- [ ] pasta `main/app_x/` com `extern const app_t APP_X` (o nome segue a pasta)
-- [ ] Nenhum `fillRect` de limpeza em caminho periódico
-- [ ] Área grande limpa com `tab5_tela_limpar()`, não `fillRect` — inclusive as que só *podem* ficar grandes
-- [ ] `setTextDatum`/`setTextSize` antes de todo `drawString`
-- [ ] Usa `pintura.hpp`, sem `||` entre comparadores
-- [ ] `ao_tocar` usa `sistema_area()`, sem constantes copiadas
-- [ ] Nenhuma E/S bloqueante no `ao_tocar`
-- [ ] Tarefas criadas com `tarefa_app_criar` e paradas no `ao_fechar`
-- [ ] Toda `tab5_sd_montar()` tem desmontagem em todos os caminhos
-- [ ] `.perfil` não define `brilho`
-- [ ] Preferência do sistema aplicada por `sistema_reaplicar_perfil()`, sem mexer no hardware
-- [ ] Recurso exclusivo pedido com `tomar()` e devolvido com `soltar()`
-- [ ] Botão/célula usa `tab5_ui.hpp`, não uma cópia local
-- [ ] Cores e cantos só pelo `tab5_tema.hpp`, com `.fundo_tema = true` (seção 2.5)
-- [ ] Testado: abrir, fechar, entrar em repouso e **acordar**
+- [ ] folder `main/app_x/` with `extern const app_t APP_X` (the name follows the folder)
+- [ ] No clearing `fillRect` on a periodic path
+- [ ] Large areas cleared with `tab5_tela_limpar()`, not `fillRect` — including those that only *can* get large
+- [ ] `setTextDatum`/`setTextSize` before every `drawString`
+- [ ] Uses `pintura.hpp`, with no `||` between comparators
+- [ ] `ao_tocar` uses `sistema_area()`, with no copied constants
+- [ ] No blocking I/O in `ao_tocar`
+- [ ] Tasks created with `tarefa_app_criar` and stopped in `ao_fechar`
+- [ ] Every `tab5_sd_montar()` has an unmount on every path
+- [ ] `.perfil` does not set `brilho`
+- [ ] System preferences applied through `sistema_reaplicar_perfil()`, without touching the hardware
+- [ ] Exclusive resources requested with `tomar()` and given back with `soltar()`
+- [ ] Buttons/cells use `tab5_ui.hpp`, not a local copy
+- [ ] Colours and corners only from `tab5_tema.hpp`, with `.fundo_tema = true` (section 2.5)
+- [ ] Tested: open, close, go idle and **wake**
 
-O último item pega mais bug que todos os outros juntos.
+The last item catches more bugs than all the others put together.
 
-## Componentes prontos: não reimplemente botão
+## Ready-made components: do not reimplement buttons
 
-`tab5_ui.hpp` existe porque **quatro apps diferentes** escreveram o mesmo
-botão, byte a byte igual - comentário incluso - antes de alguém notar
-. O comentário que cada cópia carregava contava a mesma história:
-sem salvar e devolver o `TextStyle`, o `middle_center` de um botão **vaza**
-para o próximo `drawString` de quem desenhar depois, empurrando texto para
-fora da tela. É a mesma pegadinha que já tinha mordido `tab5_power_mostrar` -
-e mordeu de novo em cada cópia, porque cada uma redescobriu o bug sozinha em
-vez de herdar o conserto.
+`tab5_ui.hpp` exists because **four different apps** wrote the same button,
+byte-for-byte identical - comment included - before anyone noticed. The comment
+each copy carried told the same story: without saving and restoring the
+`TextStyle`, a button's `middle_center` **leaks** into the next `drawString`
+of whoever draws afterwards, pushing text off the screen. It is the same trap
+that had already bitten `tab5_power_mostrar` - and it bit again in every copy,
+because each one rediscovered the bug on its own instead of inheriting the fix.
 
 ```c
 #include "tab5_ui.hpp"
 
 tab5_botao(d, x, y, largura, altura, "OK", TEMA_DESTAQUE);
-tab5_botao(d, x, y, largura, altura, "OK", TEMA_DESTAQUE, TEMA_SOBRE_DESTAQUE, 3);  // cor do texto e tamanho, se quiser diferente do padrão
+tab5_botao(d, x, y, largura, altura, "OK", TEMA_DESTAQUE, TEMA_SOBRE_DESTAQUE, 3);  // text colour and size, if you want them different from the default
 ```
 
-Para um painel de "rótulo pequeno em cima, valor grande embaixo" - o mesmo
-desenho da tela inicial (`GROVE`/`CARTÃO`) - use
-`tab5_celula()` em vez de desenhar os três `drawString` na mão:
+For a "small label on top, large value below" panel - the same design as the
+home screen (`GROVE`/`CARTÃO`, shown in English as GROVE/SD CARD) - use
+`tab5_celula()` (cell) instead of drawing the three `drawString`s by hand:
 
 ```c
 tab5_celula(d, centro_x, y0, "FIX", "GPS", TFT_WHITE, "HDOP 0.9 - 8 sats");
 ```
 
-Se você notar outro pedaço de desenho se repetindo em dois apps, é sinal de
-que ele também deveria morar aqui - não na terceira cópia.
+If you notice another piece of drawing repeated in two apps, that is a sign it
+should live here too - not in a third copy.
 
-## Limpeza de tela: peça sempre, sem condição
+## Clearing the screen: always ask, unconditionally
 
-Chame `tab5_tela_limpar()` sempre que quiser uma área limpa. **Não** consulte
-`sistema_area_foi_limpa()` para decidir se vale a pena — essa decisão não é sua.
+Call `tab5_tela_limpar()` whenever you want a clear area. **Do not** check
+`sistema_area_foi_limpa()` to decide whether it is worth it — that decision is
+not yours.
 
-O sistema limpa a área útil inteira antes de te chamar numa repintura completa,
-e avisa a camada de tela do que fez. Se o seu pedido já está satisfeito, ele
-vira operação vazia lá embaixo. Você escreve a intenção; o kernel decide o
-trabalho.
+The system clears the whole usable area before calling you for a full repaint,
+and tells the display layer what it did. If your request is already satisfied,
+it becomes a no-op further down. You write the intent; the kernel decides the
+work.
 
-Isso importa porque limpar duas vezes a mesma superfície é ~3,2 MB escritos na
-PSRAM em rajada, enquanto o painel puxa 119 MB/s dela para se manter vivo. O
-FIFO do painel seca e o frame sai **azul**. Era um bug que aparecia num app
-qualquer, meses depois, longe da causa — e que três dos oito apps evitavam por
-lembrarem da regra, o que é a definição de regra no lugar errado.
+This matters because clearing the same surface twice is ~3.2 MB written to
+PSRAM in a burst, while the panel pulls 119 MB/s from it to stay alive. The
+panel's FIFO runs dry and the frame comes out **blue**. It was a bug that showed
+up in some random app, months later, far from the cause — and that three of
+the eight apps avoided by remembering the rule, which is the very definition
+of a rule in the wrong place.
 
-`tela` no console mostra quantas limpezas foram dispensadas.
+`display` (`tela`) in the console shows how many clears were skipped.
 
-Nunca use `d.fillRect()` para áreas grandes: ele escreve tudo de uma vez, sem
-pausa. `tab5_tela_limpar()` escreve em faixas com respiro entre elas.
+Never use `d.fillRect()` for large areas: it writes everything at once, with no
+pause. `tab5_tela_limpar()` writes in strips with a breather between them.
 
-**O número, para não ficar no "grande":** a faixa é de 96 KB, ou seja ~49.000
-pixels. Um `fillRect` acima disso vira rajada; abaixo, cabe numa faixa e o
-`tab5_tela_limpar` não muda nada. Na prática: largura da tela × mais de 40
-linhas já passa do limite em retrato, e × mais de 38 em paisagem.
+**The number, so "large" is not left vague:** a strip is 96 KB, i.e. ~49,000
+pixels. A `fillRect` above that becomes a burst; below it, it fits in one strip
+and `tab5_tela_limpar` changes nothing. In practice: screen width × more than
+40 rows already exceeds the limit in portrait, and × more than 38 in landscape.
 
-Na dúvida, use `tab5_tela_limpar()`. Ele nunca é pior que o `fillRect`.
+When in doubt, use `tab5_tela_limpar()`. It is never worse than `fillRect`.
 
-## Loop que desenha muita coisa
+## A loop that draws a lot
 
-Não precisa de nada especial. Desde o compositor ([COMPOSITOR.md](COMPOSITOR.md))
-o app desenha na página de trás e o sistema leva à tela por DMA, entre duas
-varreduras do painel: a rajada de escrita não disputa mais com a leitura do
-painel. O antigo `tab5_tela_gastou()` ficou como função vazia, só para não
-quebrar quem ainda chama.
+It needs nothing special. Since the compositor ([COMPOSITOR.md](COMPOSITOR.md))
+the app draws on the back page and the system brings it to the screen by DMA,
+between two panel scans: the write burst no longer competes with the panel's
+reads. The old `tab5_tela_gastou()` remains as an empty function, only so as
+not to break code that still calls it.
 
 ---
 
-## Animação: `periodo_ms` e `sistema_quadro_dt()`
+## Animation: `periodo_ms` and `sistema_quadro_dt()`
 
-O `periodo_ms` é o ritmo **pedido**. O sistema o arredonda para um número
-inteiro de varreduras do painel (o mais perto do pedido, nunca menos de uma)
-e começa o quadro logo depois de uma varredura — assim ele vai ao ar sempre
-na mesma fase, sem o tranco de "um quadro a cada tantos fica um período a
-mais na tela" (`kernel/ritmo.hpp`). Não há nada a fazer para ganhar isso.
+`periodo_ms` is the **requested** pace. The system rounds it to a whole number
+of panel scans (the nearest to the request, never less than one) and starts the
+frame just after a scan — so it always goes on air at the same phase, without
+the judder of "every so many frames one stays on screen a period longer"
+(`kernel/ritmo.hpp`). There is nothing to do to get this.
 
-Para **mover** coisas, não meça o tempo você mesmo dentro do `desenhar()`:
-peça `sistema_quadro_dt()`. Ele dá o tempo entre as varreduras em que este
-quadro e o anterior **aparecem**, não entre os instantes em que foram
-desenhados — o que aparece andou exatamente o que ficou na tela. Limite do
-seu jeito (depois de uma pausa ele é grande):
+To **move** things, do not measure time yourself inside `desenhar()`: ask for
+`sistema_quadro_dt()` (frame delta). It gives the time between the scans at
+which this frame and the previous one **appear**, not between the moments they
+were drawn — what appears moved exactly as much as it stayed on screen. Clamp
+it your own way (after a pause it is large):
 
 ```c
 float dt = sistema_quadro_dt();
@@ -940,141 +974,144 @@ if (dt > 0.1f) { dt = 0.1f; }
 bola.x += bola.vx * dt;
 ```
 
-E desenhe por caixas pequenas à vontade: muitos objetos pequenos por quadro
-são problema do compositor, não seu — ele junta o que se sobrepõe e aguenta
-dezenas de áreas sem copiar sobra.
+And draw in small boxes as much as you like: many small objects per frame are
+the compositor's problem, not yours — it merges whatever overlaps and copes
+with dozens of areas without copying leftovers.
 
 ---
 
-## A piscada azul: o que é do sistema e o que é seu
+## The blue flicker: what is the system's and what is yours
 
-Vale saber a causa, porque ela explica todas as regras acima.
+It is worth knowing the cause, because it explains all the rules above.
 
-O painel é MIPI-DSI em modo DPI. Ele **não recebe** a imagem: um DMA lê o
-framebuffer da PSRAM linha a linha, para sempre, no ritmo do relógio de pixel.
-Se esse DMA atrasar, o FIFO do painel seca e o frame sai **azul** — o próprio
-driver do IDF diz isso em `esp_lcd_panel_dpi.c:113`.
+The panel is MIPI-DSI in DPI mode. It **does not receive** the image: a DMA
+reads the framebuffer from PSRAM line by line, forever, at the pixel clock
+rate. If that DMA falls behind, the panel's FIFO runs dry and the frame comes
+out **blue** — the IDF driver itself says so in `esp_lcd_panel_dpi.c:113`.
 
-Duas coisas atrasam o DMA, e **as duas são do sistema, não suas**:
+Two things delay the DMA, and **both belong to the system, not to you**:
 
-| Causa | Onde foi resolvida |
+| Cause | Where it was solved |
 |---|---|
-| A CPU disputa a PSRAM com o painel | Prioridade no AXI-ICM (`tab5_barramento`) e, na tela ILI9881C, relógio do painel a 60 MHz em vez de 80 (`tab5_power_relogio_dpi`; nas telas ST71xx fica o de fábrica) |
-| A interrupção que religa o DMA é desligada durante escrita na flash | `CONFIG_LCD_DSI_ISR_CACHE_SAFE=y` |
+| The CPU competes with the panel for PSRAM | Priority in the AXI-ICM (`tab5_barramento`) and, on the ILI9881C screen, the panel clock at 60 MHz instead of 80 (`tab5_power_relogio_dpi`; ST71xx screens keep the factory clock) |
+| The interrupt that restarts the DMA is disabled while writing to flash | `CONFIG_LCD_DSI_ISR_CACHE_SAFE=y` |
 
-O que sobra do seu lado é só **não fazer rajada grande**, e para isso as regras
-já estão nas seções 2.1 e 2.4:
+All that is left on your side is **not making large bursts**, and the rules
+for that are already in sections 2.1 and 2.4:
 
-- limpe com `tab5_tela_limpar()` — **sempre, sem condição**; quem decide se há
-  trabalho a fazer é o kernel.
+- clear with `tab5_tela_limpar()` — **always, unconditionally**; the kernel
+  decides whether there is work to do.
 
-### Peça a repintura CERTA
+### Ask for the RIGHT repaint
 
-Este é o erro mais caro e o mais fácil de cometer:
+This is the most expensive mistake and the easiest to make:
 
 ```c
-sistema_pedir_redesenho();            // mudou um VALOR    -> barato
-sistema_pedir_redesenho_completo();   // mudou o LAYOUT    -> ~4 MB de PSRAM
+sistema_pedir_redesenho();            // a VALUE changed     -> cheap
+sistema_pedir_redesenho_completo();   // the LAYOUT changed  -> ~4 MB of PSRAM
 ```
 
-A repintura completa apaga a área útil (1,6 MB), redesenha tudo, sincroniza o
-framebuffer inteiro (1,84 MB) e troca de página. **Pedir isso para trocar uma
-letra dentro de um campo de texto é o caminho mais curto para a piscada azul** —
-e era exatamente o que o app Mesh fazia a cada tecla digitada.
+A full repaint erases the usable area (1.6 MB), redraws everything, syncs the
+whole framebuffer (1.84 MB) and flips the page. **Asking for that to change one
+letter inside a text field is the shortest road to the blue flicker** — and it
+is exactly what the Mesh app used to do on every keystroke.
 
-Regra prática: se o que mudou continua **no mesmo lugar e do mesmo tamanho**,
-é `sistema_pedir_redesenho()`. Só peça a completa quando algo mudou de posição,
-apareceu ou sumiu.
+Rule of thumb: if what changed stays **in the same place and the same size**,
+it is `sistema_pedir_redesenho()`. Only ask for the full one when something
+moved, appeared or disappeared.
 
-### Teclado físico
+### Physical keyboard
 
-O teclado do ExtPort1 chega pelo `ao_teclar` do `app_t`, já traduzido pelo
-driver (`hal/tab5_teclado`, modo HID com a tabela oficial das 70 teclas). O
-texto vem em UTF-8; as teclas especiais vêm no `codigo`:
+The ExtPort1 keyboard arrives through the `app_t`'s `ao_teclar` (on key),
+already translated by the driver (`hal/tab5_teclado`, HID mode with the
+official table of the 70 keys). Text comes as UTF-8; special keys come in
+`codigo` (code):
 
-| código | tecla |
+| code | key |
 |---|---|
 | `TAB5_TECLA_ENTER`, `_ESC`, `_TAB` | Enter, Esc, Tab |
-| `TAB5_TECLA_APAGAR` / `_DEL` | Backspace (antes do cursor) / Del (depois) |
-| `TAB5_TECLA_ESQUERDA`, `_DIREITA`, `_CIMA`, `_BAIXO` | setas |
+| `TAB5_TECLA_APAGAR` / `_DEL` | Backspace (before the cursor) / Del (after) |
+| `TAB5_TECLA_ESQUERDA`, `_DIREITA`, `_CIMA`, `_BAIXO` | arrows (left, right, up, down) |
 
-Código desconhecido: ignore. Com Ctrl/Alt (`mod`) é atalho, não texto.
-Acentos vêm por tecla morta, como no layout US internacional: `'`+vogal = á,
-`'`+c = ç, `~`+a = ã, `^`+e = ê, `` ` ``+a = à; `'`+espaço = `'`. Campo que só
-aceita ASCII (senha, nome do nó) passa o texto por `tab5_teclado_ascii()`, que
-desfaz a composição (á → `'a`).
+Unknown code: ignore it. With Ctrl/Alt (`mod`) it is a shortcut, not text.
+Accents come via dead keys, as in the US International layout: `'`+vowel = á,
+`'`+c = ç, `~`+a = ã, `^`+e = ê, `` ` ``+a = à; `'`+space = `'`. A field that
+only accepts ASCII (password, node name) passes the text through
+`tab5_teclado_ascii()`, which undoes the composition (á → `'a`).
 
 ```c
 static void ao_teclar(const char* texto, uint8_t codigo, uint8_t mod)
 {
   if (codigo == TAB5_TECLA_ENTER) { enviar(); return; }
   if (codigo == TAB5_TECLA_APAGAR) { apagar_ultimo(); return; }
-  acrescentar(texto);            // vazio quando foi tecla especial
+  acrescentar(texto);            // empty when it was a special key
 }
 ```
 
-`tab5_teclado_presente()` diz se há teclado encaixado. Se o seu app tem teclado
-virtual, use isso para não roubar meia tela — **mas então implemente
-`ao_teclar`**, senão não sobra nenhuma forma de escrever.
+`tab5_teclado_presente()` tells you whether a keyboard is docked. If your app
+has a virtual keyboard, use it so as not to steal half the screen — **but then
+implement `ao_teclar`**, otherwise there is no way left to type.
 
 ---
 
-## Listas roláveis: use `kernel/lista` (padrão, toque)
+## Scrolling lists: use `kernel/lista` (pattern, touch)
 
-Não escreva rolagem à mão, nem a conta de "qual item o dedo tocou". Toda lista
-do sistema (Mesh: mensagens, conversas e nós; Arquivos; Tarefas) usa a mesma
-peça. O padrão é o da LVGL: **o item é medido uma vez, quando muda, e a lista
-guarda o resultado.**
+Do not write scrolling by hand, nor the "which item did the finger touch"
+maths. Every list in the system (Mesh: messages, conversations and nodes;
+Files; Tasks) uses the same part. The pattern is LVGL's: **an item is measured
+once, when it changes, and the list stores the result.**
 
 ```c
 static lista_t s_l;
-static int  altura_de(int i, void* ctx);                  // lê do SEU cache
+static int  altura_de(int i, void* ctx);                  // reads from YOUR cache
 static void desenhar_item(lgfx::LovyanGFX& d, int i, int x, int y, int largura, void* ctx);
 
-// ao abrir
-lista_definir(&s_l, ROLAGEM_INICIO /* ou ROLAGEM_FIM */, n, altura_de, desenhar_item, nullptr);
-s_l.topo = 12;                          // opcional: respiro antes do 1o item
-// itens mudaram (entrou, saiu, re-medido)
+// on opening
+lista_definir(&s_l, ROLAGEM_INICIO /* or ROLAGEM_FIM */, n, altura_de, desenhar_item, nullptr);
+s_l.topo = 12;                          // optional: breathing room before the 1st item
+// items changed (added, removed, re-measured)
 lista_itens_mudaram(&s_l, n);
-// UM item mudou de valor, mesma altura (idade, contador)
+// ONE item changed value, same height (age, counter)
 lista_item_mudou(&s_l, i);
 // ao_tocar_nivel
 if (lista_arrastar(&s_l, x, y, pressionado)) { sistema_pedir_redesenho(); }
 // ao_tocar
 int dy;
-const int i = lista_item_tocado(&s_l, x, y, &dy);   // -1 = nada; LISTA_ARRASTE = foi rolagem
+const int i = lista_item_tocado(&s_l, x, y, &dy);   // -1 = nothing; LISTA_ARRASTE = it was a scroll
 // desenhar
 lista_desenhar(&s_l, d, janela, cor_de_fundo, pintura_completa(&s_p));
-// a tela da lista saiu (outra página do app, arquivo aberto por cima)
+// the list's screen went away (another page of the app, a file opened on top)
 lista_esconder(&s_l);
 ```
 
-Regras:
+Rules:
 
-- **A lista é dona da janela.** Ela limpa, recorta, rola, desenha a barra
-  (8 px à direita — não desenhe item ali) e só repinta a faixa exposta ou os
-  itens marcados. Não chame `tab5_tela_limpar` na janela dela.
-- **O item desenha só dentro da própria altura.** Enfeite que sobe acima do
-  item (um contador no canto) precisa de respiro dentro do item; a lista só
-  repinta o item que cruza a faixa, e o que sai dele fica sem dono.
-- **O toque vale só onde a lista desenhou por último.** Ela converte sozinha
-  as coordenadas da área, e a janela já exclui o que outra coisa cobre
-  (teclado, barra de escrita). Numa troca de página, `lista_esconder` nas
-  listas que saíram.
-- **Moldura e cabeçalho ficam fora da janela.** Desenhe-os na passada
-  completa; a lista nunca os alcança.
-- **Nunca meça texto dentro de `desenhar_item`**: meça ao montar o seu cache
-  (ver `construir_layout` no app Mesh).
+- **The list owns its window.** It clears, clips, scrolls, draws the scroll
+  bar (8 px on the right — do not draw items there) and only repaints the
+  exposed strip or the marked items. Do not call `tab5_tela_limpar` on its
+  window.
+- **An item draws only within its own height.** Decoration that rises above
+  the item (a counter in the corner) needs breathing room inside the item; the
+  list only repaints the item crossing the strip, and whatever sticks out of it
+  is left without an owner.
+- **A touch only counts where the list last drew.** It converts the area
+  coordinates by itself, and the window already excludes whatever something
+  else covers (keyboard, compose bar). On a page change, call `lista_esconder`
+  on the lists that went away.
+- **Frame and header stay outside the window.** Draw them on the full pass;
+  the list never reaches them.
+- **Never measure text inside `desenhar_item`**: measure when building your
+  cache (see `construir_layout` in the Mesh app).
 
-`kernel/rolagem` é o motor por baixo da lista e da rolagem da área inteira
-(`altura_conteudo`). App não usa `rolagem_*` direto.
+`kernel/rolagem` (scrolling) is the engine under the list and under whole-area
+scrolling (`altura_conteudo`). Apps do not use `rolagem_*` directly.
 
-## App de mensagens: use `kernel/conversa`
+## Messaging app: use `kernel/conversa`
 
-Baloes, barra de escrita, teclado virtual e fisico, rolagem e divisor de dia
-sao um componente do sistema - nao copie o app Mesh. O app responde tres
-perguntas (quantas mensagens, como e a mensagem i, envie este texto) e repassa
-desenho e toque:
+Bubbles, compose bar, virtual and physical keyboard, scrolling and day
+dividers are a system component (`conversa` = conversation) - do not copy the
+Mesh app. The app answers three questions (how many messages, what message i
+looks like, send this text) and passes drawing and touch through:
 
 ```c
 static conversa_t s_c;  static pintura_t s_p;
@@ -1086,7 +1123,7 @@ desenhar:        pintura_iniciar(&s_p);
 ao_tocar / ao_tocar_nivel / ao_teclar: conversa_tocar / _tocar_nivel / _teclar
 ```
 
-O retangulo vai ate a base da area do app (o teclado abre por cima da parte de
-baixo). Exemplo completo e curto: `app_espnow/app_espnow.cpp`. O teclado
-virtual mora em `kernel/teclado_virtual` (ver a seção 9) e a quebra de linhas e
-`conversa_quebrar_linhas` - o Mesh ja usa as duas.
+The rectangle goes down to the bottom of the app's area (the keyboard opens
+over the lower part). A complete, short example: `app_espnow/app_espnow.cpp`.
+The virtual keyboard lives in `kernel/teclado_virtual` (see section 9) and line
+wrapping is `conversa_quebrar_linhas` - Mesh already uses both.

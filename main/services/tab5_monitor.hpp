@@ -1,27 +1,27 @@
-// MONITOR DO SISTEMA - servico que mede o aparelho O TEMPO TODO.
+// SYSTEM MONITOR - a service that measures the device ALL THE TIME.
 //
-// Antes, a medicao de CPU e memoria so existia com o app Tarefas aberto: a
-// tarefa de amostragem nascia e morria com ele, e o que acontecesse com ele
-// fechado (um pico, a memoria descendo de madrugada) nunca era visto.
+// Before, CPU and memory measurement only existed with the Tasks app open: the
+// sampling task was born and died with it, and whatever happened while it was
+// closed (a spike, memory dropping in the small hours) was never seen.
 //
-// Agora uma tarefa de servico (prioridade 1, abaixo de tudo menos o IDLE)
-// amostra a cada segundo, sem desenhar nada, e guarda:
-//   - a foto atual: CPU de cada tarefa, stack livre, memoria;
-//   - os PICOS com a hora em que aconteceram: maior CPU de cada tarefa e do
-//     sistema, menor RAM/PSRAM livre, menor maior-bloco, menor stack;
-//   - um historico de 5 minutos (CPU, RAM, PSRAM) para o grafico;
-//   - EVENTOS, disparados por gatilhos pequenos (ver tab5_monitor.cpp):
-//     memoria abaixo de um limite, novo minimo, queda brusca, fragmentacao,
-//     stack quase no fim, tarefa presa em CPU alta, tarefa nova ou sumida.
+// Now a service task (priority 1, below everything except IDLE)
+// samples every second, without drawing anything, and keeps:
+//   - the current snapshot: CPU of each task, free stack, memory;
+//   - the PEAKS with the time they happened: highest CPU of each task and of the
+//     system, lowest free RAM/PSRAM, lowest largest-block, lowest stack;
+//   - a 5-minute history (CPU, RAM, PSRAM) for the graph;
+//   - EVENTS, fired by small triggers (see tab5_monitor.cpp):
+//     memory below a limit, new minimum, sharp drop, fragmentation,
+//     stack nearly exhausted, task stuck at high CPU, task new or gone.
 //
-// Registro no cartao, em apps/Tarefas/:
-//   eventos-AAAA-MM-DD.csv  - um evento por linha, na hora em que acontece;
-//   resumo-AAAA-MM-DD.csv   - uma linha por MINUTO: pior CPU, menor RAM,
-//                             menor PSRAM, menor bloco - "quando sobrou
-//                             quanto de memoria" ao longo do dia.
-// E cada evento tambem sai no log (tag "monitor"), que o tab5_log ja grava.
+// Logged to the SD card, in apps/Tarefas/:
+//   eventos-AAAA-MM-DD.csv  - one event per line, at the moment it happens;
+//   resumo-AAAA-MM-DD.csv   - one line per MINUTE: worst CPU, lowest RAM,
+//                             lowest PSRAM, lowest block - "how much memory
+//                             was left when" over the day.
+// And each event also goes to the log (tag "monitor"), which tab5_log already records.
 //
-// O app Tarefas e so a janela: le daqui, nao mede nada.
+// The Tasks app is just the window: it reads from here, measures nothing.
 
 #pragma once
 
@@ -29,103 +29,103 @@
 #include <stdbool.h>
 #include "freertos/FreeRTOS.h"
 
-// Era 32 - e o uxTaskGetSystemState() devolve ZERO quando ha mais tarefas que
-// vagas, sem dizer nada. Com Wi-Fi + Bluetooth + Mesh o sistema passa de 32
-// (so o esp_hosted cria sete), a amostra era descartada e o app Tarefas
-// ficava mostrando a ultima foto boa: numeros "defasados da realidade".
+// It was 32 - and uxTaskGetSystemState() returns ZERO when there are more tasks
+// than slots, silently. With Wi-Fi + Bluetooth + Mesh the system goes past 32
+// (esp_hosted alone creates seven), the sample was discarded and the Tasks app
+// kept showing the last good snapshot: numbers "out of step with reality".
 #define MON_MAX_TAREFAS 64
-#define MON_HIST_N      300     // 5 min a 1 amostra/s
+#define MON_HIST_N      300     // 5 min at 1 sample/s
 #define MON_EVENTOS_N   32
 #define MON_NOME        16
 
 typedef struct {
   char        nome[MON_NOME];
-  UBaseType_t numero;         // xTaskNumber - identidade estavel
+  UBaseType_t numero;         // xTaskNumber - stable identity
   UBaseType_t prioridade;
-  BaseType_t  core;           // tskNO_AFFINITY = qualquer
-  float       pct;            // CPU no ultimo segundo (dos dois cores)
-  float       pct_pico;       // maior ja visto desde o boot (ou do zerar)
-  uint32_t    pct_pico_em;    // segundos de uptime do pico
-  uint32_t    pilha_livre;    // bytes - o minimo que ja sobrou (high water mark)
-  bool        pilha_psram;    // a pilha mora na PSRAM (false = SRAM interna)
-  uint8_t     tipo;           // dono_tipo_t (hal/tab5_donos.hpp): sistema, servico, app, fundo
-  char        dono[MON_NOME]; // quem ("WiFi", "Camera", "Trilha"); vazio = sistema
+  BaseType_t  core;           // tskNO_AFFINITY = any
+  float       pct;            // CPU in the last second (of both cores)
+  float       pct_pico;       // highest seen since boot (or since reset)
+  uint32_t    pct_pico_em;    // uptime seconds of the peak
+  uint32_t    pilha_livre;    // bytes - the minimum ever left (high water mark)
+  bool        pilha_psram;    // the stack lives in PSRAM (false = internal SRAM)
+  uint8_t     tipo;           // dono_tipo_t (hal/tab5_donos.hpp): system, service, app, background
+  char        dono[MON_NOME]; // who ("WiFi", "Camera", "Trilha"); empty = system
 } mon_tarefa_t;
 
 typedef struct {
   uint32_t livre, total;
-  uint32_t maior_bloco;       // maior alocacao possivel AGORA (fragmentacao)
-  uint32_t min_livre;         // menor livre visto pelo monitor
-  uint32_t min_livre_em;      // uptime em s
-  uint32_t min_bloco;         // menor maior-bloco visto
+  uint32_t maior_bloco;       // largest possible allocation NOW (fragmentation)
+  uint32_t min_livre;         // lowest free seen by the monitor
+  uint32_t min_livre_em;      // uptime in s
+  uint32_t min_bloco;         // lowest largest-block seen
   uint32_t min_bloco_em;
 } mon_mem_t;
 
 typedef struct {
   uint32_t     uptime_s;
-  float        cpu;           // uso total (100 - IDLE)
+  float        cpu;           // total usage (100 - IDLE)
   float        cpu_pico;
   uint32_t     cpu_pico_em;
-  mon_mem_t    ram;           // interna
+  mon_mem_t    ram;           // internal
   mon_mem_t    psram;
-  uint32_t     foto_us;       // duracao da ultima uxTaskGetSystemState (secao critica)
-  uint32_t     foto_pior_us;  // a pior desde o boot - cresce com pilha fora da L2MEM
+  uint32_t     foto_us;       // duration of the last uxTaskGetSystemState (critical section)
+  uint32_t     foto_pior_us;  // the worst since boot - grows with stacks outside L2MEM
   int          n;
-  mon_tarefa_t t[MON_MAX_TAREFAS];   // ordenadas por xTaskNumber
+  mon_tarefa_t t[MON_MAX_TAREFAS];   // sorted by xTaskNumber
 } mon_foto_t;
 
 typedef struct {
   uint32_t uptime_s;
-  uint32_t epoch;             // 0 = relogio ainda nao acertado
+  uint32_t epoch;             // 0 = clock not set yet
   char     texto[72];
 } mon_evento_t;
 
-// Sobe a tarefa. Chamar no boot, depois do SD e do log.
+// Starts the task. Call at boot, after the SD card and the log.
 void tab5_monitor_iniciar(void);
 
-// Copia a foto atual. false = monitor ainda sem primeira amostra.
+// Copies the current snapshot. false = monitor has no first sample yet.
 bool tab5_monitor_foto(mon_foto_t* out);
 
-// Historico, do mais antigo ao mais novo. Devolve quantos.
+// History, oldest to newest. Returns how many.
 int tab5_monitor_historico(float* cpu, uint32_t* ram_livre, uint32_t* psram_livre, int max);
 
-// Eventos, do mais NOVO ao mais antigo. Devolve quantos.
+// Events, NEWEST to oldest. Returns how many.
 int tab5_monitor_eventos(mon_evento_t* out, int max);
-uint32_t tab5_monitor_total_eventos(void);   // contador que so sobe
+uint32_t tab5_monitor_total_eventos(void);   // counter that only goes up
 
-// Recomeca a contagem dos picos (os minimos de memoria tambem).
+// Restarts the peak tracking (the memory minimums too).
 void tab5_monitor_zerar_picos(void);
 
-// A PARTICAO DO PROGRAMA que esta rodando: 'total' = o tamanho dela, 'usado' =
-// quanto o programa ocupa nela (le o cabecalho da imagem na flash; pode ser
-// nullptr se so o total interessa). Qualquer um dos dois pode ser nullptr.
-// false = nao achou a particao (ou a imagem nao abriu, se pediu 'usado').
+// The running PROGRAM'S PARTITION: 'total' = its size, 'usado' = how much
+// the program occupies in it (reads the image header in flash; may be
+// nullptr if only the total matters). Either of the two may be nullptr.
+// false = partition not found (or the image did not open, if 'usado' was asked for).
 bool tab5_monitor_programa(uint32_t* usado, uint32_t* total);
 
-// EXTRATO DA RAM INTERNA - quem comeu quanto.
+// INTERNAL RAM STATEMENT - who ate how much.
 //
-// O monitor ve a RAM cair, mas nao sabe POR QUE: "80 KB livres" nao diz se foi
-// o painel, o SDIO do C6, o NimBLE ou uma tarefa nova. Cada marco anota a RAM
-// interna livre naquele ponto e a diferenca para o marco anterior - como um
-// extrato bancario. Os marcos ficam no boot (main.cpp, sistema_iniciar) e na
-// subida de cada radio/servico; o comando "mem" do console imprime a tabela, e
-// cada marco tambem sai no log (tag "mem").
+// The monitor sees RAM drop, but does not know WHY: "80 KB free" does not say if it
+// was the panel, the C6's SDIO, NimBLE or a new task. Each milestone notes the free
+// internal RAM at that point and the difference from the previous milestone - like
+// a bank statement. The milestones are at boot (main.cpp, sistema_iniciar) and at
+// the start of each radio/service; the console's "mem" command prints the table, and
+// each milestone also goes to the log (tag "mem").
 //
-// Pode ser chamado de qualquer tarefa, a qualquer momento, inclusive antes do
-// tab5_monitor_iniciar. Nao aloca nada. Nao chamar de ISR.
+// Can be called from any task, at any time, including before
+// tab5_monitor_iniciar. Allocates nothing. Do not call from an ISR.
 #define MEM_MARCOS_N 40
 
 typedef struct {
-  uint32_t ms;            // uptime em ms
-  uint32_t livre;         // RAM interna livre (bytes)
-  uint32_t maior_bloco;   // maior bloco interno livre
-  uint32_t minimo;        // menor RAM interna livre ja vista ate aqui: abaixo de
-                          // 'livre' = pico temporario DENTRO da etapa (some no delta)
-  int32_t  delta;         // livre - livre do marco anterior (negativo = consumiu)
+  uint32_t ms;            // uptime in ms
+  uint32_t livre;         // free internal RAM (bytes)
+  uint32_t maior_bloco;   // largest free internal block
+  uint32_t minimo;        // lowest free internal RAM seen up to here: below
+                          // 'livre' = temporary spike WITHIN the step (hidden in the delta)
+  int32_t  delta;         // livre - livre of the previous milestone (negative = consumed)
   char     etapa[28];
 } mem_marco_t;
 
 void tab5_mem_marco(const char* etapa);
 
-// Copia os marcos, do primeiro ao ultimo. Devolve quantos.
+// Copies the milestones, first to last. Returns how many.
 int tab5_mem_extrato(mem_marco_t* out, int max);

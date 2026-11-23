@@ -10,10 +10,10 @@
 
 static const char* TAG = "imu_fifo";
 
-// MODO COM CABECALHO: cada quadro comeca com um byte dizendo o que vem (giro,
-// acelerometro ou os dois). O giroscopio roda a 200 Hz e o acelerometro a 100
-// no padrao do chip, entao os quadros alternam "so giro" e "giro + acel" - o
-// cabecalho e o que permite ler isso sem adivinhar.
+// HEADER MODE: each frame starts with a byte saying what follows (gyro,
+// accelerometer or both). The gyroscope runs at 200 Hz and the accelerometer
+// at 100 by the chip's default, so frames alternate "gyro only" and "gyro +
+// accel" - the header is what lets us read that without guessing.
 #define BMI_CHIP_ID     0x24
 #define BMI_REG_ID      0x00
 #define BMI_FIFO_LEN    0x24
@@ -28,37 +28,39 @@ static const char* TAG = "imu_fifo";
 #define BMI_CMD         0x7E
 #define BMI_FIFO_FLUSH  0xB0
 #define BMI_I2C_HZ      400000
-// FIFO_CONFIG_1: bit7 giro, bit6 acelerometro, bit4 cabecalho.
+// FIFO_CONFIG_1: bit7 gyro, bit6 accelerometer, bit4 header.
 #define BMI_FIFO_LIGADO 0xD0
-// A fila do chip tem 2 KB: o buffer do mesmo tamanho le tudo de uma vez, e
-// quadro nenhum fica cortado no meio.
+// The chip's queue is 2 KB: a buffer of the same size reads it all at once,
+// and no frame gets cut in half.
 #define FIFO_BUF        2048
-// GYR_CONF bit6: modo de baixo RUIDO do giroscopio (o padrao e o de baixo
-// consumo). Custa uns decimos de mA, so com o FIFO ligado.
+// GYR_CONF bit6: the gyroscope's low-NOISE mode (the default is low power).
+// Costs a few tenths of a mA, only with the FIFO on.
 #define BMI_GYR_RUIDO   0x40
 
-static uint8_t  s_bmi = 0;                     // endereco I2C; 0 = desligado
+static uint8_t  s_bmi = 0;                     // I2C address; 0 = off
 static uint8_t  s_fifo_cfg1_antes = 0;
-static uint8_t* s_fifo_buf = nullptr;          // RAM interna (o I2C copia dali)
-static float    s_gyr_lsb = 16.384f;           // contagens por grau/s
-static float    s_acc_lsb = 4096.0f;           // contagens por g
+static uint8_t* s_fifo_buf = nullptr;          // internal RAM (I2C copies from there)
+static float    s_gyr_lsb = 16.384f;           // counts per degree/s
+static float    s_acc_lsb = 4096.0f;           // counts per g
 static float    s_gyr_dt  = 0.005f;
-static float    s_gyr_dt_nom = 0.005f;         // o que o registrador diz
+static float    s_gyr_dt_nom = 0.005f;         // what the register says
 static uint8_t  s_gyr_conf_antes = 0;
-// A TAXA REAL. O relogio interno do BMI270 nao e o do P4: se ele roda 2% mais
-// devagar que o nominal, cada amostra vale 2% a mais de tempo e TODO giro sai
-// 2% curto - 7 graus por volta. Contando as amostras contra o esp_timer por
-// alguns segundos, o passo verdadeiro sai com erro de centesimos de por cento.
+// THE REAL RATE. The BMI270's internal clock is not the P4's: if it runs 2%
+// slower than nominal, each sample is worth 2% more time and EVERY rotation
+// comes out 2% short - 7 degrees per turn. Counting samples against
+// esp_timer for a few seconds, the true step comes out with an error of
+// hundredths of a per cent.
 static int64_t  s_odr_t0 = 0;
 static uint32_t s_odr_n = 0;
 #define ODR_MEDIR_S   4.0f
 #define ODR_TOL       0.06f
-// Ordem dentro do quadro "giro + acel". O datasheet diz giro primeiro; a
-// calibracao parada confirma (o acelerometro marca ~1 g, o giro ~0) e corrige
-// se o chip discordar - errar isto trocaria giro por gravidade em silencio.
+// Order within the "gyro + accel" frame. The datasheet says gyro first;
+// stationary calibration confirms it (the accelerometer reads ~1 g, the gyro
+// ~0) and corrects it if the chip disagrees - getting this wrong would
+// silently swap rotation for gravity.
 static int      s_ordem_votos = 0;
 static bool     s_acel_primeiro = false;
-static tab5_imu_fifo_diag_t s_dg;              // contadores (so da tarefa de interface)
+static tab5_imu_fifo_diag_t s_dg;              // counters (UI task only)
 
 bool tab5_imu_fifo_ligado(void) { return s_bmi != 0; }
 
@@ -73,20 +75,20 @@ bool tab5_imu_fifo_ligar(tab5_imu_fifo_info_t* info)
   s_fifo_buf = (uint8_t*)heap_caps_malloc(FIFO_BUF, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
   if (!s_fifo_buf) { s_bmi = 0; return false; }
 
-  // Giro e acelerometro ligados (alguem pode ter deixado so o acelerometro
-  // para economizar - ver tab5_power_imu_so_acelerometro).
+  // Gyro and accelerometer on (someone may have left only the accelerometer
+  // on to save power - see tab5_power_imu_so_acelerometro).
   const uint8_t pwr = M5.In_I2C.readRegister8(s_bmi, BMI_PWR_CTRL, BMI_I2C_HZ);
   if ((pwr & 0x06) != 0x06) { M5.In_I2C.writeRegister8(s_bmi, BMI_PWR_CTRL, pwr | 0x06, BMI_I2C_HZ); }
-  // Economia avancada (PWR_CONF bit0) desligada: com ela o chip pode
-  // cochilar entre amostras. O M5Unified ja deixa 0; aqui so garante.
+  // Advanced power save (PWR_CONF bit0) off: with it the chip may doze
+  // between samples. M5Unified already leaves it 0; this just makes sure.
   const uint8_t pconf = M5.In_I2C.readRegister8(s_bmi, BMI_PWR_CONF, BMI_I2C_HZ);
   if (pconf & 0x01) {
     M5.In_I2C.writeRegister8(s_bmi, BMI_PWR_CONF, pconf & ~0x01, BMI_I2C_HZ);
-    vTaskDelay(pdMS_TO_TICKS(2));   // o datasheet pede 450 us antes da proxima escrita
+    vTaskDelay(pdMS_TO_TICKS(2));   // the datasheet asks for 450 us before the next write
   }
 
-  // Escalas e taxa: lidas do chip, nao supostas - o M5Unified nao as muda
-  // hoje, mas se mudar o rumo continua certo.
+  // Ranges and rate: read from the chip, not assumed - M5Unified does not
+  // change them today, but if it does the heading stays right.
   const uint8_t ar = M5.In_I2C.readRegister8(s_bmi, BMI_ACC_RANGE, BMI_I2C_HZ) & 0x03;
   const uint8_t gr = M5.In_I2C.readRegister8(s_bmi, BMI_GYR_RANGE, BMI_I2C_HZ) & 0x07;
   s_gyr_conf_antes = M5.In_I2C.readRegister8(s_bmi, BMI_GYR_CONF, BMI_I2C_HZ);
@@ -96,7 +98,7 @@ bool tab5_imu_fifo_ligar(tab5_imu_fifo_info_t* info)
   const uint8_t gc = s_gyr_conf_antes & 0x0F;
   s_acc_lsb = (float)(16384 >> ar);                          // 2/4/8/16 g
   s_gyr_lsb = 16.384f * (float)(1 << (gr > 4 ? 4 : gr));     // 2000/1000/500/250/125 dps
-  const float odr = 100.0f * powf(2.0f, (float)gc - 8.0f);   // codigo 8 = 100 Hz, 9 = 200 Hz
+  const float odr = 100.0f * powf(2.0f, (float)gc - 8.0f);   // code 8 = 100 Hz, 9 = 200 Hz
   s_gyr_dt = (odr >= 25.0f && odr <= 3200.0f) ? 1.0f / odr : 0.005f;
   s_gyr_dt_nom = s_gyr_dt;
   s_odr_t0 = 0;
@@ -104,12 +106,12 @@ bool tab5_imu_fifo_ligar(tab5_imu_fifo_info_t* info)
   memset(&s_dg, 0, sizeof(s_dg));
 
   s_fifo_cfg1_antes = M5.In_I2C.readRegister8(s_bmi, BMI_FIFO_CFG1, BMI_I2C_HZ);
-  M5.In_I2C.writeRegister8(s_bmi, BMI_FIFO_CFG0, 0x00, BMI_I2C_HZ);   // fila corrente, sem relogio
+  M5.In_I2C.writeRegister8(s_bmi, BMI_FIFO_CFG0, 0x00, BMI_I2C_HZ);   // streaming queue, no clock
   M5.In_I2C.writeRegister8(s_bmi, BMI_FIFO_CFG1, BMI_FIFO_LIGADO, BMI_I2C_HZ);
   M5.In_I2C.writeRegister8(s_bmi, BMI_CMD, BMI_FIFO_FLUSH, BMI_I2C_HZ);
   s_ordem_votos = 0;
   s_acel_primeiro = false;
-  ESP_LOGI(TAG, "FIFO do BMI270 (0x%02x): giro %.0f Hz, %.1f LSB/dps, acel %.0f LSB/g", s_bmi,
+  ESP_LOGI(TAG, "BMI270 FIFO (0x%02x): gyro %.0f Hz, %.1f LSB/dps, accel %.0f LSB/g", s_bmi,
            (double)(1.0f / s_gyr_dt), (double)s_gyr_lsb, (double)s_acc_lsb);
   if (info) {
     info->gyr_hz  = 1.0f / s_gyr_dt;
@@ -135,8 +137,9 @@ static inline void tripla(const uint8_t* p, float out[3], float escala)
   for (int i = 0; i < 3; ++i) { out[i] = (float)(int16_t)(p[2 * i] | (p[2 * i + 1] << 8)) / escala; }
 }
 
-// Confere a ordem giro/acel num quadro com os dois, so parado (calibrando): o
-// que marca ~1 g e o acelerometro. 5 votos seguidos contra o datasheet trocam.
+// Checks the gyro/accel order in a frame with both, only when still
+// (calibrating): whichever reads ~1 g is the accelerometer. 5 consecutive
+// votes against the datasheet swap it.
 static void votar_ordem(const float g[3], const float a[3])
 {
   const float ng = sqrtf(g[0] * g[0] + g[1] * g[1] + g[2] * g[2]) * s_gyr_lsb / s_acc_lsb;
@@ -147,28 +150,28 @@ static void votar_ordem(const float g[3], const float a[3])
     if (--s_ordem_votos <= -5) {
       s_acel_primeiro = !s_acel_primeiro;
       s_ordem_votos = 0;
-      ESP_LOGW(TAG, "FIFO: acelerometro antes do giro neste chip - corrigido");
+      ESP_LOGW(TAG, "FIFO: accelerometer before gyro on this chip - corrected");
     }
   }
 }
 
-// Percorre os quadros. Com 'cb' nulo so conta as amostras de giro (para saber
-// o horario de cada uma: a ultima e "agora", as anteriores um passo antes
-// cada). Devolve quantas havia, ou -1 se achou um byte que nao entende.
+// Walks the frames. With a null 'cb' it only counts the gyro samples (to know
+// each one's timestamp: the last is "now", each earlier one a step before).
+// Returns how many there were, or -1 if it found a byte it does not understand.
 static int fifo_percorrer(const uint8_t* b, int n, bool parado, tab5_imu_fifo_cb cb, void* ctx,
                           int64_t t_fim, int total)
 {
   const bool aplicar = cb != nullptr;
   int i = 0, k = 0;
   while (i < n) {
-    const uint8_t h = b[i] & 0xFC;             // os 2 bits de baixo sao marcas de interrupcao
-    if (h == 0x80) { if (aplicar) { s_dg.vazios += 1; } break; }   // fila vazia (leitura alem do fim)
-    if ((h & 0xC0) == 0x80) {                  // quadro de dados: aux? giro? acel?
+    const uint8_t h = b[i] & 0xFC;             // the low 2 bits are interrupt markers
+    if (h == 0x80) { if (aplicar) { s_dg.vazios += 1; } break; }   // queue empty (read past the end)
+    if ((h & 0xC0) == 0x80) {                  // data frame: aux? gyro? accel?
       const int  aux   = (h & 0x10) ? 8 : 0;
       const bool tem_g = (h & 0x08) != 0;
       const bool tem_a = (h & 0x04) != 0;
       const int  tam   = 1 + aux + (tem_g ? 6 : 0) + (tem_a ? 6 : 0);
-      if (i + tam > n) { if (aplicar) { ++s_dg.cortes; } break; }   // cortado: o chip o repete na proxima leitura
+      if (i + tam > n) { if (aplicar) { ++s_dg.cortes; } break; }   // truncated: the chip repeats it on the next read
       if (tem_g) {
         if (aplicar) {
           const uint8_t* p1 = b + i + 1 + aux;
@@ -189,11 +192,11 @@ static int fifo_percorrer(const uint8_t* b, int n, bool parado, tab5_imu_fifo_cb
       i += tam;
       continue;
     }
-    // Quadros de controle: pulo (1), relogio (3), mudanca de configuracao (4),
-    // amostra perdida (1).
+    // Control frames: skip (1), clock (3), configuration change (4),
+    // dropped sample (1).
     int resto = -1;
     switch (h) {
-      case 0x40: resto = 1; if (aplicar) { ++s_dg.pulos; } break;   // pulo: a fila encheu
+      case 0x40: resto = 1; if (aplicar) { ++s_dg.pulos; } break;   // skip: the queue filled up
       case 0x44: resto = 3; break;
       case 0x48: resto = 4; break;
       case 0x50: resto = 1; break;
@@ -214,9 +217,9 @@ void tab5_imu_fifo_ler(bool parado, tab5_imu_fifo_cb cb, void* ctx)
   if (!M5.In_I2C.readRegister(s_bmi, BMI_FIFO_LEN, l, 2, BMI_I2C_HZ)) { return; }
   int n = (l[0] | (l[1] << 8)) & 0x3FFF;
   if (n == 0) { return; }
-  // Mais que o buffer so acontece depois de a interface parar ~0,5 s: le o
-  // que cabe agora, o resto na proxima chamada (o horario dessa leva sai
-  // adiantado, o giro integrado nao).
+  // More than the buffer only happens after the UI has stalled ~0.5 s: read
+  // what fits now, the rest on the next call (this batch's timestamps come
+  // out early, the integrated rotation does not).
   const bool cheio = n > FIFO_BUF;
   if (cheio) { n = FIFO_BUF; }
   ++s_dg.lidas;
@@ -225,7 +228,7 @@ void tab5_imu_fifo_ler(bool parado, tab5_imu_fifo_cb cb, void* ctx)
   if (!M5.In_I2C.readRegister(s_bmi, BMI_FIFO_DATA, s_fifo_buf, n, BMI_I2C_HZ)) { s_odr_t0 = 0; return; }
   const int total = fifo_percorrer(s_fifo_buf, n, parado, nullptr, nullptr, 0, 0);
   if (total < 0) {
-    ESP_LOGW(TAG, "FIFO: quadro desconhecido - esvaziando");
+    ESP_LOGW(TAG, "FIFO: unknown frame - flushing");
     ++s_dg.desconhecidos;
     M5.In_I2C.writeRegister8(s_bmi, BMI_CMD, BMI_FIFO_FLUSH, BMI_I2C_HZ);
     s_odr_t0 = 0;
@@ -234,11 +237,11 @@ void tab5_imu_fifo_ler(bool parado, tab5_imu_fifo_cb cb, void* ctx)
   const uint32_t pulos = s_dg.pulos;
   fifo_percorrer(s_fifo_buf, n, parado, cb, ctx, agora, total);
   if (s_dg.pulos != pulos) {
-    ESP_LOGW(TAG, "FIFO: o chip descartou amostras (a interface parou?) - giro perdido");
+    ESP_LOGW(TAG, "FIFO: the chip dropped samples (did the UI stall?) - rotation lost");
   }
 
-  // A taxa real: amostras desde t0 sobre o tempo do P4. Qualquer leitura
-  // anormal (fila cheia, pulo) recomeca a conta.
+  // The real rate: samples since t0 over the P4's time. Any abnormal read
+  // (queue full, skip) restarts the count.
   if (cheio || s_dg.pulos != pulos || s_odr_t0 == 0) {
     s_odr_t0 = agora;
     s_odr_n = 0;
@@ -250,7 +253,7 @@ void tab5_imu_fifo_ler(bool parado, tab5_imu_fifo_cb cb, void* ctx)
     const float dt = dec / (float)s_odr_n;
     if (fabsf(dt / s_gyr_dt_nom - 1.0f) < ODR_TOL) {
       if (fabsf(dt / s_gyr_dt - 1.0f) > 0.002f) {
-        ESP_LOGI(TAG, "taxa real do giro %.2f Hz (nominal %.0f)", (double)(1.0f / dt),
+        ESP_LOGI(TAG, "real gyro rate %.2f Hz (nominal %.0f)", (double)(1.0f / dt),
                  (double)(1.0f / s_gyr_dt_nom));
       }
       s_gyr_dt = dt;
@@ -265,7 +268,7 @@ void tab5_imu_fifo_diag(tab5_imu_fifo_diag_t* d, bool zerar)
   d->acel_primeiro = s_acel_primeiro;
   d->dt = s_gyr_dt;
   if (zerar) {
-    const uint32_t pulos = s_dg.pulos;   // acumulado: nao zera
+    const uint32_t pulos = s_dg.pulos;   // cumulative: not reset
     memset(&s_dg, 0, sizeof(s_dg));
     s_dg.pulos = pulos;
   }

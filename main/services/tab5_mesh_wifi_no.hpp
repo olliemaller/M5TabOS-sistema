@@ -1,10 +1,10 @@
-// REDES DO WI-FI DO NO MESHTASTIC, guardadas no cartao.
+// MESHTASTIC NODE WI-FI NETWORKS, stored on the SD card.
 //
-// O no so tem UMA rede configurada por vez (Config.network), e trocar exigia
-// digitar nome e senha de novo. Aqui ficam as redes que ja foram gravadas nele,
-// para escolher numa lista. Arquivo: Meshtastic/wifi_no.txt, par de linhas por
-// rede (nome, senha cifrada com a chave do aparelho - a mesma do wifi.txt do
-// Tab5; "-" = rede aberta). O C6L so enxerga 2,4 GHz, como o Tab5.
+// The node has only ONE network configured at a time (Config.network), and
+// switching meant typing the name and password again. This keeps the networks
+// already written to it, to pick from a list. File: Meshtastic/wifi_no.txt, a
+// pair of lines per network (name, password encrypted with the device key - the
+// same as the Tab5's wifi.txt; "-" = open network). The C6L sees only 2.4 GHz, like the Tab5.
 #pragma once
 
 #include <stdint.h>
@@ -14,17 +14,17 @@
 
 typedef struct {
   char ssid[33];
-  char senha[65];     // texto puro, so na RAM; vazio = rede aberta
+  char senha[65];     // plain text, only in RAM; empty = open network
   bool aberta;
 } mesh_wifi_rede_t;
 
-void     mesh_wifi_no_carregar(void);                    // cartao -> RAM, na subida do servico
+void     mesh_wifi_no_carregar(void);                    // SD card -> RAM, when the service starts
 int      mesh_wifi_no_n(void);
-bool     mesh_wifi_no_rede(int i, mesh_wifi_rede_t* o);  // 0 = a mais recente
-// Guarda (ou atualiza) e passa para o topo da lista. Senha vazia = rede aberta.
+bool     mesh_wifi_no_rede(int i, mesh_wifi_rede_t* o);  // 0 = the most recent
+// Stores (or updates) and moves it to the top of the list. Empty password = open network.
 bool     mesh_wifi_no_salvar(const char* ssid, const char* senha);
 bool     mesh_wifi_no_esquecer(int i);
-// Copia para ca as redes guardadas no Tab5 que ainda nao estao na lista.
-// Devolve quantas entraram, ou -1 se o Tab5 nao tem nenhuma carregada.
+// Copies in the networks stored on the Tab5 that are not in the list yet.
+// Returns how many were added, or -1 if the Tab5 has none loaded.
 int      mesh_wifi_no_trazer_do_tab5(void);
 uint32_t mesh_wifi_no_versao(void);

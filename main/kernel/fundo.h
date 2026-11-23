@@ -1,87 +1,87 @@
-// PARTE DE FUNDO DE UM APP - trabalho que continua quando a janela fecha
+// BACKGROUND PART OF AN APP - work that carries on when the window closes
 // .
 //
 // -------------------------------------------------------------------------
-// O PROBLEMA
+// THE PROBLEM
 // -------------------------------------------------------------------------
-// Um app vive enquanto esta na tela: ao_fechar() libera tudo. Mas existe o app
-// cujo TRABALHO nao e a tela - gravar a trilha do GPS, mandar a posicao pela
-// internet, um calculo longo. A Trilha resolvia isso virando um servico feito
-// a mao (services/tab5_trilha, com tarefa, notificacao e parada proprias). O
-// segundo app assim teria que repetir tudo - e cada um repetiria diferente.
+// An app lives while it is on screen: ao_fechar() frees everything. But there is the app
+// whose WORK is not the screen - recording the GPS track, sending the position over the
+// internet, a long calculation. Trilha solved this by becoming a hand-made
+// service (services/tab5_trilha, with its own task, notification and stop). The
+// second app like that would have to repeat everything - and each would repeat it differently.
 //
 // -------------------------------------------------------------------------
-// O MODELO
+// THE MODEL
 // -------------------------------------------------------------------------
-// O app se divide em duas metades:
-//   - a JANELA: o app de sempre (desenha, toca, nasce e morre com a tela);
-//   - a PARTE DE FUNDO: um loop que o KERNEL roda numa tarefa DELE. O app so
-//     descreve (fundo_def_t) e pede para ligar/desligar. Fechar a janela nao
-//     para o fundo.
+// The app splits into two halves:
+//   - the WINDOW: the usual app (draws, takes touch, is born and dies with the screen);
+//   - the BACKGROUND PART: a loop the KERNEL runs in a task of ITS OWN. The app only
+//     describes it (fundo_def_t) and asks for it to be started/stopped. Closing the window does not
+//     stop the background part.
 //
-// O que o SISTEMA garante a toda parte de fundo, sem o app escrever nada:
-//   - TAREFA propria, prioridade 1 (abaixo da interface, dos radios e do
-//     worker) - o loop mais pesado nunca trava o toque. A excecao e o que
-//     tem PRAZO de tempo real (o som): ver fundo_def_t.prioridade;
-//   - VISIVEL SEMPRE: enquanto roda, uma notificacao NOTIF_ESTADO com o nome
-//     dela (pastilha cinza na barra). Nada roda escondido do usuario - o
-//     fundo de trabalho curto (aviso_ms) aparece so se passar do prazo;
-//   - ENERGIA somada: o perfil declarado entra no perfil efetivo do aparelho
-//     (junto do app da tela, ou da home) enquanto ela rodar - WiFi pedido
-//     aqui fica de pe com qualquer app na tela e em repouso;
-//   - PARADA LIMPA: pedir para parar ACORDA o loop (fundo_esperar volta na
-//     hora) e o sistema espera ele sair antes de chamar ao_parar();
-//   - QUEM PARA: a janela, o console ("fundo parar <nome>") e O USUARIO, pelo
-//     X do cartao na central de avisos (tocar a barra). Ver o contrato abaixo.
-//
-// -------------------------------------------------------------------------
-// O CONTRATO DA PARADA - o usuario manda
-// -------------------------------------------------------------------------
-// Toda parte de fundo aparece na central de avisos, na faixa "Em segundo
-// plano", com um X. O X e do SISTEMA: nenhum app escreve nada para te-lo, e
-// nenhum app pode recusar. Primeiro toque: "Parar?"; o segundo, em 3 s, para.
-// Midia (kernel/midia.h) ganha o mesmo X no miniplayer, no lugar do cartao.
-//
-// O que o app garante, em troca:
-//   - o loop sai logo depois do pedido (fundo_esperar/fundo_ceder voltam
-//     false; espera longa sem eles atrasa a parada);
-//   - TUDO que precisa sobreviver e salvo no ao_parar() (ou antes): ele roda
-//     na interface depois que o loop saiu, sempre - inclusive quando quem
-//     parou foi o usuario;
-//   - parar no meio nao corrompe nada (arquivo fechado a cada escrita, ou
-//     fechado no ao_parar). A janela pode estar fechada e nao e avisada.
-// E o que o sistema garante: o pedido nao congela a tela (a parada do X pede
-// e segue; quem recolhe e o kernel quando o loop sai), e a pastilha mostra
-// "parando..." ate la. Passou de 3 s sem sair: a vaga fica "abandonada" e e
-// limpa quando o loop por fim sair.
-//
-// Parte de fundo que pode ficar OCIOSA (musica pausada) deve se encerrar
-// sozinha depois de um tempo - o tocador sai com 5 min de pausa. Esquecida,
-// ela ocupa uma das FUNDO_MAX vagas e gasta energia sem ninguem ver.
+// What the SYSTEM guarantees every background part, without the app writing anything:
+//   - its OWN TASK, priority 1 (below the UI, the radios and the
+//     worker) - the heaviest loop never stalls touch. The exception is whatever
+//     has a real-time DEADLINE (sound): see fundo_def_t.prioridade;
+//   - ALWAYS VISIBLE: while it runs, a NOTIF_ESTADO notification with its
+//     name (grey pill in the bar). Nothing runs hidden from the user - a
+//     short-job background part (aviso_ms) only appears if it runs past the deadline;
+//   - POWER added: the declared profile enters the device's effective profile
+//     (together with the on-screen app, or home) while it runs - WiFi requested
+//     here stays up with any app on screen and when idle;
+//   - CLEAN STOP: asking it to stop WAKES the loop (fundo_esperar returns
+//     immediately) and the system waits for it to exit before calling ao_parar();
+//   - WHO STOPS IT: the window, the console ("fundo parar <nome>") and THE USER, via the
+//     card's X in the notification centre (tap the bar). See the contract below.
 //
 // -------------------------------------------------------------------------
-// O CONTRATO DO LOOP (corpo)
+// THE STOP CONTRACT - the user is in charge
+// -------------------------------------------------------------------------
+// Every background part appears in the notification centre, in the "Em segundo
+// plano" (In the background) strip, with an X. The X is the SYSTEM's: no app writes anything to have it, and
+// no app can refuse it. First tap: "Parar?" (Stop?); the second, within 3 s, stops it.
+// Media (kernel/midia.h) gets the same X on the mini player, in place of the card.
+//
+// What the app guarantees in return:
+//   - the loop exits soon after the request (fundo_esperar/fundo_ceder return
+//     false; a long wait without them delays the stop);
+//   - EVERYTHING that must survive is saved in ao_parar() (or before): it runs
+//     on the UI after the loop has exited, always - including when it was the user
+//     who stopped it;
+//   - stopping midway corrupts nothing (file closed after each write, or
+//     closed in ao_parar). The window may be closed and is not notified.
+// And what the system guarantees: the request does not freeze the screen (the X stop requests
+// and carries on; the kernel collects when the loop exits), and the pill shows
+// "parando..." (stopping...) until then. Past 3 s without exiting: the slot is left "abandoned" and is
+// cleaned up when the loop finally exits.
+//
+// A background part that can go IDLE (paused music) should end
+// by itself after a while - the player exits after 5 min paused. Forgotten,
+// it takes up one of the FUNDO_MAX slots and uses power without anyone seeing.
+//
+// -------------------------------------------------------------------------
+// THE LOOP CONTRACT (body)
 // -------------------------------------------------------------------------
 //   static void meu_laco(fundo_t* f) {
-//       while (fundo_esperar(f, 5000)) {       // dorme 5 s; false = pare
-//           ...trabalho com esperas LIMITADAS...
-//           fundo_estado(f, n, "42 envios");    // o texto da pastilha
+//       while (fundo_esperar(f, 5000)) {       // sleeps 5 s; false = stop
+//           ...work with BOUNDED waits...
+//           fundo_estado(f, n, "42 envios");    // the pill text
 //       }
-//   }                                           // retornou: o sistema limpa
+//   }                                           // returned: the system cleans up
 //
-//   - NUNCA espere para sempre (portMAX_DELAY): o pedido de parada precisa
-//     conseguir chegar. Espera de verdade e fundo_esperar().
-//   - Loop de CALCULO (sem esperar nada) chama fundo_ceder(f) a cada volta:
-//     sem isso a tarefa ocupa o core inteiro, o IDLE dele nunca roda, o
-//     watchdog dispara e o aparelho nao dorme. fundo_ceder so cede de fato
-//     a cada ~20 ms, entao pode ser chamado em loop apertado.
-//   - O loop NAO desenha. O que a janela precisa mostrar, o fundo guarda em
-//     estado proprio (protegido) e a janela le por copia - igual servico.
-//   - Memoria do fundo e do fundo: estatica ou alocada no ao_iniciar() e
-//     liberada no ao_parar(). NUNCA um buffer da janela - ela pode fechar a
-//     qualquer momento.
-//   - Retornar do loop sozinho (terminou o trabalho) e permitido: o sistema
-//     percebe e limpa como numa parada pedida.
+//   - NEVER wait forever (portMAX_DELAY): the stop request must be able
+//     to get through. A real wait is fundo_esperar().
+//   - A CALCULATION loop (waiting on nothing) calls fundo_ceder(f) on every turn:
+//     without it the task takes the whole core, its IDLE never runs, the
+//     watchdog fires and the device does not sleep. fundo_ceder only actually yields
+//     every ~20 ms, so it can be called in a tight loop.
+//   - The loop does NOT draw. What the window needs to show, the background part keeps in its
+//     own (protected) state and the window reads a copy - same as a service.
+//   - The background part's memory belongs to it: static or allocated in ao_iniciar() and
+//     freed in ao_parar(). NEVER a window buffer - the window may close at
+//     any moment.
+//   - Returning from the loop by itself (work finished) is allowed: the system
+//     notices and cleans up as with a requested stop.
 #pragma once
 
 #include <stdint.h>
@@ -89,62 +89,62 @@
 #include "tab5_power.hpp"
 #include "notificacao.h"
 
-#define FUNDO_MAX 4   // partes de fundo rodando ao mesmo tempo
+#define FUNDO_MAX 4   // background parts running at the same time
 
 typedef struct fundo_s fundo_t;
 typedef void (*fundo_corpo_t)(fundo_t* f);
 
 typedef struct {
-  const char*   nome;       // literal: nome da tarefa (<=15), da notificacao e nas listas
+  const char*   nome;       // literal: task name (<=15), of the notification and in the lists
   fundo_corpo_t corpo;
   uint32_t      pilha;      // bytes; 0 = 4096
-  tab5_perfil_t perfil;     // o que precisa LIGADO enquanto roda (soma no perfil efetivo)
-  // Opcionais. Rodam na tarefa de quem pediu (a interface, na pratica).
-  bool (*ao_iniciar)(void); // prepara o estado; false = recusa ligar
-  void (*ao_parar)(void);   // depois que o loop saiu: fecha e libera
-  bool (*com_som)(void);    // preferencia de beep da notificacao; nullptr = com som
-  // A PASTILHA SO DEPOIS DE aviso_ms RODANDO (0 = na hora). Para o fundo de
-  // trabalho curto e frequente (um comando do Terminal): o que termina antes
-  // nao pisca na barra; o que demora aparece, com o X, como qualquer fundo.
+  tab5_perfil_t perfil;     // what must be ON while it runs (added to the effective profile)
+  // Optional. They run on the requester's task (the UI, in practice).
+  bool (*ao_iniciar)(void); // prepares the state; false = refuses to start
+  void (*ao_parar)(void);   // after the loop has exited: close and free
+  bool (*com_som)(void);    // notification beep preference; nullptr = with sound
+  // THE PILL ONLY AFTER RUNNING FOR aviso_ms (0 = immediately). For short,
+  // frequent background work (a Terminal command): what finishes sooner
+  // does not flash in the bar; what takes longer appears, with the X, like any background part.
   uint32_t aviso_ms;
-  // PRIORIDADE DA TAREFA (0 = a padrao, 1). So para quem tem PRAZO e trabalho
-  // CURTO por volta: o som da Musica. Na 1 ele perdia a vez para a captura da
-  // camera (3) e a interface (4), que juntas ocupam os dois nucleos, e o
-  // alto-falante secava. Acima da interface so cabe um laco que faz uma
-  // fracao do seu tempo e DORME (decodifica um bloco e espera a fila) - um
-  // laco de calculo aqui trava o toque.
+  // TASK PRIORITY (0 = the default, 1). Only for something with a DEADLINE and
+  // SHORT work per turn: the Music app's sound. At 1 it lost its turn to the camera
+  // capture (3) and the UI (4), which together occupy both cores, and the
+  // speaker ran dry. Above the UI there is only room for a loop that does a
+  // fraction of its time and SLEEPS (decodes a block and waits on the queue) - a
+  // calculation loop here stalls touch.
   uint32_t prioridade;
 } fundo_def_t;
 
-// ---- para a janela (e qualquer um) -----------------------------------------
-bool sistema_fundo_iniciar(const fundo_def_t* d);   // false: ja rodando, sem vaga ou recusou
-bool sistema_fundo_parar(const fundo_def_t* d);     // ESPERA o loop sair (ate 3 s)
+// ---- for the window (and anyone) -------------------------------------------
+bool sistema_fundo_iniciar(const fundo_def_t* d);   // false: already running, no slot or refused
+bool sistema_fundo_parar(const fundo_def_t* d);     // WAITS for the loop to exit (up to 3 s)
 bool sistema_fundo_ativo(const fundo_def_t* d);
-// LIGAR DE QUALQUER TAREFA, sem esperar (o servidor web rodando um comando do
-// Terminal): a interface liga na volta seguinte. Se o mesmo fundo ainda esta
-// numa vaga (saindo), o pedido espera ele sair e liga de novo - e o que o
-// laco que "sai quando a fila seca" precisa. Pedir de novo o que ja foi
-// pedido e o mesmo pedido. Da interface, liga na hora se a vaga estiver livre.
-// false = sem vaga para o pedido (FUNDO_MAX pedidos ja esperando).
+// START FROM ANY TASK, without waiting (the web server running a
+// Terminal command): the UI starts it on the next turn. If the same background part is still
+// in a slot (exiting), the request waits for it to exit and starts it again - which is what the
+// loop that "exits when the queue runs dry" needs. Requesting again what was already
+// requested is the same request. From the UI, it starts immediately if the slot is free.
+// false = no slot for the request (FUNDO_MAX requests already waiting).
 bool sistema_fundo_pedir(const fundo_def_t* d);
 
 typedef struct {
   const char* nome;
-  uint32_t    ha_s;                  // rodando ha quantos segundos
-  char        resumo[NOTIF_RESUMO];  // o ultimo fundo_estado()
+  uint32_t    ha_s;                  // running for how many seconds
+  char        resumo[NOTIF_RESUMO];  // the latest fundo_estado()
 } fundo_info_t;
 int  sistema_fundo_listar(fundo_info_t* out, int max);
-// Pede a parada pelo NOME, de qualquer tarefa, SEM ESPERAR (o X da central e
-// o console usam esta): o kernel para de verdade no proprio laco.
+// Requests the stop by NAME, from any task, WITHOUT WAITING (the centre's X and
+// the console use this): the kernel really stops it in its own loop.
 bool sistema_fundo_parar_nome(const char* nome);
 
-// ---- para o loop ----------------------------------------------------------
-bool fundo_esperar(fundo_t* f, uint32_t ms);   // dorme ate ms; false = pediram para parar
-bool fundo_ceder(fundo_t* f);                  // loop de calculo; false = pediram para parar
+// ---- for the loop ----------------------------------------------------------
+bool fundo_esperar(fundo_t* f, uint32_t ms);   // sleeps up to ms; false = asked to stop
+bool fundo_ceder(fundo_t* f);                  // calculation loop; false = asked to stop
 bool fundo_rodando(const fundo_t* f);
 void fundo_estado(fundo_t* f, int quantidade, const char* resumo);
 
-// ---- para o kernel --------------------------------------------------------
-void fundo_somar_perfil(tab5_perfil_t& p);   // chamado por sistema_impor_preferencias()
-void fundo_manter(void);                     // no loop da interface: limpa quem terminou sozinho,
-                                             // reaplica o perfil quando o conjunto mudou
+// ---- for the kernel --------------------------------------------------------
+void fundo_somar_perfil(tab5_perfil_t& p);   // called by sistema_impor_preferencias()
+void fundo_manter(void);                     // in the UI loop: cleans up whoever ended on their own,
+                                             // reapplies the profile when the set changed

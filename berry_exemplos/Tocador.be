@@ -2,23 +2,24 @@
 # cor: 0x2E5E
 # periodo: 500
 #
-# UM PLAYER DE MUSICA EM BERRY - so a interface. Quem toca e o tocador do
-# sistema (modulo 'musica'): ele acha a pasta Music do cartao, toca com o app
-# fechado, mostra na barra e no miniplayer da central, tem o X para parar e
-# calcula o espectro. O script so desenha e chama - nenhuma linha de audio.
+# A MUSIC PLAYER IN BERRY - just the interface. The playing is done by the
+# system player (the 'musica' module): it finds the Music folder on the card,
+# keeps playing with the app closed, shows in the status bar and in the
+# notification centre's mini-player, has the X to stop and computes the
+# spectrum. The script only draws and calls - not one line of audio code.
 #
-# Copie para /sdcard/apps/Berry/ e reinicie. Musicas: pasta Music (ou
-# Música) na raiz do cartao, MP3 ou WAV, com subpastas.
+# Copy to /sdcard/apps/Berry/ and restart. Music: the Music (or Música)
+# folder at the root of the card, MP3 or WAV, with subfolders.
 
 import string
 
 var CIANO = tela.cor(40, 200, 240)
 var FUNDO = tela.cor(28, 32, 36)
-var sub = ""           # a subpasta aberta ("" = a raiz da pasta de musica)
+var sub = ""           # the open subfolder ("" = the root of the music folder)
 var itens = []         # musica.lista(sub)
-var topo = 0           # rolagem da lista, em linhas
-var arrasto = nil      # [y do dedo, topo] durante o arraste
-var picos = []         # o pico de cada barra do espectro (cai devagar)
+var topo = 0           # list scroll position, in rows
+var arrasto = nil      # [finger y, topo] while dragging
+var picos = []         # the peak of each spectrum bar (falls slowly)
 var LINHA = 76
 
 def ler_pasta()
@@ -33,7 +34,7 @@ def tempo(ms)
   return str(s / 60) + ":" + (s % 60 < 10 ? "0" : "") + str(s % 60)
 end
 
-# ---- a geometria (tudo relativo ao tamanho da area: em pe ou deitado) --------
+# ---- the geometry (all relative to the area size: portrait or landscape) -----
 def g_espectro() return [20, 16, tela.largura() - 40, 170] end
 def g_titulo_y() return 206 end
 def g_barra() return [40, 290, tela.largura() - 80] end
@@ -53,7 +54,7 @@ def desenhar_espectro(e)
     if h > picos[i] picos[i] = h else picos[i] = picos[i] > 4 ? picos[i] - 4 : 0 end
     var x = r[0] + 10 + i * passo
     var base = r[1] + r[3] - 10
-    # cor por barra: do ciano (graves) ao rosa (agudos)
+    # colour per bar: from cyan (bass) to pink (treble)
     var c = tela.cor(40 + i * 7, 200 - i * 4, 240 - i * 2)
     if h > 0 tela.retangulo(x, base - h, passo - 4, h, c) end
     if picos[i] > 2 tela.retangulo(x, base - picos[i] - 3, passo - 4, 3, tela.BRANCO) end
@@ -65,14 +66,14 @@ def desenhar(tudo)
   desenhar_espectro(e)
   var L = tela.largura()
 
-  # o que toca
-  # tela.cortar: o sistema corta o que nao cabe, com "..." (nome longo de musica)
-  var t = e["ativo"] ? e["titulo"] : "Nada tocando"
+  # what is playing
+  # tela.cortar: the system trims what doesn't fit, with "..." (long track names)
+  var t = e["ativo"] ? e["titulo"] : idioma.escolher("Nada tocando", "Nothing playing")
   tela.texto(tela.cortar(t, L - 60, 3.4), L / 2, g_titulo_y(), 3.4, tela.BRANCO, tela.CENTRO)
-  var sub_txt = e["ativo"] ? e["artista"] + (e["tocando"] ? "" : "  (pausado)") : "Toque numa musica da lista"
+  var sub_txt = e["ativo"] ? e["artista"] + (e["tocando"] ? "" : idioma.escolher("  (pausado)", "  (paused)")) : idioma.escolher("Toque numa musica da lista", "Tap a track in the list")
   tela.texto(tela.cortar(sub_txt, L - 60, 2.6), L / 2, g_titulo_y() + 44, 2.6, tela.CINZA_CLARO, tela.CENTRO)
 
-  # a linha de progresso (tocar nela busca)
+  # the progress line (tapping it seeks)
   var b = g_barra()
   tela.arredondado(b[0], b[1] - 4, b[2], 8, 4, tela.CINZA)
   if e["ativo"] && e["dur"] > 0
@@ -83,7 +84,7 @@ def desenhar(tudo)
     tela.texto(tempo(e["dur"]), b[0] + b[2], b[1] + 16, 2.4, tela.CINZA_CLARO, tela.DIREITA)
   end
 
-  # anterior, tocar/pausar, proxima; volume nos cantos
+  # previous, play/pause, next; volume in the corners
   var y = g_botoes_y()
   tela.circulo(L / 2, y, 40, CIANO)
   if e["tocando"]
@@ -98,10 +99,10 @@ def desenhar(tudo)
   tela.texto("+", L - 40, y - 20, 4, tela.BRANCO, tela.DIREITA)
   tela.texto(str(musica.volume()) + "%", L - 90, y - 12, 2.4, tela.CINZA_CLARO, tela.DIREITA)
 
-  # a lista (pastas primeiro); "<" volta uma pasta
+  # the list (folders first); "<" goes back one folder
   var ly = g_lista_y()
   var cab = musica.pasta()
-  cab = (cab != nil ? cab : "sem cartao") + (sub != "" ? " / " + sub : "")
+  cab = (cab != nil ? cab : idioma.escolher("sem cartao", "no SD card")) + (sub != "" ? " / " + sub : "")
   tela.texto((sub != "" ? "<  " : "") + cab, 30, ly, 3, sub != "" ? CIANO : tela.BRANCO)
   var cabem = (tela.altura() - ly - 50) / LINHA
   if cabem < 1 cabem = 1 end
@@ -116,10 +117,10 @@ def desenhar(tudo)
     tela.texto(tela.cortar((it["pasta"] ? "[ ] " : "") + it["titulo"], L - 80, 2.8), 40, yy + 20, 2.8, cor)
   end
   if size(itens) == 0
-    tela.texto("Copie MP3 ou WAV para a pasta Music do cartao", L / 2, ly + 90, 2.6, tela.CINZA_CLARO, tela.CENTRO)
+    tela.texto(idioma.escolher("Copie MP3 ou WAV para a pasta Music do cartao", "Copy MP3 or WAV files to the Music folder on the card"), L / 2, ly + 90, 2.6, tela.CINZA_CLARO, tela.CENTRO)
   end
 
-  # tocando: ~30 quadros/s para o espectro; parado: devagar
+  # playing: ~30 frames/s for the spectrum; stopped: slowly
   sistema.periodo(e["tocando"] ? 33 : 500)
 end
 
@@ -145,7 +146,7 @@ def tocar(x, y)
     elif x > L - 100 musica.volume(musica.volume() + 10)
     end
   elif y >= g_lista_y() && y < g_lista_y() + 50
-    if sub != ""   # "<": volta uma pasta
+    if sub != ""   # "<": go back one folder
       var p = string.split(sub, "/")
       sub = ""
       for k: 0 .. size(p) - 2 sub += (k > 0 ? "/" : "") + p[k] end
@@ -164,7 +165,7 @@ def tocar(x, y)
   end
 end
 
-# Arrastar a lista rola.
+# Dragging the list scrolls it.
 def dedo(x, y, pressionado)
   if !pressionado arrasto = nil return end
   if y < g_lista_y() return end
@@ -176,4 +177,4 @@ def dedo(x, y, pressionado)
 end
 
 ler_pasta()
-musica.cor(CIANO)   # a pastilha da barra e o miniplayer na cor deste player
+musica.cor(CIANO)   # the status-bar pill and the mini-player in this player's colour

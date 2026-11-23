@@ -4,7 +4,7 @@
 #include "tab5_ble.hpp"
 #include "tab5_donos.hpp"
 #include "pool_tarefas.h"
-#include "parada.hpp"      // parada cooperativa da tarefa (kernel)
+#include "parada.hpp"      // cooperative task stop (kernel)
 #include "ajustes.h"
 #include "notificacao.h"
 
@@ -26,37 +26,37 @@
 
 static const char* TAG = "mesh_ble";
 
-// UUIDs do servico do Meshtastic (docs: meshtastic.org, "Bluetooth API").
+// Meshtastic service UUIDs (docs: meshtastic.org, "Bluetooth API").
 #define UUID_TORADIO   "f75c76d2-129e-4dad-a1dd-7866124401e7"
 #define UUID_FROMRADIO "2c55e69e-4993-11ed-b878-0242ac120002"
 #define UUID_FROMNUM   "ed9da18c-a800-4f66-a670-aa7547e34453"
 
-#define CORPO_MAX       512    // MAX_TO_FROM_RADIO_SIZE do firmware
-#define PRAZO_OP_MS   10000    // cada operacao GATT
-#define PRAZO_PAR_MS  30000    // pareamento (o no pode estar mostrando o PIN)
-#define VOLTA_MS       5000    // leitura de seguranca, mesmo sem aviso do fromNum
+#define CORPO_MAX       512    // the firmware's MAX_TO_FROM_RADIO_SIZE
+#define PRAZO_OP_MS   10000    // each GATT operation
+#define PRAZO_PAR_MS  30000    // pairing (the node may be showing the PIN)
+#define VOLTA_MS       5000    // safety read, even without a fromNum notification
 
 typedef struct { uint16_t n; uint8_t d[CORPO_MAX]; } envio_t;
 
-// ---- estado ----------------------------------------------------------------
+// ---- state -------------------------------------------------------------------
 static TaskHandle_t        s_tarefa = nullptr;
 static QueueHandle_t       s_tx = nullptr;
 static MessageBufferHandle_t s_rx = nullptr;
-static SemaphoreHandle_t   s_op = nullptr;        // fim de uma operacao GATT/GAP
+static SemaphoreHandle_t   s_op = nullptr;        // end of a GATT/GAP operation
 static volatile int        s_op_rc = 0;
-static parada_t            s_parada = { };      // pedido de parada / saida confirmada da tarefa
+static parada_t            s_parada = { };      // stop request / confirmed task exit
 static volatile bool       s_conectado = false, s_conectou_agora = false;
 static volatile bool       s_ler = false;
 static volatile uint16_t   s_conn = BLE_HS_CONN_HANDLE_NONE;
 static volatile bool       s_pin_pedido = false;
-// PIN NA HORA. O Meshtastic tem dois modos: PIN FIXO (123456 nos
-// aparelhos sem tela, ou o que se configurou) e PIN ALEATORIO, que o no mostra
-// na tela A CADA pareamento - um PIN salvo nunca acerta esse. Por isso: a
-// primeira tentativa usa o PIN de Ajustes; se o no recusar, a proxima e
-// INTERATIVA - o pedido fica esperando (o pareamento da ~30 s) e Ajustes >
-// Meshtastic abre o teclado para digitar o que o no esta mostrando.
-static volatile bool       s_pin_interativo = false;   // a proxima vez, pergunta
-static volatile bool       s_pin_esperando = false;    // ha um pedido esperando o PIN agora
+// PIN ON THE SPOT. Meshtastic has two modes: FIXED PIN (123456 on
+// devices without a screen, or whatever was configured) and RANDOM PIN, which the node shows
+// on screen ON EVERY pairing - a saved PIN never matches that one. Hence: the
+// first attempt uses the PIN from Settings; if the node refuses, the next one is
+// INTERACTIVE - the request waits (pairing allows ~30 s) and Settings >
+// Meshtastic opens the keyboard to type what the node is showing.
+static volatile bool       s_pin_interativo = false;   // next time, ask
+static volatile bool       s_pin_esperando = false;    // there is a request waiting for the PIN now
 static volatile uint16_t   s_pin_conn = 0;
 static int                 s_notif = -1;
 static char                s_estado[48] = "parado";
@@ -65,15 +65,15 @@ static char                s_nome[24] = "", s_end[18] = "";
 static ble_uuid_any_t s_u_svc, s_u_to, s_u_from, s_u_num;
 static uint16_t s_svc_ini, s_svc_fim, s_h_to, s_h_from, s_h_num, s_h_cccd;
 
-// O envio sendo escrito (so a tarefa do enlace usa) - PSRAM, fora da stack.
+// The send being written (only the link task uses it) - PSRAM, off the stack.
 EXT_RAM_BSS_ATTR static envio_t s_envio;
 
-// Leitura em andamento (callback da NimBLE -> tarefa)
+// Read in progress (NimBLE callback -> task)
 static uint8_t  s_lido[CORPO_MAX];
 static uint16_t s_lido_n;
 
-// Cada mudanca de estado tambem vai para o log: uma tentativa de conexao que
-// falha deixa o rastro inteiro (procurando -> conectando -> pareando -> ...).
+// Every state change also goes to the log: a connection attempt that
+// fails leaves the whole trail (searching -> connecting -> pairing -> ...).
 static void estado(const char* fmt, const char* arg = nullptr)
 {
   char novo[sizeof(s_estado)];
@@ -84,14 +84,14 @@ static void estado(const char* fmt, const char* arg = nullptr)
 
 static int esperar_op(uint32_t ms)
 {
-  if (parada_pedida(&s_parada)) { return BLE_HS_ENOTCONN; }   // pediram para parar: nada de operacao nova
+  if (parada_pedida(&s_parada)) { return BLE_HS_ENOTCONN; }   // asked to stop: no new operation
   if (xSemaphoreTake(s_op, pdMS_TO_TICKS(ms)) != pdTRUE) { return BLE_HS_ETIMEOUT; }
   return s_op_rc;
 }
 static void fim_op(int rc) { s_op_rc = rc; xSemaphoreGive(s_op); }
 
 // ---------------------------------------------------------------------------
-// EVENTOS DA CONEXAO (tarefa da NimBLE - curto, so anota e acorda)
+// CONNECTION EVENTS (NimBLE task - short, just note and wake)
 // ---------------------------------------------------------------------------
 static int ao_gap(struct ble_gap_event* ev, void*)
 {
@@ -102,10 +102,10 @@ static int ao_gap(struct ble_gap_event* ev, void*)
       break;
 
     case BLE_GAP_EVENT_DISCONNECT:
-      ESP_LOGI(TAG, "desconectado (motivo 0x%x)", ev->disconnect.reason);
+      ESP_LOGI(TAG, "disconnected (reason 0x%x)", ev->disconnect.reason);
       s_conn = BLE_HS_CONN_HANDLE_NONE;
       s_conectado = false;
-      fim_op(BLE_HS_ENOTCONN);   // destrava quem esperava uma operacao
+      fim_op(BLE_HS_ENOTCONN);   // unblocks whoever was waiting on an operation
       if (s_tarefa) { xTaskNotifyGive(s_tarefa); }
       break;
 
@@ -114,8 +114,8 @@ static int ao_gap(struct ble_gap_event* ev, void*)
       break;
 
     case BLE_GAP_EVENT_PASSKEY_ACTION: {
-      // O PIN. O no diz o que quer: DIGITAR (o comum - ele mostra ou tem um
-      // fixo, 123456 nos sem tela) ou CONFERIR um numero (aceitamos).
+      // The PIN. The node says what it wants: ENTER (the usual - it shows one or has a
+      // fixed one, 123456 on those without a screen) or CONFIRM a number (we accept).
       struct ble_sm_io io;
       memset(&io, 0, sizeof(io));
       io.action = ev->passkey.params.action;
@@ -123,16 +123,16 @@ static int ao_gap(struct ble_gap_event* ev, void*)
         s_pin_pedido = true;
         if (s_pin_interativo || ajustes_mesh_pin_na_tela()) {
           s_pin_interativo = true;
-          // Espera quem digitar (mesh_ble_digitar_pin): nada e injetado aqui.
+          // Wait for someone to type it (mesh_ble_digitar_pin): nothing is injected here.
           s_pin_conn = ev->passkey.conn_handle;
           s_pin_esperando = true;
           estado(tr("digite o PIN que o nó mostra"));
           if (s_notif >= 0) { notif_publicar(s_notif, 1, NOTIF_ATENCAO, tr("PIN do Meshtastic")); }
-          ESP_LOGI(TAG, "o no pediu o PIN - esperando o usuario (Ajustes > Meshtastic)");
+          ESP_LOGI(TAG, "the node asked for the PIN - waiting for the user (Settings > Meshtastic)");
           break;
         }
         io.passkey = ajustes_mesh_pin();
-        ESP_LOGI(TAG, "o no pediu o PIN - usando o de Ajustes");
+        ESP_LOGI(TAG, "the node asked for the PIN - using the one from Settings");
       } else if (io.action == BLE_SM_IOACT_NUMCMP) {
         io.numcmp_accept = 1;
       }
@@ -141,8 +141,8 @@ static int ao_gap(struct ble_gap_event* ev, void*)
     }
 
     case BLE_GAP_EVENT_REPEAT_PAIRING: {
-      // O no esqueceu o vinculo (reset) e quer parear de novo: apagamos o
-      // nosso e deixamos repetir - senao ficaria recusando para sempre.
+      // The node forgot the bond (reset) and wants to pair again: we delete
+      // ours and let it repeat - otherwise it would keep refusing forever.
       struct ble_gap_conn_desc d;
       if (ble_gap_conn_find(ev->repeat_pairing.conn_handle, &d) == 0) {
         ble_store_util_delete_peer(&d.peer_id_addr);
@@ -163,7 +163,7 @@ static int ao_gap(struct ble_gap_event* ev, void*)
 }
 
 // ---------------------------------------------------------------------------
-// GATT SINCRONO - uma operacao por vez, sempre da tarefa do enlace
+// SYNCHRONOUS GATT - one operation at a time, always from the link task
 // ---------------------------------------------------------------------------
 static int cb_mtu(uint16_t, const struct ble_gatt_error* e, uint16_t mtu, void*)
 {
@@ -242,12 +242,12 @@ static int escrever(uint16_t h, const uint8_t* d, size_t n)
   return rc ? rc : esperar_op(PRAZO_OP_MS);
 }
 
-// FromRadio: uma mensagem por leitura; leitura vazia = o no nao tem mais nada.
-// Ate 64 por vez (a fila de envio nao pode esperar o dump inteiro). Devolve
-// false quando parou no teto SEM esvaziar: o resto vem na volta seguinte, na
-// hora - antes esperava o proximo aviso do fromNum (que so vem com pacote
-// NOVO) ou os 5 s da leitura de seguranca, e um dump de muitos nos andava aos
-// soluços.
+// FromRadio: one message per read; an empty read = the node has nothing more.
+// Up to 64 at a time (the send queue cannot wait for the whole dump). Returns
+// false when it stopped at the ceiling WITHOUT draining: the rest comes on the next round,
+// immediately - before, it waited for the next fromNum notification (which only comes with a
+// NEW packet) or the 5 s safety read, and a dump of many nodes went along in
+// fits and starts.
 static bool ler_ate_vazio(void)
 {
   for (int k = 0; k < 64 && conexao_viva() && !parada_pedida(&s_parada); ++k) {
@@ -257,7 +257,7 @@ static bool ler_ate_vazio(void)
     if (esperar_op(PRAZO_OP_MS) != 0) { return true; }
     if (s_lido_n == 0) { return true; }
     if (xMessageBufferSend(s_rx, s_lido, s_lido_n, pdMS_TO_TICKS(500)) == 0) {
-      ESP_LOGW(TAG, "o servico Mesh nao esta consumindo - mensagem de %u bytes perdida",
+      ESP_LOGW(TAG, "the Mesh service is not consuming - message of %u bytes lost",
                (unsigned)s_lido_n);
     }
   }
@@ -265,7 +265,7 @@ static bool ler_ate_vazio(void)
 }
 
 // ---------------------------------------------------------------------------
-// ACHAR, CONECTAR, PAREAR, DESCOBRIR
+// FIND, CONNECT, PAIR, DISCOVER
 // ---------------------------------------------------------------------------
 static bool achar_no(ble_addr_t* alvo)
 {
@@ -275,8 +275,8 @@ static bool achar_no(ble_addr_t* alvo)
   const bool tem_salvo = tab5_ble_endereco_ler(salvo, quer);
 
   estado(tem_salvo ? tr("procurando %s") : tr("procurando um no Meshtastic"), salvo);
-  // Se a tela ja esta varrendo, aproveitamos a varredura dela.
-  // 8 s: com o Wi-Fi conectado o C6 divide o radio, e a busca ouve menos.
+  // If the screen is already scanning, we piggyback on its scan.
+  // 8 s: with Wi-Fi connected the C6 shares the radio, and the search hears less.
   if (!tab5_ble_varrendo() && !tab5_ble_varrer(8000)) { return false; }
   while (tab5_ble_varrendo() && !parada_pedida(&s_parada)) { vTaskDelay(pdMS_TO_TICKS(200)); }
 
@@ -300,7 +300,7 @@ static bool achar_no(ble_addr_t* alvo)
   return true;
 }
 
-// 0 = conectado e pronto; <0 = tente de novo em breve; >0 = espere mais (PIN)
+// 0 = connected and ready; <0 = try again soon; >0 = wait longer (PIN)
 static int conectar(const ble_addr_t* alvo)
 {
   uint8_t proprio;
@@ -312,14 +312,14 @@ static int conectar(const ble_addr_t* alvo)
   if (rc != 0) { ESP_LOGW(TAG, "ble_gap_connect: %d", rc); return -1; }
   rc = esperar_op(12000);
   if (rc != 0 || !conexao_viva()) {
-    ESP_LOGW(TAG, "nao conectou (%d)", rc);
+    ESP_LOGW(TAG, "did not connect (%d)", rc);
     ble_gap_conn_cancel();
     return -1;
   }
 
-  // Os enderecos desta conexao: o que a stack acha que e o nosso (id), o que
-  // foi de fato ao ar (ota) e o do no. A verificacao final do pareamento
-  // seguro inclui os enderecos - se id e ota divergirem, e ali que ela quebra.
+  // This connection's addresses: what the stack thinks is ours (id), what
+  // actually went on air (ota) and the node's. The final check of secure
+  // pairing includes the addresses - if id and ota diverge, that is where it breaks.
   {
     struct ble_gap_conn_desc d;
     if (ble_gap_conn_find(s_conn, &d) == 0) {
@@ -327,7 +327,7 @@ static int conectar(const ble_addr_t* alvo)
       tab5_ble_endereco_txt(d.our_id_addr.val, a1);
       tab5_ble_endereco_txt(d.our_ota_addr.val, a2);
       tab5_ble_endereco_txt(d.peer_ota_addr.val, a3);
-      ESP_LOGI(TAG, "enderecos: nosso id %s (tipo %u), no ar %s (tipo %u), no %s (tipo %u)",
+      ESP_LOGI(TAG, "addresses: our id %s (type %u), on air %s (type %u), node %s (type %u)",
                a1, d.our_id_addr.type, a2, d.our_ota_addr.type, a3, d.peer_ota_addr.type);
     }
   }
@@ -335,8 +335,8 @@ static int conectar(const ble_addr_t* alvo)
   xSemaphoreTake(s_op, 0);
   if (ble_gattc_exchange_mtu(s_conn, cb_mtu, nullptr) == 0) { esperar_op(PRAZO_OP_MS); }
 
-  // Pareamento. Ja vinculado: so retoma a cifra, sem PIN. Sem vinculo: o no
-  // pede o PIN (ver PASSKEY_ACTION).
+  // Pairing. Already bonded: just resumes encryption, no PIN. No bond: the node
+  // asks for the PIN (see PASSKEY_ACTION).
   estado(tr("pareando com %s"), s_nome);
   s_pin_pedido = false;
   xSemaphoreTake(s_op, 0);
@@ -350,46 +350,46 @@ static int conectar(const ble_addr_t* alvo)
       s_pin_esperando = false;
       if (s_notif >= 0) { notif_limpar(s_notif); }
     }
-    // DHKEY CHECK FAILED: as 20 rodadas do PIN passaram (o PIN estava certo),
-    // mas a verificacao final do pareamento seguro (LE Secure Connections)
-    // nao bateu. O modo LEGADO com PIN nao tem essa etapa, e o Meshtastic o
-    // aceita: troca para ele e pergunta o PIN de novo ja (o no mostra outro).
+    // DHKEY CHECK FAILED: the 20 PIN rounds passed (the PIN was right),
+    // but the final check of secure pairing (LE Secure Connections)
+    // did not match. LEGACY mode with PIN has no such step, and Meshtastic
+    // accepts it: switch to it and ask for the PIN again now (the node shows another).
     if ((rc == BLE_HS_SM_PEER_ERR(BLE_SM_ERR_DHKEY) || rc == BLE_HS_SM_US_ERR(BLE_SM_ERR_DHKEY))
      && ble_hs_cfg.sm_sc) {
-      ESP_LOGW(TAG, "verificacao final do pareamento seguro falhou (%d) - tentando o pareamento legado", rc);
+      ESP_LOGW(TAG, "final check of secure pairing failed (%d) - trying legacy pairing", rc);
       ble_hs_cfg.sm_sc = 0;
       s_pin_interativo = true;
       estado(tr("tentando outro modo de pareamento - o no vai mostrar outro PIN"));
       return -1;
     }
-    // O PIN SALVO FOI RECUSADO: o no mostra um PIN novo a cada pareamento.
-    // Lembra disso (NVS) e tenta de novo ja - agora perguntando o PIN.
+    // THE SAVED PIN WAS REFUSED: the node shows a new PIN on every pairing.
+    // Remember that (NVS) and try again now - this time asking for the PIN.
     if (s_pin_pedido && !s_pin_interativo) {
-      ESP_LOGW(TAG, "PIN salvo recusado (%d) - o no usa PIN na tela; pergunto a partir de agora", rc);
+      ESP_LOGW(TAG, "saved PIN refused (%d) - the node uses an on-screen PIN; asking from now on", rc);
       ajustes_definir_mesh_pin_na_tela(true);
-      ajustes_definir_mesh_pin(123456);   // o salvo estava errado: volta ao padrao
+      ajustes_definir_mesh_pin(123456);   // the saved one was wrong: back to the default
       s_pin_interativo = true;
       estado(tr("o nó mostra o PIN na tela - tentando de novo"));
       return -1;
     }
     if (s_pin_pedido) {
-      // PIN errado (ou o prazo venceu). Nao repete sozinho: cada tentativa
-      // incomoda o no e gera um PIN novo nele. A proxima pergunta o PIN na
-      // hora, e so comeca quando o usuario pedir (mesh_ble_tentar_de_novo, que
-      // o ENVIAR do PIN em Ajustes > Meshtastic chama).
-      ESP_LOGW(TAG, "pareamento recusado (%d) - PIN errado ou prazo vencido", rc);
+      // Wrong PIN (or the timeout expired). Does not retry by itself: each attempt
+      // bothers the node and generates a new PIN on it. The next one asks for the PIN on the
+      // spot, and only starts when the user asks (mesh_ble_tentar_de_novo, which
+      // the PIN's SEND in Settings > Meshtastic calls).
+      ESP_LOGW(TAG, "pairing refused (%d) - wrong PIN or timeout expired", rc);
       estado(tr("PIN recusado - toque no nó para tentar"));
       s_pin_interativo = true;
       return 2;
     }
-    // Sem PIN pedido e ainda assim falhou: o vinculo guardado nao vale mais
-    // (o no foi resetado). Apaga e tenta do zero na proxima volta.
+    // No PIN requested and it still failed: the stored bond is no longer valid
+    // (the node was reset). Delete it and start from scratch on the next round.
     if (achou) { ble_store_util_delete_peer(&d.peer_id_addr); }
-    ESP_LOGW(TAG, "cifra recusada (%d) - vinculo antigo apagado", rc);
+    ESP_LOGW(TAG, "encryption refused (%d) - old bond deleted", rc);
     return -1;
   }
 
-  // Descoberta do servico e das tres caracteristicas.
+  // Discovery of the service and the three characteristics.
   s_svc_ini = s_svc_fim = s_h_to = s_h_from = s_h_num = s_h_cccd = 0;
   xSemaphoreTake(s_op, 0);
   rc = ble_gattc_disc_svc_by_uuid(s_conn, &s_u_svc.u, cb_svc, nullptr);
@@ -405,24 +405,24 @@ static int conectar(const ble_addr_t* alvo)
     if (rc == 0) { rc = esperar_op(PRAZO_OP_MS); }
   }
   if (rc != 0 || !s_h_to || !s_h_from) {
-    ESP_LOGW(TAG, "o aparelho nao tem o servico do Meshtastic completo (%d)", rc);
+    ESP_LOGW(TAG, "the device does not have the complete Meshtastic service (%d)", rc);
     if (conexao_viva()) { ble_gap_terminate(s_conn, BLE_ERR_REM_USER_CONN_TERM); }
     return -1;
   }
 
-  // Assina o fromNum. Sem ele ainda funciona (a volta de VOLTA_MS le assim
-  // mesmo), so mais devagar.
+  // Subscribes to fromNum. Without it, it still works (the VOLTA_MS round reads
+  // anyway), just more slowly.
   if (s_h_cccd) {
     const uint8_t liga[2] = { 0x01, 0x00 };
-    if (escrever(s_h_cccd, liga, 2) != 0) { ESP_LOGW(TAG, "nao assinei o fromNum"); }
+    if (escrever(s_h_cccd, liga, 2) != 0) { ESP_LOGW(TAG, "could not subscribe to fromNum"); }
   }
 
   s_pin_interativo = false;
   if (s_notif >= 0) { notif_limpar(s_notif); }
 
-  // Deste no em diante e este no: guarda para reconectar direto.
+  // From this node on it is this node: save it to reconnect directly.
   ajustes_definir_mesh_ble_endereco(s_end);
-  ESP_LOGI(TAG, "conectado a %s (%s)", s_nome, s_end);
+  ESP_LOGI(TAG, "connected to %s (%s)", s_nome, s_end);
   estado(tr("conectado a %s"), s_nome);
   s_conectado = true;
   s_conectou_agora = true;
@@ -430,7 +430,7 @@ static int conectar(const ble_addr_t* alvo)
 }
 
 // ---------------------------------------------------------------------------
-// A TAREFA DO ENLACE
+// THE LINK TASK
 // ---------------------------------------------------------------------------
 static void vTaskMeshBle(void*)
 {
@@ -457,26 +457,26 @@ static void vTaskMeshBle(void*)
     }
     const int rc = conectar(&alvo);
     if (rc != 0) {
-      // A queda da conexao acorda esta tarefa (ver DISCONNECT em ao_gap) - sem
-      // escoar esse aviso, a espera acabava na hora e a busca seguinte corria
-      // enquanto o no ainda nao voltou a anunciar.
+      // The connection drop wakes this task (see DISCONNECT in ao_gap) - without
+      // draining that notification, the wait ended at once and the next search ran
+      // while the node had not started advertising again yet.
       vTaskDelay(pdMS_TO_TICKS(500));
       ulTaskNotifyTake(pdTRUE, 0);
       espera = (rc > 1) ? portMAX_DELAY : (rc > 0) ? 60000 : 3000;
       continue;
     }
 
-    s_ler = true;   // o que o no ja tinha na queue
+    s_ler = true;   // whatever the node already had queued
     TickType_t ultima = xTaskGetTickCount();
     while (conexao_viva() && !parada_pedida(&s_parada)) {
-      // Tudo que interessa ACORDA esta tarefa: o aviso do fromNum, um envio
-      // na fila, a queda da conexao e o pedido de parada (xTaskNotifyGive).
-      // O prazo e so a leitura de seguranca (VOLTA_MS) - era 1 s, cinco
-      // despertares a toa para cada um util com o no conectado.
+      // Everything that matters WAKES this task: the fromNum notification, a send
+      // in the queue, the connection dropping and the stop request (xTaskNotifyGive).
+      // The timeout is just the safety read (VOLTA_MS) - it was 1 s, five
+      // pointless wake-ups for each useful one with the node connected.
       ulTaskNotifyTake(pdTRUE, s_ler ? 0 : pdMS_TO_TICKS(VOLTA_MS));
       while (xQueueReceive(s_tx, &s_envio, 0) == pdTRUE) {
-        if (escrever(s_h_to, s_envio.d, s_envio.n) != 0) { ESP_LOGW(TAG, "escrita no toRadio falhou"); }
-        s_ler = true;   // a resposta vem pelo fromRadio
+        if (escrever(s_h_to, s_envio.d, s_envio.n) != 0) { ESP_LOGW(TAG, "write to toRadio failed"); }
+        s_ler = true;   // the answer comes via fromRadio
       }
       if (s_ler || (xTaskGetTickCount() - ultima) > pdMS_TO_TICKS(VOLTA_MS)) {
         s_ler = false;
@@ -495,7 +495,7 @@ static void vTaskMeshBle(void*)
   s_conectado = false;
   estado("parado");
   parada_confirmar(&s_parada);
-  // Retorna: a vaga do pool devolve o dono e volta a dormir (kernel/pool_tarefas.h).
+  // Returns: the pool slot gives back the owner and goes back to sleep (kernel/pool_tarefas.h).
 }
 
 // ---------------------------------------------------------------------------
@@ -513,7 +513,7 @@ bool mesh_ble_iniciar(void)
     ble_uuid_from_str(&s_u_from, UUID_FROMRADIO);
     ble_uuid_from_str(&s_u_num,  UUID_FROMNUM);
   }
-  if (!s_op || !s_tx || !s_rx) { ESP_LOGE(TAG, "sem memoria"); return false; }
+  if (!s_op || !s_tx || !s_rx) { ESP_LOGE(TAG, "out of memory"); return false; }
   if (s_notif < 0) { s_notif = notif_registrar("Bluetooth"); notif_associar_app(s_notif, "Mesh"); }
   xQueueReset(s_tx);
   xMessageBufferReset(s_rx);
@@ -529,11 +529,11 @@ bool mesh_ble_iniciar(void)
   return true;
 }
 
-// A tarefa dorme em esperas PROPRIAS (notificacao, fim de operacao da pilha
-// BLE): o aviso e REPETIDO enquanto se espera. Um so podia ser engolido pelo
-// xSemaphoreTake(s_op, 0) que antecede cada operacao, e a tarefa ficava presa
-// os 12 s do conectar (ou os ~30 s do PIN) - o desligar seguia sem ela e a
-// pilha sumia debaixo de um ble_gap_* em curso.
+// The task sleeps on its OWN waits (notification, end of a BLE stack
+// operation): the signal is REPEATED while waiting. A single one could be swallowed by the
+// xSemaphoreTake(s_op, 0) that precedes each operation, and the task stayed stuck for
+// the 12 s of connecting (or the ~30 s of the PIN) - shutdown went ahead without it and the
+// stack vanished under an ongoing ble_gap_*.
 static void cutucar_tarefa(void)
 {
   if (s_tarefa) { xTaskNotifyGive(s_tarefa); }
@@ -544,7 +544,7 @@ bool mesh_ble_parar(void)
 {
   if (!s_tarefa) { return true; }
   if (!parada_pedir(&s_parada, 6000, cutucar_tarefa)) {
-    ESP_LOGE(TAG, "a tarefa do enlace nao saiu em 6 s");
+    ESP_LOGE(TAG, "the link task did not exit within 6 s");
     return false;
   }
   s_tarefa = nullptr;

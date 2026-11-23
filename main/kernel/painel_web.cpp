@@ -1,4 +1,4 @@
-// O painel "No PC" - ver painel_web.hpp.
+// The "No PC" (PC access) panel - see painel_web.hpp.
 #include "painel_web.hpp"
 #include "app.h"
 #include "idioma.h"
@@ -29,7 +29,7 @@ void painel_web_desenhar(lgfx::LovyanGFX& d, int x, int y, int l, int a, const c
 {
   tab5_tela_limpar(x, y, l, a, TFT_BLACK);
   const bool meu = tab5_web_aberto(dono);
-  // Os outros apps abertos agora (o servidor e um so, com uma pasta por app).
+  // The other apps open right now (the server is a single one, with one folder per app).
   const char* abertos[WEB_PARTES_MAX];
   const int na = tab5_web_abertos(abertos, WEB_PARTES_MAX);
   char outros[96] = "";
@@ -46,8 +46,8 @@ void painel_web_desenhar(lgfx::LovyanGFX& d, int x, int y, int l, int a, const c
 
   if (meu) {
     char url[64], senha[8], quem[48];
-    // A RAIZ, nao a pasta do app: e mais curta de digitar, e o portal abre
-    // direto no app que acabou de ligar (e mostra os outros).
+    // THE ROOT, not the app's folder: it is shorter to type, and the portal opens
+    // straight on the app that has just started (and shows the others).
     tab5_web_endereco(nullptr, url, sizeof(url));
     tab5_web_senha(senha, sizeof(senha));
     tab5_web_ultimo(quem, sizeof(quem), nullptr);
@@ -111,7 +111,7 @@ bool painel_web_tocar(int x, int y, int l, int a, int tx, int ty, const char* do
   int bx, by;
   botao_rect(x, y, l, a, &bx, &by);
   if (!tab5_dentro(tx, ty, bx, by, BT_L, BT_A)) { return false; }
-  if (tab5_web_aberto(dono)) { tab5_web_fechar(dono); return true; }   // a tela muda pelo AVISO_WEB
+  if (tab5_web_aberto(dono)) { tab5_web_fechar(dono); return true; }   // the screen changes via AVISO_WEB
   if (tab5_wifi_estado() != TAB5_WIFI_CONECTADO) { sistema_recado(tr("Conecte o Wi-Fi primeiro")); return true; }
   if (!ligar || !ligar()) { sistema_recado(tr("O servidor não ligou")); }
   return true;

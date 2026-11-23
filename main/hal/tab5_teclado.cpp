@@ -10,65 +10,65 @@
 
 static const char *TAG = "teclado";
 
-// Registradores, copiados do fonte oficial (M5Unit-KEYBOARD,
-// src/unit/unit_Tab5Keyboard.hpp). Mantidos com os nomes de la para que a
-// comparacao com o upstream seja direta se algo mudar.
+// Registers, copied from the official source (M5Unit-KEYBOARD,
+// src/unit/unit_Tab5Keyboard.hpp). Kept with their names from there so that
+// comparison with upstream is direct if anything changes.
 #define REG_INT_CFG            0x00
 #define REG_INT_STAT           0x01
 #define REG_EVENT_NUM          0x02
 #define REG_MODE_KEYBOARD      0x10
-#define REG_HID_EVENT          0x30   // 2 bytes: modificador + codigo HID
+#define REG_HID_EVENT          0x30   // 2 bytes: modifier + HID code
 #define REG_FIRMWARE_VERSION   0xFE
 
-// MODO HID, e nao o modo caractere.
+// HID MODE, not character mode.
 //
-// No modo caractere o STM32 devolve TEXTO: a letra pronta, mas as teclas
-// especiais como o NOME delas ("enter", cinco letras). Os nomes nao estao
-// documentados em lugar nenhum - nem o firmware do teclado nem a biblioteca
-// oficial os listam - entao cada tecla especial tinha que ser descoberta
-// apertando e lendo o log, e as setas, o Del e o Tab nunca chegaram a ser.
+// In character mode the STM32 returns TEXT: the ready-made letter, but the special
+// keys as their NAME ("enter", five letters). The names are not
+// documented anywhere - neither the keyboard firmware nor the official
+// library lists them - so each special key had to be discovered by
+// pressing it and reading the log, and the arrows, Del and Tab never were.
 //
-// No modo HID cada tecla vem como o codigo de uso do padrao USB HID (pagina
-// 0x07), mais o byte de modificadores. A biblioteca oficial traz a matriz
-// 5x14 inteira capturada do aparelho real nesse modo (KEY_MATRIX_HID_BASE e
-// KEY_MATRIX_HID_SYM em unit_Tab5Keyboard.cpp):
+// In HID mode each key comes as its USB HID standard usage code (page
+// 0x07), plus the modifier byte. The official library includes the whole 5x14
+// matrix captured from the real device in this mode (KEY_MATRIX_HID_BASE and
+// KEY_MATRIX_HID_SYM in unit_Tab5Keyboard.cpp):
 //
-//   linha 0: Esc 1 2 3 4 5 6 7 8 9 0 - + Del
-//   linha 1: ` ! @ # $ % ^ & * ( ) [ ] \
-//   linha 2: Tab q w e r t y u i o p ; ' Backspace
-//   linha 3: Sym Aa a s d f g h j k l (cima) _ Enter
-//   linha 4: Ctrl Alt z x c v b n m . (esq) (baixo) (dir) Espaco
+//   row 0: Esc 1 2 3 4 5 6 7 8 9 0 - + Del
+//   row 1: ` ! @ # $ % ^ & * ( ) [ ] \
+//   row 2: Tab q w e r t y u i o p ; ' Backspace
+//   row 3: Sym Aa a s d f g h j k l (up) _ Enter
+//   row 4: Ctrl Alt z x c v b n m . (left) (down) (right) Space
 //
-// Sym e Aa sao resolvidos PELO FIRMWARE: com Sym segurado a tecla ja chega
-// com o codigo da camada Sym (! vira ?, * vira /, ( vira <, . vira ,), e o
-// Aa chega como o bit de shift. Do nosso lado basta a tabela US do HID.
+// Sym and Aa are resolved BY THE FIRMWARE: with Sym held the key already arrives
+// with the Sym layer code (! becomes ?, * becomes /, ( becomes <, . becomes ,), and
+// Aa arrives as the shift bit. On our side the US HID table is enough.
 #define MODO_HID               1
 
 #define FREQ  400000
 
 static bool     s_presente = false;
 static uint8_t  s_versao   = 0;
-static bool     s_bus_ok   = false;   // o barramento externo ja aponta para o ExtPort1
-static uint32_t s_ultima_busca = 0;   // ms; a ultima procura por um teclado ausente
+static bool     s_bus_ok   = false;   // the external bus already points at ExtPort1
+static uint32_t s_ultima_busca = 0;   // ms; the last search for an absent keyboard
 
-// SEM AJUSTE DE LIGAR/DESLIGAR: o teclado e achado sozinho. Ausente, custa uma
-// transacao I2C a cada BUSCA_MS com a tela acesa (nenhuma em repouso), e a
-// primeira tecla de um teclado recem-encaixado e achada na hora pelo G50 - o
-// INT desce com a fila cheia e o pull-up o segura em cima sem teclado (ver
-// int_em_baixo e tab5_teclado_pendente). O ajuste antigo ("teclado" na NVS)
-// ficou sem uso.
+// NO ON/OFF SETTING: the keyboard is found automatically. When absent, it costs one
+// I2C transaction every BUSCA_MS with the screen on (none when idle), and the
+// first keypress of a freshly attached keyboard is caught immediately via G50 - the
+// INT goes low with the queue full and the pull-up holds it high with no keyboard (see
+// int_em_baixo and tab5_teclado_pendente). The old setting ("teclado" in NVS)
+// is no longer used.
 
-// De quanto em quanto tempo procurar um teclado ausente.
+// How often to search for an absent keyboard.
 //
-// 2s e o compromisso: encaixar e ver funcionar dentro de dois segundos parece
-// instantaneo para quem esta usando, e uma transacao I2C a cada 2s e ruido
-// desprezivel perto das 50 por segundo que a interface ja faz. Buscar a cada
-// ciclo (20ms) seria desperdicio puro num aparelho que passa a maior parte da
-// vida sem teclado encaixado.
+// 2s is the compromise: attaching it and seeing it work within two seconds feels
+// instant to the user, and one I2C transaction every 2s is negligible
+// noise next to the 50 per second the UI already does. Searching every
+// cycle (20ms) would be pure waste on a device that spends most of its
+// life without a keyboard attached.
 #define BUSCA_MS  2000
-// Com o G50 em baixo e nenhum teclado conhecido, procura bem mais cedo - mas
-// nao a cada volta: outro acessorio segurando o pino em baixo nao pode virar
-// um scan I2C por quadro.
+// With G50 low and no known keyboard, search much sooner - but
+// not every round: another accessory holding the pin low must not turn into
+// an I2C scan per frame.
 #define BUSCA_INT_MS  250
 
 
@@ -76,10 +76,10 @@ bool tab5_teclado_presente(void) { return s_presente; }
 uint8_t tab5_teclado_versao(void) { return s_versao; }
 
 // ---------------------------------------------------------------------------
-// TRADUCAO: codigo HID -> texto ou tecla especial
+// TRANSLATION: HID code -> text or special key
 // ---------------------------------------------------------------------------
-// Tabela US (a do teclado). Indice = codigo HID a partir de 0x1E; os de 0x04 a
-// 0x1D sao as letras, tratadas a parte. 0 = codigo sem caractere.
+// US table (the keyboard's). Index = HID code from 0x1E; those from 0x04 to
+// 0x1D are the letters, handled separately. 0 = code with no character.
 static const char US_NORMAL[] = "1234567890" "\0\0\0\0" " -=[]\\\0;'`,./";
 static const char US_SHIFT[]  = "!@#$%^&*()" "\0\0\0\0" " _+{}|\0:\"~<>?";
 #define US_PRIMEIRO  0x1E
@@ -101,7 +101,7 @@ static uint8_t codigo_especial(uint8_t hid)
   }
 }
 
-// O caractere ASCII da tecla, ou 0.
+// The key's ASCII character, or 0.
 static char caractere(uint8_t hid, bool shift)
 {
   if (hid >= 0x04 && hid <= 0x1D) { return (char)((shift ? 'A' : 'a') + (hid - 0x04)); }
@@ -112,22 +112,22 @@ static char caractere(uint8_t hid, bool shift)
 }
 
 // ---------------------------------------------------------------------------
-// ACENTOS POR TECLA MORTA (o "US internacional" de quem escreve portugues)
+// ACCENTS VIA DEAD KEYS (the "US international" layout of Portuguese writers)
 // ---------------------------------------------------------------------------
-// O teclado e US: nao tem tecla de acento nem cedilha. Como no layout
-// internacional dos computadores, quatro teclas viram MORTAS - nao escrevem na
-// hora, esperam a letra seguinte:
+// The keyboard is US: it has no accent or cedilla key. As in computers'
+// international layout, four keys become DEAD - they don't type
+// immediately, they wait for the next letter:
 //
-//   '  + a e i o u c  ->  á é í ó ú ç     (e maiusculas)
+//   '  + a e i o u c  ->  á é í ó ú ç     (and uppercase)
 //   `  + a            ->  à
-//   ~  + a o          ->  ã õ             (~ e Sym + `)
-//   ^  + a e o        ->  â ê ô           (^ e shift + 6)
+//   ~  + a o          ->  ã õ             (~ is Sym + `)
+//   ^  + a e o        ->  â ê ô           (^ is shift + 6)
 //
-// Seguida de espaco, sai o proprio sinal (' + espaco = '). Seguida de outra
-// letra qualquer, saem os dois (' + x = 'x) - nada se perde. A aspa dupla
-// (shift + ') NAO e morta.
+// Followed by a space, the mark itself comes out (' + space = '). Followed by any other
+// letter, both come out (' + x = 'x) - nothing is lost. The double quote
+// (shift + ') is NOT dead.
 //
-// Para desligar: TECLADO_ACENTOS 0.
+// To disable: TECLADO_ACENTOS 0.
 #define TECLADO_ACENTOS 1
 
 typedef struct { char base; const char* utf8; } composta_t;
@@ -164,24 +164,24 @@ void tab5_teclado_ascii(const char* texto, char* saida, size_t tam)
 }
 
 // ---------------------------------------------------------------------------
-// TECLA SEGURADA: REPETICAO
+// HELD KEY: REPEAT
 // ---------------------------------------------------------------------------
-// No modo HID o firmware manda um evento ao APERTAR e outro, com codigo 0, ao
-// SOLTAR (unit_Tab5Keyboard.hpp: "keycode ... 0 on key release"). Entre os
-// dois a tecla esta segurada, e as que repetem (apagar, setas) repetem aqui,
-// com os tempos do teclado de toque.
+// In HID mode the firmware sends one event on PRESS and another, with code 0, on
+// RELEASE (unit_Tab5Keyboard.hpp: "keycode ... 0 on key release"). Between the
+// two the key is held, and the ones that repeat (backspace, arrows) repeat here,
+// with the touch keyboard's timings.
 //
-// DUAS TRAVAS, porque apagar sozinho e a pior falha possivel (some o texto):
-//  - so repete depois de ja ter visto UMA soltura desde que o teclado
-//    encaixou. Se um firmware nao mandar soltura, a repeticao nunca liga - a
-//    tecla segurada simplesmente nao repete;
-//  - se o PROPRIO firmware repetir (o mesmo codigo de novo sem soltura no
-//    meio), a nossa desliga: duas repeticoes somadas apagariam em dobro.
-// E um teto de 10 s segurada, contra uma soltura perdida no barramento.
+// TWO SAFEGUARDS, because deleting on its own is the worst possible failure (text vanishes):
+//  - only repeats after having seen ONE release since the keyboard was
+//    attached. If a firmware doesn't send releases, repeat never switches on - the
+//    held key simply doesn't repeat;
+//  - if the firmware ITSELF repeats (the same code again with no release in
+//    between), ours switches off: two repeats combined would delete twice as fast.
+// And a 10 s ceiling on holding, against a release lost on the bus.
 #define SEGURADA_MAX_MS  10000
 
-static uint8_t      s_seg_hid = 0;        // codigo HID segurado que repete (0 = nenhum)
-static tab5_tecla_t s_seg_ev;             // o evento que ele repete
+static uint8_t      s_seg_hid = 0;        // held HID code that repeats (0 = none)
+static tab5_tecla_t s_seg_ev;             // the event it repeats
 static uint32_t     s_seg_desde = 0, s_seg_ultimo = 0;
 static bool         s_seg_repetiu = false;
 static bool         s_soltura_vista = false;
@@ -196,29 +196,29 @@ static bool repete(uint8_t codigo)
 
 bool tab5_teclado_segurando(void) { return s_presente && s_seg_hid != 0 && s_soltura_vista && !s_fw_repete; }
 
-static char s_morta = 0;            // a tecla morta esperando a letra (0 = nenhuma)
-static tab5_tecla_t s_guardada;     // evento que chegou junto da morta e sai na proxima leitura
+static char s_morta = 0;            // the dead key waiting for the letter (0 = none)
+static tab5_tecla_t s_guardada;     // event that arrived with the dead key and goes out on the next read
 static bool s_tem_guardada = false;
 
-// Estado do pino de INT (ver 'O PINO ANTES DO BARRAMENTO', em ler_hid).
-static bool     s_int_confiavel = false;   // o G50 ja provou que avisa
-static bool     s_int_traiu     = false;   // ...ou ja provou que nao avisa
-static bool     s_pode_ter_mais = true;    // a ultima leitura achou evento
+// INT pin state (see 'THE PIN BEFORE THE BUS', in ler_hid).
+static bool     s_int_confiavel = false;   // G50 has proven it signals
+static bool     s_int_traiu     = false;   // ...or has proven it doesn't
+static bool     s_pode_ter_mais = true;    // the last read found an event
 static uint32_t s_conferido_ms  = 0;
 
 // ---------------------------------------------------------------------------
 
 static bool int_em_baixo(void);
 
-// Tenta encontrar e configurar o teclado. Chamada no boot E periodicamente
-// enquanto ele estiver ausente - e o que permite encaixar com o aparelho ligado.
+// Tries to find and configure the keyboard. Called at boot AND periodically
+// while it is absent - that is what allows attaching it with the device on.
 static bool procurar(bool falar)
 {
   if (!M5.Ex_I2C.scanID(TAB5_TECLADO_ENDERECO, FREQ))
   {
-    // Nao e erro: o teclado e acessorio, e a ausencia e o estado normal.
+    // Not an error: the keyboard is an accessory, and absence is the normal state.
     if (falar) {
-      ESP_LOGW(TAG, "nenhum teclado em 0x%02X - vou continuar procurando a cada %dms",
+      ESP_LOGW(TAG, "no keyboard at 0x%02X - will keep searching every %dms",
                TAB5_TECLADO_ENDERECO, BUSCA_MS);
     }
     s_presente = false;
@@ -227,12 +227,12 @@ static bool procurar(bool falar)
 
   s_versao = M5.Ex_I2C.readRegister8(TAB5_TECLADO_ENDERECO, REG_FIRMWARE_VERSION, FREQ);
 
-  // Modo HID. Trocar de modo deixa na fila eventos no formato ANTIGO, que
-  // seriam lidos errado: como o fonte oficial, esvaziamos a fila (escrever 0
-  // no contador limpa a fila e solta o INT).
+  // HID mode. Switching mode leaves events in the OLD format in the queue, which
+  // would be misread: like the official source, we empty the queue (writing 0
+  // to the counter clears the queue and releases INT).
   if (!M5.Ex_I2C.writeRegister8(TAB5_TECLADO_ENDERECO, REG_MODE_KEYBOARD, MODO_HID, FREQ))
   {
-    ESP_LOGE(TAG, "achei o teclado mas nao consegui por em modo HID");
+    ESP_LOGE(TAG, "found the keyboard but could not put it into HID mode");
     s_presente = false;
     return false;
   }
@@ -243,95 +243,95 @@ static bool procurar(bool falar)
   s_seg_hid = 0;
   s_soltura_vista = false;
   s_fw_repete = false;
-  s_pode_ter_mais = true;   // primeira leitura depois de encaixar: sem olhar o pino
-  // O pino e reaprendido a cada encaixe: um evento lido com o INT em cima logo
-  // depois de encaixar (o pino ainda assentando) desligava a confianca ate o
-  // proximo boot - visto num reencaixe, com o teclado avisando direito.
+  s_pode_ter_mais = true;   // first read after attaching: without looking at the pin
+  // The pin is relearnt on every attach: an event read with INT high right
+  // after attaching (the pin still settling) used to disable trust until the
+  // next boot - seen on a reattach, with the keyboard signalling correctly.
   s_int_confiavel = false;
   s_int_traiu = false;
 
-  ESP_LOGI(TAG, "teclado ENCAIXADO em 0x%02X (firmware %u), modo HID",
+  ESP_LOGI(TAG, "keyboard ATTACHED at 0x%02X (firmware %u), HID mode",
            TAB5_TECLADO_ENDERECO, (unsigned)s_versao);
   return true;
 }
 
 bool tab5_teclado_iniciar(void)
 {
-  // O barramento e reapontado SEMPRE, com ou sem teclado: e ele que tira o
-  // Ex_I2C de cima dos pinos do Grove, e o Azimutal conta com isso.
+  // The bus is ALWAYS repointed, with or without a keyboard: it is what moves
+  // Ex_I2C off the Grove pins, and Azimutal relies on that.
 
-  // Reaponta o barramento externo para o ExtPort1. Ver o porque no cabecalho.
-  // Isto e feito UMA vez; so a procura pelo teclado e que se repete.
+  // Repoints the external bus to ExtPort1. See why in the header.
+  // This is done ONCE; only the search for the keyboard repeats.
   M5.Ex_I2C.release();
   if (!M5.Ex_I2C.begin(TAB5_TECLADO_PORTA, TAB5_TECLADO_SDA, TAB5_TECLADO_SCL))
   {
-    ESP_LOGE(TAG, "nao consegui abrir I2C em SDA=%d SCL=%d",
+    ESP_LOGE(TAG, "could not open I2C on SDA=%d SCL=%d",
              TAB5_TECLADO_SDA, TAB5_TECLADO_SCL);
     return false;
   }
   s_bus_ok = true;
   s_ultima_busca = tab5_agora_ms();
-  // O G50 como entrada com pull-up (o kernel ja o configura com a
-  // interrupcao; isto so garante o nivel legivel se aquilo falhar). Nao mexe
-  // no tipo de interrupcao.
+  // G50 as an input with pull-up (the kernel already configures it with the
+  // interrupt; this only ensures a readable level if that fails). Doesn't touch
+  // the interrupt type.
   gpio_set_direction((gpio_num_t)TAB5_TECLADO_INT, GPIO_MODE_INPUT);
   gpio_pullup_en((gpio_num_t)TAB5_TECLADO_INT);
 
   return procurar(true);
 }
 
-// O PINO ANTES DO BARRAMENTO. O INT do teclado (G50, ativo em baixo) desce
-// quando ha evento na fila e so sobe quando ela e lida. Com a tela acesa a
-// interface le o teclado a cada 60 ms: eram 16 transacoes I2C por segundo com
-// o teclado parado na mesa. Agora, com o pino em cima, nao ha o que ler - e
-// ler o nivel do pino nao custa nada. Tres cuidados, porque perder tecla e
-// pior que gastar barramento:
-//  - o pino so passa a valer depois de VISTO funcionando (um evento lido com
-//    ele em baixo); um evento lido com ele em cima desliga a confianca de vez
-//    (firmware que nao mexe no INT, fio solto) e volta a leitura de sempre;
-//  - depois de um evento le de novo sem olhar o pino (a fila pode ter mais de
-//    um, e o INT pode subir ja na primeira leitura), ate ver a fila vazia;
-//  - com o pino em cima, uma leitura de verdade por segundo assim mesmo: e
-//    ela que percebe o teclado ARRANCADO (o pull-up deixa o pino em cima).
-#define TECLADO_CONFERIR_MS 1000   // (as variaveis do pino moram la em cima, junto do estado)
+// THE PIN BEFORE THE BUS. The keyboard INT (G50, active low) goes low
+// when there is an event in the queue and only goes high when it is read. With the screen on
+// the UI reads the keyboard every 60 ms: that was 16 I2C transactions per second with
+// the keyboard sitting on the desk. Now, with the pin high, there is nothing to read - and
+// reading the pin level costs nothing. Three precautions, because losing a key is
+// worse than spending bus time:
+//  - the pin only counts after being SEEN working (an event read with
+//    it low); an event read with it high disables trust for good
+//    (firmware that doesn't drive INT, loose wire) and goes back to the usual reads;
+//  - after an event it reads again without looking at the pin (the queue may hold more than
+//    one, and INT may go high already on the first read), until it sees the queue empty;
+//  - with the pin high, one real read per second anyway: that is
+//    what notices the keyboard being PULLED OUT (the pull-up leaves the pin high).
+#define TECLADO_CONFERIR_MS 1000   // (the pin variables live up above, with the state)
 
 static bool int_em_baixo(void) { return gpio_get_level((gpio_num_t)TAB5_TECLADO_INT) == 0; }
 
-// Le o proximo evento HID cru da fila. false = fila vazia (ou teclado saiu).
+// Reads the next raw HID event from the queue. false = queue empty (or keyboard gone).
 static bool ler_hid(uint8_t* mod, uint8_t* hid)
 {
   const uint32_t t = tab5_agora_ms();
   const bool int_baixo = int_em_baixo();
   if (s_int_confiavel && !int_baixo && !s_pode_ter_mais && s_seg_hid == 0
    && (t - s_conferido_ms) < TECLADO_CONFERIR_MS) {
-    return false;   // nada na fila, e o pino diz isso de graca
+    return false;   // nothing in the queue, and the pin says so for free
   }
   s_conferido_ms = t;
 
-  // Uma transacao por ciclo quando nao ha tecla: le so o contador de eventos.
+  // One transaction per cycle when there is no key: reads only the event counter.
   //
-  // Lemos com readRegister (que devolve sucesso) e nao readRegister8 (que
-  // devolve o valor): sem saber se a transacao falhou, um teclado ARRANCADO
-  // pareceria um teclado sem teclas pressionadas, para sempre.
+  // We read with readRegister (which returns success) and not readRegister8 (which
+  // returns the value): without knowing whether the transaction failed, a keyboard PULLED OUT
+  // would look like a keyboard with no keys pressed, forever.
   uint8_t n = 0;
   if (!M5.Ex_I2C.readRegister(TAB5_TECLADO_ENDERECO, REG_EVENT_NUM, &n, 1, FREQ))
   {
-    ESP_LOGW(TAG, "teclado RETIRADO (parou de responder)");
+    ESP_LOGW(TAG, "keyboard REMOVED (stopped responding)");
     s_presente = false;
     s_ultima_busca = t;
     return false;
   }
   if (n == 0) { s_pode_ter_mais = false; return false; }
-  // Aprende o pino na primeira leitura de uma rajada (com s_pode_ter_mais o
-  // INT ja pode ter subido pela leitura anterior - essa nao conta).
+  // Learns the pin on the first read of a burst (with s_pode_ter_mais the
+  // INT may already have gone high from the previous read - that one doesn't count).
   if (!s_pode_ter_mais && !s_int_traiu) {
     if (int_baixo) {
-      if (!s_int_confiavel) { ESP_LOGI(TAG, "o INT do teclado (G%d) avisa: leitura so quando ha tecla", TAB5_TECLADO_INT); }
+      if (!s_int_confiavel) { ESP_LOGI(TAG, "the keyboard INT (G%d) signals: reading only when there is a key", TAB5_TECLADO_INT); }
       s_int_confiavel = true;
     } else {
       s_int_confiavel = false;
       s_int_traiu = true;
-      ESP_LOGW(TAG, "evento com o INT (G%d) em cima - o pino nao avisa, leitura periodica", TAB5_TECLADO_INT);
+      ESP_LOGW(TAG, "event with INT (G%d) high - the pin doesn't signal, periodic reads", TAB5_TECLADO_INT);
     }
   }
   s_pode_ter_mais = true;
@@ -339,12 +339,12 @@ static bool ler_hid(uint8_t* mod, uint8_t* hid)
   uint8_t buf[2] = { 0xFF, 0xFF };
   if (!M5.Ex_I2C.readRegister(TAB5_TECLADO_ENDERECO, REG_HID_EVENT, buf, 2, FREQ)) { return false; }
 
-  // Libera o sinal de INT. Fazemos isto mesmo sem usar o pino ainda: sem a
-  // limpeza o STM32 mantem a interrupcao ativa e, no dia em que a gente ligar o
-  // G50, ela ja nasceria travada.
+  // Releases the INT signal. We do this even without using the pin yet: without the
+  // clear the STM32 keeps the interrupt active and, on the day we enable
+  // G50, it would start out stuck.
   M5.Ex_I2C.writeRegister8(TAB5_TECLADO_ENDERECO, REG_INT_STAT, 0x00, FREQ);
 
-  if (buf[0] == 0xFF && buf[1] == 0xFF) { return false; }   // fila vazia (sentinela do firmware)
+  if (buf[0] == 0xFF && buf[1] == 0xFF) { return false; }   // queue empty (firmware sentinel)
   *mod = buf[0];
   *hid = buf[1];
   return true;
@@ -358,23 +358,23 @@ bool tab5_teclado_ler(tab5_tecla_t* ev)
 
   if (!s_presente)
   {
-    // Ausente: procura de tempos em tempos, ou JA se o G50 desceu (alguem
-    // encaixou e apertou uma tecla). E isto que faz o teclado funcionar ao ser
-    // encaixado com o aparelho ligado, sem reiniciar.
+    // Absent: searches from time to time, or RIGHT AWAY if G50 went low (someone
+    // attached it and pressed a key). This is what makes the keyboard work when
+    // attached with the device on, without restarting.
     const uint32_t t = tab5_agora_ms();
     if (t - s_ultima_busca < (int_em_baixo() ? BUSCA_INT_MS : BUSCA_MS)) { return false; }
     s_ultima_busca = t;
     if (!procurar(false)) { return false; }
   }
 
-  // O evento que ficou para tras quando uma tecla morta foi desfeita por uma
-  // tecla especial: sai agora, na ordem em que foi apertado.
+  // The event left behind when a dead key was undone by a special
+  // key: goes out now, in the order it was pressed.
   if (s_tem_guardada) { *ev = s_guardada; s_tem_guardada = false; return true; }
 
   const uint32_t agora = tab5_agora_ms();
   uint8_t m = 0, hid = 0;
   if (!ler_hid(&m, &hid)) {
-    // Fila vazia: a tecla segurada repete, se for a vez dela.
+    // Queue empty: the held key repeats, if it's its turn.
     if (tab5_teclado_segurando()) {
       if (agora - s_seg_desde > SEGURADA_MAX_MS) { s_seg_hid = 0; return false; }
       const uint32_t passo = s_seg_repetiu ? TAB5_TECLA_REPETE_MS : TAB5_TECLA_REPETE_INICIO_MS;
@@ -388,19 +388,19 @@ bool tab5_teclado_ler(tab5_tecla_t* ev)
     return false;
   }
   if (hid == 0) {
-    // SOLTURA (ou so um modificador, Ctrl/Alt sozinhos): nada a entregar, e
-    // a tecla segurada parou de estar.
+    // RELEASE (or just a modifier, Ctrl/Alt alone): nothing to deliver, and
+    // the held key is no longer held.
     s_seg_hid = 0;
-    if (!s_soltura_vista) { s_soltura_vista = true; ESP_LOGI(TAG, "o teclado manda a soltura: tecla segurada repete"); }
+    if (!s_soltura_vista) { s_soltura_vista = true; ESP_LOGI(TAG, "the keyboard sends releases: held key repeats"); }
     return false;
   }
   if (hid == s_seg_hid && !s_fw_repete) {
-    // O mesmo codigo de novo, sem soltura no meio: e o firmware repetindo.
+    // The same code again, with no release in between: it is the firmware repeating.
     s_fw_repete = true;
-    ESP_LOGI(TAG, "o firmware do teclado ja repete a tecla segurada - a repeticao daqui fica desligada");
+    ESP_LOGI(TAG, "the keyboard firmware already repeats the held key - our repeat stays off");
   }
 
-  // Modificadores HID: esquerdo nos bits 0-2, direito nos 4-6.
+  // HID modifiers: left in bits 0-2, right in 4-6.
   const uint8_t mm = (uint8_t)((m | (m >> 4)) & 0x07);
   ev->mod = mm;
   const bool shift = (mm & TAB5_TECLA_SHIFT) != 0;
@@ -409,7 +409,7 @@ bool tab5_teclado_ler(tab5_tecla_t* ev)
   if (ev->codigo == TAB5_TECLA_NENHUMA) {
     const char ch = caractere(hid, shift);
     if (!ch) {
-      ESP_LOGW(TAG, "tecla sem traducao: HID 0x%02X mod 0x%02X - ignorada", hid, m);
+      ESP_LOGW(TAG, "untranslated key: HID 0x%02X mod 0x%02X - ignored", hid, m);
       return false;
     }
     ev->texto[0] = ch;
@@ -425,7 +425,7 @@ bool tab5_teclado_ler(tab5_tecla_t* ev)
   }
 
 #if TECLADO_ACENTOS
-  // Com Ctrl/Alt e atalho, nao texto: a tecla morta nao se mete.
+  // With Ctrl/Alt it is a shortcut, not text: the dead key stays out of it.
   const bool atalho = (mm & (TAB5_TECLA_CTRL | TAB5_TECLA_ALT)) != 0;
   if (!atalho) {
     if (s_morta) {
@@ -433,14 +433,14 @@ bool tab5_teclado_ler(tab5_tecla_t* ev)
       s_morta = 0;
       if (ev->codigo == TAB5_TECLA_NENHUMA) {
         const char ch = ev->texto[0];
-        if (ch == ' ') { ev->texto[0] = morta; return true; }        // ' + espaco = '
+        if (ch == ' ') { ev->texto[0] = morta; return true; }        // ' + space = '
         for (const composta_t* c = tabela_morta(morta); c->base; ++c) {
           if (c->base == ch) { snprintf(ev->texto, sizeof(ev->texto), "%s", c->utf8); return true; }
         }
         ev->texto[0] = morta; ev->texto[1] = ch; ev->texto[2] = 0;    // ' + x = 'x
         return true;
       }
-      // Especial depois da morta: o sinal sai primeiro, a especial na proxima.
+      // Special after the dead key: the mark goes out first, the special on the next one.
       s_guardada = *ev;
       s_tem_guardada = true;
       memset(ev, 0, sizeof(*ev));
@@ -448,7 +448,7 @@ bool tab5_teclado_ler(tab5_tecla_t* ev)
       return true;
     }
     if (ev->codigo == TAB5_TECLA_NENHUMA && tabela_morta(ev->texto[0])) {
-      s_morta = ev->texto[0];   // espera a letra
+      s_morta = ev->texto[0];   // wait for the letter
       return false;
     }
   }
@@ -459,17 +459,17 @@ bool tab5_teclado_ler(tab5_tecla_t* ev)
 bool tab5_teclado_pendente(void)
 {
   if (!s_bus_ok) { return false; }
-  // Ausente com o G50 em baixo: um teclado encaixado no repouso, com tecla
-  // na fila. Procura agora - e a tecla acorda a tela como qualquer outra.
-  // A procura esvazia a fila (troca de modo), entao a tecla que desceu o
-  // pino nao chega a ser lida: achar o teclado ja e o "ha tecla".
+  // Absent with G50 low: a keyboard attached while idle, with a key
+  // in the queue. Search now - and the key wakes the screen like any other.
+  // The search empties the queue (mode switch), so the key that pulled the
+  // pin low never gets read: finding the keyboard is itself the "there is a key".
   if (!s_presente) {
     const uint32_t t = tab5_agora_ms();
     if (!int_em_baixo() || t - s_ultima_busca < BUSCA_INT_MS) { return false; }
     s_ultima_busca = t;
     return procurar(false);
   }
-  // Em repouso tambem: pino em cima e nada pendente = sem tecla, sem I2C.
+  // When idle too: pin high and nothing pending = no key, no I2C.
   if (s_int_confiavel && !int_em_baixo() && !s_pode_ter_mais) { return false; }
   uint8_t n = 0;
   if (!M5.Ex_I2C.readRegister(TAB5_TECLADO_ENDERECO, REG_EVENT_NUM, &n, 1, FREQ)) { return false; }
@@ -482,7 +482,7 @@ void tab5_teclado_descartar(void)
   s_tem_guardada = false;
   s_seg_hid = 0;
   if (!s_bus_ok || !s_presente) { return; }
-  // Escrever 0 no contador limpa a fila e solta o INT (datasheet).
+  // Writing 0 to the counter clears the queue and releases INT (datasheet).
   M5.Ex_I2C.writeRegister8(TAB5_TECLADO_ENDERECO, REG_EVENT_NUM, 0x00, FREQ);
   M5.Ex_I2C.writeRegister8(TAB5_TECLADO_ENDERECO, REG_INT_STAT, 0x00, FREQ);
 }

@@ -37,9 +37,9 @@ int tab5_marcos_entre(int64_t de_us, int64_t ate_us, tab5_marco_t* out, int max)
   for (int i = 0; i < MARCOS_N; ++i) { copia[i] = s_anel[i]; }
   portEXIT_CRITICAL(&s_mux);
 
-  // Quando ha mais marcos na janela que cabem em 'out', ficam os MAIS NOVOS -
-  // os que cairam mais perto do atraso. A primeira versao guardava os mais
-  // antigos e cortava justamente os ultimos milissegundos antes dele.
+  // When there are more markers in the window than fit in 'out', the NEWEST
+  // are kept - those that landed closest to the delay. The first version kept
+  // the oldest and cut precisely the last milliseconds before it.
   const uint32_t total = prox < MARCOS_N ? prox : MARCOS_N;
   int na_janela = 0;
   for (uint32_t k = prox - total; k != prox; ++k) {
@@ -57,46 +57,46 @@ int tab5_marcos_entre(int64_t de_us, int64_t ate_us, tab5_marco_t* out, int max)
   return n;
 }
 
-// O DESVIO DA TROCA DE CLOCK (ver o .hpp). Roda dentro do do_switch() do
-// esp_pm, em secao critica e possivelmente com a cache desligada: IRAM, dados
-// em DRAM, nada alem de anotar e seguir.
+// THE CLOCK-CHANGE WRAP (see the .hpp). Runs inside esp_pm's do_switch(), in
+// a critical section and possibly with the cache off: IRAM, data in DRAM,
+// nothing beyond noting it down and moving on.
 extern "C" void __real_rtc_clk_cpu_freq_set_config_fast(const rtc_cpu_freq_config_t* config);
 
 extern "C" void IRAM_ATTR __wrap_rtc_clk_cpu_freq_set_config_fast(const rtc_cpu_freq_config_t* config)
 {
-  tab5_marco("clock da CPU ->", config ? (int32_t)config->freq_mhz : -1);
+  tab5_marco("CPU clock ->", config ? (int32_t)config->freq_mhz : -1);
   __real_rtc_clk_cpu_freq_set_config_fast(config);
 }
 
-// O CARTAO: leitura e escrita de setores, que e DMA do SDMMC. O
-// atraso de 9,7 s apareceu sem troca de clock nenhuma, com o Mesh carregando
-// nos e conversas do cartao - o proximo suspeito e esse trafego.
+// THE SD CARD: sector reads and writes, which are SDMMC DMA. The 9.7 s delay
+// showed up with no clock change at all, with Mesh loading nodes and
+// conversations from the card - the next suspect is that traffic.
 extern "C" esp_err_t __real_sdmmc_read_sectors(sdmmc_card_t* card, void* dst, size_t bloco, size_t n);
 extern "C" esp_err_t __real_sdmmc_write_sectors(sdmmc_card_t* card, const void* src, size_t bloco, size_t n);
 
 extern "C" esp_err_t __wrap_sdmmc_read_sectors(sdmmc_card_t* card, void* dst, size_t bloco, size_t n)
 {
-  tab5_marco("sd: le setores", (int32_t)n);
+  tab5_marco("sd: read sectors", (int32_t)n);
   return __real_sdmmc_read_sectors(card, dst, bloco, n);
 }
 
 extern "C" esp_err_t __wrap_sdmmc_write_sectors(sdmmc_card_t* card, const void* src, size_t bloco, size_t n)
 {
-  tab5_marco("sd: escreve setores", (int32_t)n);
+  tab5_marco("sd: write sectors", (int32_t)n);
   return __real_sdmmc_write_sectors(card, src, bloco, n);
 }
 
-// SINCRONIA DE CACHE GRANDE: escrever de volta ou invalidar dezenas de KB da
-// PSRAM ocupa o barramento que o DMA do painel usa. So as grandes (>= 16 KB)
-// - as pequenas sao constantes e so encheriam o anel.
+// LARGE CACHE SYNC: writing back or invalidating tens of KB of PSRAM occupies
+// the bus the panel DMA uses. Only the large ones (>= 16 KB) - the small ones
+// are constant and would just fill the ring.
 extern "C" esp_err_t __real_esp_cache_msync(void* addr, size_t size, int flags);
 
 extern "C" esp_err_t IRAM_ATTR __wrap_esp_cache_msync(void* addr, size_t size, int flags)
 {
   if (size >= 16384) { tab5_marco("cache: msync KB", (int32_t)(size / 1024)); }
   const esp_err_t r = __real_esp_cache_msync(addr, size, flags);
-  // O cabecalho do heap da PSRAM inteiro depois de uma sincronia grande (o
-  // esp_lcd faz uma de 1,8 MB por quadro - ver tab5_heap_psram.cpp).
-  if (size >= (1u << 20)) { tab5_heap_psram_checar("depois do msync", size); }
+  // The PSRAM heap header intact after a large sync (esp_lcd does a 1.8 MB
+  // one per frame - see tab5_heap_psram.cpp).
+  if (size >= (1u << 20)) { tab5_heap_psram_checar("after msync", size); }
   return r;
 }

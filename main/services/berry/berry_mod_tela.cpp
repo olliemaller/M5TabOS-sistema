@@ -1,5 +1,5 @@
-// Modulos Berry 'tela' (desenho, camadas) e 'teclado' (o virtual do sistema e
-// saber se ha o fisico). Ver berry_apps.cpp (o motor) e berry_interno.hpp.
+// Berry modules 'tela' (drawing, layers) and 'teclado' (the system's virtual one and
+// knowing whether there is a physical one). See berry_apps.cpp (the engine) and berry_interno.hpp.
 
 #include <string.h>
 #include "idioma.h"
@@ -12,10 +12,10 @@
 #include "tab5_glifos.hpp"
 #include "berry_interno.hpp"
 
-// O TECLADO VIRTUAL DO SISTEMA (um so: so um app Berry fica aberto por vez).
-// O script so pede (teclado.abrir/fechar); quem abre e a interface, depois
-// que o trabalho volta - tecvirt_abrir trava a navegacao, coisa da interface.
-// As teclas chegam ao script pelo mesmo tecla(texto, codigo) do fisico.
+// THE SYSTEM'S ON-SCREEN KEYBOARD (just one: only one Berry app is open at a time).
+// The script only requests (teclado.abrir/fechar); the UI opens it, after
+// the job comes back - tecvirt_abrir locks navigation, which is the UI's business.
+// The keys reach the script through the same tecla(texto, codigo) as the physical one.
 tecvirt_t s_kb;
 int       s_kb_pedido = KB_NADA;
 uint8_t   s_kb_tipo = TECVIRT_TEXTO;
@@ -25,22 +25,22 @@ static bool kb_aberto(void)
   return s_kb_pedido == KB_ABRIR || (tecvirt_aberto(&s_kb) && s_kb_pedido != KB_FECHAR);
 }
 
-// A altura que sobra para o app: o teclado aberto come a base da area.
+// The height left for the app: the open keyboard eats the bottom of the area.
 int altura_livre(void)
 {
   return C->a.altura - (kb_aberto() ? tecvirt_altura(C->a) : 0);
 }
 
-// As camadas de um app somadas: no maximo 4 telas inteiras (~7 MB de PSRAM).
+// An app's layers added up: at most 4 whole screens (~7 MB of PSRAM).
 static const uint32_t CAMADAS_MAX_PX = 4u * 720u * 1280u;
 
 // ---------------------------------------------------------------------------
-// CAMADAS - imagens guardadas, desenhadas quando o app quiser e coladas na tela
+// LAYERS - stored images, drawn whenever the app wants and pasted onto the screen
 // ---------------------------------------------------------------------------
-// tela.camada(l, a) cria; tela.alvo(c) faz TODA funcao de 'tela' desenhar
-// nela (em qualquer evento, nao so no desenhar), tela.alvo() volta para a
-// tela; tela.colar(c, x, y [, rx, ry, rl, ra]) copia a camada (ou um pedaco)
-// para a tela. Memoria na PSRAM, devolvida ao fechar o app.
+// tela.camada(l, a) creates one; tela.alvo(c) makes EVERY 'tela' function draw
+// into it (in any event, not just in desenhar), tela.alvo() goes back to the
+// screen; tela.colar(c, x, y [, rx, ry, rl, ra]) copies the layer (or a piece)
+// to the screen. Memory in PSRAM, returned when the app closes.
 void alvo_tela(void)
 {
   if (C->alvo) { tab5_glifos_canvas_direto(nullptr, nullptr, 0, 0); }
@@ -82,7 +82,7 @@ static int t_camada(bvm* vm)
     be_return_nil(vm);
   }
   auto* c = new lgfx::LGFX_Sprite();
-  c->setColorDepth(lgfx::color_depth_t::rgb565_nonswapped);   // o formato da tela: colar e copia simples
+  c->setColorDepth(lgfx::color_depth_t::rgb565_nonswapped);   // the screen format: pasting is a plain copy
   c->setPsram(true);
   if (!c->createSprite(l, al)) { delete c; be_raise(vm, "tela_error", tr("sem memoria para a camada")); be_return_nil(vm); }
   c->fillScreen(TFT_BLACK);
@@ -99,7 +99,7 @@ static int t_alvo(bvm* vm)
   if (!c) { be_return_nil(vm); }
   C->alvo = arg_int(vm, 1, 0);
   C->d = c;
-  // O texto transparente pode escrever direto na memoria dela (sem giro).
+  // Transparent text can write straight into its memory (no rotation).
   tab5_glifos_canvas_direto(c, (uint16_t*)c->getBuffer(), c->width(), c->height());
   C->a = area_t{ 0, 0, (int)c->width(), (int)c->height() };
   be_return_nil(vm);
@@ -118,10 +118,10 @@ static int t_liberar(bvm* vm)
   be_return_nil(vm);
 }
 
-static int t_colar(bvm* vm);   // depois do medir_prim (e medida como desenho)
+static int t_colar(bvm* vm);   // after medir_prim (it is measured as drawing)
 
-// QUANTO CADA DESENHO CUSTA ('berry tempos'): o tempo dentro de cada funcao
-// de 'tela', para separar "o desenho e caro" de "o Berry e lento".
+// WHAT EACH DRAWING COSTS ('berry tempos'): the time inside each 'tela'
+// function, to separate "drawing is expensive" from "Berry is slow".
 const char* const P_NOME[P_N] = { "limpar", "retangulo", "circulo", "linha", "texto", "medir", "arredondado", "triangulo", "pixel", "botao", "colar" };
 tempo_t s_prim[P_N];
 
@@ -136,10 +136,10 @@ struct medir_prim {
   }
 };
 
-// colar(c, x, y [, rx, ry, rl, ra]): a camada c (ou o pedaco rx, ry, rl, ra
-// dela) em x, y da TELA. So no desenhar(), com o alvo na tela. A copia e da
-// memoria da camada direto para a pagina de tras (o compositor e avisado de
-// que o retangulo foi coberto inteiro - nada vem da frente antes).
+// colar(c, x, y [, rx, ry, rl, ra]): layer c (or the piece rx, ry, rl, ra
+// of it) at x, y on the SCREEN. Only in desenhar(), with the target on the screen. The copy goes from
+// the layer's memory straight to the back page (the compositor is told
+// the rectangle was fully covered - nothing comes from the front first).
 static int t_colar(bvm* vm)
 {
   if (!exige_tela(vm)) { be_return_nil(vm); }
@@ -150,7 +150,7 @@ static int t_colar(bvm* vm)
   int rx = arg_int(vm, 4, 0), ry = arg_int(vm, 5, 0);
   int rl = arg_int(vm, 6, c->width()), ra = arg_int(vm, 7, c->height());
   int x = C->a.x + arg_int(vm, 2, 0), y = C->a.y + arg_int(vm, 3, 0);
-  // Recorta: o pedaco dentro da camada, e o destino dentro da area do app.
+  // Clip: the piece within the layer, and the destination within the app's area.
   if (rx < 0) { rl += rx; x -= rx; rx = 0; }
   if (ry < 0) { ra += ry; y -= ry; ry = 0; }
   if (rx + rl > c->width())  { rl = c->width() - rx; }
@@ -162,12 +162,12 @@ static int t_colar(bvm* vm)
   if (rl <= 0 || ra <= 0) { be_return_nil(vm); }
   const uint16_t* img = (const uint16_t*)c->getBuffer();
   const int passo = c->width();
-  // Direto da memoria da camada para a pagina de tras (memcpy por linha).
+  // Straight from the layer's memory to the back page (memcpy per row).
   if (tela_virtual_colar(C->d, x, y, rl, ra, img + (size_t)ry * passo + rx, passo)) { be_return_nil(vm); }
-  // Outro alvo (nao deveria acontecer): pelo M5GFX, linha a linha.
+  // Another target (should not happen): via M5GFX, row by row.
   tela_virtual_cobrir(x, y, rl, ra);
   C->d->startWrite();
-  if (rx == 0 && rl == passo) {   // largura inteira: as linhas sao contiguas, uma copia so
+  if (rx == 0 && rl == passo) {   // full width: the rows are contiguous, a single copy
     C->d->pushImage(x, y, rl, ra, (const lgfx::rgb565_t*)(img + (size_t)ry * passo));
   } else {
     for (int j = 0; j < ra; ++j) {
@@ -179,7 +179,7 @@ static int t_colar(bvm* vm)
 }
 
 // ---------------------------------------------------------------------------
-// MODULO 'tela' - coordenadas relativas a area do app
+// MODULE 'tela' - coordinates relative to the app's area
 // ---------------------------------------------------------------------------
 static int t_largura(bvm* vm) { be_pushint(vm, C->a.largura); be_return(vm); }
 static int t_altura(bvm* vm)  { be_pushint(vm, C->alvo ? C->a.altura : altura_livre()); be_return(vm); }
@@ -202,15 +202,15 @@ static int t_limpar(bvm* vm)
   if (!exige_tela(vm)) { be_return_nil(vm); }
   medir_prim _m(P_LIMPAR);
   const uint16_t cor = (uint16_t)arg_int(vm, 1, TFT_BLACK);
-  if (C->alvo) { C->d->fillScreen(cor); }   // a camada inteira
+  if (C->alvo) { C->d->fillScreen(cor); }   // the whole layer
   else        { tab5_tela_limpar(C->a.x, C->a.y, C->a.largura, C->a.altura, cor); }
   be_return_nil(vm);
 }
 
-// Retangulo grande vai em faixas (tab5_tela_limpar), como pede o ESCREVENDO_APPS.
+// A large rectangle goes in bands (tab5_tela_limpar), as ESCREVENDO_APPS asks.
 static void preencher(int x, int y, int l, int a, uint16_t cor)
 {
-  // tab5_tela_limpar e da TELA do sistema: numa camada, o fillRect dela.
+  // tab5_tela_limpar belongs to the system SCREEN: on a layer, its own fillRect.
   if (!C->alvo && (int64_t)l * a > 40000) { tab5_tela_limpar(x, y, l, a, cor); }
   else                        { C->d->fillRect(x, y, l, a, cor); }
 }
@@ -254,9 +254,9 @@ static float arg_tam(bvm* vm, int i)
   return be_top(vm) >= i && be_isnumber(vm, i) ? (float)be_toreal(vm, i) : 3.0f;
 }
 
-// texto(txt, x, y [, tamanho = 3 [, cor = branco [, alinhamento]]]) - tamanho
-// N = N*8 px de altura; alinhamento tela.ESQUERDA (padrao), CENTRO ou DIREITA:
-// x e onde o texto comeca, o meio dele ou onde termina.
+// texto(txt, x, y [, tamanho = 3 [, cor = white [, alinhamento]]]) - size
+// N = N*8 px tall; alignment tela.ESQUERDA (default), CENTRO or DIREITA:
+// x is where the text starts, its middle or where it ends.
 static int t_texto(bvm* vm)
 {
   if (!exige_tela(vm)) { be_return_nil(vm); }
@@ -266,16 +266,16 @@ static int t_texto(bvm* vm)
   tab5_texto(*C->d, arg_tam(vm, 4));
   const int al = arg_int(vm, 6, 0);
   C->d->setTextDatum(al == 1 ? top_center : al == 2 ? top_right : top_left);
-  C->d->setTextColor((uint16_t)arg_int(vm, 5, TFT_WHITE));   // sem fundo: transparente
+  C->d->setTextColor((uint16_t)arg_int(vm, 5, TFT_WHITE));   // no background: transparent
   C->d->drawString(arg_txt(vm, 1), C->a.x + arg_int(vm, 2, 0), C->a.y + arg_int(vm, 3, 0));
   C->d->setTextStyle(estilo);
   be_return_nil(vm);
 }
 
-// medir(txt [, tamanho]) - a largura em px que texto() ocuparia.
-// cortar(txt, largura [, tam]) - o texto cortado para caber em 'largura' px,
-// com "..." no fim quando cortou (UTF-8 inteiro: acento nunca vira lixo). O
-// mesmo corte que os apps do sistema usam - em C, de uma vez.
+// medir(txt [, tamanho]) - the width in px that texto() would take up.
+// cortar(txt, largura [, tam]) - the text cut to fit in 'largura' px,
+// with "..." at the end when it was cut (whole UTF-8: an accent never turns into garbage). The
+// same cut the system apps use - in C, in one go.
 static int t_cortar(bvm* vm)
 {
   if (!exige_tela(vm)) { be_return_nil(vm); }
@@ -345,10 +345,10 @@ static int t_botao(bvm* vm)
   be_return_nil(vm);
 }
 
-// MODULO 'teclado' - o virtual do sistema, e saber se ha o fisico
+// MODULE 'teclado' - the system's virtual one, and knowing whether there is a physical one
 // ---------------------------------------------------------------------------
-// teclado.abrir([tipo]): o TIPO do campo, como nos apps do sistema
-// (kernel/teclado_virtual.hpp) - "texto" (o padrao), "ascii", "senha",
+// teclado.abrir([tipo]): the field TYPE, as in the system apps
+// (kernel/teclado_virtual.hpp) - "texto" (the default), "ascii", "senha",
 // "numero", "busca", "paragrafo", "codigo" ou "comando".
 static int k_abrir(bvm* vm)
 {

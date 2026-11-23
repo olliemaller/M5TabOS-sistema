@@ -1,26 +1,27 @@
-// MARCOS DO SISTEMA - "o que aconteceu, e quando", para cruzar com o frame
-// atrasado.
+// SYSTEM MARKERS - "what happened, and when", to cross-check against the late
+// frame.
 //
-// O frame atrasado tem uma assinatura fixa: um frame inteiro perdido
-// (~30 ms com periodo de 15), com os DOIS cores ociosos - ou seja, nao e
-// software atrasando a ISR, e o DMA do painel ficando sem dados. O que falta
-// e saber o que o HARDWARE estava fazendo naquele instante. Cada suspeito
-// deixa um marco aqui, e o monitor, ao ver um atraso, lista os marcos que
-// cairam logo antes dele.
+// The late frame has a fixed signature: one whole frame lost (~30 ms with a
+// 15 ms period), with BOTH cores idle - i.e. it is not software delaying the
+// ISR, it is the panel DMA running out of data. What is missing is knowing
+// what the HARDWARE was doing at that instant. Each suspect leaves a marker
+// here, and the monitor, on seeing a delay, lists the markers that landed
+// just before it.
 //
-// O suspeito numero 1 se registra sozinho: TODA troca de clock da CPU feita
-// pelo gerenciador de energia (travas de PM de UART, I2C, PPA; esp_pm_configure)
-// passa por rtc_clk_cpu_freq_set_config_fast() - e ANTES dela o IDF reajusta
-// o modo do barramento da PSRAM/flash (esp_clk_utils_mspi_speed_mode_sync_*).
-// O link desvia essa chamada para ca (-Wl,--wrap, main/CMakeLists.txt).
+// Suspect number 1 registers itself: EVERY CPU clock change made by the power
+// manager (PM locks from UART, I2C, PPA; esp_pm_configure) goes through
+// rtc_clk_cpu_freq_set_config_fast() - and BEFORE it IDF readjusts the
+// PSRAM/flash bus mode (esp_clk_utils_mspi_speed_mode_sync_*). The linker
+// diverts that call here (-Wl,--wrap, main/CMakeLists.txt).
 //
-// Anel em RAM INTERNA (o desvio roda com a cache em qualquer estado, dentro de
-// secao critica): 32 marcos, texto sempre LITERAL (so o ponteiro e guardado).
+// Ring in INTERNAL RAM (the wrap runs with the cache in any state, inside a
+// critical section): 32 markers, text always a LITERAL (only the pointer is
+// stored).
 #pragma once
 
 #include <stdint.h>
 
-// Deixa um marco. 'o_que' tem que ser literal. Chamavel de tarefa e de ISR.
+// Leaves a marker. 'o_que' must be a literal. Callable from a task or an ISR.
 void tab5_marco(const char* o_que, int32_t valor);
 
 typedef struct {
@@ -29,5 +30,5 @@ typedef struct {
   int32_t     valor;
 } tab5_marco_t;
 
-// Os marcos entre [de_us, ate_us], do mais antigo ao mais novo. Devolve quantos.
+// The markers within [de_us, ate_us], oldest to newest. Returns how many.
 int tab5_marcos_entre(int64_t de_us, int64_t ate_us, tab5_marco_t* out, int max);

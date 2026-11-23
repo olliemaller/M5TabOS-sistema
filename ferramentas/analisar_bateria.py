@@ -1,8 +1,8 @@
-# Confere a % da bateria contra a carga CONTADA (mAh), direto de um CSV de
-# energia do cartao (energia.csv antigo ou Sistema/energia/energia-AAAA-MM-DD.csv).
-# Roda direto: python3 analisar_bateria.py [arquivo.csv]
-# Para cada trecho de descarga: quanto a curva de tensao diz que caiu contra
-# quanto a contagem de mAh diz - e quantas vezes a % gravada SUBIU descarregando.
+# Checks the battery % against the COUNTED charge (mAh), straight from an
+# energy CSV from the card (old energia.csv or Sistema/energia/energia-AAAA-MM-DD.csv).
+# Run directly: python3 analisar_bateria.py [arquivo.csv]
+# For each discharge stretch: how much the voltage curve says it dropped versus
+# how much the mAh count says - and how many times the recorded % went UP while discharging.
 import sys
 
 CAP = 1306.8   # TAB5_CAPACIDADE_MAH
@@ -21,7 +21,7 @@ def curva(v, ma):
         if mv >= m1: return p1 + (mv - m1) * (p0 - p1) / (m0 - m1)
 
 arq = sys.argv[1] if len(sys.argv) > 1 else "energia.csv"
-amostras = []   # (t, V, mA, pct gravado); None = reinicio
+amostras = []   # (t, V, mA, recorded pct); None = restart
 for linha in open(arq):
     f = linha.strip().split(",")
     if f[0] == "BOOT": amostras.append(None)
@@ -35,10 +35,10 @@ for a in amostras + [None]:
     if len(atual) >= 20: trechos.append(atual)
     atual = [a] if (a and a[2] < -20) else []
 
-print(f"{len(trechos)} trechos de descarga em {arq}\n")
-print("  horas | curva: de -> ate (queda) | contado | diferenca | a % gravada subiu")
+print(f"{len(trechos)} discharge stretches in {arq}\n")
+print("  hours | curve: from -> to (drop) | counted | difference | recorded % went up")
 for t in trechos:
     mah = sum(-(b[2] + a[2]) / 2 * (b[0] - a[0]) / 3600 for a, b in zip(t, t[1:]))
     c0, c1 = curva(t[0][1], t[0][2]), curva(t[-1][1], t[-1][2])
     subiu = sum(1 for a, b in zip(t, t[1:]) if b[3] > a[3])
-    print(f"  {(t[-1][0]-t[0][0])/3600:5.1f} | {c0:5.1f} -> {c1:5.1f} ({c0-c1:5.1f}) | {mah/CAP*100:6.1f}  | {(c0-c1)-mah/CAP*100:+6.1f}    | {subiu} vez(es)")
+    print(f"  {(t[-1][0]-t[0][0])/3600:5.1f} | {c0:5.1f} -> {c1:5.1f} ({c0-c1:5.1f}) | {mah/CAP*100:6.1f}  | {(c0-c1)-mah/CAP*100:+6.1f}    | {subiu} time(s)")

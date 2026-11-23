@@ -28,7 +28,7 @@ static const char *TAG = "medf_buffer";
 #define BUFFER_BOUNCE_REF 0xFFFFFFFFu
 
 struct medf_buffer {
-    void *file;   /* M5tabOS: o arquivo aberto pelas funcoes de medf_set_io (era o fd) */
+    void *file;   /* M5tabOS: the file opened by the medf_set_io functions (used to be the fd) */
     off_t size;
     off_t cursor;
     off_t base;
@@ -74,7 +74,7 @@ static uint8_t *chunk_at(const medf_buffer_t *buffer, int index) {
     return buffer->ring + (size_t)((buffer->head + index) % buffer->ring_chunks) * BUFFER_CHUNK_BYTES;
 }
 
-/* M5tabOS: as funcoes de arquivo. As de fora (medf_set_io) ou o POSIX. */
+/* M5tabOS: the file functions. The external ones (medf_set_io) or POSIX. */
 static void *posix_open(const char *path, off_t *size) {
     const int fd = open(path, O_RDONLY);
     if (fd < 0) {
@@ -87,7 +87,7 @@ static void *posix_open(const char *path, off_t *size) {
         return NULL;
     }
     *size = info.st_size;
-    return (void *)(intptr_t)(fd + 1);   /* +1: o fd 0 nao vira NULL */
+    return (void *)(intptr_t)(fd + 1);   /* +1: fd 0 does not become NULL */
 }
 
 static size_t posix_read_at(void *file, off_t offset, void *out, size_t size) {
@@ -110,7 +110,7 @@ static medf_io_t s_io = { posix_open, posix_read_at, posix_close, 3, 0 };
 void medf_set_io(const medf_io_t *io) {
     if (!io || !io->open || !io->read_at || !io->close) return;
     s_io = *io;
-    if (s_io.readahead_prio <= 0) {   /* nao disse: a tarefa como no original */
+    if (s_io.readahead_prio <= 0) {   /* not specified: the task as in the original */
         s_io.readahead_prio = 3;
         s_io.readahead_core = 0;
     }
@@ -258,7 +258,7 @@ medf_buffer_t *medf_buffer_open(const char *path, const medf_arena_t *arena) {
     }
 
 #ifdef ESP_PLATFORM
-    /* M5tabOS: prioridade e nucleo de medf_set_io. */
+    /* M5tabOS: priority and core from medf_set_io. */
     const BaseType_t created = xTaskCreatePinnedToCoreWithCaps(
         readahead_task, "medf_readahead", 3072, buffer, (UBaseType_t)s_io.readahead_prio, NULL,
         s_io.readahead_core < 0 ? tskNO_AFFINITY : s_io.readahead_core, MALLOC_CAP_SPIRAM);

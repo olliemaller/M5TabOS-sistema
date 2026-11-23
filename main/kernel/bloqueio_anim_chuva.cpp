@@ -1,12 +1,12 @@
-// Animacao do bloqueio: Chuva digital: riscos verdes caindo.
-// (parte do bloqueio_anim; o que e comum a todas esta no bloqueio_anim_interno.hpp).
+// Lock screen animation: Digital rain: green streaks falling.
+// (part of bloqueio_anim; what is common to all of them is in bloqueio_anim_interno.hpp).
 
 #include "bloqueio_anim_interno.hpp"
 
 namespace bq_anim {
 
 // ---------------------------------------------------------------------------
-// 3. CHUVA DIGITAL - riscos verdes caindo
+// 3. DIGITAL RAIN - green streaks falling
 // ---------------------------------------------------------------------------
 namespace {
 struct Coluna { float y, v; int16_t x, len; };
@@ -48,7 +48,7 @@ void chuva_desenhar(lgfx::LovyanGFX& d)
     const Coluna& c = s.c[i];
     const int n = c.len / 10;
     for (int k = 0; k < n; ++k) {
-      if (k > 0 && ((i * 7 + k * 13) & 3) == 0) { continue; }   // buracos: parece texto
+      if (k > 0 && ((i * 7 + k * 13) & 3) == 0) { continue; }   // gaps: looks like text
       const int yy = (int)c.y - k * 10 - 8;
       if (yy + 6 < s_ay || yy > s_ay + s_H) { continue; }
       const float f = 1.0f - (float)k / n;

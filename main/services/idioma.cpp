@@ -12,7 +12,7 @@
 
 static const char* TAG = "idioma";
 
-// O ingles embutido (main/CMakeLists.txt, EMBED_TXTFILES).
+// The embedded English (main/CMakeLists.txt, EMBED_TXTFILES).
 extern const char EN_PO[] asm("_binary_en_po_start");
 
 typedef struct { const char* pt; const char* tr; } par_t;
@@ -25,12 +25,12 @@ static std::atomic<int>      s_atual{0};
 static std::atomic<uint32_t> s_versao{1};
 
 // ---------------------------------------------------------------------------
-// O .po: msgid "..." / msgstr "..." (com linhas "..." de continuacao), '#'
-// e comentario. O texto e copiado para a PSRAM e decodificado ali mesmo: cada
-// frase vira um ponteiro para dentro dessa copia.
+// The .po: msgid "..." / msgstr "..." (with "..." continuation lines), '#'
+// is a comment. The text is copied into PSRAM and decoded in place: each
+// phrase becomes a pointer into that copy.
 // ---------------------------------------------------------------------------
-// Decodifica a string entre aspas que comeca em 'r', escrevendo em 'w'.
-// Devolve onde 'w' parou; 'r' anda ate depois da aspa final.
+// Decodes the quoted string starting at 'r', writing to 'w'.
+// Returns where 'w' stopped; 'r' moves to just after the closing quote.
 static char* aspas(char*& r, char* w)
 {
   r = strchr(r, '"');
@@ -46,7 +46,7 @@ static char* aspas(char*& r, char* w)
 
 static int comparar(const void* a, const void* b) { return strcmp(((const par_t*)a)->pt, ((const par_t*)b)->pt); }
 
-// Valor de um campo do cabecalho ("Language: fr\n...").
+// Value of a header field ("Language: fr\n...").
 static void campo(const char* cab, const char* nome, char* out, size_t n)
 {
   const char* p = strstr(cab, nome);
@@ -70,7 +70,7 @@ static bool carregar(const char* po, size_t tam, lingua_t* l)
 
   int n = 0;
   char* id = nullptr;
-  char* atual = nullptr;   // a string em montagem (id ou str)
+  char* atual = nullptr;   // the string being built (id or str)
   char* w = nullptr;
   auto fechar = [&]() { if (atual) { *w = 0; atual = nullptr; } };
   char* r = t;
@@ -85,7 +85,7 @@ static bool carregar(const char* po, size_t tam, lingua_t* l)
       w = aspas(r, w);
       if (eh_id) { id = atual; } else if (id && n < cap) { pares[n++].tr = atual; id = nullptr; }
     } else if (*r == '"' && atual) {
-      w = aspas(r, w);   // continuacao: emenda na mesma string (w sempre atras de r)
+      w = aspas(r, w);   // continuation: joined onto the same string (w always behind r)
     } else {
       fechar();
     }
@@ -93,7 +93,7 @@ static bool carregar(const char* po, size_t tam, lingua_t* l)
   }
   fechar();
 
-  // O cabecalho (msgid "") traz o codigo e o nome; traducao vazia nao conta.
+  // The header (msgid "") carries the code and the name; an empty translation does not count.
   int k = 0;
   for (int i = 0; i < n; ++i) {
     if (!pares[i].pt[0]) {
@@ -115,20 +115,20 @@ static bool carregar(const char* po, size_t tam, lingua_t* l)
   return true;
 }
 
-// Entra na lista; o mesmo codigo de novo (en.po no cartao) substitui.
+// Goes into the list; the same code again (en.po on the card) replaces it.
 static void entrar(const char* po, size_t tam, const char* de_onde)
 {
   lingua_t l = {};
-  if (!carregar(po, tam, &l)) { ESP_LOGW(TAG, "%s sem \"Language:\" - ignorado", de_onde); return; }
+  if (!carregar(po, tam, &l)) { ESP_LOGW(TAG, "%s without \"Language:\" - ignored", de_onde); return; }
   int i = 0;
   while (i < s_n && strcmp(s_l[i].codigo, l.codigo) != 0) { ++i; }
-  if (i == 0) { ESP_LOGW(TAG, "%s: o portugues e o idioma do codigo", de_onde); return; }
+  if (i == 0) { ESP_LOGW(TAG, "%s: Portuguese is the code's own language", de_onde); return; }
   if (i == s_n) {
     if (s_n == LINGUAS_MAX) { return; }
     ++s_n;
   }
-  s_l[i] = l;   // o anterior fica na memoria: tr() pode ter devolvido um ponteiro dele
-  ESP_LOGI(TAG, "%s (%s): %d frases, de %s", l.nome, l.codigo, l.n, de_onde);
+  s_l[i] = l;   // the previous one stays in memory: tr() may have returned a pointer into it
+  ESP_LOGI(TAG, "%s (%s): %d phrases, from %s", l.nome, l.codigo, l.n, de_onde);
 }
 
 static void ler_arquivo(const tab5_arq_item_t* it)
@@ -142,7 +142,7 @@ static void ler_arquivo(const tab5_arq_item_t* it)
     fclose(f);
     entrar(buf, lidos, it->nome);
   }
-  heap_caps_free(buf);   // carregar() copiou
+  heap_caps_free(buf);   // carregar() made a copy
 }
 
 void idioma_iniciar(void)
@@ -183,7 +183,7 @@ const char* tr(const char* pt)
   return p ? p->tr : pt;
 }
 
-// Troca {nome} por 'valor' em 'out' (uma vez).
+// Replaces {nome} with 'valor' in 'out' (once).
 static void trocar(char* out, size_t n, const char* nome, const char* valor)
 {
   char* p = strstr(out, nome);

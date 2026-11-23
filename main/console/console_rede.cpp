@@ -1,5 +1,5 @@
-// Comandos do console - REDE: wifi, ble, espnow, c6, farejo, radio, ping, ip/dns/arp/traceroute/tcp/http, busca, ssh, web.
-// (Partido de console.cpp; a tabela COMANDOS e a ajuda continuam la.)
+// Console commands - REDE (NETWORK): wifi, ble, espnow, c6, farejo, radio, ping, ip/dns/arp/traceroute/tcp/http, busca, ssh, web.
+// (Split from console.cpp; the COMANDOS table and the help remain there.)
 
 #include "tab5_wifi_cochilo.hpp"
 #include "freertos/FreeRTOS.h"
@@ -27,27 +27,27 @@
 #include "console/console_interno.hpp"
 
 // ---------------------------------------------------------------------------
-// RECONHECIMENTO DO C6
+// C6 IDENTIFICATION
 // ---------------------------------------------------------------------------
-// SOMENTE LEITURA. Nao muda nada no coprocessador - so pergunta quem ele e.
+// READ ONLY. It changes nothing on the coprocessor - it only asks who it is.
 //
-// Existe por causa de uma linha que aparece no boot desde sempre:
+// It exists because of a line that has always appeared at boot:
 //
 //   esp-hosted fw versions: host=3.0.6 coprocessor=0.0.0
 //
-// Um coprocessador que se declara 0.0.0 ou nao preenche o campo, ou nao e o
-// firmware esp_hosted de referencia. Isso importa por dois motivos concretos:
+// A coprocessor that declares itself 0.0.0 either does not fill in the field, or is not the
+// reference esp_hosted firmware. That matters for two concrete reasons:
 //
-//   1. E o suspeito do RSSI=0 que o app Ajustes ja trata como "indisponivel";
-//   2. E decide se da para rodar ESP-NOW no C6. O ESP-NOW nao existe pelo
-//      esp_hosted (esp_now_init nao linka neste alvo - conferido), entao a
-//      unica via seria firmware proprio no C6 usando o canal peer_data. Antes
-//      de cogitar substituir o firmware que HOJE faz o WiFi funcionar, e
-//      preciso saber o que esta la.
+//   1. It is the suspect for the RSSI=0 that the Settings app already treats as "unavailable";
+//   2. It decides whether ESP-NOW can run on the C6. ESP-NOW does not exist via
+//      esp_hosted (esp_now_init does not link on this target - checked), so the
+//      only way would be our own firmware on the C6 using the peer_data channel. Before
+//      considering replacing the firmware that TODAY makes WiFi work, we
+//      need to know what is there.
 //
-// O app descriptor traz nome do projeto, versao, IDF usado e data da
-// compilacao - e o suficiente para dizer se e um build da M5Stack ou o
-// esp_hosted de fabrica.
+// The app descriptor carries the project name, version, IDF used and build
+// date - which is enough to tell whether it is an M5Stack build or the
+// factory esp_hosted.
 static void cmd_c6(void)
 {
   if (!tab5_wifi_c6_enlace()) {
@@ -68,17 +68,17 @@ static void cmd_c6(void)
     printf("%s", tr("  firmware   : nao respondeu\n"));
   }
 
-  // SO A VERSAO VIAJA.
+  // ONLY THE VERSION TRAVELS.
   //
-  // O esp_hosted_app_desc_t tem project_name, date, time e idf_ver, e a
-  // primeira versao deste comando imprimia os quatro. Vem vazios, e o
-  // proprio header diz por que:
+  // esp_hosted_app_desc_t has project_name, date, time and idf_ver, and the
+  // first version of this command printed all four. They come empty, and the
+  // header itself says why:
   //
   //   /* App descriptor; wire carries version + idf_target only. */
   //
-  // Os campos existem no struct porque ele espelha o esp_app_desc_t do IDF,
-  // mas o RPC nao transporta o resto. Imprimir campo que nunca chega e pior que
-  // nao imprimir: parece defeito do coprocessador.
+  // The fields exist in the struct because it mirrors the IDF's esp_app_desc_t,
+  // but the RPC does not carry the rest. Printing a field that never arrives is worse than
+  // not printing it: it looks like a coprocessor fault.
   esp_hosted_app_desc_t d = { };
   if (eh_host_sys_get_cp_app_desc(&d) == ESP_OK) {
     printf(tr("  versao app : %.*s\n"), (int)sizeof(d.version), d.version);
@@ -87,9 +87,9 @@ static void cmd_c6(void)
   }
 
 
-  // O MAC e a IDENTIDADE no ESP-NOW - la nao existe nome, so endereco de 6
-  // bytes. Se um dia o ESP-NOW rodar no C6, e este numero que o outro aparelho
-  // vai cadastrar como par.
+  // The MAC is the IDENTITY in ESP-NOW - there are no names there, only a 6-byte
+  // address. If ESP-NOW ever runs on the C6, this is the number the other device
+  // will register as a peer.
   uint8_t mac[6] = { };
   if (eh_host_sys_get_mac(WIFI_IF_STA, mac) == ESP_OK) {
     printf(tr("  MAC (STA)  : %02X:%02X:%02X:%02X:%02X:%02X\n"),
@@ -100,14 +100,14 @@ static void cmd_c6(void)
            mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
   }
 
-  // Aviso por ULTIMO, depois dos dados. Ele estava no meio do relatorio e
-  // partia a lista em duas - os MACs apareciam depois de um bloco de alerta,
-  // como se fossem parte dele.
+  // Warning LAST, after the data. It was in the middle of the report and
+  // split the list in two - the MACs appeared after an alert block,
+  // as if they were part of it.
   //
-  // A tabela do docs/migration.md do esp_hosted:
-  //   host 3.x + coprocessador 3.x    Suportado
-  //   host 3.x + coprocessador 1.x    Retrocompativel, atualizacao RECOMENDADA
-  //   host < 3.x + coprocessador 3.x  Nao suportado
+  // The table from esp_hosted's docs/migration.md:
+  //   host 3.x + coprocessor 3.x    Supported
+  //   host 3.x + coprocessor 1.x    Backward compatible, update RECOMMENDED
+  //   host < 3.x + coprocessor 3.x  Not supported
   if (v.major1 != 0 && v.major1 < 3) {
     printf(tr("\n  ATENCAO: host 3.x com coprocessador %d.x.\n"
            "  Combinacao retrocompativel, mas o esp_hosted RECOMENDA atualizar\n"
@@ -117,16 +117,16 @@ static void cmd_c6(void)
 }
 
 // ---------------------------------------------------------------------------
-// wifi gravar <ssid> [senha]
+// wifi gravar <ssid> [password]
 // ---------------------------------------------------------------------------
 static int wifi_gravar(const char* ssid, const char* senha_ou_null)
 {
-  const char* senha = senha_ou_null ? senha_ou_null : "-";   // "-" = rede aberta
+  const char* senha = senha_ou_null ? senha_ou_null : "-";   // "-" = open network
 
   return com_cartao([&]() -> int {
-    // tab5_wifi_gravar_credenciais() cifra a senha antes de escrever (AES-128-CBC,
-    // ver tab5_wifi.cpp) e ja atualiza a copia em RAM tambem - reler o arquivo
-    // depois, com o C6 no ar, e justamente o que nao pode acontecer.
+    // tab5_wifi_gravar_credenciais() encrypts the password before writing (AES-128-CBC,
+    // see tab5_wifi.cpp) and also updates the RAM copy - re-reading the file
+    // afterwards, with the C6 on air, is precisely what must not happen.
     if (!tab5_wifi_gravar_credenciais(ssid, senha))
     {
       printf(tr("erro: nao consegui gravar %s\n"), TAB5_WIFI_ARQUIVO);
@@ -141,7 +141,7 @@ static int wifi_gravar(const char* ssid, const char* senha_ou_null)
 }
 
 // ---------------------------------------------------------------------------
-// REDE
+// NETWORK
 // ---------------------------------------------------------------------------
 
 void c_wifi(int argc, char** argv)
@@ -156,8 +156,8 @@ void c_wifi(int argc, char** argv)
     }
     printf(tr("guardadas: %d rede(s) no wifi.txt%s\n"), tab5_wifi_n_conhecidas(),
            tab5_wifi_so_radio() ? tr("   (radio ligado so para ESP-NOW)") : "");
-    // O modo de economia que o C6 diz estar usando AGORA (RPC) - nao o que o
-    // P4 pediu. Foi o que faltou para entender os 28 mA do Wi-Fi em repouso.
+    // The power-saving mode the C6 says it is using NOW (RPC) - not what the
+    // P4 asked for. It was what was missing to understand Wi-Fi's 28 mA at idle.
     if (tab5_wifi_pilha_de_pe()) {
       wifi_ps_type_t ps;
       if (esp_wifi_get_ps(&ps) == ESP_OK) {
@@ -174,8 +174,8 @@ void c_wifi(int argc, char** argv)
     return;
   }
   const char* o = argv[1];
-  // Ligar/desligar o Wi-Fi como no Ajustes (grava a vontade e age).
-  // Uma rede chamada "ligar" ou "desligar" se grava com 'wifi gravar'.
+  // Turn Wi-Fi on/off as in Settings (stores the wish and acts).
+  // A network called "ligar" or "desligar" is saved with 'wifi gravar'.
   if (eh(o, "ligar") || eh(o, "desligar")) {
     const bool ligar = eh(o, "ligar");
     sistema_wifi(ligar);
@@ -184,14 +184,14 @@ void c_wifi(int argc, char** argv)
     return;
   }
   if (eh(o, "redes")) {
-    // Exige a pilha de pe: sem esp_hosted no ar nao ha radio a quem pedir.
+    // Requires the stack up: with no esp_hosted on air there is no radio to ask.
     if (!tab5_wifi_pilha_de_pe()) {
       printf("%s", tr("o WiFi ainda nao foi ligado neste boot - ligue em Ajustes e tente de novo\n"));
       return;
     }
-    // A MESMA PROCURA DE Ajustes > Wi-Fi (hal/tab5_wifi): conectado, procura
-    // sem soltar a rede. O resultado e lido e impresso AQUI, na tarefa de quem
-    // digitou - antes a tarefa do Wi-Fi imprimia, e no Terminal nada aparecia.
+    // THE SAME SCAN AS Settings > Wi-Fi (hal/tab5_wifi): when connected, it scans
+    // without dropping the network. The result is read and printed HERE, on the task of whoever
+    // typed - previously the Wi-Fi task printed, and nothing appeared in the Terminal.
     const uint32_t v0 = tab5_wifi_redes_versao();
     tab5_wifi_procurar();
     printf("%s", tr("procurando (a rede atual continua conectada)...\n"));
@@ -225,7 +225,7 @@ void c_wifi(int argc, char** argv)
       printf(tr("'%s' nao esta guardada - use: wifi gravar \"%s\" <senha>\n"), argv[2], argv[2]);
       return;
     }
-    // Pedir uma rede tira o ESP-NOW do canal fixo (ver conectar_rede no Ajustes).
+    // Asking for a network takes ESP-NOW off the fixed channel (see conectar_rede in Settings).
     if (tab5_espnow_canal_fixo()) { tab5_espnow_definir_canal(0); }
     tab5_wifi_conectar(argv[2]);
     printf(tr("trocando para '%s' - confira com 'wifi' em alguns segundos\n"), argv[2]);
@@ -246,11 +246,11 @@ void c_wifi(int argc, char** argv)
     wifi_gravar(argv[2], argc >= 4 ? argv[3] : nullptr);
     return;
   }
-  // Forma curta, a original: 'wifi <ssid> [senha]'.
+  // Short form, the original: 'wifi <ssid> [password]'.
   wifi_gravar(argv[1], argc >= 3 ? argv[2] : nullptr);
 }
 
-// Atalho antigo: 'redes' = 'wifi redes'.
+// Old shortcut: 'redes' = 'wifi redes'.
 void c_redes(int, char**)
 {
   char a0[] = "wifi", a1[] = "redes";
@@ -258,7 +258,7 @@ void c_redes(int, char**)
   c_wifi(2, a);
 }
 
-// BLUETOOTH: estado da stack, do enlace do Mesh e quem foi visto.
+// BLUETOOTH: state of the stack, of the Mesh link and who was seen.
 void c_ble(int argc, char** argv)
 {
   if (argc >= 2 && eh(argv[1], "varrer")) {
@@ -272,7 +272,7 @@ void c_ble(int argc, char** argv)
     return;
   }
   if (argc >= 2 && eh(argv[1], "ligar")) {
-    // Ligar com o C6 desligado pede o trilho (I2C), que so a interface fala.
+    // Turning on with the C6 off needs the rail (I2C), which only the UI speaks to.
     if (!tab5_wifi_pilha_de_pe()) { printf("%s", tr("o C6 ainda nao subiu neste boot - ligue em Ajustes\n")); return; }
     sistema_bluetooth(true);
     printf("%s", tr("ligando - confira com 'ble' em alguns segundos\n"));
@@ -294,9 +294,9 @@ void c_ble(int argc, char** argv)
   }
 }
 
-// O estado real do ESP-NOW e do radio - sem depender da tela. O canal e
-// perguntado AO C6 agora (nao o que o servico acha), que e o que decide se
-// dois aparelhos se ouvem.
+// The real state of ESP-NOW and the radio - without depending on the screen. The channel is
+// asked OF THE C6 now (not what the service thinks), which is what decides whether
+// two devices hear each other.
 void c_espnow(int argc, char** argv)
 {
   if (argc >= 3 && eh(argv[1], "canal")) {
@@ -305,7 +305,7 @@ void c_espnow(int argc, char** argv)
     return;
   }
   if (argc >= 3 && eh(argv[1], "enviar")) {
-    // A frase inteira: antes so a primeira palavra ia, o resto sumia calado.
+    // The whole sentence: previously only the first word went, the rest vanished silently.
     char msg[200];
     juntar(msg, sizeof(msg), argc, argv, 2);
     printf(tab5_espnow_enviar(msg) ? tr("na fila: '%s'\n") : tr("recusado: '%s'\n"), msg);
@@ -320,8 +320,8 @@ void c_espnow(int argc, char** argv)
     return;
   }
   if (argc >= 3 && eh(argv[1], "todos")) {
-    // "todos <MAC> <texto>" direto; "todos <texto>" difunde. Um MAC sozinho
-    // (sem texto depois) e tratado como texto.
+    // "todos <MAC> <text>" direct; "todos <text>" broadcasts. A MAC on its own
+    // (with no text after) is treated as text.
     uint8_t dest[6];
     const bool direto = argc >= 4 && tab5_espnow_mac_de_texto(argv[2], dest);
     char msg[200];
@@ -332,8 +332,8 @@ void c_espnow(int argc, char** argv)
     return;
   }
   if (argc >= 2 && eh(argv[1], "msgs")) {
-    // As ultimas n (padrao 10), da mais antiga para a mais nova: hora, quem
-    // (seta + MAC), os bytes em hexa e o texto legivel (fora de 0x20-0x7E = '.').
+    // The last n (default 10), oldest to newest: time, who
+    // (arrow + MAC), the bytes in hex and the readable text (outside 0x20-0x7E = '.').
     int quer = argc >= 3 ? atoi(argv[2]) : 10;
     const int total = tab5_espnow_n();
     if (quer < 1) { quer = 10; }
@@ -372,30 +372,30 @@ void c_espnow(int argc, char** argv)
          mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], tab5_espnow_n(), tab5_espnow_vistos());
 }
 
-// GRAVAR O C6 PELO ENLACE ESTA DESLIGADO. A OTA pelo proprio SDIO nao tem
-// volta quando a imagem nova nao fala - foi o que ja deixou o C6 mudo. Com o
-// M5Stack ESP32 Downloader, gravar e restaurar e FISICO e sempre tem volta. As
-// funcoes antigas (cmd_c6_ota/cmd_c6_gravar) estao no historico do git.
+// WRITING THE C6 OVER THE LINK IS DISABLED. OTA over SDIO itself has no
+// way back when the new image does not talk - that is what already left the C6 mute. With the
+// M5Stack ESP32 Downloader, flashing and restoring is PHYSICAL and always has a way back. The
+// old functions (cmd_c6_ota/cmd_c6_gravar) are in the git history.
 // ---------------------------------------------------------------------------
-// GRAVAR O C6 PELO ENLACE (OTA pelo SDIO)
+// WRITING THE C6 OVER THE LINK (OTA over SDIO)
 // ---------------------------------------------------------------------------
-// So existe com o firmware do C6 da tabela nova (bootloader com rollback, dois
-// slots de 1,875 MB, GUARDA DE IMAGEM NOVA no c6/main/app_main.c). O caminho:
+// Only exists with the C6 firmware of the new table (bootloader with rollback, two
+// 1.875 MB slots, NEW IMAGE GUARD in c6/main/app_main.c). The path:
 //
-//   1. le apps/Sistema/tab5_c6.bin INTEIRO para a PSRAM e confere antes de
-//      tocar no C6: e imagem do IDF, e para ESP32-C6, e e o projeto tab5_c6;
-//   2. begin (apaga o slot LIVRE) -> write em pedacos de 1536 -> end (o C6
-//      valida a imagem inteira) -> activate (troca o boot; reinicia em 2 s).
-//      Erro antes do activate: nada mudou, o firmware atual segue rodando;
-//   3. o P4 se reinicia 4 s depois. No boot ele reseta o C6 (2o boot da
-//      imagem nova - a guarda conta e tolera) e manda o VIVO, que a confirma.
+//   1. reads apps/Sistema/tab5_c6.bin IN FULL into PSRAM and checks before
+//      touching the C6: it is an IDF image, it is for ESP32-C6, and it is the tab5_c6 project;
+//   2. begin (erases the FREE slot) -> write in 1536 chunks -> end (the C6
+//      validates the whole image) -> activate (switches the boot; restarts in 2 s).
+//      Error before activate: nothing changed, the current firmware keeps running;
+//   3. the P4 restarts itself 4 s later. At boot it resets the C6 (2nd boot of the
+//      new image - the guard counts and tolerates it) and sends VIVO (alive), which confirms it.
 //
-// Se o VIVO nao vier (enlace nao fecha, imagem trava em laco), o proprio C6
-// volta para a imagem anterior: 120 s, ou no 5o boot sem confirmacao.
+// If VIVO does not come (link does not close, image stuck in a loop), the C6 itself
+// goes back to the previous image: 120 s, or on the 5th boot without confirmation.
 #define C6_FW_APP     "Sistema"
 #define C6_FW_ARQUIVO "tab5_c6.bin"
 #define C6_PEDACO     1536          // EH_RPC_OTA_CHUNK_MAX
-#define C6_FW_MAX     0x1E0000      // slot do c6/partitions.csv
+#define C6_FW_MAX     0x1E0000      // slot from c6/partitions.csv
 
 static void cmd_c6_gravar(bool confirmado)
 {
@@ -416,7 +416,7 @@ static void cmd_c6_gravar(bool confirmado)
     return;
   }
 
-  // RPC vivo? Sem ele, cada pedido da OTA esperaria o tempo esgotado.
+  // RPC alive? Without it, each OTA request would wait for the timeout.
   eh_host_coprocessor_fwver_t v = { };
   if (eh_host_sys_get_cp_fw_version(&v) != ESP_OK) {
     printf("%s", tr("o C6 aceita o enlace mas nao responde a RPC - so pelo Downloader.\n"));
@@ -438,10 +438,10 @@ static void cmd_c6_gravar(bool confirmado)
     return;
   }
 
-  // CONFERENCIA ANTES DE TOCAR NO C6. Cabecalho do IDF: 0xE9 no byte 0,
-  // chip_id no 12 (0x000D = ESP32-C6). Logo depois do cabecalho (24 B) e do
-  // 1o segmento (8 B) vem o esp_app_desc_t: magic 0xABCD5432, versao no +16,
-  // nome do projeto no +48.
+  // CHECK BEFORE TOUCHING THE C6. IDF header: 0xE9 at byte 0,
+  // chip_id at 12 (0x000D = ESP32-C6). Right after the header (24 B) and the
+  // 1st segment (8 B) comes the esp_app_desc_t: magic 0xABCD5432, version at +16,
+  // project name at +48.
   const uint32_t magic_desc = (uint32_t)img[32] | ((uint32_t)img[33] << 8) |
                               ((uint32_t)img[34] << 16) | ((uint32_t)img[35] << 24);
   char versao[33] = { 0 }, projeto[33] = { 0 };
@@ -496,10 +496,10 @@ static void cmd_c6_gravar(bool confirmado)
   esp_restart();
 }
 
-// c6 dormir | acordar | sono - a prova do C6 dormindo associado (hal/tab5_c6_sono).
+// c6 dormir | acordar | sono - the proof of the C6 sleeping while associated (hal/tab5_c6_sono).
 #if CONFIG_ESP_HOSTED_HOST_PKT_STATS
-// Os contadores do transporte do esp_hosted (mesma forma de eh_host_pkt_stats.h,
-// como em hal/tab5_wifi.cpp).
+// The esp_hosted transport counters (same form as eh_host_pkt_stats.h,
+// as in hal/tab5_wifi.cpp).
 struct pkt_stats_espelho_t { uint32_t tx_in, tx_trans, tx_out, tx_drop, rx_in, rx_out, stalls; };
 extern "C" pkt_stats_espelho_t pkt_stats;
 #endif
@@ -553,19 +553,19 @@ static void c6_pm_rx(uint32_t, const uint8_t* d, size_t n, void*)
 void c_c6(int argc, char** argv)
 {
   if (argc >= 4 && eh(argv[1], "janela")) {
-    // c6 janela <intervalo ms> <janela ms>: quanto o ESP-NOW deixa o radio acordado.
+    // c6 janela <interval ms> <window ms>: how long ESP-NOW keeps the radio awake.
     const int iv = atoi(argv[2]), jn = atoi(argv[3]);
     const uint8_t m[5] = { C6_AJ_ESPNOW_JANELA, (uint8_t)iv, (uint8_t)(iv >> 8), (uint8_t)jn, (uint8_t)(jn >> 8) };
     printf(eh_host_peer_data_send(C6_MSG_HOST_AJUSTE, m, sizeof(m)) == ESP_OK ? tr("janela pedida\n") : tr("nao saiu\n"));
     return;
   }
   if (argc >= 3 && eh(argv[1], "laco")) {
-    // TESTE DE BANCADA: 'c6 laco N' - o C6 dorme e acorda N vezes, com esperas
-    // sorteadas (50 a 1500 ms) para varrer a fase das corridas da desmontagem
-    // e da volta (SDIO lendo na janela do aviso; slot 1 x cartao no mesmo
-    // controlador). Rode com trafego chegando (ping do PC) e o cartao em uso.
-    // Mostra o controlador SDMMC (slots iniciados) a cada volta: com o cartao
-    // montado e o C6 acordado deve dar 2; nunca 0 com alguem usando.
+    // BENCH TEST: 'c6 laco N' - the C6 sleeps and wakes N times, with random
+    // waits (50 to 1500 ms) to sweep the phase of the teardown and return
+    // races (SDIO reading in the notice window; slot 1 vs SD card on the same
+    // controller). Run it with traffic arriving (ping from the PC) and the card in use.
+    // Shows the SDMMC controller (slots initialised) on each loop: with the card
+    // mounted and the C6 awake it should be 2; never 0 with someone using it.
     const int n = atoi(argv[2]);
     int ok = 0, recusou = 0, falhou = 0;
     for (int i = 0; i < n; ++i) {
@@ -585,7 +585,7 @@ void c_c6(int argc, char** argv)
     return;
   }
   if (argc >= 2 && eh(argv[1], "travas")) {
-    // Quem impede o light sleep do C6 (a tabela do PM dele, pelo enlace).
+    // What prevents the C6's light sleep (its PM table, over the link).
     if (!s_c6_pm_sem) { s_c6_pm_sem = xSemaphoreCreateBinary(); eh_host_peer_data_register(C6_MSG_PM, c6_pm_rx, nullptr); }
     xSemaphoreTake(s_c6_pm_sem, 0);
     const uint8_t k = C6_AJ_PM;
@@ -619,9 +619,9 @@ void c_c6(int argc, char** argv)
 }
 
 // ---------------------------------------------------------------------------
-// FAREJO (modo promiscuo no C6) - e a janela para as capacidades de radio que
-// a gravacao do C6 trouxe. 'info' mostra o que este C6 sabe fazer (CSI, FTM,
-// 802.15.4): o bit so acende se o modulo foi compilado no firmware gravado.
+// FAREJO (SNIFF) (promiscuous mode on the C6) - it is the window onto the radio capabilities that
+// the C6 flashing brought. 'info' shows what this C6 can do (CSI, FTM,
+// 802.15.4): the bit only lights up if the module was compiled into the flashed firmware.
 // ---------------------------------------------------------------------------
 static void farejo_estado(void)
 {
@@ -661,8 +661,8 @@ static void farejo_info(void)
   printf(tr("heap livre %lu (min %lu)   no ar %lu s   quadros farejados %lu\n"),
          (unsigned long)in.heap_livre, (unsigned long)in.heap_min,
          (unsigned long)in.no_ar_s, (unsigned long)in.quadros);
-  // Firmware do C6 m5tabos-c6-3 em diante: um caminho so; csi_modo 1 = ligado.
-  // ESP_FAIL aqui = o WiFi do C6 subiu com csi_enable 0 (ver tab5_wifi.cpp).
+  // C6 firmware m5tabos-c6-3 onwards: a single path; csi_modo 1 = on.
+  // ESP_FAIL here = the C6's WiFi came up with csi_enable 0 (see tab5_wifi.cpp).
   printf(tr("CSI: %s (etapa %u: 1 config, 2 callback, 3 ligar)   ligado: %s\n"),
          in.csi_err ? esp_err_to_name(in.csi_err) : tr("OK"), (unsigned)in.csi_etapa,
          in.csi_modo ? tr("sim") : tr("nao"));
@@ -689,12 +689,12 @@ void c_farejo(int argc, char** argv)
   if (argc >= 2 && eh(argv[1], "on")) {
     c6_farejo_cfg_t cfg;
     memset(&cfg, 0, sizeof(cfg));
-    cfg.filtro = 0;                              // os dois tipos
-    cfg.canais = 0;                              // canal atual (associado ao roteador)
+    cfg.filtro = 0;                              // both types
+    cfg.canais = 0;                              // current channel (associated with the router)
     cfg.lote_ms = (argc >= 3) ? (uint16_t)atoi(argv[2]) : 250;
-    // Mascara de canais em hex opcional: 'farejo on <lote_ms> <mask>'. Com
-    // mais de um canal, SOLTE o roteador antes ('espnow canal 1' ja faz isso),
-    // senao o C6 fica preso no canal do AP.
+    // Optional channel mask in hex: 'farejo on <lote_ms> <mask>'. With
+    // more than one channel, DROP the router first ('espnow canal 1' already does that),
+    // otherwise the C6 stays stuck on the AP's channel.
     if (argc >= 4) { cfg.canais = (uint16_t)strtoul(argv[3], nullptr, 16); }
     if (!tab5_farejo_ligar(&cfg)) {
       printf("%s", tr("nao liguei: o C6 tem o firmware nosso (v3)? WiFi ligado? ('farejo info')\n"));
@@ -709,21 +709,21 @@ void c_farejo(int argc, char** argv)
 }
 
 // ---------------------------------------------------------------------------
-// RADIO - teste dos extras do C6 (CSI, FTM, 802.15.4)
+// RADIO - test of the C6 extras (CSI, FTM, 802.15.4)
 // ---------------------------------------------------------------------------
-// Liga cada extra por alguns segundos e conta o que volta. Serve para provar a
-// gravacao do C6 (ligar, receber e desligar sem derrubar o C6 nem o WiFi) - o
-// que so se conserta com o aparelho aberto. Os contadores sao escritos na
-// tarefa de eventos do esp_hosted e lidos aqui: volateis, sem trava.
+// Turns each extra on for a few seconds and counts what comes back. It serves to prove
+// the C6 flashing (turn on, receive and turn off without bringing down the C6 or WiFi) - which
+// can only be fixed with the device opened up. The counters are written on the
+// esp_hosted event task and read here: volatile, no lock.
 //
-// O CSI passa pelo servico tab5_csi (o mesmo que o Radar usa): o peer_data
-// guarda UM ouvinte por mensagem, e registrar o CSI aqui roubaria o do servico.
+// CSI goes through the tab5_csi service (the same one Radar uses): peer_data
+// keeps ONE listener per message, and registering CSI here would steal the service's.
 static std::atomic<uint32_t> s_rx_csi = 0, s_rx_154 = 0, s_rx_ftm = 0;
 static volatile int      s_rx_rssi = 0, s_rx_canal = 0, s_rx_len = 0;
 static c6_ftm_rep_t      s_rx_ftm_rep;
 static bool              s_radio_registrado = false;
-// CSI por formato de quadro (C6_CSI_FORMATO: 0 11b ... 7 HE TB) e os avisos
-// que mudam a leitura dos bytes.
+// CSI by frame format (C6_CSI_FORMATO: 0 11b ... 7 HE TB) and the warnings
+// that change how the bytes are read.
 static std::atomic<uint32_t> s_csi_fmt[16], s_csi_w0_ruim = 0, s_csi_cortado = 0, s_csi_len_max = 0;
 
 static void radio_csi_rx(const c6_csi_cab_t* c, const uint8_t*, uint16_t)
@@ -770,11 +770,11 @@ static void radio_mandar(uint8_t sub, const void* cfg, size_t n)
   eh_host_peer_data_send(C6_MSG_HOST_RADIO, b, 1 + n);
 }
 
-// Liga, renova a cada 3 s (o C6 desliga sozinho em 10 s sem renovar), mostra
-// a contagem a cada segundo e desliga no fim.
+// Turns on, renews every 3 s (the C6 turns off by itself after 10 s without renewing), shows
+// the count every second and turns off at the end.
 //
-// ping_meio: pinga o roteador na metade da janela, com o recurso LIGADO - e o
-// teste que separa "associado" de "passando dados".
+// ping_meio: pings the router halfway through the window, with the feature ON - it is the
+// test that separates "associated" from "passing data".
 static void ping_roteador(const char* rotulo);
 
 static void radio_janela(uint8_t sub, const void* cfg_on, const void* cfg_off, size_t n,
@@ -797,18 +797,18 @@ void c_radio(int argc, char** argv)
 {
   if (argc < 2) { mostrar_uso("radio"); return; }
   if (!radio_preparar()) { return; }
-  // csi [s] | 154 [canal] [s]
+  // csi [s] | 154 [channel] [s]
   const bool z154 = eh(argv[1], "154");
   const int  i_seg = z154 ? 3 : 2;
   int seg = (argc > i_seg) ? atoi(argv[i_seg]) : 10;
   if (seg < 1 || seg > 120) { seg = 10; }
 
   if (eh(argv[1], "csi")) {
-    // Pelo servico tab5_csi: ele pede ao C6 so o CSI do roteador, pinga o
-    // roteador a 20 Hz como fonte (o beacon de 2,4 GHz, a 1 Mbps, nao gera
-    // CSI) e mantem o receptor do C6 acordado. Aqui so se conta o que chega e
-    // se mostra a medida de movimento - parado, sem ninguem andando perto, a
-    // razao fica perto de 1.
+    // Via the tab5_csi service: it asks the C6 only for the router's CSI, pings the
+    // router at 20 Hz as a source (the 2.4 GHz beacon, at 1 Mbps, does not generate
+    // CSI) and keeps the C6's receiver awake. Here we only count what arrives and
+    // show the motion measure - still, with nobody walking nearby, the
+    // ratio stays close to 1.
     printf(tr("CSI por %d s (1 record a cada 100 ms, so do roteador; farejo %s).\n"
            "Deixe o Tab5 apoiado: os 3 primeiros segundos aprendem o 'parado'.\n"),
            seg, tab5_farejo_ativo() ? tr("LIGADO") : tr("desligado"));
@@ -853,8 +853,8 @@ void c_radio(int argc, char** argv)
     on.promiscuo = 1;
     printf(tr("802.15.4 no canal %u por %d s (so ouvindo; sem Zigbee/Thread por perto, 0 e normal):\n"),
            (unsigned)on.canal, seg);
-    // O 802.15.4 divide a antena com o WiFi: o teste mede o WiFi antes, com
-    // ele ligado e depois. Os tres em 4/4 = a coexistencia esta funcionando.
+    // 802.15.4 shares the antenna with WiFi: the test measures WiFi before, with
+    // it on and after. All three at 4/4 = coexistence is working.
     ping_roteador("  WiFi ANTES");
     radio_janela(C6_RX_154, &on, &off, sizeof(on), seg, &s_rx_154, true);
     vTaskDelay(pdMS_TO_TICKS(500));
@@ -862,7 +862,7 @@ void c_radio(int argc, char** argv)
     return;
   }
   if (eh(argv[1], "ftm")) {
-    // Alvo: o roteador conectado (MAC e canal dele).
+    // Target: the connected router (its MAC and channel).
     wifi_ap_record_t ap;
     if (esp_wifi_sta_get_ap_info(&ap) != ESP_OK) { printf("%s", tr("sem roteador conectado\n")); return; }
     c6_ftm_cfg_t c;
@@ -883,13 +883,13 @@ void c_radio(int argc, char** argv)
              (unsigned long)r.dist_est_cm, (unsigned long)r.rtt_est_ns, (unsigned)r.num);
     } else {
       if (r.status == C6_FTM_NAO_INICIOU) {
-        // O C6 nem mandou a requisicao: o motivo e o esp_err_t do driver dele.
+        // The C6 did not even send the request: the reason is its driver's esp_err_t.
         const esp_err_t e = (esp_err_t)(int32_t)r.rtt_raw_ns;
         printf(tr("o C6 nao iniciou a sessao: %s\n"), esp_err_to_name(e));
         if (e == ESP_ERR_NOT_SUPPORTED) {
-          // esp_wifi/src/wifi_init.c apaga o bit do FTM initiator nos C6 v0.0
-          // e v0.1 (errata do silicio). Nao ha contorno honesto: forcar o bit
-          // daria distancias erradas.
+          // esp_wifi/src/wifi_init.c clears the FTM initiator bit on C6 v0.0
+          // and v0.1 (silicon erratum). There is no honest workaround: forcing the bit
+          // would give wrong distances.
           printf("%s", tr("  o ESP32-C6 das revisoes v0.0/v0.1 nao faz FTM initiator (errata do chip;\n"
                  "  o proprio ESP-IDF desliga). 'farejo info' mostra a revisao deste C6.\n"));
         }
@@ -907,7 +907,7 @@ void c_radio(int argc, char** argv)
 }
 
 // ---------------------------------------------------------------------------
-// PING - separa "o WiFi nao passa dados" de "a internet/servidor nao responde"
+// PING - separates "WiFi does not pass data" from "the internet/server does not respond"
 // ---------------------------------------------------------------------------
 static std::atomic<int> s_ping_ok = 0, s_ping_perdidos = 0;
 static volatile uint32_t s_ping_ms_soma = 0;
@@ -971,7 +971,7 @@ void c_ping(int argc, char** argv)
   }
   ip_addr_t a = { };
   if (argc >= 2) {
-    // Um alvo so: IP ou nome.
+    // A single target: IP or name.
     struct addrinfo* res = nullptr;
     if (getaddrinfo(argv[1], nullptr, nullptr, &res) != 0 || !res) {
       printf(tr("%s: o DNS nao resolveu (sem internet ou nome errado)\n"), argv[1]);
@@ -983,7 +983,7 @@ void c_ping(int argc, char** argv)
     ping_um(argv[1], a);
     return;
   }
-  // Sem alvo: o roteador (o WiFi passa dados?) e a internet (passa do roteador?).
+  // No target: the router (does WiFi pass data?) and the internet (does it get past the router?).
   a.type = IPADDR_TYPE_V4;
   a.u_addr.ip4.addr = ip.gw.addr;
   ping_um("roteador (gateway)", a);
@@ -992,8 +992,8 @@ void c_ping(int argc, char** argv)
 }
 
 // ---------------------------------------------------------------------------
-// FERRAMENTAS DE REDE (services/tab5_rede): ip, dns, arp, traceroute, tcp,
-// http, busca. O motor e do servico; aqui so se imprime.
+// NETWORK TOOLS (services/tab5_rede): ip, dns, arp, traceroute, tcp,
+// http, busca. The engine belongs to the service; here we only print.
 // ---------------------------------------------------------------------------
 static void mac_txt(const uint8_t* m, char* out) { sprintf(out, "%02x:%02x:%02x:%02x:%02x:%02x", m[0], m[1], m[2], m[3], m[4], m[5]); }
 
@@ -1088,8 +1088,8 @@ static bool tipo_texto(const char* t)
       || strcasestr(t, "javascript");
 }
 
-// O corpo vai para a tela so se for texto (o tipo chega nos cabecalhos, antes
-// dele), ate 'resta' bytes; binario para de ler na hora.
+// The body goes to the screen only if it is text (the type arrives in the headers, before
+// it), up to 'resta' bytes; binary stops reading at once.
 typedef struct { int64_t resta; const tab5_rede_http_t* info; bool binario; } http_mostra_t;
 static bool http_mostrar(const char* d, int n, void* ctx)
 {
@@ -1101,9 +1101,9 @@ static bool http_mostrar(const char* d, int n, void* ctx)
   return m->resta > 0;
 }
 
-// BAIXAR PARA O DISCO: o corpo vai direto para um arquivo novo
-// (tab5_arq_novo_*: nome repetido vira "x (2)", e o que nao terminou bem e
-// apagado - nunca fica arquivo pela metade).
+// DOWNLOAD TO DISK: the body goes straight to a new file
+// (tab5_arq_novo_*: a repeated name becomes "x (2)", and what did not finish well is
+// deleted - a half-written file is never left behind).
 static bool http_gravar(const char* d, int n, void* ctx) { return tab5_arq_novo_escrever((tab5_arq_novo_t*)ctx, d, (size_t)n); }
 
 static void http_baixar(const char* url, const char* saida)
@@ -1112,7 +1112,7 @@ static void http_baixar(const char* url, const char* saida)
   if (saida) {
     snprintf(nome, sizeof(nome), "%s", saida);
   } else {
-    // O nome do fim da URL (sem ?...), como o wget; sem nome, index.html.
+    // The name from the end of the URL (without ?...), like wget; without a name, index.html.
     const char* p = strstr(url, "://");
     p = p ? p + 3 : url;
     const size_t fim = strcspn(p, "?#");
@@ -1162,7 +1162,7 @@ void c_http(int argc, char** argv)
   if (!url) { mostrar_uso("http"); return; }
   char u[256];
   snprintf(u, sizeof(u), "%s%s", strstr(url, "://") ? "" : "http://", url);
-  // 'wget' grava (como o de sempre); 'http'/'curl' mostram, a nao ser com -o.
+  // 'wget' saves (as usual); 'http'/'curl' show, unless with -o.
   if (saida || eh(argv[0], "wget")) { http_baixar(u, saida); return; }
   tab5_rede_http_t info;
   http_mostra_t m = { max, &info, false };
@@ -1178,8 +1178,8 @@ void c_http(int argc, char** argv)
   else if (!so_cab && m.resta <= 0 && max > 0) { printf(tr("--- cortado em %lld bytes ('-n <bytes>' mostra mais)\n"), (long long)max); }
 }
 
-// O texto de "chave" num JSON (a primeira depois de 'de'), com os escapes
-// desfeitos (\uXXXX vira UTF-8). Devolve onde parou, ou nullptr.
+// The text of "key" in a JSON (the first after 'de'), with the escapes
+// undone (\uXXXX becomes UTF-8). Returns where it stopped, or nullptr.
 static const char* json_texto(const char* de, const char* chave, char* out, size_t n)
 {
   char pad[40];
@@ -1206,8 +1206,8 @@ static const char* json_texto(const char* de, const char* chave, char* out, size
   return p;
 }
 
-// BUSCA: o resumo da Wikipedia em portugues (achar o artigo, depois o resumo);
-// sem artigo, a resposta instantanea do DuckDuckGo. Sem chave de API.
+// BUSCA (SEARCH): the Portuguese Wikipedia summary (find the article, then the summary);
+// with no article, DuckDuckGo's instant answer. No API key.
 void c_busca(int argc, char** argv)
 {
   if (argc < 2) { mostrar_uso("busca"); return; }
@@ -1227,7 +1227,7 @@ void c_busca(int argc, char** argv)
     free(j);
     char t[400];
     tab5_rede_url_codificar(titulo, t, sizeof(t));
-    for (char* c = t; *c; ++c) { if (*c == '+') { *c = '_'; } }   // espaco no titulo e '_' na URL
+    for (char* c = t; *c; ++c) { if (*c == '+') { *c = '_'; } }   // space in the title is '_' in the URL
     snprintf(url, sizeof(url), "https://pt.wikipedia.org/api/rest_v1/page/summary/%s", t);
     j = tab5_rede_http_texto(url, 32768, &info, console_interrompido);
     if (j && json_texto(j, "extract", txt, 2048) && txt[0]) {
@@ -1245,7 +1245,7 @@ void c_busca(int argc, char** argv)
       for (int i = 0; i < 3 && !achou; ++i) {
         if (json_texto(j, CH[i], txt, 2048) && txt[0]) { printf("%s\n", txt); achou = true; }
       }
-      // Sem resumo: os primeiros assuntos relacionados.
+      // No summary: the first related topics.
       const char* p = j;
       int n = 0;
       while (!achou && n < 5 && (p = json_texto(p, "Text", txt, 2048)) != nullptr) {
@@ -1260,14 +1260,14 @@ void c_busca(int argc, char** argv)
   heap_caps_free(txt);
 }
 
-// SSH (services/tab5_ssh): 'ssh [-p porta] usuario@host [comando]'.
+// SSH (services/tab5_ssh): 'ssh [-p port] user@host [command]'.
 static void ssh_saida(const char* d, int n, void*) { fwrite(d, 1, (size_t)n, stdout); fflush(stdout); }
 
 void c_ssh(int argc, char** argv)
 {
   int porta = 22, i = 1;
   if (argc >= 3 && eh(argv[1], "esquecer")) {
-    // 'ssh esquecer host[:porta]': tira a chave guardada (servidor reinstalado).
+    // 'ssh esquecer host[:port]': removes the stored key (server reinstalled).
     char h[96];
     snprintf(h, sizeof(h), "%s", argv[2]);
     char* dois = strrchr(h, ':');
@@ -1293,14 +1293,14 @@ void c_ssh(int argc, char** argv)
   char* arroba = strchr(quem, '@');
   *arroba = 0;
   char* host = arroba + 1;
-  char* dois = strrchr(host, ':');   // usuario@host:porta tambem vale
+  char* dois = strrchr(host, ':');   // user@host:port also works
   if (dois) { *dois = 0; porta = atoi(dois + 1); }
   char cmd[192] = "";
   juntar(cmd, sizeof(cmd), argc, argv, i + 1);
   if (!cmd[0] && sessao()->interativo) {
-    // UM TERMINAL DE VERDADE NA FRENTE (o app Terminal, a pagina /terminal/):
-    // a sessao interativa compartilhada. A tela troca sozinha para ela e volta
-    // aqui quando ela terminar; o tamanho e o de quem digitar primeiro.
+    // A REAL TERMINAL IN FRONT (the Terminal app, the /terminal/ page):
+    // the shared interactive session. The screen switches to it by itself and comes back
+    // here when it ends; the size is that of whoever types first.
     tab5_ssh_sessao_esquecer_fim();
     if (!tab5_ssh_sessao_abrir(quem, host, porta, 80, 24)) {
       printf("%s", tr("ssh: ja ha uma sessao aberta ('ssh fechar' encerra)\n"));
@@ -1323,7 +1323,7 @@ void c_ssh(int argc, char** argv)
   else if (r != 0) { printf(tr("(o comando saiu com %d)\n"), r); }
 }
 
-// ACESSO PELO PC (services/tab5_web): 'web', 'web ligar [app]', 'web desligar'.
+// PC ACCESS (services/tab5_web): 'web', 'web ligar [app]', 'web desligar'.
 void c_web(int argc, char** argv)
 {
   if (argc >= 2 && eh(argv[1], "desligar")) {
@@ -1334,7 +1334,7 @@ void c_web(int argc, char** argv)
   const char* cat[SISTEMA_APPS_MAX];
   const int nc = tab5_web_catalogo(cat, SISTEMA_APPS_MAX);
   if (argc >= 2 && eh(argv[1], "ligar")) {
-    // Sem nome: o Terminal (quem digita esta nele), ou o primeiro do catalogo.
+    // No name: the Terminal (whoever is typing is in it), or the first in the catalogue.
     const char* app = argc >= 3 ? argv[2] : nullptr;
     for (int i = 0; !app && i < nc; ++i) { if (eh(cat[i], "Terminal")) { app = cat[i]; } }
     if (!app && nc) { app = cat[0]; }

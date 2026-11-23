@@ -1,13 +1,13 @@
-// A tela SSH do Terminal - ver terminal_ssh.hpp.
+// The Terminal's SSH screen - see terminal_ssh.hpp.
 //
-//   no alto   a sessao (usuario@servidor), "Encerrar" e "No PC"
-//   o meio    conforme o estado: a impressao digital do servidor novo, a
-//             senha - ou a GRADE do terminal (cores, cursor), com a fileira
-//             de teclas extras (Esc, Tab, Ctrl, setas...) como no Termius
-//   embaixo   o teclado virtual (a tecla verde e a de nova linha: Enter)
+//   top       the session (user@server), "Encerrar" (end) and "No PC" (on PC)
+//   middle    depending on the state: the new server's fingerprint, the
+//             password - or the terminal GRID (colours, cursor), with the row
+//             of extra keys (Esc, Tab, Ctrl, arrows...) as in Termius
+//   bottom    the virtual keyboard (the green key is the new-line one: Enter)
 //
-// O TAMANHO e o de quem digitou por ultimo (como no tmux): ao digitar aqui,
-// a sessao passa a ter as colunas e linhas que cabem nesta tela.
+// The SIZE is that of whoever typed last (as in tmux): when typing here,
+// the session takes the columns and rows that fit this screen.
 #include "terminal_ssh.hpp"
 #include "teclado_virtual.hpp"
 #include "painel_web.hpp"
@@ -24,26 +24,26 @@
 #include <string.h>
 #include <stdlib.h>
 
-#define DONO_WEB "Terminal"   // a parte do servidor web (o mesmo de tab5_terminal_web_ligar)
+#define DONO_WEB "Terminal"   // the web server part (the same as in tab5_terminal_web_ligar)
 
-static const int TOPO_A = 56;    // a linha de estado
-static const int TECLAS_A = 56;  // a fileira de teclas extras
+static const int TOPO_A = 56;    // the status line
+static const int TECLAS_A = 56;  // the row of extra keys
 static const int MX = 8;
 static const int MAX_COLS = 240, MAX_LINHAS = 80;
-// A grade e as telas de conexao ficam sobre PRETO, nao sobre TEMA_FUNDO: as cores
-// ANSI da sessao (dado do servidor) pressupoem fundo preto, e "fundo padrao"
-// chega do servico como 0x0000 (sem constante). Por isso o app nao liga .fundo_tema.
+// The grid and the connection screens sit on BLACK, not TEMA_FUNDO: the session's ANSI
+// colours (server data) assume a black background, and "default background"
+// arrives from the service as 0x0000 (no constant). That is why the app does not turn on .fundo_tema.
 static const uint16_t FUNDO_TERM = TFT_BLACK;
 
 static tecvirt_t s_kb;
-static area_t    s_a;                    // a area da aba (tela), do ultimo desenho
-static bool      s_pc = false;           // a tela do "No PC" (painel do servidor web)
+static area_t    s_a;                    // the tab (screen) area, from the last drawing
+static bool      s_pc = false;           // the "No PC" screen (web server panel)
 static char      s_senha[128];
-static bool      s_ctrl = false;         // Ctrl da fileira: vale para a proxima tecla
-static uint32_t  s_encerrar_ms = 0;      // "Encerrar?" esperando o segundo toque
-static uint32_t  s_versao = 0xFFFFFFFF;  // estado ja desenhado
-static int       s_estado_kb = -1;       // para que estado o teclado foi ajustado
-// A grade: medidas da fonte e o que cada linha mostrava (so o que mudou e repintado).
+static bool      s_ctrl = false;         // the row's Ctrl: applies to the next key
+static uint32_t  s_encerrar_ms = 0;      // "Encerrar?" waiting for the second tap
+static uint32_t  s_versao = 0xFFFFFFFF;  // state already drawn
+static int       s_estado_kb = -1;       // which state the keyboard was set up for
+// The grid: font measurements and what each row showed (only what changed is repainted).
 static int       s_cw = 14, s_lh = 24;
 static uint32_t  s_hash[MAX_LINHAS];
 static tab5_ssh_celula_t s_cel[MAX_COLS];
@@ -51,16 +51,16 @@ static tab5_ssh_celula_t s_cel[MAX_COLS];
 static void fonte(lgfx::LovyanGFX& d) { d.setFont(&fonts::FreeMono12pt7b); d.setTextSize(1); }
 
 // ---------------------------------------------------------------------------
-// GEOMETRIA (relativa a area da aba)
+// GEOMETRY (relative to the tab area)
 // ---------------------------------------------------------------------------
 static int kb_a(void)       { return tecvirt_aberto(&s_kb) ? tecvirt_altura(s_a) : 0; }
-static bool com_teclas(void) { return !tab5_teclado_presente(); }   // o fisico tem Esc, Tab e setas
+static bool com_teclas(void) { return !tab5_teclado_presente(); }   // the physical one has Esc, Tab and arrows
 static int teclas_y(void)   { return s_a.altura - kb_a() - TECLAS_A; }
 static int grade_a(void)    { return s_a.altura - TOPO_A - kb_a() - (com_teclas() ? TECLAS_A : 0); }
 static int grade_cols(void) { return (s_a.largura - 2 * MX) / s_cw; }
 static int grade_lin(void)  { return grade_a() / s_lh; }
 
-// As teclas extras: rotulo e o que mandam (nullptr = o Ctrl, que e estado).
+// The extra keys: label and what they send (nullptr = Ctrl, which is a state).
 static const struct { const char* rot; const char* seq; } TECLAS[] = {
   { "Esc", "\x1b" }, { "Tab", "\t" }, { "Ctrl", nullptr }, { "\xE2\x86\x90", "\x1b[D" },   // ←
   { "\xE2\x86\x91", "\x1b[A" }, { "\xE2\x86\x93", "\x1b[B" }, { "\xE2\x86\x92", "\x1b[C" },   // ↑ ↓ →
@@ -69,9 +69,9 @@ static const struct { const char* rot; const char* seq; } TECLAS[] = {
 static const int N_TECLAS = sizeof(TECLAS) / sizeof(TECLAS[0]);
 
 // ---------------------------------------------------------------------------
-// MANDAR O QUE SE DIGITA
+// SENDING WHAT IS TYPED
 // ---------------------------------------------------------------------------
-// Digitar aqui faz desta tela a dona do tamanho (como no tmux).
+// Typing here makes this screen the owner of the size (as in tmux).
 static void reclamar_tamanho(void)
 {
   const int c = grade_cols(), l = grade_lin();
@@ -91,15 +91,15 @@ static void mandar(const char* d, size_t n)
   tab5_ssh_sessao_escrever(d, n);
 }
 
-// O TIPO DO CAMPO em cada estado: a senha e SENHA, o terminal aberto e
-// COMANDO (a tecla verde e o Enter).
+// THE FIELD TYPE in each state: the password is SENHA, the open terminal is
+// COMANDO (the green key is Enter).
 static uint8_t tipo_do_estado(tab5_ssh_estado_t e)
 {
   return e == TAB5_SSH_SENHA ? TECVIRT_SENHA : TECVIRT_COMANDO;
 }
 
-// O teclado segue o estado (o tipo muda com ele aberto); abre sozinho quando a
-// conexao pede a senha e fecha enquanto ela conecta.
+// The keyboard follows the state (the type changes while it is open); it opens by itself when the
+// connection asks for the password and closes while it connects.
 static void ajustar_teclado(tab5_ssh_estado_t e)
 {
   if ((int)e == s_estado_kb) { return; }
@@ -134,7 +134,7 @@ static void acao_teclado(int ac)
 }
 
 // ---------------------------------------------------------------------------
-// DESENHO
+// DRAWING
 // ---------------------------------------------------------------------------
 static uint32_t hash_linha(int n, int cur_col)
 {
@@ -147,15 +147,15 @@ static uint32_t hash_linha(int n, int cur_col)
   return (h ^ (uint32_t)(cur_col + 1)) * 16777619u;
 }
 
-// Uma linha da grade: o fundo, as cores de fundo das celulas, o texto em
-// trechos da mesma cor, e o cursor.
+// A grid row: the background, the cells' background colours, the text in
+// runs of the same colour, and the cursor.
 static void desenhar_linha(lgfx::LovyanGFX& d, int l, int n, int x0, int y, int cur_col)
 {
   d.fillRect(s_a.x, y, s_a.largura, s_lh, FUNDO_TERM);
   for (int c = 0; c < n; ++c) {
     if (s_cel[c].bg) { d.fillRect(x0 + c * s_cw, y, s_cw, s_lh, s_cel[c].bg); }
   }
-  if (cur_col >= 0 && cur_col < n) { d.fillRect(x0 + cur_col * s_cw, y, s_cw, s_lh, 0xD69A); }   // cursor: o mesmo cinza do texto padrao (dado do terminal)
+  if (cur_col >= 0 && cur_col < n) { d.fillRect(x0 + cur_col * s_cw, y, s_cw, s_lh, 0xD69A); }   // cursor: the same grey as the default text (terminal data)
   char t[MAX_COLS * 4 + 1];
   for (int c = 0; c < n; ) {
     const uint16_t fg = (c == cur_col) ? (uint16_t)FUNDO_TERM : s_cel[c].fg;
@@ -194,7 +194,7 @@ static void desenhar_grade(lgfx::LovyanGFX& d, const tab5_ssh_sessao_info_t& i, 
     s_hash[l] = h;
     desenhar_linha(d, l, n, x0, gy + l * s_lh, cur);
   }
-  // A sessao e maior que a tela (o PC e o dono do tamanho): avisa no rodape.
+  // The session is larger than the screen (the PC owns the size): notify in the footer.
   if (tudo && (i.cols > cols_tela || i.linhas > grade_lin())) {
     tab5_fonte_corpo(d);
     tab5_texto(d, 1.8f);
@@ -220,7 +220,7 @@ static void desenhar_teclas(lgfx::LovyanGFX& d)
   }
 }
 
-// Um campo de texto (destino ou senha) com o rotulo em cima.
+// A text field (destination or password) with the label above.
 static void campo(lgfx::LovyanGFX& d, int y, const char* rotulo, const char* valor, bool oculto)
 {
   tab5_fonte_corpo(d);
@@ -255,7 +255,7 @@ static void texto_centro(lgfx::LovyanGFX& d, const char* t, int y, float tam, ui
 }
 
 static const int BT_L = 260, BT_A = 64;
-static const int BL = 130;      // os botoes do alto (Encerrar, No PC)
+static const int BL = 130;      // the top buttons (Encerrar, No PC)
 
 static void desenhar_topo(lgfx::LovyanGFX& d, const tab5_ssh_sessao_info_t& i)
 {
@@ -333,7 +333,7 @@ void ssh_tela_desenhar(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
 }
 
 // ---------------------------------------------------------------------------
-// TOQUE E TECLAS
+// TOUCH AND KEYS
 // ---------------------------------------------------------------------------
 void ssh_tela_tocar(int x, int y)
 {
@@ -365,12 +365,12 @@ void ssh_tela_tocar(int x, int y)
       const int k = (x - MX) / l;
       if (k >= 0 && k < N_TECLAS) {
         if (!TECLAS[k].seq) { s_ctrl = !s_ctrl; }
-        else                { mandar(TECLAS[k].seq, strlen(TECLAS[k].seq)); }   // Ctrl armado vale para ela (mandar)
+        else                { mandar(TECLAS[k].seq, strlen(TECLAS[k].seq)); }   // an armed Ctrl applies to it (mandar)
         sistema_pedir_redesenho_completo();
       }
       return;
     }
-    // Tocar na grade abre o teclado (sem o fisico).
+    // Tapping the grid opens the keyboard (without the physical one).
     if (!tecvirt_aberto(&s_kb) && !tab5_teclado_presente()) {
       tecvirt_abrir(&s_kb, TECVIRT_COMANDO);
       sistema_pedir_redesenho_completo();
@@ -397,8 +397,8 @@ void ssh_tela_tocar_nivel(int, int, bool)
   }
 }
 
-// O teclado fisico: no terminal aberto, cada tecla vira a sequencia que um
-// terminal de verdade manda; nos campos, edita.
+// The physical keyboard: in the open terminal, each key becomes the sequence a
+// real terminal sends; in the fields, it edits.
 void ssh_tela_teclar(const char* txt, uint8_t codigo, uint8_t mod)
 {
   tab5_ssh_sessao_info_t i;

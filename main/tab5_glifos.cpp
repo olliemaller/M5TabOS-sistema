@@ -9,33 +9,33 @@
 static const char *TAG = "glifos";
 
 // ---------------------------------------------------------------------------
-// O CACHE
+// THE CACHE
 // ---------------------------------------------------------------------------
-// Tabela de espalhamento (enderecamento aberto) + uma arena so para as
-// imagens, as duas na PSRAM e criadas no primeiro uso. Encheu (arena ou 3/4
-// da tabela): recomeca do zero. Simples de proposito - o conjunto de letras
-// em uso e pequeno (poucas fontes, poucas combinacoes de cor), e recomecar
-// custa so redesenhar cada letra uma vez.
+// Hash table (open addressing) + an arena just for the
+// images, both in PSRAM and created on first use. Full (arena or 3/4
+// of the table): start again from scratch. Simple on purpose - the set of letters
+// in use is small (few fonts, few colour combinations), and starting again
+// only costs redrawing each letter once.
 //
-// UMA TAREFA SO: so a interface desenha texto (ver tab5_ui.cpp - as fontes ja
-// tem essa regra). Nenhuma trava aqui.
-static const uint32_t TAB_N       = 4096;          // potencia de 2
-// 512 KB encheu na primeira medida (561 letras, ~900 B cada): a interface usa
-// mais combinacoes de fonte e cor do que parecia. 1 MB cabe ~1.100.
+// ONE TASK ONLY: only the UI draws text (see tab5_ui.cpp - the fonts already
+// have that rule). No lock here.
+static const uint32_t TAB_N       = 4096;          // power of 2
+// 512 KB filled up on the first measurement (561 letters, ~900 B each): the UI uses
+// more font and colour combinations than it seemed. 1 MB fits ~1,100.
 static const uint32_t ARENA_BYTES = 1024 * 1024;
-static const int      RASCUNHO_L  = 160;           // maior letra que entra
+static const int      RASCUNHO_L  = 160;           // largest letter that fits
 static const int      RASCUNHO_A  = 160;
 
 typedef struct {
   const void* fonte;
-  uint32_t    frente, fundo;   // rgb888, como o TextStyle traz
-  uint32_t    ofs;             // onde a imagem comeca na arena
+  uint32_t    frente, fundo;   // rgb888, as the TextStyle provides
+  uint32_t    ofs;             // where the image starts in the arena
   uint16_t    codigo;
-  uint16_t    l, a;            // tamanho do bloco
-  uint16_t    alt_linha;       // metrics->height quando foi guardada
-  int16_t     esq;             // inicio do bloco em relacao ao x da letra
-  int16_t     dir;             // fim do fundo (filled_x = x + dir)
-  uint16_t    avanco;          // quanto o cursor anda
+  uint16_t    l, a;            // block size
+  uint16_t    alt_linha;       // metrics->height when it was stored
+  int16_t     esq;             // block start relative to the letter's x
+  int16_t     dir;             // end of the background (filled_x = x + dir)
+  uint16_t    avanco;          // how far the cursor moves
   bool        usada;
 } entrada_t;
 
@@ -48,13 +48,13 @@ static glifos_estat_t s_est = {};
 
 static lgfx::LGFX_Sprite* s_rascunho = nullptr;
 
-// TEXTO TRANSPARENTE (sem cor de fundo): a entrada guarda a MASCARA da letra -
-// o cinza de cada pixel, como esta no arquivo VLW - e vale para qualquer cor.
-// Chave: frente = fundo = MASCARA (uma cor rgb888 nunca passa de 0xFFFFFF).
+// TRANSPARENT TEXT (no background colour): the entry stores the letter's MASK -
+// the grey of each pixel, as in the VLW file - and is valid for any colour.
+// Key: frente = fundo = MASCARA (an rgb888 colour never exceeds 0xFFFFFF).
 static const uint32_t MASCARA = 0xFFFFFFFFu;
-// O maior bloco que a letra transparente le e escreve de uma vez, e o lugar
-// onde a mistura e feita (na PSRAM - a pilha da interface tem 8 KB). Um so:
-// so uma tarefa desenha por vez (ver acima).
+// The largest block the transparent letter reads and writes at once, and the place
+// where the blend is done (in PSRAM - the UI stack is 8 KB). Only one:
+// only one task draws at a time (see above).
 static const int MASC_MAX_PX = 64 * 64;
 static lgfx::rgb565_t* s_mistura = nullptr;
 
@@ -67,13 +67,13 @@ static bool preparar(void)
   s_mistura = (lgfx::rgb565_t*)heap_caps_malloc(MASC_MAX_PX * sizeof(lgfx::rgb565_t), MALLOC_CAP_SPIRAM);
   s_rascunho = new lgfx::LGFX_Sprite();
   if (s_rascunho) {
-    // O MESMO formato das paginas do painel: a imagem guardada vai para a
-    // tela sem conversao nenhuma.
+    // The SAME format as the panel pages: the stored image goes to the
+    // screen with no conversion at all.
     s_rascunho->setColorDepth(lgfx::color_depth_t::rgb565_nonswapped);
     s_rascunho->setPsram(true);
   }
   if (!s_tab || !s_arena || !s_mistura || !s_rascunho || !s_rascunho->createSprite(RASCUNHO_L, RASCUNHO_A)) {
-    ESP_LOGE(TAG, "sem PSRAM para o cache de glifos - texto pelo caminho original");
+    ESP_LOGE(TAG, "no PSRAM for the glyph cache - text via the original path");
     heap_caps_free(s_tab);   s_tab = nullptr;
     heap_caps_free(s_arena); s_arena = nullptr;
     heap_caps_free(s_mistura); s_mistura = nullptr;
@@ -81,7 +81,7 @@ static bool preparar(void)
     s_sem_memoria = true;
     return false;
   }
-  ESP_LOGI(TAG, "cache de glifos no ar (%u KB de imagens)", (unsigned)(ARENA_BYTES / 1024));
+  ESP_LOGI(TAG, "glyph cache up (%u KB of images)", (unsigned)(ARENA_BYTES / 1024));
   return true;
 }
 
@@ -126,7 +126,7 @@ void tab5_glifos_estat(glifos_estat_t* out)
 }
 
 // ---------------------------------------------------------------------------
-// O DESENHO
+// THE DRAWING
 // ---------------------------------------------------------------------------
 static const lgfx::LGFXBase* s_cv_gfx = nullptr;
 static uint16_t*             s_cv_buf = nullptr;
@@ -140,8 +140,8 @@ void tab5_glifos_canvas_direto(const lgfx::LGFXBase* gfx, uint16_t* buf, int lar
   s_cv_a = altura;
 }
 
-// A mistura do M5GFX (VLWfont::drawChar, "alpha blend mode"), pixel de tinta
-// a pixel de tinta, numa memoria RGB565 de passo 'passo'.
+// M5GFX's blend (VLWfont::drawChar, "alpha blend mode"), ink pixel by
+// ink pixel, into RGB565 memory with stride 'passo'.
 static void misturar_565(uint16_t* dst, int passo, const uint8_t* m, int m_passo, int w, int h, uint32_t cor888)
 {
   const uint32_t fr = (cor888 >> 16) & 0xFF, fg = (cor888 >> 8) & 0xFF, fb = cor888 & 0xFF;
@@ -162,13 +162,13 @@ static void misturar_565(uint16_t* dst, int passo, const uint8_t* m, int m_passo
   }
 }
 
-// A LETRA TRANSPARENTE. O original (VLWfont::drawChar, "alpha blend mode")
-// le a tela e escreve de volta UMA LINHA POR VEZ: uma letra de 24 px sao ~48
-// idas ao canvas, e um texto de 30 letras passa de mil - era quase todo o
-// custo do desenhar() de um app Berry (o tela.texto e transparente). Aqui o
-// bloco inteiro da letra e lido uma vez, misturado com a mascara guardada
-// (a MESMA conta do original) e escrito uma vez.
-// Devolve false = nao deu (fica com o original).
+// THE TRANSPARENT LETTER. The original (VLWfont::drawChar, "alpha blend mode")
+// reads the screen and writes back ONE LINE AT A TIME: a 24 px letter is ~48
+// trips to the canvas, and a 30-letter text exceeds a thousand - it was almost all the
+// cost of a Berry app's desenhar() (tela.texto is transparent). Here the
+// letter's whole block is read once, blended with the stored mask
+// (the SAME sum as the original) and written once.
+// Returns false = could not (stays with the original).
 bool FonteRapida::letra_transparente(lgfx::LGFXBase* gfx, int32_t x, int32_t y, uint16_t c, uint16_t g,
                                      const lgfx::TextStyle* style, lgfx::FontMetrics* metrics,
                                      size_t* avanco_out) const
@@ -206,7 +206,7 @@ bool FonteRapida::letra_transparente(lgfx::LGFXBase* gfx, int32_t x, int32_t y, 
     e->frente = MASCARA; e->fundo = MASCARA;
     e->ofs = s_uso; e->l = (uint16_t)w; e->a = (uint16_t)h;
     e->alt_linha = (uint16_t)metrics->height;
-    e->esq = (int16_t)xoff; e->dir = (int16_t)yoff;   // na mascara: dir = deslocamento vertical
+    e->esq = (int16_t)xoff; e->dir = (int16_t)yoff;   // in the mask: dir = vertical offset
     e->avanco = (uint16_t)avanco;
     e->usada = true;
     s_uso += bytes;
@@ -216,7 +216,7 @@ bool FonteRapida::letra_transparente(lgfx::LGFXBase* gfx, int32_t x, int32_t y, 
     ++s_est.acertos;
   }
 
-  // O bloco da tinta na tela, cortado pelo recorte do canvas.
+  // The ink block on screen, clipped by the canvas clip rectangle.
   const int32_t bx = x + e->esq;
   const int32_t by = y + metrics->y_offset + e->dir;
   int32_t cl, ct, cw, ch;
@@ -226,27 +226,27 @@ bool FonteRapida::letra_transparente(lgfx::LGFXBase* gfx, int32_t x, int32_t y, 
   const int32_t x1 = (bx + e->l) < (cl + cw) ? (bx + e->l) : (cl + cw);
   const int32_t y1 = (by + e->a) < (ct + ch) ? (by + e->a) : (ct + ch);
   *avanco_out = e->avanco;
-  if (x0 >= x1 || y0 >= y1) { return true; }   // fora do recorte: so anda o cursor
+  if (x0 >= x1 || y0 >= y1) { return true; }   // outside the clip: only move the cursor
   const int32_t rw = x1 - x0, rh = y1 - y0;
 
-  // O CAMINHO RAPIDO: direto na pagina de tras do objeto de desenho do
-  // sistema, so nos pixels de tinta (kernel/tela_virtual). O de baixo, pelo
-  // readRect/pushImage do M5GFX, fica para outro canvas (um sprite de app):
-  // a leitura dele copia pixel a pixel por uma rotina generica, ~40 us/letra.
+  // THE FAST PATH: straight into the back page of the system's drawing
+  // object, only on the ink pixels (kernel/tela_virtual). The one below, via
+  // M5GFX's readRect/pushImage, is for another canvas (an app sprite):
+  // its read copies pixel by pixel through a generic routine, ~40 us/letter.
   {
     const uint8_t* m0 = s_arena + e->ofs + (size_t)(y0 - by) * e->l + (x0 - bx);
     if (tela_virtual_misturar_mascara(gfx, x0, y0, rw, rh, m0, e->l, style->fore_rgb888)) { return true; }
-    // Um canvas avisado (camada): a memoria dele, sem giro, passo = largura.
+    // A registered canvas (layer): its memory, unrotated, stride = width.
     if (gfx == s_cv_gfx && x1 <= s_cv_l && y1 <= s_cv_a && x0 >= 0 && y0 >= 0) {
       misturar_565(s_cv_buf + (size_t)y0 * s_cv_l + x0, s_cv_l, m0, e->l, rw, rh, style->fore_rgb888);
       return true;
     }
   }
 
-  // NO FORMATO DA TELA (RGB565), sem passar por RGB888: a leitura e a escrita
-  // viram copia simples, e cada pixel de tinta faz a conta do original - o
-  // fundo expandido para 8 bits como o M5GFX expande (r5 << 3 | r5 >> 2), a
-  // mesma mistura, e o resultado cortado como ele corta. Mesmo pixel final.
+  // IN THE SCREEN FORMAT (RGB565), without going through RGB888: the read and the write
+  // become a plain copy, and each ink pixel does the original's sum - the
+  // background expanded to 8 bits the way M5GFX expands it (r5 << 3 | r5 >> 2), the
+  // same blend, and the result truncated as it truncates. Same final pixel.
   lgfx::rgb565_t* const buf = s_mistura;
   gfx->readRect(x0, y0, rw, rh, buf);
   const int32_t fr = (style->fore_rgb888 >> 16) & 0xFF;
@@ -275,13 +275,13 @@ size_t FonteRapida::drawChar(lgfx::LGFXBase* gfx, int32_t x, int32_t y, uint16_t
                              const lgfx::TextStyle* style, lgfx::FontMetrics* metrics,
                              int32_t& filled_x) const
 {
-  // O que nao da para reproduzir exatamente segue o caminho original.
-  // Destino de 16 bits: a imagem guardada e RGB565 - num canvas de 24 bits
-  // ela chegaria com menos precisao de cor do que o original desenharia.
+  // Whatever cannot be reproduced exactly takes the original path.
+  // 16-bit destination: the stored image is RGB565 - on a 24-bit canvas
+  // it would arrive with less colour precision than the original would draw.
   const bool com_fundo = style->back_rgb888 != style->fore_rgb888;
   const bool de_16_bits = ((int)gfx->getColorDepth() & 0xFF) == 16;
   uint16_t g = 0;
-  // O MOTIVO de cada recusa e contado: e o que diz qual regra vale mudar.
+  // The REASON for each refusal is counted: that is what tells which rule is worth changing.
   uint32_t* motivo = nullptr;
   if      (c == 0x20)                                          { motivo = &s_est.rec_espaco; }
   else if (!de_16_bits || gfx->hasPalette())                   { motivo = &s_est.rec_destino; }
@@ -302,12 +302,12 @@ size_t FonteRapida::drawChar(lgfx::LGFXBase* gfx, int32_t x, int32_t y, uint16_t
   bool nova = false;
   bool guardou = false;
   entrada_t* e = procurar(this, c, style->fore_rgb888, style->back_rgb888, &nova);
-  if (e && !nova && e->alt_linha != (uint16_t)metrics->height) { e = nullptr; }   // outra metrica: nao arrisca
+  if (e && !nova && e->alt_linha != (uint16_t)metrics->height) { e = nullptr; }   // different metrics: do not risk it
 
   if (e && nova) {
-    // FALTA: mede a letra pelo cabecalho do arquivo (o mesmo que o
-    // VLWfont::drawChar le), calcula o bloco que ele escreveria, e desenha a
-    // letra UMA vez num rascunho com o proprio M5GFX.
+    // MISS: measures the letter from the file header (the same one
+    // VLWfont::drawChar reads), works out the block it would write, and draws the
+    // letter ONCE on a scratch sprite with M5GFX itself.
     uint32_t cab[6] = { 0 };
     _fontData->preRead();
     _fontData->seek(28 + g * 28);
@@ -320,18 +320,18 @@ size_t FonteRapida::drawChar(lgfx::LGFXBase* gfx, int32_t x, int32_t y, uint16_t
     const int32_t xoff   = (int8_t)__builtin_bswap32(cab[4]);
     const int32_t yoff   = (int32_t)maxAscent - dY;
 
-    // O bloco: da esquerda da tinta (ou do x, se ela nao recua) ate o maior
-    // entre o fim da tinta e o avanco; da linha de cima ate a maior entre a
-    // altura da linha e o fim da tinta. TODO pixel nele e escrito pelo
-    // original (fundo ou letra) - por isso a imagem o substitui por inteiro.
+    // The block: from the left of the ink (or from x, if it does not overhang) to the larger
+    // of the end of the ink and the advance; from the top line to the larger of the
+    // line height and the end of the ink. EVERY pixel in it is written by the
+    // original (background or letter) - which is why the image replaces it entirely.
     const int32_t esq = xoff < 0 ? xoff : 0;
     const int32_t dir = (w + xoff) > avanco ? (w + xoff) : avanco;
     const int32_t l   = dir - esq;
     const int32_t a   = (yoff + h) > metrics->height ? (yoff + h) : metrics->height;
     const uint32_t bytes = (uint32_t)l * a * 2;
 
-    // w == 0 (letra sem tinta que nao e espaco): o original nao pinta as
-    // linhas da letra, e o bloco teria buraco. Fica com o original.
+    // w == 0 (a letter with no ink that is not a space): the original does not paint the
+    // letter's lines, and the block would have a hole. Stays with the original.
     if (w <= 0 || h < 0 || l <= 0 || a <= 0 || yoff < 0 || l > RASCUNHO_L || a > RASCUNHO_A) {
       e = nullptr;
     } else {
@@ -340,9 +340,9 @@ size_t FonteRapida::drawChar(lgfx::LGFXBase* gfx, int32_t x, int32_t y, uint16_t
         bool n2 = false;
         e = procurar(this, c, style->fore_rgb888, style->back_rgb888, &n2);
       }
-      // No rascunho: x = -esq poe o bloco na coluna 0; y = -y_offset poe a
-      // linha de cima na linha 0 (o drawChar soma o y_offset). filled_x no
-      // minimo = o fundo comeca no inicio do bloco, como numa letra solta.
+      // On the scratch sprite: x = -esq puts the block at column 0; y = -y_offset puts the
+      // top line at row 0 (drawChar adds y_offset). filled_x at its
+      // minimum = the background starts at the block start, as in a standalone letter.
       int32_t f = INT32_MIN;
       s_rascunho->setClipRect(0, 0, l, a);
       VLWfont::drawChar(s_rascunho, -esq, -metrics->y_offset, c, style, metrics, f);
@@ -364,9 +364,9 @@ size_t FonteRapida::drawChar(lgfx::LGFXBase* gfx, int32_t x, int32_t y, uint16_t
     }
   }
 
-  // A LETRA DE ANTES INVADE ESTA (o fundo dela passou do x desta): o
-  // original nao repinta o fundo ali, so a tinta. A imagem pintaria por cima
-  // - entao este caso fica com o original.
+  // THE PREVIOUS LETTER OVERLAPS THIS ONE (its background went past this one's x): the
+  // original does not repaint the background there, only the ink. The image would paint over it
+  // - so this case stays with the original.
   if (!e || filled_x > x + e->esq) {
     ++s_est.recusas;
     ++*(e ? &s_est.rec_invade : &s_est.rec_outro);

@@ -1,12 +1,12 @@
-// Animacao do bloqueio: Bolhas que sobem balancando.
-// (parte do bloqueio_anim; o que e comum a todas esta no bloqueio_anim_interno.hpp).
+// Lock screen animation: Bubbles rising and swaying.
+// (part of bloqueio_anim; what is common to all of them is in bloqueio_anim_interno.hpp).
 
 #include "bloqueio_anim_interno.hpp"
 
 namespace bq_anim {
 
 // ---------------------------------------------------------------------------
-// 5. BOLHAS - sobem balancando
+// 5. BUBBLES - rise while swaying
 // ---------------------------------------------------------------------------
 namespace {
 struct Bolha  { float x0, y, r, vy, fase, fv, amp, ox, oy; uint8_t h; };
@@ -22,7 +22,7 @@ static void bolha_nova(Bolha& b, bool espalhar)
   b.vy   = frand(40, 110);
   b.fase = frand(0, 6.2832f);
   b.fv   = frand(1.0f, 2.2f);
-  b.h    = (uint8_t)(110 + irand(60));   // do verde ao azul, com um toque de roxo
+  b.h    = (uint8_t)(110 + irand(60));   // from green to blue, with a touch of purple
   b.ox   = b.x0; b.oy = b.y;
 }
 

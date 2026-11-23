@@ -9,9 +9,9 @@
 #define GIF_ARQUIVO_MAX (16 * 1024 * 1024)
 
 struct tab5_gif {
-  uint8_t*      arquivo;     // o GIF inteiro
+  uint8_t*      arquivo;     // the whole GIF
   gif_nucleo_t* nucleo;
-  uint16_t*     linha;       // uma linha reduzida (so se a imagem encolhe)
+  uint16_t*     linha;       // one scaled-down row (only if the image shrinks)
   int           linha_cap;
   bool          fundo_pintado;
 };
@@ -52,13 +52,13 @@ int tab5_gif_proximo(tab5_gif_t* g, lgfx::LovyanGFX* destino)
   const int px = (destino->width() - l) / 2, py = (destino->height() - a) / 2;
   if (!g->fundo_pintado) { destino->fillScreen(TFT_BLACK); g->fundo_pintado = true; }
 
-  if (l < W && l > g->linha_cap) {   // linha para a reducao
+  if (l < W && l > g->linha_cap) {   // row for the scaling down
     heap_caps_free(g->linha);
     g->linha = (uint16_t*)heap_caps_malloc((size_t)l * sizeof(uint16_t), MALLOC_CAP_SPIRAM);
     g->linha_cap = g->linha ? l : 0;
     if (!g->linha) { return -1; }
   }
-  // A tela logica e RGB565 natural: o pushImage so a entende com a troca de bytes.
+  // The logical screen is natural RGB565: pushImage only understands it with byte swapping.
   const bool troca_ant = destino->getSwapBytes();
   destino->setSwapBytes(true);
   const uint16_t* tela = gif_n_tela(g->nucleo);
@@ -66,7 +66,7 @@ int tab5_gif_proximo(tab5_gif_t* g, lgfx::LovyanGFX* destino)
     const uint16_t* origem = tela + (size_t)((int64_t)y * H / a) * W;
     if (l == W) {
       destino->pushImage(px, py + y, l, 1, origem);
-    } else {   // vizinho mais proximo
+    } else {   // nearest neighbour
       for (int x = 0; x < l; ++x) { g->linha[x] = origem[(int64_t)x * W / l]; }
       destino->pushImage(px, py + y, l, 1, g->linha);
     }

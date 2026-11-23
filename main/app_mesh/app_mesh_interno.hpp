@@ -1,73 +1,73 @@
-// O que os arquivos do app Mesh (app_mesh.cpp e app_mesh_*.cpp) compartilham: as
-// constantes e os tipos usados por mais de um deles, o estado (declarado aqui,
-// definido em app_mesh.cpp ou no arquivo indicado) e as funcoes que cruzam
-// arquivos. So para eles: nenhum outro app inclui este header.
+// What the Mesh app files (app_mesh.cpp and app_mesh_*.cpp) share: the
+// constants and types used by more than one of them, the state (declared here,
+// defined in app_mesh.cpp or in the file indicated) and the functions that cross
+// files. For them only: no other app includes this header.
 //
-// O app foi partido por assunto (so mudou de arquivo, nada de logica):
-//   app_mesh.cpp           estado, as listas, o ciclo do app e o registro do app_t
-//   app_mesh_desenho.cpp   desenho, glifos, marca, grade das colunas, nos, busca, malha
-//   app_mesh_conversa.cpp  localizacao dentro de mensagem e a conversa
-//   app_mesh_no.cpp        a pagina "No"
+// The app was split by subject (it only moved files, no logic changed):
+//   app_mesh.cpp           state, the lists, the app cycle and the app_t registration
+//   app_mesh_desenho.cpp   drawing, glyphs, logo, column grid, nodes, search, mesh
+//   app_mesh_conversa.cpp  location inside a message and the conversation
+//   app_mesh_no.cpp        the "No" (Node) page
 #pragma once
 
 #include "lista.hpp"
 #include "app.h"
 #include "tab5_mesh.hpp"
-#include "tab5_mesh_mqtt.hpp"   // servidores do modo internet
+#include "tab5_mesh_mqtt.hpp"   // internet mode servers
 #include "teclado_virtual.hpp"
 #include "conversa.hpp"
 #include "pintura.hpp"
 
 // ---------------------------------------------------------------------------
-// Constantes e tipos usados por mais de um arquivo
+// Constants and types used by more than one file
 // ---------------------------------------------------------------------------
 static const int TRILHO_L = 90;
 static const int CONV_L   = 200;
-static const int ITEM_A   = 72;      // altura de um item nas colunas
-// BOTAO DE APAGAR CONVERSA. Geometria num lugar so, porque desenho e toque
-// precisam concordar - e ja foi por concordarem "quase" que as colunas dos nos
-// sairam do lugar uma vez.
+static const int ITEM_A   = 72;      // height of an item in the columns
+// DELETE CONVERSATION BUTTON. Geometry in one place only, because drawing and touch
+// must agree - and it was by "almost" agreeing that the node columns
+// drifted out of place once.
 //
-// Fica ABAIXO do nome, e nao ao lado: ao lado obrigaria a encurtar o nome de 8
-// para 6 caracteres, e o item tem 72px de altura com o nome ocupando so a
-// primeira linha. A altura estava sobrando; a largura, nao.
+// It sits BELOW the name, not beside it: beside would force shortening the name from 8
+// to 6 characters, and the item is 72px high with the name taking only the
+// first line. Height was spare; width was not.
 static const int APAGAR_L  = 30;
 static const int APAGAR_A  = 28;
-static const int APAGAR_DY = 40;            // a partir do y do item
-static const int FRENTE_TOPO_A = 84;        // a faixa do VOLTAR e do nome
+static const int APAGAR_DY = 40;            // from the item's y
+static const int FRENTE_TOPO_A = 84;        // the BACK and name strip
 static const int FRENTE_VOLTAR_L = 200, FRENTE_VOLTAR_A = 56, FRENTE_VOLTAR_Y = 14;
-// Ordem do trilho: CONVERSAS primeiro. E a pagina que se usa mais, e a que
-// motiva abrir o app - as outras sao consulta.
-// A ORDEM IMPORTA: ela e a mesma dos quatro primeiros glifos (GL_CONVERSAS,
-// GL_NOS, GL_MALHA, GL_CONFIG), e o trilho converte a pagina em glifo por
-// conversao direta. Trocar a ordem de um sem o outro poe o icone errado.
+// Rail order: CONVERSATIONS first. It is the most used page, and the one that
+// prompts opening the app - the others are for reference.
+// THE ORDER MATTERS: it is the same as the first four glyphs (GL_CONVERSAS,
+// GL_NOS, GL_MALHA, GL_CONFIG), and the rail converts the page into a glyph by
+// direct cast. Changing the order of one without the other puts the wrong icon.
 typedef enum { PAG_MSGS = 0, PAG_NOS, PAG_MALHA, PAG_NO, PAG_TOTAL } pagina_t;
-// A CONVERSA ABERTA PELA CHAVE, e nao so pelo indice. O indice e a posicao na
-// coluna, e a coluna se reordena (direta com mensagem nova sobe, conversa
-// nova, canal desabilitado no no). Guardando so o indice, a tela passava a
-// mostrar e a ENVIAR para a conversa vizinha. Quando a versao da ordem muda
-// (tab5_mesh_conversas_versao), o indice e reencontrado por esta chave.
+// THE OPEN CONVERSATION BY KEY, and not only by index. The index is the position in the
+// column, and the column reorders itself (a direct one with a new message moves up, a new
+// conversation, a channel disabled on the node). Storing only the index, the screen ended up
+// showing and SENDING to the neighbouring conversation. When the order version changes
+// (tab5_mesh_conversas_versao), the index is found again by this key.
 typedef struct { bool ok; bool canal; uint8_t idx; uint32_t no; } chave_t;
-// Atalho local: dentro do desenhar() todos os blocos perguntam "esta passada e
-// completa?", e escrever pintura_completa(&s_p) em cada um ficaria ilegivel.
+// Local shortcut: inside desenhar() every block asks "is this pass
+// full?", and writing pintura_completa(&s_p) in each would be unreadable.
 #define TUDO  pintura_completa(&s_p)
 typedef enum { GL_CONVERSAS = 0, GL_NOS, GL_MALHA, GL_CONFIG, GL_DIFUSAO, GL_DIRETO } glifo_t;
 typedef struct {
-  int         col;      // caractere onde a coluna comeca
+  int         col;      // character where the column starts
   int         larg;
-  bool        direita;  // alinhamento do valor E do titulo
+  bool        direita;  // alignment of the value AND the title
   const char* titulo;
 } coluna_t;
-typedef struct { int x, y, l, a; uint8_t idx; } chip_t;   // coordenadas LOCAIS da area
-static const int BUSCA_LIMPAR_L = 56;      // o "x", na ponta direita da caixa
+typedef struct { int x, y, l, a; uint8_t idx; } chip_t;   // LOCAL area coordinates
+static const int BUSCA_LIMPAR_L = 56;      // the "x", at the right end of the box
 static const int DET_BTN_A = 64;
-static const int DET_BTN_Y_DA_BASE = 84;    // de baixo para cima, ver ao_tocar
-// Botao da ESTRELA, no canto de cima a direita do cartao (coordenadas a partir
-// da direita da area, para valer em qualquer largura).
+static const int DET_BTN_Y_DA_BASE = 84;    // from the bottom up, see ao_tocar
+// STAR button, in the top right corner of the card (coordinates from
+// the right of the area, so they hold at any width).
 static const int DET_FAV_L = 260, DET_FAV_A = 56, DET_FAV_Y = 14, DET_FAV_DIR = 24;
 
 // ---------------------------------------------------------------------------
-// Estado usado por mais de um arquivo (cada um definido no arquivo indicado)
+// State used by more than one file (each defined in the file indicated)
 // ---------------------------------------------------------------------------
 // app_mesh.cpp:
 extern int s_col_l;
@@ -106,7 +106,7 @@ extern mesh_mqtt_servidor_t s_net_p;
 extern char s_cfg_msg[64];
 
 // ---------------------------------------------------------------------------
-// Funcoes internas que cruzam arquivos (cada uma definida no arquivo indicado)
+// Internal functions that cross files (each defined in the file indicated)
 // ---------------------------------------------------------------------------
 // app_mesh.cpp:
 int apagar_dx(void);
@@ -139,9 +139,9 @@ void desenhar_malha(lgfx::LovyanGFX& d, const area_t& a, int x0);
 // app_mesh_conversa.cpp:
 void distancia_direcao(float lat1, float lon1, float lat2, float lon2, float* dist_km,
                        const char** direcao);
-// Declaradas aqui, definidas mais abaixo perto de desenhar_msgs() (onde
-// nasceram) - trilho e coluna de conversas tambem precisam da
-// mesma paleta agora, e vem ANTES no arquivo.
+// Declared here, defined further down near desenhar_msgs() (where they
+// were born) - the rail and the conversations column now also need the
+// same palette, and they come EARLIER in the file.
 uint16_t fundo_msg(lgfx::LovyanGFX& d);
 void atualizar_eh_canal(void);
 int conv_contar(void*);

@@ -1,17 +1,17 @@
-// TOCANDO AGORA - o que esta tocando, para o SISTEMA mostrar e controlar.
+// NOW PLAYING - what is playing, for the SYSTEM to show and control.
 //
-// A musica toca na parte de fundo de um app (kernel/fundo.h), com a janela
-// fechada. Quem esta em outro app ainda precisa ver o que toca e pausar sem
-// abrir o tocador: a barra mostra uma pastilha propria (nota + titulo), que
-// convive com a pastilha de avisos, e a central de avisos (tocar a barra)
-// ganha um miniplayer embaixo - anterior, tocar/pausar, proxima e a linha de
-// progresso.
+// Music plays in an app's background part (kernel/fundo.h), with the window
+// closed. Someone in another app still needs to see what is playing and pause without
+// opening the player: the bar shows a pill of its own (note + title), which
+// sits alongside the notices pill, and the notification centre (tap the bar)
+// gains a mini player at the bottom - previous, play/pause, next and the progress
+// line.
 //
-// Uma vaga so: um tocador de cada vez. Quem toca PUBLICA o estado (de
-// qualquer tarefa) e registra os controles; o sistema so le e chama.
+// A single slot: one player at a time. Whoever plays PUBLISHES the state (from
+// any task) and registers the controls; the system only reads and calls.
 //
-// Os controles rodam NA TAREFA DE INTERFACE: devem so marcar um pedido para a
-// parte de fundo atender (sem esperar nada, sem I2C, sem cartao).
+// The controls run ON THE UI TASK: they must only mark a request for the
+// background part to serve (no waiting, no I2C, no card).
 #pragma once
 
 #include <stdint.h>
@@ -23,41 +23,41 @@ typedef struct {
   void (*tocar_pausar)(void);
   void (*proxima)(void);
   void (*anterior)(void);
-  void (*ir_para)(uint32_t ms);   // opcional (nullptr = a linha de progresso nao busca)
+  void (*ir_para)(uint32_t ms);   // optional (nullptr = the progress line does not seek)
 } midia_controles_t;
 
-// Assume a vaga. 'fonte' = o nome da parte de fundo que toca (a central tira
-// o cartao dela: o miniplayer ja e o cartao); 'app' = o app que tocar o
-// titulo abre. Os dois precisam sobreviver (literal ou estatico).
+// Takes the slot. 'fonte' = the name of the background part that plays (the centre removes
+// its card: the mini player already is the card); 'app' = the app that tapping the
+// title opens. Both must outlive the call (literal or static).
 void midia_assumir(const char* fonte, const char* app, const midia_controles_t* c);
-// Solta a vaga (parou de tocar de vez): a pastilha e o miniplayer somem.
+// Releases the slot (stopped playing for good): the pill and the mini player disappear.
 void midia_soltar(void);
 
-// O estado atual. titulo nullptr = mantem o anterior.
+// The current state. titulo nullptr = keeps the previous one.
 void midia_publicar(const char* titulo, bool tocando, uint32_t pos_ms, uint32_t dur_ms);
 
 typedef struct {
   bool        ativa;
   bool        tocando;
-  bool        busca;      // tem ir_para
-  const char* fonte;      // a parte de fundo que toca
-  const char* app;        // o app que o miniplayer abre
+  bool        busca;      // has ir_para
+  const char* fonte;      // the background part that plays
+  const char* app;        // the app the mini player opens
   char        titulo[MIDIA_TITULO];
   uint32_t    pos_ms, dur_ms;
-  uint16_t    cor;        // cor de destaque do tocador (RGB565); 0 = a do sistema (lilas)
+  uint16_t    cor;        // the player's accent colour (RGB565); 0 = the system's (lilac)
 } midia_info_t;
 
-// A cor de destaque do tocador (o tema dele): a pastilha da barra e o
-// miniplayer passam a usar esta. 0 = a do sistema.
+// The player's accent colour (its theme): the bar pill and the
+// mini player start using this. 0 = the system's.
 void midia_definir_cor(uint16_t cor565);
 
-bool     midia_ler(midia_info_t* out);   // false = nada tocando (out zerado)
-// Muda quando titulo, tocando/pausado ou a vaga mudam - o que a BARRA mostra.
+bool     midia_ler(midia_info_t* out);   // false = nothing playing (out zeroed)
+// Changes when the title, playing/paused or the slot change - what the BAR shows.
 uint32_t midia_versao(void);
-// Muda tambem a cada segundo de posicao - o que o MINIPLAYER mostra.
+// Also changes every second of position - what the MINI PLAYER shows.
 uint32_t midia_versao_posicao(void);
 
-// Para quem desenha (a interface): repassa ao dono da vaga.
+// For whoever draws (the UI): passes on to the slot owner.
 void midia_tocar_pausar(void);
 void midia_proxima(void);
 void midia_anterior(void);

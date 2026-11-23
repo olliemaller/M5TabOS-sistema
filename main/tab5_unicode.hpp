@@ -1,41 +1,41 @@
-// TEXTO DE FORA, PRONTO PARA AS FONTES DO SISTEMA.
+// TEXT FROM OUTSIDE, READY FOR THE SYSTEM FONTS.
 //
-// As fontes suaves (ferramentas/gerar_fontes.py) tem ASCII, o Latin-1 do
-// portugues e meia duzia de simbolos; o resto que tem desenho e o emoji de um
-// codigo so (tab5_emoji). TODO o restante vira o "dummy" da M5GFX - um
-// RETANGULO (IFont::drawCharDummy) - e e dai que vinham as mensagens "todas em
-// quadrados" da ponte do Telegram: gente escrevendo do celular manda bandeira
-// (dois indicadores regionais), tom de pele, letra "estilizada" (os geradores
-// de fonte bonita usam os Simbolos Alfanumericos Matematicos, 𝗻𝗲𝗴𝗿𝗶𝘁𝗼 /
-// 𝘪𝘵𝘢𝘭𝘪𝘤𝘰 / 𝓈𝒸𝓇𝒾𝓅𝓉), espaco especial, acento combinado, cirilico...
+// The smooth fonts (ferramentas/gerar_fontes.py) have ASCII, the Latin-1 of
+// Portuguese and half a dozen symbols; the rest that has a drawing is the single
+// code point emoji (tab5_emoji). EVERYTHING else becomes M5GFX's "dummy" - a
+// RECTANGLE (IFont::drawCharDummy) - and that is where the messages "all in
+// boxes" from the Telegram bridge came from: people writing on a phone send flags
+// (two regional indicators), skin tones, "styled" letters (the fancy-font
+// generators use the Mathematical Alphanumeric Symbols, 𝗻𝗲𝗴𝗿𝗶𝘁𝗼 /
+// 𝘪𝘵𝘢𝘭𝘪𝘤𝘰 / 𝓈𝒸𝓇𝒾𝓅𝓉), special spaces, combining accents, Cyrillic...
 //
-// Aqui cada codigo vira o que da para desenhar, nesta ordem:
-//   1. a fonte ou o emoji tem -> fica como esta;
-//   2. tem equivalente legivel -> troca (𝗔->A, ａ->a, Ⓐ->A, ł->l, Ж->Zh,
-//      🇧🇷->BR, a+◌́->á, espaco fino->espaco, „->", ...);
-//   3. e invisivel por natureza (largura zero, seletor, tom de pele, ZWJ) ->
-//      some;
-//   4. nada disso -> "?" (um ponto de interrogacao diz "havia algo aqui" sem
-//      a parede de caixinhas).
+// Here each code point becomes whatever can be drawn, in this order:
+//   1. the font or the emoji set has it -> stays as is;
+//   2. it has a readable equivalent -> replaced (𝗔->A, ａ->a, Ⓐ->A, ł->l, Ж->Zh,
+//      🇧🇷->BR, a+◌́->á, thin space->space, „->", ...);
+//   3. it is invisible by nature (zero width, selector, skin tone, ZWJ) ->
+//      removed;
+//   4. none of the above -> "?" (a question mark says "there was something here" without
+//      the wall of little boxes).
 //
-// Puro: sem M5GFX, sem ESP-IDF - roda no Mac (testes/rodar_unicode.sh). Quem
-// sabe o que a fonte e o emoji desenham e quem chama, pelo predicado.
+// Pure: no M5GFX, no ESP-IDF - runs on the Mac (testes/rodar_unicode.sh). The
+// caller is the one who knows what the font and the emoji draw, via the predicate.
 #pragma once
 
 #include <stddef.h>
 #include <stdint.h>
 
-// true = este codigo tem desenho proprio (fonte ou emoji).
+// true = this code point has its own drawing (font or emoji).
 typedef bool (*tab5_unicode_desenha_t)(uint32_t codigo);
 
-// 'out' sempre termina em NUL; o corte cai sempre numa fronteira de caractere.
-// Tambem colapsa as cadeias ZWJ no primeiro emoji (ver tab5_emoji_preparar) e
-// troca quebras de linha e tabulacao por espaco.
+// 'out' always ends in NUL; the cut always falls on a character boundary.
+// Also collapses ZWJ chains to the first emoji (see tab5_emoji_preparar) and
+// replaces line breaks and tabs with a space.
 void tab5_unicode_preparar(const char* in, char* out, size_t out_tam, tab5_unicode_desenha_t desenha);
 
-// ---- POSICOES NUM TEXTO UTF-8 (cursor, corte) -------------------------------
-// Sempre numa fronteira de caractere: um acento (2 bytes) ou emoji (4) nunca e
-// partido ao meio.
+// ---- POSITIONS IN A UTF-8 TEXT (cursor, cut) -------------------------------
+// Always on a character boundary: an accent (2 bytes) or emoji (4) is never
+// split in half.
 static inline int tab5_utf8_anterior(const char* s, int i)
 {
   if (i <= 0) { return 0; }
@@ -44,7 +44,7 @@ static inline int tab5_utf8_anterior(const char* s, int i)
   return i;
 }
 
-// O caractere seguinte a 'i', sem passar de 'fim' (-1 = ate o '\0').
+// The character after 'i', without going past 'fim' (-1 = up to the '\0').
 static inline int tab5_utf8_seguinte(const char* s, int i, int fim = -1)
 {
   if (fim >= 0 ? i >= fim : !s[i]) { return i; }
@@ -53,16 +53,16 @@ static inline int tab5_utf8_seguinte(const char* s, int i, int fim = -1)
   return i;
 }
 
-// Quantos dos primeiros 'n' bytes de 's' cabem sem partir um caractere.
-// Decide SO pelos n bytes dados - nunca olha s[n]. (Olhava, 04/11/2026: o
-// editor insere cada tecla de um buffer da pilha, e o byte depois dela era
-// lixo; quando o lixo parecia continuacao de UTF-8, a tecla sumia - o Enter
-// das Notas "nao pegava" quase nunca. O notas_ler, depois do fread, tambem
-// olhava um byte nao lido.)
+// How many of the first 'n' bytes of 's' fit without splitting a character.
+// Decides ONLY from the n bytes given - never looks at s[n]. (It used to, 04/11/2026: the
+// editor inserts each key from a stack buffer, and the byte after it was
+// garbage; when the garbage looked like a UTF-8 continuation, the key vanished - Enter
+// in Notes "did not take" every so often. notas_ler, after fread, also
+// looked at an unread byte.)
 static inline int tab5_utf8_corte(const char* s, int n)
 {
   if (n <= 0) { return 0; }
-  int i = n - 1;   // o comeco do ultimo caractere
+  int i = n - 1;   // the start of the last character
   while (i > 0 && ((unsigned char)s[i] & 0xC0) == 0x80) { --i; }
   const unsigned char b = (unsigned char)s[i];
   const int tam = b < 0x80 ? 1 : (b & 0xE0) == 0xC0 ? 2 : (b & 0xF0) == 0xE0 ? 3 : (b & 0xF8) == 0xF0 ? 4 : 1;

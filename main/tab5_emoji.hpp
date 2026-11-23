@@ -1,115 +1,115 @@
-// EMOJI - um conjunto pequeno, desenhado como IMAGEM, no lugar de fonte.
+// EMOJI - a small set, drawn as an IMAGE, instead of a font.
 //
 // -------------------------------------------------------------------------
-// POR QUE IMAGEM, E POR QUE ISTO E DO KERNEL E NAO DE UM APP SO
+// WHY AN IMAGE, AND WHY THIS BELONGS TO THE KERNEL AND NOT TO A SINGLE APP
 // -------------------------------------------------------------------------
-// A fonte deste sistema e um bitmap ASCII 6x8 - nao tem emoji, e nunca vai
-// ter por fonte: a arte de um emoji de verdade nao cabe num desenho de
-// caractere. A saida nao e desenhar de novo, e MOSTRAR o desenho que ja
-// existe - o LovyanGFX ja tem o hook certo para isso.
+// This system's font is a 6x8 ASCII bitmap - it has no emoji, and never will
+// as a font: the art of a real emoji does not fit in a character
+// drawing. The way out is not to redraw them, but to SHOW the drawing that
+// already exists - LovyanGFX already has the right hook for this.
 //
-// setEmojiCallback() (ver LGFXBase.hpp) e chamado automaticamente pela
-// biblioteca toda vez que write()/drawString() encontra um codigo Unicode que
-// a fonte atual nao conhece - e isso cobre TODO emoji, porque a fonte deste
-// sistema e puro ASCII. Registrando UMA vez no boot, qualquer app que chame
-// d.drawString() com uma mensagem recebida passa a mostrar os emoji deste
-// conjunto sem saber que este arquivo existe - e o mesmo principio do resto
-// do kernel: quem desenha texto nao deveria ter que se preocupar com isso.
-//
-// -------------------------------------------------------------------------
-// O CONJUNTO, O LIMITE E A LICENCA
-// -------------------------------------------------------------------------
-// TODO emoji de UM SO ponto de codigo Unicode - 1357 deles (dos 1391 que
-// existem na versao 17.0; 34 sao adicoes recentes que o Twemoji ainda nao
-// desenhou). Arte do Twemoji (twemoji.twitter.com), licenca CC-BY 4.0 -
-// atribuicao obrigatoria, e por isso ela mora aqui.
-//
-// "UM SO PONTO DE CODIGO" e o limite de verdade, e vale entender por que.
-// O seletor de estilo (U+FE0F) NAO conta contra isso - a propria biblioteca
-// ja o descarta antes de qualquer emoji chegar ao callback (LGFXBase.cpp:
-// "if (uniCode >= 0xFE00 && uniCode < 0xFE10) continue"). O que fica de FORA:
-//
-//   - bandeiras: dois "indicadores regionais" colados (🇧🇷 = U+1F1E7 U+1F1F7)
-//   - tom de pele: o emoji base + um modificador (👍🏽 = U+1F44D U+1F3FD)
-//   - sequencias ZWJ: varios emoji unidos por U+200D (👨‍👩‍👧 = pessoa+ZWJ+pessoa+ZWJ+crianca)
-//
-// Cada um desses e VARIOS codigos Unicode formando UMA imagem composta, e o
-// hook do LovyanGFX (setEmojiCallback) dispara uma vez POR CODIGO - nao ha
-// como esta arquitetura, como esta, juntar N chamadas numa imagem so sem
-// trabalho extra de verdade (juntar os codigos pendentes, decidir quando a
-// sequencia fechou). Fica para quando fizer falta.
+// setEmojiCallback() (see LGFXBase.hpp) is called automatically by the
+// library whenever write()/drawString() meets a Unicode code point that
+// the current font does not know - and that covers EVERY emoji, because this
+// system's font is pure ASCII. Registering ONCE at boot, any app that calls
+// d.drawString() with a received message shows this set's emoji
+// without knowing this file exists - the same principle as the rest
+// of the kernel: whoever draws text should not have to worry about this.
 //
 // -------------------------------------------------------------------------
-// FORMATO
+// THE SET, THE LIMIT AND THE LICENCE
 // -------------------------------------------------------------------------
-// 24x24 (TAB5_EMOJI_LADO) com PALETA: cada emoji tem a sua lista de cores
-// RGB565 (no maximo 256 - nenhum Twemoji passa de 237, a media e 62) e um
-// indice de 1 byte por pixel. O indice 0 (TAB5_EMOJI_TRANSPARENTE) e sempre
-// o fundo: "nao desenhe". A transparencia e decidida pelo INDICE, nunca pela
-// cor - nenhuma mistura de pixels consegue fabricar um falso "transparente".
+// EVERY emoji made of a SINGLE Unicode code point - 1357 of them (of the 1391 that
+// exist in version 17.0; 34 are recent additions that Twemoji has not yet
+// drawn). Art from Twemoji (twemoji.twitter.com), licence CC-BY 4.0 -
+// attribution required, which is why it lives here.
 //
-// Por que paleta e nao RGB565 cru: 2 bytes por pixel viram 1, mais a paleta.
-// 1357 emoji passaram de ~1,49MB para ~0,91MB de flash, com a MESMA imagem
-// pixel a pixel (o gerador so troca a forma de guardar, nao a arte).
+// "A SINGLE CODE POINT" is the real limit, and it is worth understanding why.
+// The variation selector (U+FE0F) does NOT count against it - the library itself
+// already discards it before any emoji reaches the callback (LGFXBase.cpp:
+// "if (uniCode >= 0xFE00 && uniCode < 0xFE10) continue"). What is LEFT OUT:
 //
-// TAMANHO NA TELA - ver tab5_emoji.cpp. Ate 2x a altura da linha o bitmap
-// sai no tamanho nativo (24px); acima disso, no maior multiplo inteiro; em
-// linha MENOR que 24px ele encolhe para a altura dela, para nao invadir as
-// linhas de cima e de baixo.
+//   - flags: two "regional indicators" stuck together (🇧🇷 = U+1F1E7 U+1F1F7)
+//   - skin tone: the base emoji + a modifier (👍🏽 = U+1F44D U+1F3FD)
+//   - ZWJ sequences: several emoji joined by U+200D (👨‍👩‍👧 = person+ZWJ+person+ZWJ+child)
+//
+// Each of these is SEVERAL Unicode code points forming ONE composite image, and the
+// LovyanGFX hook (setEmojiCallback) fires once PER CODE POINT - there is no
+// way for this architecture, as it stands, to merge N calls into a single image
+// without real extra work (collecting the pending code points, deciding when the
+// sequence has ended). Left for when it is needed.
 //
 // -------------------------------------------------------------------------
-// BUSCA
+// FORMAT
 // -------------------------------------------------------------------------
-// TAB5_EMOJI_TABELA e ORDENADA por codigo, e tab5_emoji.cpp busca nela por
-// BUSCA BINARIA - com mais de mil entradas, varredura linear seria
-// desperdicio (ate 1357 comparacoes por emoji desconhecido, contra no maximo
-// 11 na busca binaria). O gerador (gerar_emoji.py) ja escreve a tabela
-// ordenada; se um dia alguem editar isto a mao, a ordem PRECISA ser mantida.
+// 24x24 (TAB5_EMOJI_LADO) with a PALETTE: each emoji has its own list of RGB565
+// colours (at most 256 - no Twemoji exceeds 237, the average is 62) and a
+// 1-byte index per pixel. Index 0 (TAB5_EMOJI_TRANSPARENTE) is always
+// the background: "do not draw". Transparency is decided by the INDEX, never by
+// the colour - no pixel blending can fabricate a false "transparent".
+//
+// Why a palette and not raw RGB565: 2 bytes per pixel become 1, plus the palette.
+// 1357 emoji went from ~1.49MB to ~0.91MB of flash, with the SAME image
+// pixel for pixel (the generator only changes the storage, not the art).
+//
+// SIZE ON SCREEN - see tab5_emoji.cpp. Up to 2x the line height the bitmap
+// comes out at native size (24px); above that, at the largest integer multiple; on a
+// line SMALLER than 24px it shrinks to the line height, so as not to intrude on the
+// lines above and below.
+//
+// -------------------------------------------------------------------------
+// LOOKUP
+// -------------------------------------------------------------------------
+// TAB5_EMOJI_TABELA is SORTED by code point, and tab5_emoji.cpp searches it by
+// BINARY SEARCH - with more than a thousand entries, a linear scan would be
+// wasteful (up to 1357 comparisons per unknown emoji, against at most
+// 11 with binary search). The generator (gerar_emoji.py) already writes the table
+// sorted; if anyone ever edits it by hand, the order MUST be kept.
 #pragma once
 
 #include <stdint.h>
 #include <stddef.h>
 
 typedef struct {
-  uint32_t        codepoint;   // ponto de codigo Unicode, SEM o seletor de estilo (FE0F)
-  const uint8_t*  indices;     // TAB5_EMOJI_LADO x TAB5_EMOJI_LADO, 1 byte por pixel
-  const uint16_t* paleta;      // RGB565 com os bytes trocados; [0] e o fundo
+  uint32_t        codepoint;   // Unicode code point, WITHOUT the variation selector (FE0F)
+  const uint8_t*  indices;     // TAB5_EMOJI_LADO x TAB5_EMOJI_LADO, 1 byte per pixel
+  const uint16_t* paleta;      // RGB565 with swapped bytes; [0] is the background
 } tab5_emoji_t;
 
-static const uint32_t TAB5_EMOJI_TRANSPARENTE = 0;   // indice do fundo
+static const uint32_t TAB5_EMOJI_TRANSPARENTE = 0;   // background index
 
 extern const int             TAB5_EMOJI_LADO;
-extern const tab5_emoji_t    TAB5_EMOJI_TABELA[];   // ORDENADA por codigo - ver acima
+extern const tab5_emoji_t    TAB5_EMOJI_TABELA[];   // SORTED by code point - see above
 extern const int             TAB5_EMOJI_N;
 
-// Registra o callback no M5.Display. Chamar UMA vez, no boot, depois do
-// M5.begin() (o callback e um metodo do painel, que so existe depois disso).
+// Registers the callback on M5.Display. Call ONCE, at boot, after
+// M5.begin() (the callback is a panel method, which only exists after that).
 void tab5_emoji_iniciar(void);
 
 // -------------------------------------------------------------------------
-// PREPARAR TEXTO PARA DESENHO - a limpeza que evita "lixo na tela"
+// PREPARING TEXT FOR DRAWING - the cleanup that avoids "garbage on screen"
 // -------------------------------------------------------------------------
-// Quem monta uma mensagem ou um nome para d.drawString() deveria passar por
-// aqui antes, sempre que o texto vem de fora (outro no, outra pessoa) e pode
-// conter emoji. Resolve DOIS problemas de uma vez:
+// Whoever builds a message or a name for d.drawString() should pass it through
+// here first, whenever the text comes from outside (another node, another person) and may
+// contain emoji. It solves TWO problems at once:
 //
-// 1) CORTE SEGURO. Um snprintf("%.60s", txt) corta por BYTE, nao por
-//    caractere - e um emoji ocupa 4 bytes UTF-8. Cortar no meio de um deles
-//    deixa bytes orfaos no fim da string, e o decodificador UTF-8 nao tem
-//    como saber o que fazer com eles: o resultado e imprevisivel, e foi essa
-//    a causa mais provavel do "lixo" observado nas conversas.
-//    Aqui o corte SEMPRE cai numa fronteira de caractere.
+// 1) SAFE TRUNCATION. A snprintf("%.60s", txt) cuts by BYTE, not by
+//    character - and an emoji takes 4 UTF-8 bytes. Cutting in the middle of one
+//    leaves orphan bytes at the end of the string, and the UTF-8 decoder has no
+//    way of knowing what to do with them: the result is unpredictable, and that was
+//    the most likely cause of the "garbage" seen in conversations.
+//    Here the cut ALWAYS falls on a character boundary.
 //
-// 2) CADEIAS ZWJ COLAPSADAS PARA UM SO ICONE. Um emoji composto (familia,
-//    casal, profissao...) e VARIOS codigos Unicode colados por U+200D (o
-//    "zero width joiner"). Este sistema so tem UM desenho por codigo (ver o
-//    limite documentado no topo deste arquivo) - sem tratamento, "familia"
-//    vira 3 ou 4 icones soltos e sem nenhuma relacao visivel entre si, lado
-//    a lado - uma linha cheia de simbolos sem sentido. Aqui mantemos so o PRIMEIRO codigo da cadeia e descartamos o
-//    ZWJ e o resto - um icone so, nao perfeito (nao e a imagem composta de
-//    verdade), mas CONSISTENTE: sempre um por emoji digitado, nunca uma
-//    fileira aleatoria.
+// 2) ZWJ CHAINS COLLAPSED TO A SINGLE ICON. A composite emoji (family,
+//    couple, profession...) is SEVERAL Unicode code points joined by U+200D (the
+//    "zero width joiner"). This system has only ONE drawing per code point (see the
+//    limit documented at the top of this file) - untreated, "family"
+//    becomes 3 or 4 loose icons with no visible relation between them, side
+//    by side - a line full of meaningless symbols. Here we keep only the FIRST code point of the chain and discard the
+//    ZWJ and the rest - a single icon, not perfect (it is not the real composite
+//    image), but CONSISTENT: always one per emoji typed, never a
+//    random row.
 //
-// 'out' sempre termina em NUL. Se 'in' for maior que 'out_tam' permitir, o
-// corte cai na ultima fronteira de caractere que couber - nunca no meio.
+// 'out' always ends in NUL. If 'in' is larger than 'out_tam' allows, the
+// cut falls on the last character boundary that fits - never in the middle.
 void tab5_emoji_preparar(const char* in, char* out, size_t out_tam);

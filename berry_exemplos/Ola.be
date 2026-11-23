@@ -2,33 +2,33 @@
 # cor: 0xFD20
 # avisos: volumes
 #
-# O PRIMEIRO APP EM BERRY - um passeio pelo que um script faz no M5tabOS.
-# Cada aba mostra uma possibilidade, em poucas linhas:
+# THE FIRST APP IN BERRY - a tour of what a script can do on M5tabOS.
+# Each tab shows one possibility, in a few lines:
 #
-#   INICIO   hora, data, bateria e rede (o sistema informa)
-#   TOQUE    botoes, bip, aviso na barra e um contador que fica salvo no cartao
-#   SENSOR   o acelerometro: uma bolha que anda quando o aparelho inclina
-#   DESENHO  o dedo pintando na tela
-#   DISCOS   o cartao e o pendrive (o modulo arquivos)
+#   HOME     time, date, battery and network (the system provides them)
+#   TOUCH    buttons, beep, a status-bar notice and a counter saved on the card
+#   SENSOR   the accelerometer: a bubble that moves when the device tilts
+#   DRAW     your finger painting on the screen
+#   DISKS    the SD card and the USB flash drive (the arquivos module)
 #
-# Para fazer o seu: copie este arquivo para /sdcard/apps/Berry/ com outro
-# nome, mude, e ele aparece na tela inicial. Manual da linguagem:
-# https://berry.readthedocs.io - e todas as funcoes do sistema estao em
+# To make your own: copy this file to /sdcard/apps/Berry/ under another
+# name, change it, and it appears on the home screen. Language manual:
+# https://berry.readthedocs.io - and every system function is in
 # docs/BERRY_API.md.
 
 import json
 
-# ---- o estado do app ---------------------------------------------------------
-# O que fica FORA das funcoes roda uma vez, ao abrir.
-# No idioma escolhido em Ajustes: idioma.escolher(portugues, ingles).
+# ---- the app's state ---------------------------------------------------------
+# Whatever sits OUTSIDE the functions runs once, on opening.
+# In the language chosen in Settings: idioma.escolher(portuguese, english).
 var ABAS = [idioma.escolher("INÍCIO", "HOME"), idioma.escolher("TOQUE", "TOUCH"), "SENSOR",
             idioma.escolher("DESENHO", "DRAW"), idioma.escolher("DISCOS", "DISKS")]
 var aba = 0
-var toques = 0        # salvo no cartao (aba TOQUE)
-var pontos = []       # o desenho (aba DESENHO): [x, y] de cada ponto
-var discos = []       # a aba DISCOS
+var toques = 0        # saved on the card (TOUCH tab)
+var pontos = []       # the drawing (DRAW tab): [x, y] of each point
+var discos = []       # the DISKS tab
 
-# Ler o que ficou salvo da ultima vez: cartao.ler devolve nil se nao existe.
+# Read what was saved last time: cartao.ler returns nil if it doesn't exist.
 var salvo = cartao.ler("ola.json")
 if salvo != nil
   var d = json.load(salvo)
@@ -39,8 +39,8 @@ def salvar()
   cartao.gravar("ola.json", json.dump({"toques": toques}))
 end
 
-# ---- as abas no topo ---------------------------------------------------------
-var ABA_A = 80        # altura da fileira de abas
+# ---- the tabs at the top -----------------------------------------------------
+var ABA_A = 80        # height of the row of tabs
 
 def largura_aba() return tela.largura() / size(ABAS) end
 
@@ -51,16 +51,16 @@ def desenhar_abas()
   end
 end
 
-# Cada aba pede o ritmo de redesenho que precisa: o relogio, 1 por segundo;
-# a bolha do sensor, 20 por segundo; o resto, so quando algo muda (0) - parado,
-# o app nao gasta bateria.
+# Each tab asks for the redraw rate it needs: the clock, once a second;
+# the sensor bubble, 20 times a second; the rest, only when something changes
+# (0) - when idle, the app uses no battery.
 def trocar_aba(i)
   aba = i
   sistema.periodo(i == 0 ? 1000 : (i == 2 ? 50 : 0))
   if i == 4 discos = arquivos.volumes() end
 end
 
-# ---- INICIO ------------------------------------------------------------------
+# ---- HOME --------------------------------------------------------------------
 def desenhar_inicio(y)
   tela.texto(idioma.escolher("Olá do Berry!", "Hello from Berry!"), 40, y, 5, tela.LARANJA)
   var h = sistema.hora()
@@ -73,7 +73,7 @@ def desenhar_inicio(y)
   tela.texto(idioma.escolher("Toque nas abas acima para ver mais.", "Tap the tabs above to see more."), 40, y + 380, 2.5, tela.CINZA_CLARO)
 end
 
-# ---- TOQUE -------------------------------------------------------------------
+# ---- TOUCH -------------------------------------------------------------------
 def desenhar_toque(y)
   tela.texto(idioma.escolher("Toques: ", "Taps: ") + str(toques), 40, y, 5)
   tela.texto(idioma.escolher("(fica salvo no cartão: feche e abra de novo)", "(saved on the card: close and open again)"), 40, y + 70, 2.5, tela.CINZA_CLARO)
@@ -88,12 +88,12 @@ def tocar_toque(x, y, y0)
     sistema.bip(880, 60)
     salvar()
   elif tela.dentro(x, y, 380, y0 + 130, 300, 100)
-    # Um aviso na barra de status - toque nele (na central) abre este app.
+    # A notice in the status bar - tapping it (in the notification centre) opens this app.
     sistema.avisar(idioma.escolher("Olá: ", "Hello: ") + str(toques) + idioma.escolher(" toques", " taps"))
   elif tela.dentro(x, y, 40, y0 + 260, 300, 100)
     toques = 0
     salvar()
-    sistema.avisar()   # tira o aviso
+    sistema.avisar()   # clears the notice
   end
 end
 
@@ -103,7 +103,7 @@ def desenhar_sensor(y)
   var cy = y + 260
   tela.circulo(cx, cy, 200, tela.CINZA, false)
   tela.circulo(cx, cy, 100, tela.CINZA, false)
-  var g = sistema.imu()   # [x, y, z] em g, ou nil
+  var g = sistema.imu()   # [x, y, z] in g, or nil
   if g == nil
     tela.texto(idioma.escolher("sem acelerômetro", "no accelerometer"), 40, y, 3, tela.VERMELHO)
     return
@@ -113,8 +113,8 @@ def desenhar_sensor(y)
   tela.texto(idioma.escolher("Incline o aparelho.", "Tilt the device."), 40, y, 3, tela.CINZA_CLARO)
 end
 
-# ---- DESENHO -----------------------------------------------------------------
-# dedo(x, y, pressionado) chega a cada 20 ms com o dedo na tela.
+# ---- DRAW --------------------------------------------------------------------
+# dedo(x, y, pressionado) arrives every 20 ms while a finger is on the screen.
 def desenhar_desenho(y)
   tela.texto(idioma.escolher("Desenhe com o dedo.", "Draw with your finger."), 40, y, 3, tela.CINZA_CLARO)
   for p: pontos tela.circulo(p[0], p[1], 7, tela.CIANO) end
@@ -126,9 +126,9 @@ def dedo(x, y, pressionado)
   if size(pontos) < 1500 pontos.push([x, y]) end
 end
 
-# ---- DISCOS ------------------------------------------------------------------
-# O modulo arquivos ve o cartao inteiro e o pendrive; o app so altera a
-# propria pasta (ver docs/BERRY.md).
+# ---- DISKS -------------------------------------------------------------------
+# The arquivos module sees the whole SD card and the USB flash drive; the app
+# only changes its own folder (see docs/BERRY.md).
 def desenhar_discos(y)
   if size(discos) == 0 tela.texto(idioma.escolher("nenhum disco", "no disks"), 40, y, 3) return end
   for d: discos
@@ -141,13 +141,13 @@ def desenhar_discos(y)
   tela.texto(idioma.escolher("Espete um pendrive: ele aparece aqui sozinho.", "Plug in a flash drive: it shows up here by itself."), 40, y, 2.5, tela.CINZA_CLARO)
 end
 
-# Com "# avisos: volumes" no cabecalho, o sistema chama aviso() quando um
-# pendrive entra ou sai (e ja redesenha depois).
+# With "# avisos: volumes" in the header, the system calls aviso() when a
+# USB flash drive is plugged in or removed (and redraws afterwards).
 def aviso(nome)
   if nome == "volumes" discos = arquivos.volumes() end
 end
 
-# ---- o que o sistema chama ---------------------------------------------------
+# ---- what the system calls ---------------------------------------------------
 def desenhar(tudo)
   desenhar_abas()
   var y = ABA_A + 40
@@ -172,7 +172,7 @@ def tocar(x, y)
 end
 
 def abrir()
-  trocar_aba(aba)   # o ritmo da aba em que parou
+  trocar_aba(aba)   # the rate of the tab it was left on
 end
 
 def fechar()

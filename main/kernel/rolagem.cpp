@@ -18,10 +18,10 @@ void rolagem_definir(rolagem_t* r, uint8_t eixo, uint8_t ancoragem)
 void rolagem_zerar(rolagem_t* r)
 {
   r->atual = 0;
-  r->max = 0;   // consumidor que guarda 'max' entre passadas (o Mesh) nao
-                // fica com um limite velho de uma tela/conversa anterior no
-                // instante entre isto e o proximo desenho recalcular; quem
-                // recalcula 'max' TODO ciclo (o kernel) nem chega a notar.
+  r->max = 0;   // a consumer that keeps 'max' between passes (Mesh) is not
+                // left with a stale limit from a previous screen/conversation in
+                // the instant between this and the next draw recalculating; whoever
+                // recalculates 'max' EVERY cycle (the kernel) does not even notice.
   r->ancora = -1;
   r->descida = -1;
   r->afastamento = 0;
@@ -29,33 +29,33 @@ void rolagem_zerar(rolagem_t* r)
 
 bool rolagem_arrastar(rolagem_t* r, int coord, bool dentro)
 {
-  // SOLTA A ANCORA AO SAIR DA ZONA, nao so quando o dedo levanta de vez -
-  // padrao unificado na consolidacao (as tres listas do Mesh
-  // ja faziam assim; o kernel antes so soltava em '!tocando', tolerando o
-  // dedo passear fora da area util sem largar a ancora - um dedo que saisse
-  // e voltasse pulava a distancia toda de uma vez, porque a ancora ficava
-  // parada no ultimo ponto DENTRO. Soltar ao sair evita esse salto, e e o
-  // comportamento que ja valia pra maioria das listas deste sistema.
+  // RELEASE THE ANCHOR ON LEAVING THE ZONE, not only when the finger lifts for good -
+  // a pattern unified in the consolidation (the three Mesh lists
+  // already did this; the kernel used to release only on '!tocando', tolerating the
+  // finger wandering outside the usable area without letting go of the anchor - a finger that left
+  // and came back jumped the whole distance at once, because the anchor stayed
+  // at the last point INSIDE. Releasing on leaving avoids that jump, and it is the
+  // behaviour that already applied to most of the lists in this system.
   if (!dentro) { r->ancora = -1; return false; }
 
-  // Primeira amostra dentro da zona: so ancora, nao ha 'ciclo anterior'
-  // para tirar delta nenhum - evitar isso e o que impede um salto ao
-  // ENTRAR na zona (o dedo pode ter vindo de longe fora dela).
+  // First sample inside the zone: only anchor, there is no 'previous cycle'
+  // to take any delta from - avoiding that is what prevents a jump on
+  // ENTERING the zone (the finger may have come from far outside it).
   if (r->ancora < 0) { r->ancora = coord; r->descida = coord; r->afastamento = 0; return false; }
 
   const int dy = coord - r->ancora;
   if (dy == 0) { return false; }
   r->ancora = coord;
 
-  // AFASTAMENTO DA DESCIDA, e nao soma do caminho percorrido - um dedo que
-  // treme (ou vai e volta) parado nao pode ser lido como arrasto grande so
-  // por ter "andado" muito em vaivem. Mesma logica historica do kernel.
+  // DISTANCE FROM THE DOWN POINT, not the sum of the path travelled - a finger that
+  // trembles (or goes back and forth) in place must not be read as a big drag just
+  // for having "moved" a lot back and forth. Same historical logic as the kernel.
   const int longe = (coord > r->descida) ? (coord - r->descida) : (r->descida - coord);
   if (longe > r->afastamento) { r->afastamento = longe; }
 
-  // SINAL: lista comum sobe/desce com o dedo (dedo pra cima = conteudo
-  // sobe, por isso subtrai); ancorada no fim faz o oposto (dedo pra baixo
-  // revela conteudo mais antigo, por isso soma).
+  // SIGN: an ordinary list goes up/down with the finger (finger up = content
+  // goes up, hence subtract); anchored at the end does the opposite (finger down
+  // reveals older content, hence add).
   int nova = (r->ancoragem == ROLAGEM_INICIO) ? (r->atual - dy) : (r->atual + dy);
   if (nova < 0)      { nova = 0; }
   if (nova > r->max) { nova = r->max; }
@@ -78,8 +78,8 @@ bool rolagem_limite(rolagem_t* r, int total, int janela)
   if (novo_max < 0) { novo_max = 0; }
   r->max = novo_max;
   if (r->atual > r->max) {
-    // A lista encolheu (um item foi removido, uma conversa trocou) e a
-    // posicao atual ficou alem do fim - puxa de volta.
+    // The list shrank (an item was removed, a conversation changed) and the
+    // current position ended up past the end - pull it back.
     r->atual = r->max;
     return true;
   }
@@ -100,10 +100,10 @@ rolagem_passada_t rolagem_deslocar(rolagem_t* r, const area_t& janela, uint16_t 
       janela.largura, ad
     };
   }
-  // SEMPRE sincroniza, tenha deslocado ou nao: se nao deslocou, o chamador
-  // vai limpar/redesenhar a janela inteira por conta propria (cada um do
-  // seu jeito - ver o aviso grande no .hpp), e depois disso a pagina
-  // visivel TAMBEM passa a refletir 'atual', so que por outro caminho.
+  // ALWAYS synchronise, whether it shifted or not: if it did not shift, the caller
+  // will clear/redraw the whole window on its own (each in its
+  // own way - see the big note in the .hpp), and after that the visible
+  // page ALSO reflects 'atual', just by another path.
   r->no_visor = r->atual;
   return p;
 }
@@ -112,9 +112,9 @@ void rolagem_barra(lgfx::LovyanGFX& d, const rolagem_t* r, const area_t& janela,
                    uint16_t cor_trilha, int margem)
 {
   if (r->max <= 0) { return; }
-  // Gate extra so para ancorada-no-fim: com atual==0 o "fim" ja esta a
-  // vista, a barrinha ali seria ruido (mesma regra que mensagens do Mesh
-  // ja tinha antes desta consolidacao).
+  // Extra gate only for anchored-at-the-end: with atual==0 the "end" is already in
+  // view, the little bar there would be noise (the same rule Mesh messages
+  // already had before this consolidation).
   if (r->ancoragem == ROLAGEM_FIM && r->atual <= 0) { return; }
 
   const int bx  = janela.x + janela.largura - margem;
@@ -123,5 +123,5 @@ void rolagem_barra(lgfx::LovyanGFX& d, const rolagem_t* r, const area_t& janela,
   const int by  = janela.y + ((janela.altura - alt) * pos) / r->max;
 
   d.fillRect(bx, janela.y, 4, janela.altura, cor_trilha);
-  d.fillRoundRect(bx, by, 4, alt, 2, TEMA_LINHA);   // a cor de divisoria do tema
+  d.fillRoundRect(bx, by, 4, alt, 2, TEMA_LINHA);   // the theme's divider colour
 }

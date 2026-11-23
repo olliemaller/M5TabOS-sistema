@@ -1,5 +1,5 @@
-// Comandos do console - SHELL: cd, pwd, ls, df, cp/mv/rm/mkdir (atalhos do arquivos), echo, clear.
-// (Partido de console.cpp; a tabela COMANDOS e a ajuda continuam la.)
+// Console commands - SHELL: cd, pwd, ls, df, cp/mv/rm/mkdir (shortcuts for arquivos), echo, clear.
+// (Split from console.cpp; the COMANDOS table and the help remain there.)
 
 #include "freertos/FreeRTOS.h"
 #include "sdkconfig.h"
@@ -9,9 +9,9 @@
 #include "console/console_interno.hpp"
 
 // ---------------------------------------------------------------------------
-// SHELL - a pasta atual da sessao e os nomes de sempre, em cima do motor de
-// arquivos (services/tab5_arquivos) e dos discos (services/tab5_volumes).
-// "/" e a raiz dos discos: /sdcard e /usb.
+// SHELL - the session's current folder and the usual names, on top of the file
+// engine (services/tab5_arquivos) and the disks (services/tab5_volumes).
+// "/" is the root of the disks: /sdcard and /usb.
 // ---------------------------------------------------------------------------
 static bool nada(const tab5_arq_item_t*, void*) { return false; }
 
@@ -55,7 +55,7 @@ void c_df(int, char**)
   }
 }
 
-// cp, mv, rm e mkdir sao o 'arquivos' com o verbo na frente.
+// cp, mv, rm and mkdir are 'arquivos' with the verb in front.
 void c_atalho_arquivos(int argc, char** argv)
 {
   char* a[24];
@@ -65,7 +65,7 @@ void c_atalho_arquivos(int argc, char** argv)
   c_arquivos(argc + 1 < 24 ? argc + 1 : 24, a);
 }
 
-// Limpa a tela: a sequencia ANSI de sempre (o Terminal e o monitor serial entendem).
+// Clears the screen: the usual ANSI sequence (the Terminal and the serial monitor understand it).
 void c_clear(int, char**) { printf("\x1b[2J\x1b[H"); }
 
 void c_echo(int argc, char** argv)

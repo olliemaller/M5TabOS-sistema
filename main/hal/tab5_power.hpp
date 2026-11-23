@@ -1,25 +1,25 @@
-// Perfil de energia do M5Tab5.
+// M5Tab5 power profile.
 //
-// A ideia: TUDO nasce desligado, e cada projeto liga estritamente o que usa.
-// O Tab5 sai do M5.begin() com camera fora do reset, IMU com giroscopio em
-// performance maxima, radio alimentado e os dois trilhos de 5V (Grove e USB-A)
-// ligados por pull-up nos expansores - nada disso e pedido, e some da conta de
-// bateria sem aparecer no codigo.
+// The idea: EVERYTHING starts off, and each project turns on strictly what it
+// uses. The Tab5 comes out of M5.begin() with the camera out of reset, the
+// IMU with its gyroscope at maximum performance, the radio powered and both
+// 5V rails (Grove and USB-A) on via pull-ups on the expanders - none of it
+// requested, and it drains the battery without showing up in the code.
 //
-// O perfil e aplicado em DOIS momentos, e eles nao sao intercambiaveis:
+// The profile is applied at TWO moments, and they are not interchangeable:
 //
-//   fase 1  tab5_power_config()   ANTES do M5.begin()
-//           Mexe nas flags do M5.config(). O periferico nunca chega a ser
-//           inicializado - fica no repouso de fabrica, sem trafego I2C.
+//   phase 1  tab5_power_config()   BEFORE M5.begin()
+//            Touches the M5.config() flags. The peripheral is never even
+//            initialised - it stays in its factory idle state, no I2C traffic.
 //
-//   fase 2  tab5_power_aplicar()  DEPOIS do M5.begin()
-//           Mexe no que o M5Unified liga incondicionalmente e nao expoe:
-//           reset da camera, trilho do radio, brilho, gerenciamento de CPU.
+//   phase 2  tab5_power_aplicar()  AFTER M5.begin()
+//            Touches what M5Unified turns on unconditionally and does not
+//            expose: camera reset, radio rail, brightness, CPU management.
 //
-// Uso tipico:
+// Typical use:
 //
-//   tab5_perfil_t perfil;          // tudo desligado
-//   perfil.radio  = true;          // este projeto imprime por WiFi
+//   tab5_perfil_t perfil;          // everything off
+//   perfil.radio  = true;          // this project prints over WiFi
 //   perfil.brilho = 80;
 //
 //   auto cfg = M5.config();
@@ -31,9 +31,9 @@
 
 #include "sdkconfig.h"
 
-// CLOCK MAXIMO DO CPU - depende da revisao do P4 (sdkconfig.defaults.chip_*):
-// 360 MHz no v1.x, 400 no v3.x. Os degraus que o esp_pm aceita sao os do PLL
-// (o maximo, a metade, um quarto) e os do cristal de 40 MHz dividido.
+// MAXIMUM CPU CLOCK - depends on the P4 revision (sdkconfig.defaults.chip_*):
+// 360 MHz on v1.x, 400 on v3.x. The steps esp_pm accepts are the PLL ones
+// (maximum, half, quarter) and the divided 40 MHz crystal ones.
 #define TAB5_CPU_MAX_MHZ CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ
 #if CONFIG_ESP32P4_SELECTS_REV_LESS_V3
 #define TAB5_CPU_DEGRAUS "360 180 90 40 20 10 8 5 4 2 1"
@@ -48,374 +48,386 @@
 
 struct tab5_perfil_t
 {
-  // ---- fase 1: nem chega a ser inicializado -------------------------------
+  // ---- phase 1: never even initialised -------------------------------------
 
-  // BMI270 (acelerometro + giroscopio). ATENCAO: quando ligado, o M5Unified o
-  // deixa com giro ativo e advanced power save DESLIGADO (PWR_CONF=0x00) - o
-  // pior caso de consumo do chip. O servico hal/tab5_imu corrige isso: sem
-  // ninguem pedindo o giroscopio, so o acelerometro em economia.
+  // BMI270 (accelerometer + gyroscope). WARNING: when on, M5Unified leaves it
+  // with the gyro active and advanced power save OFF (PWR_CONF=0x00) - the
+  // chip's worst-case consumption. The hal/tab5_imu service fixes that: with
+  // nobody requesting the gyroscope, only the accelerometer, in power-save.
   bool imu           = false;
 
-  // ES7210: os microfones. Ligado = codec ADC alimentado.
+  // ES7210: the microphones. On = ADC codec powered.
   bool microfone     = false;
 
-  // ES8388: o codec de saida + SPK_EN no expansor 0.
+  // ES8388: the output codec + SPK_EN on expander 0.
   bool alto_falante  = false;
 
-  // RX8130. Custa quase nada em corrente (dominio proprio); desligar aqui
-  // economiza tempo de boot e trafego I2C, nao bateria.
+  // RX8130. Costs almost nothing in current (its own domain); turning it off
+  // here saves boot time and I2C traffic, not battery.
   bool rtc           = true;
 
-  // EXT5V_EN, expansor 0 bit 2. Alimenta a porta Grove.
+  // EXT5V_EN, expander 0 bit 2. Powers the Grove port.
   bool grove_5v      = false;
 
-  // USB5V_EN, expansor 1 bit 3. Alimenta a USB-A embutida.
+  // USB5V_EN, expander 1 bit 3. Powers the built-in USB-A.
   bool usb_a_5v      = false;
 
-  // ---- fase 2: so da para mexer com a placa de pe --------------------------
+  // ---- phase 2: only possible with the board up ---------------------------
 
-  // CAM_RST, expansor 0 bit 6. O M5Unified tira a camera do reset no boot.
+  // CAM_RST, expander 0 bit 6. M5Unified takes the camera out of reset at boot.
   bool camera        = false;
 
-  // WLAN_PWR_EN, expansor 1 bit 0. E o trilho do ESP32-C6 inteiro: WiFi E BLE
-  // saem por ele. Cortar e a maior economia depois do backlight.
-  // LEIA o comentario de tab5_power_radio() antes de religar em runtime.
+  // WLAN_PWR_EN, expander 1 bit 0. It is the whole ESP32-C6's rail: WiFi AND
+  // BLE go through it. Cutting it is the biggest saving after the backlight.
+  // READ the comment on tab5_power_radio() before turning it back on at run time.
   bool radio         = false;
 
-  // 0..255. O backlight (PWM em GPIO22) e o maior consumidor da placa com a
-  // tela acesa, e a resposta e quase linear: 80 gasta ~1/3 de 255.
+  // 0..255. The backlight (PWM on GPIO22) is the board's biggest consumer
+  // with the screen on, and the response is almost linear: 80 uses ~1/3 of 255.
   //
-  // NO M5tabOS ESTE CAMPO NAO E DO APP. O sistema o sobrescreve com a
-  // preferencia do usuario em sistema_impor_preferencias() - brilho e de quem
-  // segura o aparelho, nao do programa que esta na tela. Descritor de app que
-  // define brilho engana quem le: o valor nunca chega ao hardware.
+  // IN M5tabOS THIS FIELD DOES NOT BELONG TO THE APP. The system overwrites it
+  // with the user's preference in sistema_impor_preferencias() - brightness
+  // belongs to whoever holds the device, not the program on screen. An app
+  // descriptor that sets brightness misleads the reader: the value never
+  // reaches the hardware.
   //
-  // O campo continua existindo porque o tab5_power e AUTOCONTIDO e copiavel
-  // para projetos sem sistema de apps, onde definir brilho aqui faz sentido.
+  // The field still exists because tab5_power is SELF-CONTAINED and can be
+  // copied into projects without an app system, where setting brightness
+  // here makes sense.
   uint8_t brilho     = 64;
 
-  // ---- fase 2: gerenciamento de energia da CPU ----------------------------
+  // ---- phase 2: CPU power management --------------------------------------
 
-  // Liga o DFS do IDF: a CPU cai sozinha para cpu_min_mhz quando nenhuma
-  // tarefa esta pronta. Exige CONFIG_PM_ENABLE=y no sdkconfig - sem isso o
-  // esp_pm_configure() devolve ESP_ERR_NOT_SUPPORTED (era a trava do Arduino).
+  // Turns on IDF's DFS: the CPU drops by itself to cpu_min_mhz when no task
+  // is ready. Requires CONFIG_PM_ENABLE=y in sdkconfig - without it
+  // esp_pm_configure() returns ESP_ERR_NOT_SUPPORTED (that was Arduino's block).
   bool pm_dinamico   = true;
 
-  // O P4 do Tab5 e revisao < 3.0 (ver o bloco de REVISAO DO SILICIO no
-  // sdkconfig.defaults). Nessa familia as frequencias validas sao
-  // 360, 180, 90 e XTAL/N (40, 20, 10, 8, 5, 4, 2, 1) - a escada 400/200/100
-  // e da revisao >= 3.0 e NAO vale aqui. Qualquer outro valor faz o
-  // esp_pm_configure devolver ESP_ERR_INVALID_ARG.
+  // The Tab5's P4 is revision < 3.0 (see the SILICON REVISION block in
+  // sdkconfig.defaults). In that family the valid frequencies are
+  // 360, 180, 90 and XTAL/N (40, 20, 10, 8, 5, 4, 2, 1) - the 400/200/100
+  // ladder belongs to revision >= 3.0 and does NOT apply here. Any other
+  // value makes esp_pm_configure return ESP_ERR_INVALID_ARG.
   //
-  // TESTADO: teto baixado para 180 COM A TELA LIGADA (nao so no
-  // repouso) deu erro na pratica - de volta a 360. Ou seja, mesmo com a
-  // prioridade no AXI-ICM ja ativa (tab5_barramento_priorizar_tela), o painel
-  // DSI ainda precisa do CPU no teto pra sustentar o frame sem underrun. A
-  // trava de PM que ele segura (dsi_dpi, CPU_FREQ_MAX) nao e conservadorismo
-  // do driver - e uma dependencia real deste hardware. Nao ha degrau
-  // intermediario para tentar (300 nao existe nesta escada - so 360/180/90
-  // vem do PLL); o proximo candidato, se algum dia valer a pena reabrir isto,
-  // e medir com um relogio de painel MAIS BAIXO que 60MHz (menos banda
-  // exigida) e ver se 180 passa a bastar - nao tentado ainda.
+  // TESTED: lowering the ceiling to 180 WITH THE SCREEN ON (not just on
+  // idle) failed in practice - back to 360. That is, even with the AXI-ICM
+  // priority already active (tab5_barramento_priorizar_tela), the DSI panel
+  // still needs the CPU at the ceiling to sustain the frame without underrun.
+  // The PM lock it holds (dsi_dpi, CPU_FREQ_MAX) is not driver conservatism -
+  // it is a real dependency of this hardware. There is no intermediate step
+  // to try (300 does not exist on this ladder - only 360/180/90 come from the
+  // PLL); the next candidate, if it is ever worth reopening this, is to
+  // measure with a panel clock LOWER than 60MHz (less bandwidth demanded) and
+  // see whether 180 becomes enough - not tried yet.
   int  cpu_max_mhz   = TAB5_CPU_MAX_MHZ;
   int  cpu_min_mhz   = 40;
 
-  // Light sleep automatico no idle.
+  // Automatic light sleep on idle.
   //
-  // NAO USE: com o DSI de pe o sono nao acontece. O sono leve do repouso e do
-  // kernel (tab5_power_sono_leve), nao do perfil de app.
+  // DO NOT USE: with DSI up, sleep does not happen. Idle light sleep belongs
+  // to the kernel (tab5_power_sono_leve), not the app profile.
   //
-  // Ligar tickless e uma decisao de medicao, nao de gosto: com FREERTOS_HZ=1000
-  // o ganho depende de haver janelas ociosas de varios milissegundos, e o painel
-  // DPI pode nem permitir o sono. Medir com tab5_power_travas() antes.
+  // Turning on tickless is a decision based on measurement, not taste: with
+  // FREERTOS_HZ=1000 the gain depends on there being idle windows of several
+  // milliseconds, and the DPI panel may not even allow sleep. Measure with
+  // tab5_power_travas() first.
   bool light_sleep_ocioso = false;
 };
 
-// ---- aplicacao do perfil --------------------------------------------------
+// ---- applying the profile -------------------------------------------------
 
-// Fase 1. Chame com o cfg do M5.config(), antes do M5.begin().
+// Phase 1. Call with the cfg from M5.config(), before M5.begin().
 void tab5_power_config(m5::M5Unified::config_t& cfg, const tab5_perfil_t& perfil);
 
-// Fase 2. Chame logo depois do M5.begin().
+// Phase 2. Call right after M5.begin().
 void tab5_power_aplicar(const tab5_perfil_t& perfil);
 
-// ---- controles de runtime -------------------------------------------------
+// ---- run-time controls ---------------------------------------------------
 
-// Corta ou devolve o trilho do ESP32-C6.
+// Cuts or restores the ESP32-C6 rail.
 //
-// ATENCAO: desligar derruba WiFi e BLE juntos e reinicia o C6. Religar devolve
-// a alimentacao, mas a stack do host (esp_hosted/esp_wifi) NAO se reconecta
-// sozinha - o SDIO precisa ser renegociado. Enquanto a gente nao escrever essa
-// sequencia, trate o desligamento como caminho de mao unica dentro de um boot:
-// desligue quando terminar de usar o radio e va dormir, ou reinicie para
-// religar.
+// WARNING: turning it off takes down WiFi and BLE together and resets the C6.
+// Turning it back on restores power, but the host stack (esp_hosted/esp_wifi)
+// does NOT reconnect by itself - SDIO must be renegotiated. Until we write
+// that sequence, treat turning it off as a one-way street within a boot:
+// turn it off when done with the radio and go to sleep, or reboot to turn it
+// back on.
 void tab5_power_radio(bool ligar);
 
 
-// Trilho de 5V do Grove (expansor 0, PortA). Ligar em runtime e necessario para
-// SONDAR o que esta plugado antes de saber qual app vai usar - o modulo precisa
-// de energia para se apresentar. Ver tab5_grove.
+// Grove 5V rail (expander 0, PortA). Turning it on at run time is needed to
+// PROBE what is plugged in before knowing which app will use it - the module
+// needs power to introduce itself. See tab5_grove.
 void tab5_power_grove(bool ligar);
 
-// Trilho ja esta ligado AGORA? Existe para tab5_grove.cpp decidir se precisa
-// esperar o modulo bootar antes de sondar - pergunta de ESTADO DE HARDWARE,
-// nao de preferencia do usuario (por isso mora aqui, e nao em ajustes.h: HAL
-// pergunta a HAL, nunca a um servico - ver docs/ESCREVENDO_APPS.md secao 8).
+// Is the rail on RIGHT NOW? Exists so tab5_grove.cpp can decide whether it
+// must wait for the module to boot before probing - a HARDWARE STATE
+// question, not a user preference (which is why it lives here and not in
+// ajustes.h: HAL asks HAL, never a service - see docs/ESCREVENDO_APPS.md
+// section 8).
 bool tab5_power_grove_ligado(void);
 
-// Trilho de 5V do USB-A (expansor 1, USB5V_EN), sozinho - sem reaplicar o
-// perfil inteiro. Quem decide e services/tab5_usb (o repouso); o resto do
-// tempo ele segue o perfil (usb_a_5v). Da tarefa de interface (I2C).
+// USB-A 5V rail (expander 1, USB5V_EN), on its own - without reapplying the
+// whole profile. The decider is services/tab5_usb (idle); the rest of the
+// time it follows the profile (usb_a_5v). From the UI task (I2C).
 void tab5_power_usb_a(bool ligar);
 
-// Quando o Tab5 mexeu no 5V do Grove / reaplicou o perfil pela ultima vez
-// (esp_timer em ms, 0 = nunca). Prova ou descarta o Tab5 num reinicio do no.
+// When the Tab5 last touched the Grove 5V / reapplied the profile
+// (esp_timer in ms, 0 = never). Proves or rules out the Tab5 in a node reset.
 uint32_t tab5_power_grove_toque_ms(void);
 uint32_t tab5_power_aplicar_ms(void);
 
-// CAM_RST. false = camera segurada em reset.
+// CAM_RST. false = camera held in reset.
 void tab5_power_camera(bool ligar);
 
-// O GIROSCOPIO DO BMI270: ligado (desempenho) ou so o acelerometro em
-// economia. So da tarefa de interface (I2C interno). Quem decide e o servico
-// hal/tab5_imu (tab5_imu_giroscopio), nao o app.
+// THE BMI270 GYROSCOPE: on (performance) or only the accelerometer in
+// power-save. UI task only (internal I2C). The decider is the hal/tab5_imu
+// service (tab5_imu_giroscopio), not the app.
 bool tab5_power_imu_giroscopio(bool ligar);
 
-// O perfil de boot pediu a IMU (cfg.internal_imu). Para quem precisa saber se
-// uma IMU ausente e escolha ou falha - ver tab5_imu_medir().
+// The boot profile asked for the IMU (cfg.internal_imu). For whoever needs to
+// know whether a missing IMU is a choice or a failure - see tab5_imu_medir().
 bool tab5_power_imu_pedida(void);
 
-// ---- historico curto, para grafico ----------------------------------------
+// ---- short history, for the graph -----------------------------------------
 //
-// Fica AQUI, e nao no app, porque o tab5_power_medir() roda uma vez por segundo
-// pela tarefa de interface MESMO EM REPOUSO. Assim o historico se enche com o
-// app fechado e o grafico ja nasce cheio ao abrir - se morasse no app, ele
-// comecaria vazio toda vez.
+// It lives HERE, not in the app, because tab5_power_medir() runs once a
+// second from the UI task EVEN ON IDLE. That way the history fills up with
+// the app closed and the graph is already full on opening - if it lived in
+// the app, it would start empty every time.
 //
-// 60 pontos a cada 30s = 30 minutos. Custa 60 * 12 = 720 bytes.
+// 60 points every 30s = 30 minutes. Costs 60 * 12 = 720 bytes.
 #define TAB5_HIST_N     60
 #define TAB5_HIST_SEG   30
 
-// A temperatura mora aqui e nao num anel proprio porque e o MESMO instante: os
-// dois sao lidos no mesmo tique de 1s e desenhados no mesmo eixo de tempo. Dois
-// aneis separados dariam o trabalho de casa-los depois, e a chance de eles
-// escorregarem um do outro. Vale -273 quando nao houve leitura.
-typedef struct { float volts; float mA; float temp; int16_t pct; } tab5_ponto_t;   // pct = a % do sistema naquele instante
+// Temperature lives here and not in its own ring because it is the SAME
+// instant: both are read on the same 1s tick and drawn on the same time axis.
+// Two separate rings would mean the work of matching them up later, and the
+// chance of them drifting apart. It is -273 when there was no reading.
+typedef struct { float volts; float mA; float temp; int16_t pct; } tab5_ponto_t;   // pct = the system % at that instant
 
-// Copia o historico em ordem cronologica (mais antigo primeiro) para 'saida',
-// que precisa ter TAB5_HIST_N posicoes. Devolve quantos pontos existem.
+// Copies the history in chronological order (oldest first) into 'saida',
+// which must have TAB5_HIST_N slots. Returns how many points there are.
 int tab5_power_historico(tab5_ponto_t* saida);
 
-// Porcentagem PELA CURVA DE TENSAO, pura (tensao corrigida pela corrente).
-// NAO e o que o sistema mostra: a % do sistema vem do estimador em
-// tab5_power_medir() (contagem de mAh + curva como correcao lenta). Exposta
-// para diagnostico e para reprocessar arquivos antigos.
+// Percentage FROM THE VOLTAGE CURVE alone (voltage corrected for current).
+// It is NOT what the system shows: the system % comes from the estimator in
+// tab5_power_medir() (mAh counting + the curve as a slow correction). Exposed
+// for diagnostics and for reprocessing old files.
 int tab5_power_pct(float volts, float mA);
 
-// Estado do estimador, para o console: % com fracao, o que a curva diria
-// agora, de onde o estimador partiu, e minutos desde a ultima carga (-1 =
-// nenhuma neste boot).
+// Estimator state, for the console: % with fraction, what the curve would
+// say now, where the estimator started from, and minutes since the last
+// charge (-1 = none this boot).
 void tab5_power_soc_debug(float* soc, float* curva, const char** fonte, float* min_desde_carga);
 
-// SEMENTE DE FORA: a carga guardada por quem persiste (services/tab5_bateria).
-// So vale se o estimador partiu da curva no boot (nao da RTC) - e quem chama
-// decide quando a curva nao merece confianca (boot carregando). true = usou.
+// EXTERNAL SEED: the charge saved by the persister (services/tab5_bateria).
+// Only applies if the estimator started from the curve at boot (not from the
+// RTC) - and the caller decides when the curve is not to be trusted (booting
+// while charging). true = used.
 bool tab5_power_soc_semear(float soc, const char* fonte);
-// true enquanto o estimador partiu da curva neste boot e ninguem semeou.
+// true while the estimator started from the curve this boot and nobody has seeded it.
 bool tab5_power_soc_da_curva_no_boot(void);
 
-// ---- medicao (INA226 embutido, shunt de 5 mOhm no barramento da bateria) ---
+// ---- measurement (built-in INA226, 5 mOhm shunt on the battery bus) ------
 
-// RESISTENCIA INTERNA do conjunto (bateria + fiacao + shunt), em ohms.
+// INTERNAL RESISTANCE of the assembly (battery + wiring + shunt), in ohms.
 //
-// Serve para estimar a tensao EM REPOUSO a partir da tensao medida sob carga:
-//     V_aberto = V_medido - I * R      (I com sinal: + carregando, - descarregando)
+// Used to estimate the AT-REST voltage from the voltage measured under load:
+//     V_open = V_measured - I * R      (signed I: + charging, - discharging)
 //
-// A formula vale nos dois sentidos, e por isso ela e uma so: descarregando, a
-// tensao afunda e a correcao SOMA; carregando, a tensao esta inflada pelo
-// carregador e a correcao SUBTRAI.
+// The formula works in both directions, which is why there is only one:
+// discharging, the voltage sags and the correction ADDS; charging, the
+// voltage is inflated by the charger and the correction SUBTRACTS.
 //
-// MEDIDO, nao mais estimado., a partir do energia.csv real:
+// MEASURED, no longer estimated, from the real energia.csv:
 //
-//   39 degraus de corrente maiores que 150mA numa descarga de 10,3h
-//   R = dV/dI  ->  mediana 0.268 ohm, faixa 0.179..0.312
+//   39 current steps larger than 150mA in a 10.3h discharge
+//   R = dV/dI  ->  median 0.268 ohm, range 0.179..0.312
 //
-// Era 0.15 por estimativa, quase metade do valor real - entao a correcao de
-// I*R era menor que deveria e a porcentagem caia quando a tela acendia, que e
-// exatamente o sintoma que esta constante existe para eliminar.
+// It was 0.15 by estimate, almost half the real value - so the I*R correction
+// was smaller than it should have been and the percentage dropped when the
+// screen came on, which is exactly the symptom this constant exists to remove.
 //
-// Degraus grandes de proposito: a tensao e lida com resolucao de 1,25mV, e a
-// 20mA de diferenca o dV se perde no ruido. Sao as transicoes de repouso que
-// dao o degrau limpo.
+// Large steps on purpose: voltage is read at 1.25mV resolution, and at a 20mA
+// difference dV is lost in the noise. It is the idle transitions that give a
+// clean step.
 #define TAB5_R_INTERNA 0.268f
 
-// Capacidade medida da bateria, em mAh - SUBSTITUIDA pela
-// analise da descarga de 21,5h SEM EMENDA achada no energia.csv (a de
-// 1448mAh, vinha de duas sessoes coladas + tensao com só 2 casas
-// ver o comentario grande junto de CURVA[] em tab5_power.cpp para o metodo e
-// para o porque a etiqueta da bateria dizer "2400mAh" nao bate com isto).
-// Usada pelo estimador de carga (tab5_power.cpp, estimar_pct)
-// e exposta aqui, num lugar so, para o console poder mostrar "quantos % da
-// capacidade" sem guardar uma segunda copia do mesmo numero.
+// Measured battery capacity, in mAh - REPLACED by the analysis of the 21.5h
+// discharge WITHOUT A SPLICE found in energia.csv (the 1448mAh one came from
+// two sessions stitched together + voltage with only 2 decimals; see the big
+// comment next to CURVA[] in tab5_power.cpp for the method and for why the
+// battery label saying "2400mAh" does not match this).
+// Used by the charge estimator (tab5_power.cpp, estimar_pct) and exposed
+// here, in one place, so the console can show "what % of capacity" without
+// keeping a second copy of the same number.
 #define TAB5_CAPACIDADE_MAH 1306.8f
 
 struct tab5_medida_t
 {
-  float volts;   // barramento (2S Li-Po, ~7.4V nominal)
-  float mA;      // (+) carregando / (-) descarregando
-  float mW;      // potencia no barramento da bateria
-  int   pct;     // carga estimada 0..100 (negativo = o modelo nao sabe dizer)
+  float volts;   // bus (2S Li-Po, ~7.4V nominal)
+  float mA;      // (+) charging / (-) discharging
+  float mW;      // power on the battery bus
+  int   pct;     // estimated charge 0..100 (negative = the model cannot tell)
 };
 
-// ATENCAO - CONCORRENCIA: estas leituras vao ao INA226 pelo I2C interno, e o
-// I2C_Class do M5Unified NAO tem mutex nenhum (conferido no fonte). Se outra
-// tarefa usar o mesmo barramento ao mesmo tempo - e M5.update() usa, para ler
-// touch e botoes - as duas transacoes se intercalam e voce le REGISTRADOR
-// ERRADO, sem erro nenhum, so numero sem sentido. Chame tudo daqui a partir da
-// MESMA tarefa que chama M5.update(), ou proteja o barramento com um mutex
-// seu que envolva os dois.
+// WARNING - CONCURRENCY: these reads go to the INA226 over the internal I2C,
+// and M5Unified's I2C_Class has NO mutex at all (checked in the source). If
+// another task uses the same bus at the same time - and M5.update() does, to
+// read touch and buttons - the two transactions interleave and you read the
+// WRONG REGISTER, with no error at all, just meaningless numbers. Call
+// everything here from the SAME task that calls M5.update(), or protect the
+// bus with a mutex of your own covering both.
 tab5_medida_t tab5_power_medir(void);
 
-// A ULTIMA medida feita, sem tocar no I2C. E o que outras tarefas devem usar.
+// The LAST measurement taken, without touching I2C. It is what other tasks
+// should use.
 //
-// Regra do projeto: so a tarefa de interface fala no barramento I2C, porque o
-// I2C_Class do M5Unified nao tem mutex e duas tarefas intercalando leem
-// registrador trocado sem dar erro. Quem nao for a interface le daqui.
-// A interface atualiza este valor a cada segundo, acordada ou em repouso.
+// Project rule: only the UI task talks on the I2C bus, because M5Unified's
+// I2C_Class has no mutex and two interleaving tasks read the wrong register
+// without any error. Anything that is not the UI reads from here.
+// The UI updates this value every second, awake or idle.
 tab5_medida_t tab5_power_ultima(void);
 
-// Frequencia de operacao da CPU NESTE INSTANTE, em MHz. Com o DFS ligado
-// (pm_dinamico) ela muda em runtime, entao leia a cada atualizacao em vez de
-// guardar o valor uma vez no boot.
+// CPU operating frequency AT THIS INSTANT, in MHz. With DFS on (pm_dinamico)
+// it changes at run time, so read it on every update instead of storing the
+// value once at boot.
 int tab5_power_cpu_mhz(void);
 
-// Imprime uma linha de log com a medida atual, marcada com a etiqueta dada.
-// Use antes/depois de cada corte para saber quanto ele valeu.
+// Prints a log line with the current measurement, tagged with the given
+// label. Use before/after each cut to know how much it was worth.
 void tab5_power_log(const char* etiqueta);
 
 
-// Lista as TRAVAS DE PM ativas no console.
+// Lists the active PM LOCKS on the console.
 //
-// Existe para encerrar por medicao, e nao por deducao, a pergunta que atrasa
-// toda a economia de energia deste projeto: QUEM prende a CPU no maximo? Ate
-// hoje a resposta era inferida (o painel DPI puxa a PSRAM sem parar, logo deve
-// ser ele). O esp_pm_dump_locks() diz o nome de cada trava e quantas vezes foi
-// adquirida - se o painel aparecer com ESP_PM_CPU_FREQ_MAX, esta provado; se
-// aparecer outro dono, a gente estava caçando o alvo errado.
+// It exists to settle by measurement, not deduction, the question holding up
+// all of this project's power saving: WHO pins the CPU at maximum? Until now
+// the answer was inferred (the DPI panel pulls from PSRAM non-stop, so it
+// must be that). esp_pm_dump_locks() gives each lock's name and how many
+// times it was acquired - if the panel shows up with ESP_PM_CPU_FREQ_MAX, it
+// is proven; if another owner shows up, we were hunting the wrong target.
 //
-// Chamar em pontos diferentes (boot, com app aberto, em repouso) e comparar as
-// listas mostra o que solta e o que nunca solta.
+// Calling it at different points (boot, with an app open, on idle) and
+// comparing the lists shows what lets go and what never does.
 void tab5_power_travas(const char* etiqueta);
 
-// ---- modo de espera (tela apagada + clock baixo) ---------------------------
+// ---- standby mode (screen off + low clock) ---------------------------------
 //
-// O PORQUE: baixar o clock com o painel ativo NAO funciona - foi medido em
-// e o DSI passou a dar underrun em todo frame. O painel DPI
-// transmite o framebuffer da PSRAM continuamente, e a 180MHz o barramento nao
-// alimenta ele a tempo. O M5.Display.sleep() NAO resolve isso: o setSleep() do
-// M5GFX so manda o comando DCS 0x10 (SLPIN) para o painel; o controlador DPI
-// continua puxando ~1.8MB por frame da PSRAM para um painel que ignora.
+// THE WHY: lowering the clock with the panel active does NOT work - it was
+// measured and DSI started underrunning on every frame. The DPI panel streams
+// the framebuffer from PSRAM continuously, and at 180MHz the bus cannot feed
+// it in time. M5.Display.sleep() does NOT solve that: M5GFX's setSleep() only
+// sends the DCS 0x10 (SLPIN) command to the panel; the DPI controller keeps
+// pulling ~1.8MB per frame from PSRAM for a panel that ignores it.
 //
-// A saida e parar o proprio fluxo com esp_lcd_dpi_panel_set_pattern(): o fonte
-// do IDF diz "stop the DSI bridge from generating the DPI stream" quando o
-// padrao e diferente de NONE. Com o fetch parado, nao ha mais underrun possivel
-// e o clock pode cair.
+// The way out is to stop the stream itself with
+// esp_lcd_dpi_panel_set_pattern(): the IDF source says "stop the DSI bridge
+// from generating the DPI stream" when the pattern is not NONE. With the
+// fetch stopped, no underrun is possible any more and the clock can drop.
 //
-// Repare que sao DOIS ganhos empilhados, e provavelmente o primeiro vale mais:
-// parar o streaming elimina trafego continuo de PSRAM que existe hoje mesmo com
-// a tela "dormindo"; baixar o clock e o bonus que so fica disponivel depois.
+// Note there are TWO stacked gains, and the first is probably worth more:
+// stopping the stream removes continuous PSRAM traffic that exists today
+// even with the screen "asleep"; lowering the clock is the bonus only
+// available afterwards.
 //
 // -------------------------------------------------------------------------
-// MEDIDO com tab5_power_travas() - leia antes de mexer aqui
+// MEASURED with tab5_power_travas() - read before touching this
 // -------------------------------------------------------------------------
-// O esp_pm_dump_locks() no boot devolve:
+// esp_pm_dump_locks() at boot returns:
 //
 //     dsi_dpi   CPU_FREQ_MAX     active 1
 //     dsi_phy   NO_LIGHT_SLEEP   active 1
 //
-// Confirma a deducao sobre o clock: quem prende a CPU e o painel, nao o
-// M5Unified nem a revisao do silicio. Mas acrescenta um fato NOVO e trouxe
-// junto um limite que a gente nao conhecia:
+// It confirms the deduction about the clock: what pins the CPU is the panel,
+// not M5Unified or the silicon revision. But it adds a NEW fact and brought
+// with it a limit we did not know about:
 //
-// 1. A trava do clock NAO impede baixar o teto. ESP_PM_CPU_FREQ_MAX prende a
-//    CPU no valor de max_freq_mhz, e esse valor e nosso - por isso o repouso
-//    com ajustar_teto(90) funciona. O que quebra a 90MHz e o underrun, nao a
-//    trava. A estrategia acima continua valendo.
+// 1. The clock lock does NOT stop us lowering the ceiling.
+//    ESP_PM_CPU_FREQ_MAX pins the CPU at max_freq_mhz, and that value is ours
+//    - which is why idle with ajustar_teto(90) works. What breaks at 90MHz is
+//    the underrun, not the lock. The strategy above still holds.
 //
-// 2. LIGHT SLEEP E IMPOSSIVEL enquanto o barramento DSI existir, e nenhum
-//    set_pattern muda isso. Verificado no fonte do IDF: em
-//    esp_lcd_panel_dpi.c a trava e adquirida na CRIACAO do painel (linha 291)
-//    e so liberada dentro do destrutor, junto do free() (linhas 405-406); em
-//    esp_lcd_mipi_dsi_bus.c e igual (72 -> 151). O set_pattern() nao tem uma
-//    unica referencia a pm_lock.
+// 2. LIGHT SLEEP IS IMPOSSIBLE while the DSI bus exists, and no set_pattern
+//    changes that. Verified in the IDF source: in esp_lcd_panel_dpi.c the
+//    lock is acquired at panel CREATION (line 291) and only released inside
+//    the destructor, along with free() (lines 405-406); in
+//    esp_lcd_mipi_dsi_bus.c it is the same (72 -> 151). set_pattern() has not
+//    a single reference to pm_lock.
 //
-// Consequencia pratica: com o DSI de pe, ligar CONFIG_FREERTOS_USE_TICKLESS_IDLE
-// daria ZERO. O caminho foi DESTRUIR painel e barramento ao apagar a tela e
-// recria-los ao acordar (desmontar_tela/montar_tela) - feito. Desde 2026-10-16
-// o tickless esta ligado e o repouso dorme de verdade: tab5_power_sono_leve(),
-// chamado pelo kernel depois do repouso, com o toque/teclado armados para
-// acordar (ver "SONO LEVE: QUEM ACORDA O P4" em kernel/core.cpp).
+// Practical consequence: with DSI up, turning on
+// CONFIG_FREERTOS_USE_TICKLESS_IDLE would give ZERO. The way forward was to
+// DESTROY panel and bus when the screen turns off and recreate them on wake
+// (desmontar_tela/montar_tela) - done. Since 2026-10-16 tickless is on and
+// idle really sleeps: tab5_power_sono_leve(), called by the kernel after
+// idle, with touch/keyboard armed to wake it (see "SONO LEVE: QUEM ACORDA O
+// P4" in kernel/core.cpp).
 
-// Entra em repouso: apaga a tela, para o fluxo de video e baixa o teto de
-// clock. Devolve false se algum passo falhar (e nesse caso desfaz o que deu).
+// Enters idle: turns the screen off, stops the video stream and lowers the
+// clock ceiling. Returns false if any step fails (and in that case undoes
+// what it did).
 //
-// cpu_mhz: degraus validos nesta revisao de silicio sao 360, 180, 90 e XTAL/N.
+// cpu_mhz: valid steps on this silicon revision are 360, 180, 90 and XTAL/N.
 //
-// ATENCAO: nao entre em repouso com o radio ligado sem testar. O driver SDIO do
-// C6 tem exigencias proprias de banda, e como a trava de PM prende no MAXIMO,
-// baixar o teto baixa o clock para ele tambem.
+// WARNING: do not enter idle with the radio on without testing. The C6's SDIO
+// driver has its own bandwidth requirements, and since the PM lock pins at
+// MAXIMUM, lowering the ceiling lowers the clock for it too.
 bool tab5_power_repouso(int cpu_mhz = 90);
 
-// Sai do repouso, NESTA ORDEM: sobe o teto de clock, CONFIRMA que a frequencia
-// subiu de fato, so entao religa o fluxo de video e acorda a tela.
+// Leaves idle, IN THIS ORDER: raises the clock ceiling, CONFIRMS the
+// frequency really went up, only then restarts the video stream and wakes
+// the screen.
 //
-// A confirmacao e o intertravamento: religar o fluxo ainda em clock baixo
-// traria de volta a tempestade de underrun. Se a frequencia nao subir dentro do
-// prazo, esta funcao devolve false e DEIXA A TELA APAGADA de proposito - falhar
-// escuro e melhor que falhar com a imagem rasgando.
+// The confirmation is the interlock: restarting the stream still at a low
+// clock would bring back the underrun storm. If the frequency does not rise
+// in time, this function returns false and LEAVES THE SCREEN OFF on purpose -
+// failing dark is better than failing with a tearing image.
 bool tab5_power_retomar(void);
 
-// Acende a tela em rampa, ate o brilho anterior.
+// Ramps the screen up to the previous brightness.
 //
-// SEPARADA do retomar() de proposito: o retomar() devolve o painel ao ar mas
-// DEIXA A LUZ APAGADA, para quem chamou redesenhar a tela antes de qualquer
-// pixel ficar visivel. Sem essa separacao, a luz sobe mostrando o framebuffer
-// velho ou o lixo da ressincronizacao da ponte DSI - o "artefato" ao acordar.
+// SEPARATE from retomar() on purpose: retomar() brings the panel back but
+// LEAVES THE LIGHT OFF, so the caller can redraw the screen before any pixel
+// is visible. Without that separation, the light comes up showing the old
+// framebuffer or the garbage from the DSI bridge resync - the "artefact" on
+// waking.
 //
-//   tab5_power_retomar();   // volta clock, fluxo e painel, tela ainda escura
-//   ...redesenhe tudo...
-//   tab5_power_acender();   // agora sim
+//   tab5_power_retomar();   // restores clock, stream and panel, screen still dark
+//   ...redraw everything...
+//   tab5_power_acender();   // now it is fine
 void tab5_power_acender(void);
 
-// Gancho chamado a cada degrau da rampa de brilho do acender (a rampa bloqueia
-// a tarefa por ~300 ms; sem o gancho, qualquer coisa animada na tela fica
-// congelada nesse tempo). Rodar na tarefa de interface. nullptr = nenhum.
+// Hook called at each step of acender's brightness ramp (the ramp blocks the
+// task for ~300 ms; without the hook, anything animated on screen freezes for
+// that time). Runs in the UI task. nullptr = none.
 void tab5_power_gancho_rampa(void (*passo)(void));
 
 // ---------------------------------------------------------------------------
-// QUAL TELA ESTE TAB5 TEM
+// WHICH SCREEN THIS TAB5 HAS
 // ---------------------------------------------------------------------------
-// O Tab5 saiu com tres telas (todas 720x1280 MIPI-DSI, mesma placa):
-//   ILI9881C + GT911 - o lancamento (2025): painel e toque em chips separados;
-//   ST7123           - desde out/2025: painel e toque no MESMO chip (TDDI);
-//   ST7121           - desde abr/2026: outro TDDI da mesma familia.
-// O M5GFX descobre sozinho no M5.begin() e monta o driver certo; o desenho e o
-// toque comuns (M5.Display, M5.Touch) funcionam igual nas tres. O que NAO
-// funciona igual e o que este sistema faz por baixo do M5GFX, e cada ponto
-// desses pergunta aqui antes:
-//   - o vigia do toque le registradores do GT911 direto (kernel/core.cpp);
-//   - o repouso fundo (SLPIN + desmontar o DSI) - num TDDI o toque e varrido
-//     junto com a imagem, entao com o painel dormindo o toque provavelmente
-//     morre, e o toque e o que acorda a tela. Nos ST o repouso so apaga a luz;
-//   - o relogio de pixel (tab5_power_relogio_dpi): os porticos que o M5GFX
-//     usa nos ST deixam a varredura do toque na folga vertical, e mexer no
-//     relogio muda essa folga. Nos ST ele fica no de fabrica.
-// Os caminhos dos ST foram escritos sem aparelho para testar: sao os
-// CONSERVADORES (o que o M5GFX ja faz sozinho), nunca um palpite novo.
+// The Tab5 has shipped with three screens (all 720x1280 MIPI-DSI, same board):
+//   ILI9881C + GT911 - the launch (2025): panel and touch on separate chips;
+//   ST7123           - since Oct/2025: panel and touch on the SAME chip (TDDI);
+//   ST7121           - since Apr/2026: another TDDI from the same family.
+// M5GFX detects it by itself in M5.begin() and sets up the right driver;
+// ordinary drawing and touch (M5.Display, M5.Touch) work the same on all
+// three. What does NOT work the same is what this system does underneath
+// M5GFX, and each such point asks here first:
+//   - the touch watchdog reads GT911 registers directly (kernel/core.cpp);
+//   - deep idle (SLPIN + tearing down DSI) - on a TDDI touch is scanned
+//     together with the image, so with the panel asleep touch probably dies,
+//     and touch is what wakes the screen. On the ST ones idle only turns the
+//     light off;
+//   - the pixel clock (tab5_power_relogio_dpi): the porches M5GFX uses on
+//     the ST ones put the touch scan in the vertical blanking, and changing
+//     the clock changes that gap. On the ST ones it stays at factory default.
+// The ST paths were written without a device to test on: they are the
+// CONSERVATIVE ones (what M5GFX already does by itself), never a new guess.
 //
-// Detectado uma vez, na primeira chamada - que tem que ser DEPOIS do
-// M5.begin() e ANTES de qualquer troca de relogio (main.cpp chama logo apos
-// o begin). Qualquer tarefa depois disso.
+// Detected once, on the first call - which must be AFTER M5.begin() and
+// BEFORE any clock change (main.cpp calls it right after begin). Any task
+// after that.
 typedef enum {
   TAB5_PAINEL_DESCONHECIDO = 0,
   TAB5_PAINEL_ILI9881C,
@@ -424,77 +436,79 @@ typedef enum {
 } tab5_painel_t;
 tab5_painel_t tab5_painel(void);
 const char*   tab5_painel_nome(void);
-// true so no ILI9881C: o toque e um GT911 separado (vigia direto, pulso no
-// GPIO 23 confirmado, repouso fundo e relogio ajustavel validados nele).
+// true only on the ILI9881C: touch is a separate GT911 (direct watchdog,
+// GPIO 23 pulse confirmed, deep idle and adjustable clock validated on it).
 bool          tab5_painel_toque_gt911(void);
 
-// REINICIO DO GT911 pelo pino de reset (TP_RST, expansor 0x43 saida 5), a
-// mesma sequencia do boot: INT em alto durante o reset (fica no endereco
-// 0x14, o que o driver ja usa). Para o GT911 "mudo": visto em 13-14/11/2026,
-// ele passou a pulsar o INT ~10x/s SEM nunca ter relatorio pronto, e so voltou
-// com o aparelho reiniciado - em repouso a tela nao acordava mais. Leva ~130 ms.
-// So na tarefa de interface (a dona do I2C interno e do toque). false = nao e
-// GT911, ou o expansor nao respondeu.
+// GT911 RESET via the reset pin (TP_RST, expander 0x43 output 5), the same
+// sequence as at boot: INT high during reset (it stays at address 0x14,
+// which the driver already uses). For the "mute" GT911: seen on 13-14/11/2026,
+// it started pulsing INT ~10x/s WITHOUT ever having a report ready, and only
+// came back with the device rebooted - on idle the screen would no longer
+// wake. Takes ~130 ms. UI task only (the owner of internal I2C and touch).
+// false = not a GT911, or the expander did not respond.
 bool          tab5_toque_reiniciar(void);
 
 // ---------------------------------------------------------------------------
-// RELOGIO DE PIXEL DO PAINEL
+// PANEL PIXEL CLOCK
 // ---------------------------------------------------------------------------
-// O painel DPI le o framebuffer da PSRAM sem parar, no ritmo deste relogio. A
-// 80MHz (o que o M5GFX programa para o ILI9881C) sao 64 frames por segundo e
-// 118,5 MB/s de leitura CONTINUA. A 60MHz sao 48 frames e 88,9 MB/s.
+// The DPI panel reads the framebuffer from PSRAM non-stop, at this clock's
+// rate. At 80MHz (what M5GFX programs for the ILI9881C) that is 64 frames
+// per second and 118.5 MB/s of CONTINUOUS reading. At 60MHz it is 48 frames
+// and 88.9 MB/s.
 //
-// Esses 25% a menos sao a unica coisa que reduz a demanda do painel de forma
-// permanente - todo o resto do sistema (fatiar limpeza, evitar limpar duas
-// vezes, espacar rajadas) mexe no OUTRO lado da disputa. Ver a explicacao
-// completa em tab5_power.cpp, junto da implementacao.
+// That 25% less is the only thing that permanently reduces the panel's
+// demand - everything else in the system (sliced clearing, avoiding clearing
+// twice, spacing bursts) works on the OTHER side of the contest. See the full
+// explanation in tab5_power.cpp, alongside the implementation.
 //
-// Trocar o relogio DESMONTA E REMONTA o painel - o mesmo caminho do despertar.
-// Devolve false (e volta sozinho ao valor anterior) se o painel nao subir.
+// Changing the clock TEARS DOWN AND REBUILDS the panel - the same path as
+// waking. Returns false (and reverts by itself to the previous value) if the
+// panel does not come up.
 bool tab5_power_relogio_dpi(int mhz);
 
-// Relogio atual, em MHz; 0 se nao ha painel.
+// Current clock, in MHz; 0 if there is no panel.
 int  tab5_power_relogio_dpi(void);
 
-// Velocidade do link DSI (Mbps por via), SO PARA TESTE (nao grava). Remonta o
-// painel como o relogio; volta sozinha se nao subir. Na tarefa de interface.
+// DSI link speed (Mbps per lane), FOR TESTING ONLY (not saved). Rebuilds the
+// panel like the clock does; reverts by itself if it does not come up. In
+// the UI task.
 bool tab5_power_link_dsi(int mbps);
 int  tab5_power_link_dsi(void);
 
-// Quadros por segundo no relogio atual, pelos porticos que o M5GFX programou
-// NESTA tela (cada uma tem os seus). 0 se nao ha painel.
+// Frames per second at the current clock, from the porches M5GFX programmed
+// on THIS screen (each has its own). 0 if there is no panel.
 double tab5_power_quadros_por_segundo(void);
 
-// Proximo relogio REAL da tabela (80, 60, 48, 40, 30, 24): para cima com
-// passo > 0, para baixo com passo < 0. Para nas pontas. O app usa isto nos
-// botoes de mais/menos; tab5_power_relogio_dpi(mhz) aproxima qualquer pedido.
+// Next REAL clock in the table (80, 60, 48, 40, 30, 24): up with passo > 0,
+// down with passo < 0. Stops at the ends. The app uses this for the plus/minus
+// buttons; tab5_power_relogio_dpi(mhz) approximates any request.
 int tab5_power_relogio_vizinho(int atual, int passo);
 
 // ---------------------------------------------------------------------------
-// TETO DO CPU COM A TELA ACORDADA - diagnostico, criado
+// CPU CEILING WITH THE SCREEN AWAKE - diagnostics
 // ---------------------------------------------------------------------------
-// Muda SO o teto de clock do CPU, em execucao, SEM entrar em repouso e SEM
-// desmontar o painel - diferente de tab5_power_repouso(), que apaga a tela
-// por completo. Existe para testar uma pergunta especifica: um relogio de
-// painel mais baixo (ver tab5_power_relogio_dpi acima) abre espaco para um
-// teto de CPU menor, com a tela LIGADA e desenhando normalmente, sem underrun?
+// Changes ONLY the CPU clock ceiling, at run time, WITHOUT entering idle and
+// WITHOUT tearing down the panel - unlike tab5_power_repouso(), which turns
+// the screen off completely. It exists to test one specific question: does a
+// lower panel clock (see tab5_power_relogio_dpi above) make room for a lower
+// CPU ceiling, with the screen ON and drawing normally, without underrun?
 //
-// Ninguem tinha testado essa combinacao ainda - so "CPU baixo com o painel no
-// relogio de sempre" (deu underrun) e "CPU baixo com o painel
-// desmontado" (o repouso, que sempre funcionou porque nao ha mais painel para
-// dar underrun). Esta funcao permite o terceiro caso: os dois LIGADOS e os
-// dois devagar, ao mesmo tempo.
+// Nobody had tested that combination yet - only "low CPU with the panel at
+// the usual clock" (underran) and "low CPU with the panel torn down" (idle,
+// which always worked because there is no panel left to underrun). This
+// function allows the third case: both ON and both slow, at the same time.
 //
-// Valores validos nesta revisao de silicio: 360, 180, 90 (PLL) ou XTAL/N -
-// 40, 20, 10, 8, 5, 4, 2, 1. Devolve false e nao muda nada se o IDF recusar.
+// Valid values on this silicon revision: 360, 180, 90 (PLL) or XTAL/N -
+// 40, 20, 10, 8, 5, 4, 2, 1. Returns false and changes nothing if IDF refuses.
 bool tab5_power_teto_cpu(int mhz);
 
-// true enquanto estiver em repouso.
+// true while idle.
 bool tab5_power_em_repouso(void);
 
-// SONO LEVE (light sleep automatico no idle) - so em repouso com a tela
-// DESMONTADA. Quem decide e o kernel (que arma os pinos que acordam: toque e
-// teclado); retomar/ajustar o teto desliga sozinho. false = nao deu (fora do
-// repouso, repouso so de luz, PM ou tickless fora do sdkconfig).
+// LIGHT SLEEP (automatic light sleep on idle) - only on idle with the screen
+// TORN DOWN. The kernel decides (it arms the wake pins: touch and keyboard);
+// retomar/adjusting the ceiling turns it off by itself. false = could not
+// (not idle, light-only idle, PM or tickless missing from sdkconfig).
 bool tab5_power_sono_leve(bool ligar);
 bool tab5_power_sono_leve_ligado(void);

@@ -1,5 +1,5 @@
-// Comandos do console - BANCADA: grove, i2c, camera, foto.
-// (Partido de console.cpp; a tabela COMANDOS e a ajuda continuam la.)
+// Console commands - BANCADA (BENCH): grove, i2c, camera, foto.
+// (Split from console.cpp; the COMANDOS table and the help remain there.)
 
 #include "tab5_bmp.hpp"
 #include "tab5_camera.hpp"
@@ -14,35 +14,35 @@
 #include "console/console_interno.hpp"
 
 // ---------------------------------------------------------------------------
-// i2c <sda> <scl>  - descobre quem responde num par de pinos
+// i2c <sda> <scl>  - finds out who answers on a pair of pins
 // ---------------------------------------------------------------------------
 //
-// Existe para NAO adivinhar protocolo de hardware novo. O conector lateral do
-// Tab5 expoe G49, G50, G0, G1 e EXT 5V; se o teclado falar I2C, o endereco dele
-// aparece aqui e a integracao vira trivial. Se nada responder em nenhuma
-// combinacao, e sinal de que nao e I2C - e ai a hipotese seguinte e UART.
+// It exists so as NOT to guess the protocol of new hardware. The Tab5's side
+// connector exposes G49, G50, G0, G1 and EXT 5V; if the keyboard speaks I2C, its address
+// appears here and the integration becomes trivial. If nothing answers in any
+// combination, it is a sign it is not I2C - and then the next hypothesis is UART.
 //
-// Use o par nos DOIS sentidos: nao ha como saber de fora quem e SDA e quem e
-// SCL, e trocado nao responde nada.
+// Use the pair in BOTH directions: there is no way to tell from outside which is SDA and which is
+// SCL, and swapped nothing answers.
 //
 //   i2c 49 50        i2c 50 49        i2c 0 1        i2c 1 0
 //
-// Rode a partir da tela inicial: o comando mexe no barramento externo, que e o
-// mesmo que o Azimutal toma emprestado como UART do GPS.
+// Run it from the home screen: the command touches the external bus, which is the
+// same one Azimutal borrows as the GPS UART.
 int cmd_i2c(int argc, char** argv)
 {
   if (argc < 3) { printf("%s", tr("uso: i2c <sda> <scl>   (ex: i2c 49 50)\n")); return 1; }
 
-  // O AVISO VIROU TRAVA. Ate aqui, "rode a partir da tela inicial" era so um
-  // comentario no fonte - o comando reconfigurava o barramento externo por
-  // baixo de quem quer que o estivesse usando, sem perguntar. O Azimutal usa
-  // esse mesmo barramento como UART do GPS, e o teclado do ExtPort1 tambem
-  // esta nele: rodar isto com qualquer um dos dois aberto arranca o
-  // barramento da tarefa dona no meio de uma transacao.
+  // THE WARNING BECAME A LOCK. Until now, "run it from the home screen" was just a
+  // comment in the source - the command reconfigured the external bus from
+  // under whoever was using it, without asking. Azimutal uses
+  // this same bus as the GPS UART, and the ExtPort1 keyboard is also
+  // on it: running this with either of the two open yanks the
+  // bus from the owning task in the middle of a transaction.
   //
-  // A CONSISTENCIA que valia a pena: uma regra de bancada documentada em
-  // comentario e uma regra que so vale enquanto alguem lembra de ler o
-  // comentario. Fazendo o proprio comando checar, ela vale sempre.
+  // The CONSISTENCY worth having: a bench rule documented in a
+  // comment is a rule that only holds while someone remembers to read the
+  // comment. By making the command itself check, it always holds.
   const char* app = sistema_app_atual();
   if (app) {
     printf(tr("nao da para varrer o I2C com '%s' aberto - ele pode estar usando\n"
@@ -53,25 +53,25 @@ int cmd_i2c(int argc, char** argv)
   const int sda = atoi(argv[1]);
   const int scl = atoi(argv[2]);
 
-  // O teclado fisico e lido pela tarefa de interface no Ex_I2C: reabrir o
-  // barramento por baixo dela arrancaria a leitura no meio de uma transacao.
+  // The physical keyboard is read by the UI task on Ex_I2C: reopening the
+  // bus from under it would yank the read in the middle of a transaction.
   if (tab5_teclado_presente()) {
     printf("%s", tr("nao da para varrer o I2C com o teclado conectado - ele usa o\n"
                     "barramento externo. Desconecte o teclado e tente de novo.\n"));
     return 1;
   }
 
-  // O barramento EXTERNO (Ex_I2C, o do Grove) e o unico que podemos reaproveitar.
-  // No Tab5 o INTERNO (toque, IMU, INA226, expansores, RTC) e o In_I2C
-  // (I2C_NUM_1) e e propriedade da tarefa de interface - encostar nele daqui
-  // seria a corrida que o sistema inteiro evita. Por isso a porta usada e
-  // sempre a do proprio Ex_I2C, nunca uma fixa.
+  // The EXTERNAL bus (Ex_I2C, the Grove one) is the only one we can reuse.
+  // On the Tab5 the INTERNAL one (touch, IMU, INA226, expanders, RTC) is In_I2C
+  // (I2C_NUM_1) and is owned by the UI task - touching it from here
+  // would be the race the whole system avoids. That is why the port used is
+  // always Ex_I2C's own, never a fixed one.
   const i2c_port_t porta = M5.Ex_I2C.getPort();
   if (porta == M5.In_I2C.getPort()) {
     printf("%s", tr("o barramento externo usa a mesma porta do interno - recusado\n"));
     return 1;
   }
-  // Porta e pinos originais: e exatamente isto que volta no fim.
+  // Original port and pins: this is exactly what is restored at the end.
   const int sda_orig = M5.Ex_I2C.getSDA();
   const int scl_orig = M5.Ex_I2C.getSCL();
 
@@ -97,37 +97,37 @@ int cmd_i2c(int argc, char** argv)
   if (n == 0) { printf("%s", tr("  ninguem respondeu\n")); }
   else        { printf(tr("  %d dispositivo(s)\n"), n); }
 
-  // Devolve o barramento externo a porta e aos pinos de antes.
+  // Returns the external bus to the previous port and pins.
   M5.Ex_I2C.release();
   M5.Ex_I2C.begin(porta, sda_orig, scl_orig);
   return 0;
 }
 
 // ---------------------------------------------------------------------------
-// 'foto' - PROVA DE QUE A CAMERA VIROU SERVICO, do MESMO jeito
-// que 'concorrencia'/'simulacao' acima provam GPS/IMU: liga a camera, tira
-// UMA foto e desliga de novo, inteiramente de FORA do app Camera - se isto
-// funcionar com o app Camera FECHADO, e funcionar de novo com ele ABERTO ao
-// mesmo tempo (ver a contagem de referencia em tab5_camera.hpp), a
-// independencia entre servico e app esta provada em hardware, nao so no
-// papel.
+// 'foto' - PROOF THAT THE CAMERA BECAME A SERVICE, in the SAME way
+// that 'concorrencia'/'simulacao' above prove GPS/IMU: turns the camera on, takes
+// ONE photo and turns it off again, entirely from OUTSIDE the Camera app - if this
+// works with the Camera app CLOSED, and works again with it OPEN at the
+// same time (see the reference count in tab5_camera.hpp), the
+// independence between service and app is proven in hardware, not just on
+// paper.
 //
-// A FOTO sai com o quadro inteiro do sensor (TAB5_CAM_FOTO_L x _A); este
-// comando nao tem preview.
+// The PHOTO comes out with the sensor's full frame (TAB5_CAM_FOTO_L x _A); this
+// command has no preview.
 void cmd_foto(void)
 {
 
-  // Da tarefa do console, direto: o SCCB do sensor passa pela trava do I2C
-  // interno (hal/tab5_sccb.cpp). O console aparece usando a camera nos
-  // recursos (energia quem) enquanto ela estiver ligada por ele.
+  // From the console task, directly: the sensor's SCCB goes through the internal
+  // I2C lock (hal/tab5_sccb.cpp). The console shows up as using the camera in
+  // the resources ('energia quem') while it is turned on by it.
   printf("%s", tr("ligando a camera...\n"));
   if (!tab5_camera_iniciar("console")) {
     printf("%s", tr("falhou - confira o log (sensor ausente?)\n"));
     return;
   }
 
-  // A camera so CAPTURA (um frame, por PPA, na tarefa dela); gravar e daqui,
-  // da tarefa do console - ver services/tab5_bmp e tab5_camera_pedir_quadro.
+  // The camera only CAPTURES (one frame, via PPA, on its task); writing happens here,
+  // on the console task - see services/tab5_bmp and tab5_camera_pedir_quadro.
   uint16_t* foto = tab5_camera_quadro_alocar(TAB5_CAM_FOTO_L, TAB5_CAM_FOTO_A);
   bool ok = false;
   if (!foto) {
@@ -136,7 +136,7 @@ void cmd_foto(void)
     printf("%s", tr("nao consegui pedir a foto (outra ainda pendente?)\n"));
   } else {
     bool pronta = false;
-    for (int i = 0; i < 50 && !pronta; ++i) {    // 5 s: o primeiro frame pode demorar
+    for (int i = 0; i < 50 && !pronta; ++i) {    // 5 s: the first frame may take a while
       vTaskDelay(pdMS_TO_TICKS(100));
       pronta = tab5_camera_quadro_pronto(foto, &ok);
     }
@@ -146,22 +146,22 @@ void cmd_foto(void)
     else          { printf("%s", tr("a captura falhou (confira o log)\n")); }
   }
 
-  // SEMPRE solta o interesse que este comando pediu - mesmo em erro. Se mais
-  // alguem (o app Camera, por exemplo) ainda estiver usando, a contagem de
-  // referencia mantem o sensor de pe; se este comando era o unico
-  // interessado, ele desliga de verdade agora.
-  tab5_camera_parar("console");   // espera a tarefa da camera - so depois o buffer pode sair
+  // ALWAYS releases the interest this command requested - even on error. If anyone
+  // else (the Camera app, for example) is still using it, the reference count
+  // keeps the sensor up; if this command was the only
+  // one interested, it really turns off now.
+  tab5_camera_parar("console");   // waits for the camera task - only then can the buffer go
   if (foto) { heap_caps_free(foto); }
 }
 
-// 'camera' - O QUE O ISP ESTA FAZENDO COM A COR. Imprime o estado do IPA
-// proprio (hal/tab5_camera_ipa.c: ganhos do AWB, a matriz da calibracao e a
-// que foi ao ISP, o verde que um branco saturado teria com cada uma) e mede um
-// quadro inteiro: media do centro, media das sombras, fracao de pixel
-// estourado e de pixel magenta. Com a lente tampada, a media do centro e o
-// preto que o sensor entrega - o teste direto do pedestal (tab5_camera.cpp,
-// zerar_pedestal). 'camera reg' fala com o sensor enquanto o app Camera esta
-// aberto, para experimentar um registrador ao vivo.
+// 'camera' - WHAT THE ISP IS DOING WITH COLOUR. Prints the state of our own
+// IPA (hal/tab5_camera_ipa.c: AWB gains, the calibration matrix and the
+// one sent to the ISP, the green a saturated white would have with each) and measures a
+// whole frame: centre average, shadows average, fraction of clipped
+// pixels and of magenta pixels. With the lens covered, the centre average is the
+// black the sensor delivers - the direct test of the pedestal (tab5_camera.cpp,
+// zerar_pedestal). 'camera reg' talks to the sensor while the Camera app is
+// open, to try a register live.
 void cmd_camera(int argc, char** argv)
 {
   if (argc >= 3 && strcmp(argv[1], "reg") == 0) {
@@ -181,8 +181,8 @@ void cmd_camera(int argc, char** argv)
          rev >= 300 ? tr("ISP com WBG e BLC (balanco e preto no hardware)")
                     : tr("ISP sem WBG nem BLC (balanco na CCM, preto pelo sensor)"));
 
-  // Ligada por outro (o app Camera, o navegador): so observa - o AE/AWB ja
-  // estao assentados.
+  // Turned on by someone else (the Camera app, the browser): only observes - AE/AWB are already
+  // settled.
   const bool ja_ligada = tab5_camera_ativa();
   if (!ja_ligada) {
     printf("%s", tr("ligando a camera e esperando o AE/AWB assentarem...\n"));
@@ -249,20 +249,20 @@ void cmd_camera(int argc, char** argv)
     printf("%s", tr("nao veio quadro para medir\n"));
   }
 
-  if (!ja_ligada) { tab5_camera_parar("console"); }   // espera a tarefa: so depois o buffer sai
+  if (!ja_ligada) { tab5_camera_parar("console"); }   // waits for the task: only then does the buffer go
   if (foto) { heap_caps_free(foto); }
 }
 
 // ---------------------------------------------------------------------------
-// BANCADA
+// BENCH
 // ---------------------------------------------------------------------------
 
 void c_grove(int argc, char** argv)
 {
   if (argc >= 2 && eh(argv[1], "trocar")) {
-    // TROQUEI O MODULO NO CABO. Para o servico, devolve a porta, sonda de novo
-    // e sobe o que couber. Feito pelo sistema, na tarefa de interface - daqui
-    // nao da para mexer na UART de outra tarefa com seguranca.
+    // I SWAPPED THE MODULE ON THE CABLE. Stops the service, returns the port, probes again
+    // and brings up whatever fits. Done by the system, on the UI task - from here
+    // it is not safe to touch another task's UART.
     if (sistema_grove_redetectar()) {
       printf("%s", tr("pedido feito - a interface sonda no proximo ciclo (uns 4s).\n"
              "rode 'grove' depois para ver o que achou.\n"));
@@ -271,18 +271,18 @@ void c_grove(int argc, char** argv)
     }
     return;
   }
-  // 'grove cru <baud>', ou a forma antiga 'grove <baud>': despeja os bytes
-  // crus, para OLHAR em vez de deduzir.
+  // 'grove cru <baud>', or the old form 'grove <baud>': dumps the raw
+  // bytes, to LOOK instead of deducing.
   const char* baud = nullptr;
   if (argc >= 3 && eh(argv[1], "cru"))          { baud = argv[2]; }
   else if (argc >= 2 && atoi(argv[1]) > 0)      { baud = argv[1]; }
   if (baud) { tab5_grove_despejar(atoi(baud), 2500); return; }
   if (argc >= 2) { mostrar_uso("grove"); return; }
 
-  // SO RELATA - nao sonda. Sondar daqui era um bug silencioso: a sonda escreve
-  // e le na UART, e com o servico Meshtastic de pe a porta e DELE. Duas
-  // tarefas na mesma UART embaralham o fluxo e o enlace caia por causa do
-  // comando que deveria so diagnosticar.
+  // ONLY REPORTS - does not probe. Probing from here was a silent bug: the probe writes
+  // and reads on the UART, and with the Meshtastic service up the port is ITS. Two
+  // tasks on the same UART scramble the stream and the link dropped because of the
+  // command that was only meant to diagnose.
   const grove_dono_t dono = tab5_grove_dono();
   printf(tr("Grove: %s\n"), grove_nome(tab5_grove_tipo()));
   printf(tr("  energia : %s\n"), ajustes_grove() ? tr("ligada") : tr("desligada"));

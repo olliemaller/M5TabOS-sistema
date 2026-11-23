@@ -1,5 +1,5 @@
-// Comandos do console - TESTES: concorrencia e simulacao (carga artificial para provar os servicos).
-// (Partido de console.cpp; a tabela COMANDOS e a ajuda continuam la.)
+// Console commands - TESTES (TESTS): concorrencia and simulacao (artificial load to prove the services).
+// (Split from console.cpp; the COMANDOS table and the help remain there.)
 
 #include "tab5_hora.hpp"   // tab5_agora_ms
 #include "freertos/FreeRTOS.h"
@@ -10,17 +10,17 @@
 #include "console/console_interno.hpp"
 
 // ---------------------------------------------------------------------------
-// SEGUNDO CONSUMIDOR DE MENTIRA (com um app so nao da para testar).
+// FAKE SECOND CONSUMER (with a single app it cannot be tested).
 // ---------------------------------------------------------------------------
-// O sistema so abre UM app por vez, entao nao da para provar que
-// tab5_gps_posicao()/tab5_gps_tempo()/tab5_imu_ultima() aguentam DOIS
-// leitores ao mesmo tempo so abrindo dois apps - nao existe "dois apps
-// abertos" ainda. Esta tarefa e um segundo leitor de verdade, independente
-// de qualquer app: martela as tres funcoes bem mais rapido que qualquer
-// tela desenha, enquanto voce abre o Azimutal ou o IMU normalmente. Prova
-// duas coisas: que a trava aguenta uso concorrente de verdade sem travar
-// nem derrubar o sistema, e (comparando os numeros daqui com os da tela) que
-// os dois leitores sempre veem o MESMO valor, nunca um "meio atualizado".
+// The system only opens ONE app at a time, so you cannot prove that
+// tab5_gps_posicao()/tab5_gps_tempo()/tab5_imu_ultima() withstand TWO
+// readers at the same time just by opening two apps - "two apps
+// open" does not exist yet. This task is a real second reader, independent
+// of any app: it hammers the three functions much faster than any
+// screen draws, while you open Azimutal or IMU as normal. It proves
+// two things: that the lock withstands real concurrent use without locking up
+// or bringing the system down, and (comparing the numbers here with those on screen) that
+// both readers always see the SAME value, never a "half-updated" one.
 static bool s_conc_ativa = false;
 static bool s_conc_parar = false;
 static uint32_t s_conc_leituras = 0;
@@ -44,9 +44,9 @@ static void vTaskConcorrencia(void*)
              (unsigned long)s_conc_leituras, (int)pos.valida, pos.lat, pos.lon,
              (int)imu.valida, imu.ax, imu.ay, imu.az);
     }
-    // SEM vTaskDelay(0)/yield puro - 1 tick (o minimo real) ainda martela bem
-    // mais rapido que qualquer app desenha (20ms de ciclo), sem virar um
-    // busy-loop que rouba o core de quem esta desenhando de verdade.
+    // NO vTaskDelay(0)/pure yield - 1 tick (the real minimum) still hammers much
+    // faster than any app draws (20ms cycle), without becoming a
+    // busy-loop that steals the core from whoever is really drawing.
     vTaskDelay(1);
   }
   s_conc_ativa = false;
@@ -79,26 +79,26 @@ void cmd_concorrencia(int argc, char** argv)
 }
 
 // ---------------------------------------------------------------------------
-// TRES "APPS" DE MENTIRA, CADA UM NA SUA TAREFA
-// (teste mais rigoroso: os 3 apps aparecem no console pedindo o servico).
+// THREE FAKE "APPS", EACH ON ITS OWN TASK
+// (stricter test: the 3 apps appear in the console requesting the service).
 // ---------------------------------------------------------------------------
-// A diferenca para "concorrencia" acima: aquele e UM leitor generico,
-// martelando o mais rapido possivel. Isto aqui e tres CONSUMIDORES
-// DIFERENTES, cada um com o padrao de acesso de um app de verdade -
-// cadencia propria, log com o proprio nome - rodando ao mesmo tempo, na
-// MESMA tarefa de interface que qualquer app real usaria (nao, so cada um na
-// SUA tarefa, independente das outras duas e de qualquer app aberto na
-// tela). E o mais perto de "3 apps abertos ao mesmo tempo" que da para
-// simular sem o sistema realmente suportar isso ainda.
+// The difference from "concorrencia" above: that one is ONE generic reader,
+// hammering as fast as possible. This is three DIFFERENT
+// CONSUMERS, each with the access pattern of a real app -
+// its own cadence, logging under its own name - running at the same time, not on the
+// SAME UI task any real app would use (no - each one on
+// ITS OWN task, independent of the other two and of any app open on
+// screen). It is the closest to "3 apps open at the same time" that can be
+// simulated without the system really supporting that yet.
 //
-// App-Mapa   : le so GPS, a cada 200ms - como uma tela de posicao/mapa.
-// App-Nivel  : le so IMU, o mais rapido possivel - como um nivel-bolha.
-// App-Log    : le GPS E IMU juntos, a cada 1s - como um logger periodico.
-//              Este e o que mais interessa: prova que um consumidor lendo
-//              DOIS servicos em sequencia nao trava (as travas de GPS e IMU
-//              sao independentes, nunca uma dentro da outra - sem isso
-//              haveria risco de deadlock se um dia alguem invertesse a
-//              ordem em outro consumidor).
+// App-Mapa   : reads only GPS, every 200ms - like a position/map screen.
+// App-Nivel  : reads only IMU, as fast as possible - like a bubble level.
+// App-Log    : reads GPS AND IMU together, every 1s - like a periodic logger.
+//              This is the most interesting one: it proves that a consumer reading
+//              TWO services in sequence does not deadlock (the GPS and IMU locks
+//              are independent, never one inside the other - without that
+//              there would be a risk of deadlock if one day someone reversed the
+//              order in another consumer).
 static bool     s_sim_ativa = false;
 static bool     s_sim_parar = false;
 static uint32_t s_sim_leituras[3] = { 0, 0, 0 };
@@ -116,7 +116,7 @@ static void vTaskSimMapa(void*)
       printf(tr("[app-mapa]  pedido #%-6lu -> gps valida=%d lat=%.5f lon=%.5f\n"),
              (unsigned long)s_sim_leituras[0], (int)pos.valida, pos.lat, pos.lon);
     }
-    vTaskDelay(pdMS_TO_TICKS(200));   // cadencia de uma tela de posicao
+    vTaskDelay(pdMS_TO_TICKS(200));   // cadence of a position screen
   }
   vTaskDelete(nullptr);
 }
@@ -135,7 +135,7 @@ static void vTaskSimNivel(void*)
       printf(tr("[app-nivel] pedido #%-6lu -> imu valida=%d ax=%.2f ay=%.2f az=%.2f\n"),
              (unsigned long)s_sim_leituras[1], (int)d.valida, d.ax, d.ay, d.az);
     }
-    vTaskDelay(1);   // o mais rapido possivel, como um nivel-bolha precisa
+    vTaskDelay(1);   // as fast as possible, as a bubble level needs
   }
   vTaskDelete(nullptr);
 }
@@ -151,7 +151,7 @@ static void vTaskSimLog(void*)
 
     printf(tr("[app-log]   pedido #%-6lu -> gps(valida=%d) + hora(valida=%d) + imu(valida=%d, az=%.2f)\n"),
            (unsigned long)s_sim_leituras[2], (int)pos.valida, (int)hora.valida, (int)imu.valida, imu.az);
-    vTaskDelay(pdMS_TO_TICKS(1000));   // cadencia de um logger periodico
+    vTaskDelay(pdMS_TO_TICKS(1000));   // cadence of a periodic logger
   }
   vTaskDelete(nullptr);
 }

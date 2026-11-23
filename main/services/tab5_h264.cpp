@@ -1,4 +1,4 @@
-// H264 - ver tab5_h264.hpp.
+// H264 - see tab5_h264.hpp.
 #include "tab5_h264.hpp"
 #include "tab5_volumes.hpp"
 #include "tab5_hash.hpp"
@@ -17,22 +17,22 @@
 
 static const char* TAG = "h264";
 
-// Os quadros (DPB) moram na PSRAM. 128 bytes: a linha da cache da PSRAM -
-// dois quadros nunca dividem uma linha (o PPA e a CPU nao se atrapalham).
+// The frames (DPB) live in PSRAM. 128 bytes: the PSRAM cache line -
+// two frames never share a line (the PPA and the CPU don't get in each other's way).
 #define H264_ALINHAMENTO_QUADRO  128
-// Teto da PSRAM para os quadros. A 720p (1,4 MB por quadro) da para 4 quadros
-// de referencia + o em decodificacao + os presos pelo video; em 360p, folgado.
+// PSRAM ceiling for the frames. At 720p (1.4 MB per frame) there's room for 4 reference
+// frames + the one being decoded + those held by the video; at 360p, plenty.
 #define H264_ORCAMENTO_QUADROS   (8u * 1024 * 1024)
-// Quadros que o video pode segurar ao mesmo tempo (o na tela e o seguinte).
+// Frames the video can hold at the same time (the one on screen and the next).
 #define H264_PRESOS              2
-// A arena: o maior tamanho util (1280 de largura, ou 640 com a janela de
-// referencia). Na SRAM ela vem em ate 4 PEDACOS (a SRAM do P4 quase nunca tem
-// um bloco livre desse tamanho); pedaco menor que o minimo nao serve para nada
-// (as linhas de macrobloco tem ~25-55 KB cada). O decodificador se ajusta ao
-// que recebe: menos linhas em paralelo e, se faltar, sem a janela.
+// The arena: the largest useful size (1280 wide, or 640 with the reference
+// window). In SRAM it comes in up to 4 PIECES (the P4's SRAM almost never has
+// a free block that size); a piece smaller than the minimum is no use at all
+// (macroblock rows are ~25-55 KB each). The decoder adapts to
+// what it gets: fewer rows in parallel and, if short, no window.
 #define H264_ARENA_MAX           (240 * 1024)
-// Acima de 1280 (o 1080p do celular) as linhas de macrobloco crescem com a
-// largura: a arena na PSRAM cresce junto (1920 = 360 KB).
+// Above 1280 (the phone's 1080p) the macroblock rows grow with the
+// width: the arena in PSRAM grows with it (1920 = 360 KB).
 #define H264_LADO_MAX            1920
 static size_t arena_para(int lado)
 {
@@ -41,38 +41,38 @@ static size_t arena_para(int lado)
 }
 #define H264_PEDACO_MIN          (24 * 1024)
 #define H264_PEDACOS             (1 + H264_DEC_WORK_EXTRA)
-// O piso nao basta: os pedacos levam os MAIORES blocos, e o que sobra pode
-// ficar todo picado - a pilha do trabalhador, o pool DMA do Wi-Fi e qualquer
-// buffer contiguo do sistema falhariam com 80 KB livres em migalhas. Este
-// bloco e separado ANTES dos pedacos e devolvido depois: sempre sobra pelo
-// menos um bloco contiguo desse tamanho.
+// The floor isn't enough: the pieces take the LARGEST blocks, and what is left may
+// end up all fragmented - the worker's stack, Wi-Fi's DMA pool and any
+// contiguous system buffer would fail with 80 KB free in crumbs. This
+// block is set aside BEFORE the pieces and given back afterwards: there is always at
+// least one contiguous block of that size left.
 #define H264_RESERVA_CONTIGUA    (24 * 1024)
-// O trabalhador do nucleo 1: deblocking e gravacao das linhas. Abaixo da
-// Musica (o som nao pode engasgar por causa da imagem).
+// The core 1 worker: deblocking and writing the rows. Below
+// Musica (the sound must not stutter because of the picture).
 #define H264_POS_PILHA           6144
 #define H264_POS_PRIO            4
 #define H264_POS_NUCLEO          1
 
 struct tab5_h264 {
   h264_dec_t*       dec;
-  uint8_t*          pedaco[H264_PEDACOS];      // a arena (pedaco[0] sempre existe)
+  uint8_t*          pedaco[H264_PEDACOS];      // the arena (pedaco[0] always exists)
   size_t            pedaco_bytes[H264_PEDACOS];
-  size_t            arena_bytes;               // a soma
-  size_t            sram_bytes;                // quanto dela e SRAM
+  size_t            arena_bytes;               // the sum
+  size_t            sram_bytes;                // how much of it is SRAM
   bool              na_sram;
   h264_dec_threads_t fios;
   tab5_h264_cfg_t   cfg;
-  bool              ja_saiu_quadro;   // depois do 1o quadro, nao troca mais a arena
+  bool              ja_saiu_quadro;   // after the 1st frame, no longer swaps the arena
 };
 
 // ---------------------------------------------------------------------------
-// O que o decodificador pede ao sistema: memoria e fios (tarefas + semaforos).
+// What the decoder asks of the system: memory and threads (tasks + semaphores).
 // ---------------------------------------------------------------------------
 static void* alocar_psram(void*, size_t n)
 {
   void* p = heap_caps_aligned_alloc(H264_ALINHAMENTO_QUADRO, n, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-  if (!p) {   // video grande demais para a PSRAM que sobrou: diz quanto faltou
-    ESP_LOGW(TAG, "sem PSRAM: pediu %u KB, livre %u KB, maior bloco %u KB", (unsigned)(n / 1024),
+  if (!p) {   // video too large for the PSRAM left: says how much was missing
+    ESP_LOGW(TAG, "no PSRAM: asked for %u KB, free %u KB, largest block %u KB", (unsigned)(n / 1024),
              (unsigned)(heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024),
              (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM) / 1024));
   }
@@ -91,7 +91,7 @@ static void tarefa_pos(void* p)
 {
   const partida_t partida = *(partida_t*)p;
   delete (partida_t*)p;
-  partida.f(partida.arg);       // so volta quando o decodificador fecha
+  partida.f(partida.arg);       // only returns when the decoder closes
   tab5_h264_encerrar_tarefa();
 }
 
@@ -110,8 +110,8 @@ static bool fio_criar(void*, void (*f)(void*), void* arg)
 BaseType_t tab5_h264_criar_tarefa(TaskFunction_t f, const char* nome, uint32_t pilha, void* arg,
                                   UBaseType_t prio, BaseType_t nucleo, TaskHandle_t* h)
 {
-  // MALLOC_CAP_SIMD: pilha interna e alinhada - a troca de contexto guarda os
-  // registradores da PIE nela.
+  // MALLOC_CAP_SIMD: internal, aligned stack - the context switch saves the
+  // PIE registers on it.
   return xTaskCreatePinnedToCoreWithCaps(f, nome, pilha, arg, prio, h, nucleo,
                                          MALLOC_CAP_SIMD | MALLOC_CAP_INTERNAL);
 }
@@ -119,7 +119,7 @@ BaseType_t tab5_h264_criar_tarefa(TaskFunction_t f, const char* nome, uint32_t p
 void tab5_h264_encerrar_tarefa(void) { vTaskDeleteWithCaps(nullptr); }
 
 // ---------------------------------------------------------------------------
-// A arena: na SRAM so o que deixar o piso livre, em pedacos; senao, PSRAM.
+// The arena: in SRAM only what leaves the floor free, in pieces; otherwise, PSRAM.
 // ---------------------------------------------------------------------------
 static void soltar_arena(tab5_h264_t* d)
 {
@@ -131,32 +131,32 @@ static void soltar_arena(tab5_h264_t* d)
   d->arena_bytes = 0;
 }
 
-// Pega pedacos da SRAM, sempre o maior bloco livre, ate juntar a arena ou o
-// piso nao deixar mais. 'forcar' (bancada) ignora o piso.
+// Takes pieces from SRAM, always the largest free block, until the arena is gathered or the
+// floor allows no more. 'forcar' (bench) ignores the floor.
 static bool arena_sram(tab5_h264_t* d, bool forcar, int max_pedacos)
 {
-  // MALLOC_CAP_SIMD: so a SRAM principal (L2MEM). A SRAM de baixo consumo
-  // (0x5010xxxx) tambem e "interna", mas a PIE nao le dela: o trabalhador
-  // morria com load access fault no primeiro empacotamento.
+  // MALLOC_CAP_SIMD: only the main SRAM (L2MEM). The low-power SRAM
+  // (0x5010xxxx) is also "internal", but the PIE can't read from it: the worker
+  // died with a load access fault on the first packing.
   const uint32_t caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT | MALLOC_CAP_SIMD;
   void* reserva = heap_caps_malloc(H264_RESERVA_CONTIGUA, caps);
-  if (!reserva) { return false; }   // nem isso contiguo: a SRAM ja esta apertada demais
+  if (!reserva) { return false; }   // not even that much contiguous: SRAM is already too tight
   for (int i = 0; i < max_pedacos && d->arena_bytes < H264_ARENA_MAX; ++i) {
     const size_t livre = heap_caps_get_free_size(caps);
-    // O piso conta a reserva como livre (ela volta logo).
+    // The floor counts the reserve as free (it comes back soon).
     const size_t piso = H264_PISO_INTERNA > H264_RESERVA_CONTIGUA ? H264_PISO_INTERNA - H264_RESERVA_CONTIGUA : 0;
-    // Forcado (bancada 'sram'): piso menor, nunca zero - sem nada a pilha do
-    // trabalhador nem nasce.
+    // Forced (bench 'sram'): a smaller floor, never zero - with nothing the worker's
+    // stack isn't even born.
     const size_t piso_aqui = forcar ? 32 * 1024 : piso;
     size_t pode = livre > piso_aqui ? livre - piso_aqui : 0;
     size_t n = heap_caps_get_largest_free_block(caps);
     if (n > pode) { n = pode; }
     if (n > H264_ARENA_MAX - d->arena_bytes) { n = H264_ARENA_MAX - d->arena_bytes; }
     n &= ~(size_t)(H264_DEC_WORK_ALIGNMENT - 1);
-    // A folga do alinhamento: o maior bloco nao comporta n alinhado + cabecalho.
+    // The alignment slack: the largest block doesn't hold n aligned + header.
     if (n > 64) { n -= 64; }
     if (n < H264_PEDACO_MIN) {
-      ESP_LOGD(TAG, "SRAM: %d pedaco(s); livre %u KB, maior bloco %u KB, piso deixa %u KB - para aqui",
+      ESP_LOGD(TAG, "SRAM: %d piece(s); free %u KB, largest block %u KB, floor leaves %u KB - stopping here",
                i, (unsigned)(livre / 1024), (unsigned)(heap_caps_get_largest_free_block(caps) / 1024), (unsigned)(pode / 1024));
       break;
     }
@@ -169,19 +169,19 @@ static bool arena_sram(tab5_h264_t* d, bool forcar, int max_pedacos)
   return d->pedaco[0] != nullptr;
 }
 
-// AUTO (o normal) = PSRAM. Medido no Tab5 (2026-11-12, Wi-Fi e MQTT no ar):
-// com um pedaco "quente" de SRAM na frente o 480p ficou igual (4,9 qps) - a
-// cache L2 de 256 KB ja atende a arena na PSRAM. E a SRAM que sobra acima do
-// piso mal passa de 20 KB: tirar dela so apertaria o Wi-Fi, sem ganho.
-// SRAM so na bancada ('video h264 ... sram'), para medir.
+// AUTO (the normal case) = PSRAM. Measured on the Tab5 (2026-11-12, Wi-Fi and MQTT running):
+// with a "hot" piece of SRAM in front, 480p was the same (4.9 fps) - the
+// 256 KB L2 cache already serves the arena in PSRAM. And the SRAM left above the
+// floor barely exceeds 20 KB: taking from it would only squeeze Wi-Fi, for no gain.
+// SRAM only on the bench ('video h264 ... sram'), for measuring.
 static bool reservar_arena(tab5_h264_t* d, tab5_h264_onde_t onde)
 {
-  if (onde == TAB5_H264_SRAM) {                   // bancada: so SRAM, sem disfarce
+  if (onde == TAB5_H264_SRAM) {                   // bench: SRAM only, no disguise
     d->na_sram = arena_sram(d, true, H264_PEDACOS);
     d->sram_bytes = d->arena_bytes;
     return d->na_sram;
   }
-  // AUTO e PSRAM: um pedaco so, do tamanho da arena inteira.
+  // AUTO is PSRAM: a single piece, the size of the whole arena.
   const size_t n = arena_para(d->cfg.max_l > d->cfg.max_a ? d->cfg.max_l : d->cfg.max_a);
   d->pedaco[0] = (uint8_t*)heap_caps_aligned_alloc(H264_DEC_WORK_ALIGNMENT, n, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   if (!d->pedaco[0]) { return false; }
@@ -210,10 +210,10 @@ static bool montar(tab5_h264_t* d, tab5_h264_onde_t onde)
   c.frame_budget_bytes = H264_ORCAMENTO_QUADROS;
   c.held_pictures = d->cfg.presos ? d->cfg.presos : H264_PRESOS;
   c.threads = &d->fios;
-  c.clock = relogio_ciclos;   // so usado com H264_DEC_PROFILE (medicao por etapa)
+  c.clock = relogio_ciclos;   // only used with H264_DEC_PROFILE (per-stage measurement)
   d->dec = h264_dec_create(&c);
   if (!d->dec) {
-    ESP_LOGW(TAG, "decodificador nao criou: pedacos %u/%u/%u/%u KB, SRAM livre %u KB",
+    ESP_LOGW(TAG, "decoder not created: pieces %u/%u/%u/%u KB, SRAM free %u KB",
              (unsigned)(d->pedaco_bytes[0] / 1024), (unsigned)(d->pedaco_bytes[1] / 1024),
              (unsigned)(d->pedaco_bytes[2] / 1024), (unsigned)(d->pedaco_bytes[3] / 1024),
              (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024));
@@ -222,14 +222,14 @@ static bool montar(tab5_h264_t* d, tab5_h264_onde_t onde)
   }
   int n = 0;
   while (n < H264_PEDACOS && d->pedaco[n]) { ++n; }
-  ESP_LOGI(TAG, "aberto: arena de %u KB (%u KB na SRAM, %d pedaco(s)), ate %dx%d",
+  ESP_LOGI(TAG, "opened: arena of %u KB (%u KB in SRAM, %d piece(s)), up to %dx%d",
            (unsigned)(d->arena_bytes / 1024), (unsigned)(d->sram_bytes / 1024), n, d->cfg.max_l, d->cfg.max_a);
   return true;
 }
 
 static void desmontar(tab5_h264_t* d)
 {
-  if (d->dec) { h264_dec_destroy(d->dec); d->dec = nullptr; }   // espera o trabalhador sair
+  if (d->dec) { h264_dec_destroy(d->dec); d->dec = nullptr; }   // waits for the worker to exit
   soltar_arena(d);
 }
 
@@ -253,21 +253,21 @@ void tab5_h264_fechar(tab5_h264_t* d)
 h264_dec_result_t tab5_h264_decodificar(tab5_h264_t* d, const uint8_t* dados, size_t n,
                                         uint8_t nal_tam, int64_t marca)
 {
-  // A arena hibrida sempre tem o pedaco de PSRAM do tamanho inteiro: falta de
-  // memoria aqui e video grande demais de verdade (o erro diz qual).
+  // The hybrid arena always has the full-size PSRAM piece: running out of
+  // memory here means the video really is too big (the error says which).
   return h264_dec_decode(d->dec, dados, n, nal_tam, marca);
 }
 
 bool tab5_h264_quadro(tab5_h264_t* d, tab5_h264_quadro_t* q)
 {
   h264_dec_picture_t p;
-  if (!h264_dec_output(d->dec, &p)) { return false; }   // sai PRESO (h264_dec_release solta)
+  if (!h264_dec_output(d->dec, &p)) { return false; }   // comes out HELD (h264_dec_release releases it)
   d->ja_saiu_quadro = true;
   const h264_dec_stream_info_t& i = p.info;
   q->px = p.packed;
   q->l_cod = i.coded_width; q->a_cod = i.coded_height;
   q->x = i.crop_left; q->y = i.crop_top; q->l = i.width; q->a = i.height;
-  // Matriz de cor: o que o arquivo diz; sem dizer, HD e BT.709 e o resto BT.601.
+  // Colour matrix: what the file says; if it doesn't, HD is BT.709 and the rest BT.601.
   q->bt709 = i.matrix_coefficients == 1 || (i.matrix_coefficients != 5 && i.matrix_coefficients != 6 && i.height >= 720);
   q->faixa_cheia = i.full_range;
   q->marca = p.tag;
@@ -285,7 +285,7 @@ size_t tab5_h264_sram_bytes(const tab5_h264_t* d) { return d->sram_bytes; }
 size_t tab5_h264_arena_bytes(const tab5_h264_t* d) { return d->arena_bytes; }
 
 // ---------------------------------------------------------------------------
-// BANCADA
+// BENCH
 // ---------------------------------------------------------------------------
 typedef struct {
   const char*          caminho;
@@ -295,7 +295,7 @@ typedef struct {
   SemaphoreHandle_t    feito;
 } bancada_t;
 
-// Um "00 00 01" a partir de p (ou o fim).
+// A "00 00 01" from p onwards (or the end).
 static const uint8_t* proximo_inicio(const uint8_t* p, const uint8_t* fim)
 {
   for (; p + 3 <= fim; ++p) { if (p[0] == 0 && p[1] == 0 && p[2] == 1) { return p; } }
@@ -307,7 +307,7 @@ static void tirar_quadros(tab5_h264_t* d, bancada_t* b)
   tab5_h264_quadro_t q;
   while (tab5_h264_quadro(d, &q)) {
     if (b->hash) {
-      // O mesmo FNV-1a do teste do Mac: o quadro empacotado inteiro.
+      // The same FNV-1a as the Mac test: the whole packed frame.
       const size_t bytes = (size_t)q.l_cod * 3 / 2 * q.a_cod;
       printf("[H264V] f=%u h=%08lx\n", (unsigned)b->r->quadros, (unsigned long)tab5_fnv1a(q.px, bytes));
     }
@@ -317,7 +317,7 @@ static void tirar_quadros(tab5_h264_t* d, bancada_t* b)
   }
 }
 
-#define BANCADA_MAX  (8u * 1024 * 1024)   // o maximo do arquivo carregado na bancada
+#define BANCADA_MAX  (8u * 1024 * 1024)   // the maximum file loaded on the bench
 
 static void tarefa_bancada(void* p)
 {
@@ -327,9 +327,9 @@ static void tarefa_bancada(void* p)
   size_t n = 0;
   tab5_h264_t* d = nullptr;
 
-  // 1. O arquivo na PSRAM (a bancada mede so a decodificacao). No maximo
-  //    BANCADA_MAX: um arquivo de 18 MB inteiro na PSRAM nao deixava lugar
-  //    para os quadros de referencia (o player de verdade le aos poucos).
+  // 1. The file in PSRAM (the bench measures decoding only). At most
+  //    BANCADA_MAX: an 18 MB file wholly in PSRAM left no room
+  //    for the reference frames (the real player reads bit by bit).
   tab5_leitor_t* lt = tab5_leitor_abrir(b->caminho);
   if (!lt) { snprintf(r->erro, sizeof(r->erro), "could not open the file"); goto fim; }
   n = (size_t)tab5_leitor_tamanho(lt);
@@ -341,16 +341,16 @@ static void tarefa_bancada(void* p)
     goto fim;
   }
   tab5_leitor_fechar(lt);
-  // Cortado: termina antes do ultimo inicio de NAL (00 00 01), para o ultimo
-  // pacote nao ficar pela metade.
+  // Truncated: ends before the last NAL start (00 00 01), so the last
+  // packet isn't left half-done.
   if (n == BANCADA_MAX) {
     while (n > 3 && !(dados[n - 3] == 0 && dados[n - 2] == 0 && dados[n - 1] == 1)) { --n; }
     n = n > 3 ? n - 3 : 0;
   }
 
   {
-    // 2. Decodifica pacote a pacote: um pacote termina onde comeca a primeira
-    //    fatia do quadro seguinte (ou um SEI/SPS/PPS/AUD depois de imagem).
+    // 2. Decodes packet by packet: a packet ends where the first
+    //    slice of the next frame begins (or an SEI/SPS/PPS/AUD after a picture).
     const tab5_h264_cfg_t cfg = { 1280, 1280, b->onde };
     d = tab5_h264_abrir(&cfg);
     if (!d) { snprintf(r->erro, sizeof(r->erro), "out of memory for the decoder"); goto fim; }
@@ -359,8 +359,8 @@ static void tarefa_bancada(void* p)
     const uint8_t* au = q;
     bool tem_imagem = false;
     uint32_t pacote = 0;
-    // O clock no maximo permitido durante a medida: sem esta trava o DFS
-    // deixa a CPU no piso (40 MHz em repouso) e a bancada mede o piso.
+    // The clock at the maximum allowed during the measurement: without this lock DFS
+    // leaves the CPU at the floor (40 MHz when idle) and the bench measures the floor.
     esp_pm_lock_handle_t trava = nullptr;
     if (esp_pm_lock_create(ESP_PM_CPU_FREQ_MAX, 0, "h264_banc", &trava) == ESP_OK) { esp_pm_lock_acquire(trava); }
     const int64_t t0 = esp_timer_get_time();
@@ -399,7 +399,7 @@ static void tarefa_bancada(void* p)
     r->cpu_mhz = hz / 1000000;
     if (trava) { esp_pm_lock_release(trava); esp_pm_lock_delete(trava); }
 #ifdef H264_DEC_PROFILE
-    // Tempo por etapa (ciclos -> ms a cpu_mhz): onde a decodificacao gasta.
+    // Time per stage (cycles -> ms at cpu_mhz): where decoding spends its time.
     uint64_t prof[H264_PROF_COUNT];
     if (h264_dec_take_profile(d->dec, prof) && r->cpu_mhz) {
       static const char* const NOMES[H264_PROF_COUNT] = { "mc_luma", "mc_busca", "janela", "mc_croma", "intra",
@@ -423,8 +423,8 @@ fim:
   if (b->feito) {
     xSemaphoreGive(b->feito);
   } else {
-    // Em segundo plano: ninguem espera - o resultado vai para o log.
-    ESP_LOGI(TAG, "bancada: %s%s%lu quadros %dx%d em %lu ms = %.1f quadros/s | arena %lu KB (%lu na SRAM) | CPU %lu MHz",
+    // In the background: nobody waits - the result goes to the log.
+    ESP_LOGI(TAG, "bench: %s%s%lu frames %dx%d in %lu ms = %.1f frames/s | arena %lu KB (%lu in SRAM) | CPU %lu MHz",
              r->erro, r->erro[0] ? " | " : "", (unsigned long)r->quadros, r->l, r->a, (unsigned long)r->ms,
              r->ms ? (double)r->quadros * 1000.0 / (double)r->ms : 0.0, (unsigned long)r->arena_kb,
              (unsigned long)r->sram_kb, (unsigned long)r->cpu_mhz);
@@ -441,10 +441,10 @@ bool tab5_h264_bancada(const char* caminho, tab5_h264_onde_t onde, bool hash, ta
   memset(r, 0, sizeof(*r));
   bancada_t b = { caminho, onde, hash, r, xSemaphoreCreateBinary() };
   if (!b.feito) { snprintf(r->erro, sizeof(r->erro), "out of memory"); return false; }
-  // A tela acesa durante a medida: em repouso o clock fica limitado (180 MHz)
-  // e a bancada mediria o repouso, nao o video (que toca com a tela acesa).
+  // Screen on during the measurement: when idle the clock is limited (180 MHz)
+  // and the bench would measure idle, not video (which plays with the screen on).
   sistema_recurso_usar(RECURSO_TELA_ACESA, "h264");
-  // A mesma prioridade e nucleo que o video usa (nucleo 0, abaixo da Musica).
+  // The same priority and core the video uses (core 0, below Musica).
   if (tab5_h264_criar_tarefa(tarefa_bancada, "h264_banc", 8192, &b, 4, 0, nullptr) != pdPASS) {
     vSemaphoreDelete(b.feito);
     sistema_recurso_soltar(RECURSO_TELA_ACESA, "h264");
@@ -459,7 +459,7 @@ bool tab5_h264_bancada(const char* caminho, tab5_h264_onde_t onde, bool hash, ta
 
 bool tab5_h264_bancada_fundo(const char* caminho, tab5_h264_onde_t onde)
 {
-  // Tudo no heap: a tarefa solta ao terminar (ninguem espera por ela).
+  // All on the heap: the task frees it on finishing (nobody waits for it).
   bancada_t* b = (bancada_t*)heap_caps_calloc(1, sizeof(bancada_t), MALLOC_CAP_SPIRAM);
   tab5_h264_bancada_t* r = (tab5_h264_bancada_t*)heap_caps_calloc(1, sizeof(*r), MALLOC_CAP_SPIRAM);
   char* c = (char*)heap_caps_malloc(strlen(caminho) + 1, MALLOC_CAP_SPIRAM);

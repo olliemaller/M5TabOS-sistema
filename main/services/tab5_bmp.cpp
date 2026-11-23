@@ -21,9 +21,9 @@ bool tab5_bmp_salvar(const char* pasta, const char* nome, const uint16_t* dados,
   const int64_t t0 = esp_timer_get_time();
 
   const uint32_t w = (uint32_t)largura, h = (uint32_t)altura;
-  const uint32_t linha_bytes = ((w * 2 + 3) / 4) * 4;   // linhas de bmp alinhadas em 4 bytes
+  const uint32_t linha_bytes = ((w * 2 + 3) / 4) * 4;   // bmp rows aligned to 4 bytes
   const uint32_t dados_tam   = linha_bytes * h;
-  const uint32_t cab_tam     = 14 + 40 + 12;             // arquivo + info + 3 mascaras
+  const uint32_t cab_tam     = 14 + 40 + 12;             // file + info + 3 masks
 
   uint8_t cab[cab_tam];
   memset(cab, 0, sizeof(cab));
@@ -32,7 +32,7 @@ bool tab5_bmp_salvar(const char* pasta, const char* nome, const uint16_t* dados,
   u32(cab + 10, cab_tam);
   u32(cab + 14, 40);
   u32(cab + 18, w);
-  u32(cab + 22, h);          // altura POSITIVA = linhas de baixo para cima
+  u32(cab + 22, h);          // POSITIVE height = rows from bottom to top
   u16(cab + 26, 1);
   u16(cab + 28, 16);
   u32(cab + 30, 3);          // BI_BITFIELDS
@@ -42,8 +42,8 @@ bool tab5_bmp_salvar(const char* pasta, const char* nome, const uint16_t* dados,
   u32(cab + 62, 0x001F);     // B
 
   uint8_t* bloco = (uint8_t*)heap_caps_malloc(BLOCO, MALLOC_CAP_SPIRAM);
-  if (!bloco) { ESP_LOGE(TAG, "sem PSRAM para o bloco de escrita"); return false; }
-  if (!tab5_sd_montar()) { heap_caps_free(bloco); ESP_LOGE(TAG, "cartao indisponivel"); return false; }
+  if (!bloco) { ESP_LOGE(TAG, "no PSRAM for the write block"); return false; }
+  if (!tab5_sd_montar()) { heap_caps_free(bloco); ESP_LOGE(TAG, "SD card unavailable"); return false; }
 
   char arquivo[48];
   snprintf(arquivo, sizeof(arquivo), "%s.bmp", nome);
@@ -51,14 +51,14 @@ bool tab5_bmp_salvar(const char* pasta, const char* nome, const uint16_t* dados,
   bool ok = (f != nullptr);
   if (ok) { ok = fwrite(cab, 1, cab_tam, f) == cab_tam; }
 
-  // Linhas de baixo para cima, juntadas no bloco ate ele encher.
+  // Rows from bottom to top, gathered in the block until it fills.
   const uint32_t por_bloco = BLOCO / linha_bytes;
   for (uint32_t y = 0; ok && y < h; ) {
     uint32_t n = 0;
     for (; n < por_bloco && y < h; ++n, ++y) {
       uint8_t* dst = bloco + n * linha_bytes;
       memcpy(dst, dados + (size_t)(h - 1 - y) * w, w * 2);
-      if (filtro) { filtro((uint16_t*)dst, (int)w); }   // linha_bytes e multiplo de 4: alinhado
+      if (filtro) { filtro((uint16_t*)dst, (int)w); }   // linha_bytes is a multiple of 4: aligned
       if (linha_bytes > w * 2) { memset(dst + w * 2, 0, linha_bytes - w * 2); }
     }
     ok = fwrite(bloco, 1, n * linha_bytes, f) == n * linha_bytes;
@@ -68,10 +68,10 @@ bool tab5_bmp_salvar(const char* pasta, const char* nome, const uint16_t* dados,
   heap_caps_free(bloco);
 
   if (ok) {
-    ESP_LOGI(TAG, "%s/%s gravado (%ux%u, %lu KB em %lld ms)", pasta, arquivo, (unsigned)w, (unsigned)h,
+    ESP_LOGI(TAG, "%s/%s written (%ux%u, %lu KB in %lld ms)", pasta, arquivo, (unsigned)w, (unsigned)h,
              (unsigned long)((cab_tam + dados_tam) / 1024), (long long)((esp_timer_get_time() - t0) / 1000));
   } else {
-    ESP_LOGE(TAG, "falha ao gravar %s/%s", pasta, arquivo);
+    ESP_LOGE(TAG, "failed to write %s/%s", pasta, arquivo);
   }
   return ok;
 }

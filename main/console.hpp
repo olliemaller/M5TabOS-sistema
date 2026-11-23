@@ -1,54 +1,54 @@
-// Console serial - um punhado de comandos digitados pelo monitor.
+// Serial console - a handful of commands typed through the monitor.
 //
-// Nasceu de uma necessidade concreta: trocar a rede WiFi exigia desligar o
-// aparelho, tirar o cartao, levar no PC, editar, e remontar tudo. Para uma
-// linha de texto. Agora e um comando.
+// It was born of a concrete need: changing the WiFi network meant turning the
+// device off, taking out the SD card, taking it to the PC, editing, and putting it all back.
+// For one line of text. Now it is a command.
 //
-// Funciona dentro do proprio `idf.py monitor` - ele encaminha o que voce digita
-// para a serial. Digite "help" para ver os comandos.
+// It works inside `idf.py monitor` itself - it forwards what you type
+// to the serial port. Type "help" to see the commands.
 //
-// Nao substitui o cartao no PC para arquivo grande; e para ajuste pontual.
+// It does not replace the SD card on the PC for large files; it is for one-off adjustments.
 
 #pragma once
 
 #include <stddef.h>
 #include <stdint.h>
 
-// Cria a tarefa do console. Chamar depois de tab5_sd_iniciar().
+// Creates the console task. Call after tab5_sd_iniciar().
 void console_iniciar(void);
 
-// SESSAO DE COMANDOS - quem digita: a serial (a do proprio console) ou o
-// Terminal na tela (services/tab5_terminal). Cada uma tem a sua pasta atual
-// e o seu jeito de interromper. O comando roda na tarefa de quem chamou e
-// escreve no stdout DESSA tarefa (no ESP-IDF o stdout e de cada tarefa): o
-// Terminal troca o dele por um FILE* que guarda as linhas.
+// COMMAND SESSION - who is typing: the serial port (the console's own) or the
+// Terminal on screen (services/tab5_terminal). Each has its own current folder
+// and its own way of interrupting. The command runs on the caller's task and
+// writes to THAT task's stdout (in ESP-IDF stdout is per task): the
+// Terminal swaps its own for a FILE* that stores the lines.
 typedef struct {
-  char cwd[160];                 // pasta atual; "/sdcard" no comeco, "/" = os discos
-  bool (*interrompido)(void);    // Ctrl+C / parada pedida; nullptr = nunca
-  // Uma linha de quem digita (ver console_ler_linha). nullptr = nao sabe.
+  char cwd[160];                 // current folder; "/sdcard" at the start, "/" = the disks
+  bool (*interrompido)(void);    // Ctrl+C / stop requested; nullptr = never
+  // One line from whoever is typing (see console_ler_linha). nullptr = does not know how.
   int  (*ler_linha)(const char* pergunta, char* out, size_t n, bool oculto, uint32_t espera_ms);
-  // Ha um TERMINAL DE VERDADE na frente (o app Terminal, a pagina /terminal/):
-  // 'ssh usuario@host' abre a sessao SSH compartilhada (services/tab5_ssh) e
-  // volta na hora - a tela vira o terminal remoto. Sem ele (a serial), o ssh
-  // e o shell linha a linha.
+  // There is a REAL TERMINAL in front (the Terminal app, the /terminal/ page):
+  // 'ssh user@host' opens the shared SSH session (services/tab5_ssh) and
+  // returns at once - the screen becomes the remote terminal. Without it (the serial port), ssh
+  // is the line-by-line shell.
   bool interativo;
 } console_sessao_t;
 
-// Roda UMA linha como o console serial rodaria ('help', 'ls', 'ping'...), na
-// tarefa de quem chama. A serial e o Terminal rodam ao mesmo tempo, cada um
-// com a sua sessao (achada pela tarefa). O MESMO comando nos dois no mesmo
-// instante divide o estado proprio dele (o ping conta numa variavel so):
-// raro, e o pior caso e um numero errado na tela. 'linha' e copiada.
+// Runs ONE line as the serial console would ('help', 'ls', 'ping'...), on the
+// caller's task. The serial port and the Terminal run at the same time, each
+// with its own session (found by the task). The SAME command on both at the same
+// instant shares its own state (ping counts in a single variable):
+// rare, and the worst case is a wrong number on screen. 'linha' is copied.
 void console_executar(console_sessao_t* sessao, const char* linha);
 
-// Comando longo (ping, listagem grande, laco de teste) pergunta isto a cada
-// volta: true = a sessao pediu para parar.
+// A long command (ping, large listing, test loop) asks this on each
+// iteration: true = the session asked to stop.
 bool console_interrompido(void);
 
-// COMANDO QUE PERGUNTA (a senha do ssh, as linhas do shell remoto): uma linha
-// de quem digita nesta sessao. 'pergunta' aparece antes (na serial) ou na
-// linha de comando (no Terminal); 'oculto' = senha (sem eco, mascarada).
-// Espera ate espera_ms: 1 = veio a linha; 0 = ainda nao (chame de novo - o
-// que foi digitado ate ali fica guardado); -1 = interrompido ou a sessao nao
-// sabe perguntar.
+// A COMMAND THAT ASKS (the ssh password, the remote shell's lines): one line
+// from whoever is typing in this session. 'pergunta' appears first (on the serial port) or on the
+// command line (in the Terminal); 'oculto' = password (no echo, masked).
+// Waits up to espera_ms: 1 = the line came; 0 = not yet (call again - what
+// was typed so far is kept); -1 = interrupted or the session does not
+// know how to ask.
 int console_ler_linha(const char* pergunta, char* out, size_t n, bool oculto, uint32_t espera_ms);

@@ -1,29 +1,29 @@
 #!/usr/bin/env python3
-# Gera main/tab5_emoji_dados.cpp com TODO emoji de UM SO ponto de codigo -
-# 1391 na versao 17.0 do Unicode, 1357 com desenho no Twemoji. Arte do Twemoji (twemoji.twitter.com,
-# CC-BY 4.0). Roda uma vez, offline depois disso - o firmware nunca baixa nada
-# em tempo de execucao, so os bytes ja convertidos que este script deixa
-# gravados no repositorio.
+# Generates main/tab5_emoji_dados.cpp with EVERY emoji made of a SINGLE code point -
+# 1391 in Unicode version 17.0, 1357 with a drawing in Twemoji. Art from Twemoji (twemoji.twitter.com,
+# CC-BY 4.0). Runs once, offline after that - the firmware never downloads anything
+# at run time, only the already converted bytes this script leaves
+# committed to the repository.
 #
 #   pip3 install --user Pillow
 #   ./gerar_emoji.py
 #
-# "UM SO PONTO DE CODIGO": o seletor de estilo (U+FE0F) NAO conta - a propria
-# biblioteca de tela ja o descarta antes de qualquer emoji chegar ao callback
-# (ver LGFXBase.cpp). O que fica de fora sao bandeiras (pares de indicador
-# regional), tons de pele e sequencias com ZWJ (familia, profissoes) - cada
-# uma e VARIOS pontos de codigo colados numa imagem so, e o hook do
-# LovyanGFX dispara um callback POR CODIGO. Da para fazer, mas e outro
-# projeto: juntar N chamadas de callback numa imagem composta.
+# "A SINGLE CODE POINT": the variation selector (U+FE0F) does NOT count - the display
+# library itself already discards it before any emoji reaches the callback
+# (see LGFXBase.cpp). What is left out are flags (pairs of regional
+# indicators), skin tones and ZWJ sequences (family, professions) - each
+# one is SEVERAL code points stuck together into a single image, and the
+# LovyanGFX hook fires a callback PER CODE POINT. It can be done, but it is another
+# project: merging N callback calls into a composite image.
 #
-# FORMATO COM PALETA: cada emoji guarda as suas cores (no maximo 256, e
-# nenhum passa de 237) e um indice de 1 byte por pixel - 0,95MB em vez de
-# 1,49MB do RGB565 cru, com a mesma imagem pixel a pixel. O indice 0 e sempre
-# o fundo transparente.
+# PALETTE FORMAT: each emoji stores its colours (at most 256, and
+# none exceeds 237) and a 1-byte index per pixel - 0.95MB instead of
+# 1.49MB of raw RGB565, with the same image pixel for pixel. Index 0 is always
+# the transparent background.
 #
-# Ver main/tab5_emoji.hpp para o formato da tabela gerada e main/tab5_emoji.cpp
-# para o callback que a consome (busca BINARIA - a tabela tem que continuar
-# ORDENADA por codigo, e este script ja garante isso).
+# See main/tab5_emoji.hpp for the format of the generated table and main/tab5_emoji.cpp
+# for the callback that consumes it (BINARY search - the table must stay
+# SORTED by code point, and this script already guarantees that).
 
 import os
 import re
@@ -31,12 +31,12 @@ import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 TAM = 24
-SENTINELA = 0xF81F  # RGB565 de magenta puro - nunca aparece em emoji de verdade
+SENTINELA = 0xF81F  # RGB565 for pure magenta - never appears in a real emoji
 FONTE_URL = "https://unicode.org/Public/emoji/latest/emoji-test.txt"
 IMG_BASE = "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72"
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
-AQUI = os.path.dirname(AQUI)   # a RAIZ do projeto - o script mora em ferramentas/
+AQUI = os.path.dirname(AQUI)   # the project ROOT - the script lives in ferramentas/
 CACHE = os.path.join(AQUI, ".emoji_cache")
 SAIDA = os.path.join(AQUI, "main", "tab5_emoji_dados.cpp")
 
@@ -46,9 +46,9 @@ PADRAO_LINHA = re.compile(
 
 
 def buscar_lista_oficial():
-    """Devolve [(codigo, nome_em_ingles), ...] ordenada por codigo - so os
-    de UM ponto de codigo, fully-qualified (a forma "completa" e canonica de
-    cada emoji; minimally-qualified/unqualified sao variantes do mesmo)."""
+    """Returns [(code_point, english_name), ...] sorted by code point - only
+    those with ONE code point, fully-qualified (the "complete" and canonical form of
+    each emoji; minimally-qualified/unqualified are variants of the same one)."""
     r = subprocess.run(["curl", "-sf", FONTE_URL], capture_output=True, text=True, check=True)
     entradas = {}
     for linha in r.stdout.splitlines():
@@ -62,16 +62,16 @@ def buscar_lista_oficial():
             continue
         codigos = [c for c in codes_s.strip().split(' ') if c.upper() != 'FE0F']
         if len(codigos) != 1:
-            continue   # bandeira, tom de pele ou sequencia ZWJ - fora do escopo
+            continue   # flag, skin tone or ZWJ sequence - out of scope
         cp = int(codigos[0], 16)
         entradas[cp] = nome.strip()
     return sorted(entradas.items())
 
 
 def baixar_um(cp):
-    # curl, e nao urllib: o Python deste Mac nao tem o certificado raiz
-    # configurado (erro classico do instalador python.org), e curl usa o
-    # certificado do sistema, que ja funciona.
+    # curl, not urllib: the Python on this Mac does not have the root certificate
+    # configured (a classic python.org installer error), and curl uses the
+    # system certificate, which already works.
     nome_arquivo = f"{cp:x}"
     caminho = os.path.join(CACHE, f"{nome_arquivo}.png")
     if os.path.exists(caminho):
@@ -80,8 +80,8 @@ def baixar_um(cp):
     r = subprocess.run(["curl", "-sf", "-o", caminho, url])
     if r.returncode != 0:
         if os.path.exists(caminho):
-            os.remove(caminho)   # curl pode deixar arquivo vazio/parcial no erro
-        return cp, None, f"HTTP falhou para U+{cp:04X}"
+            os.remove(caminho)   # curl may leave an empty/partial file on error
+        return cp, None, f"HTTP failed for U+{cp:04X}"
     return cp, caminho, None
 
 
@@ -90,9 +90,9 @@ def rgb565(r, g, b):
 
 
 def trocar_bytes(v):
-    # O LovyanGFX le imagem uint16_t como RGB565 com os bytes TROCADOS
-    # (swap565_t) quando setSwapBytes nao esta ligado - e o caso do sistema.
-    # Gravar ja trocado faz a cor chegar certa sem mexer no estado da tela.
+    # LovyanGFX reads a uint16_t image as RGB565 with SWAPPED bytes
+    # (swap565_t) when setSwapBytes is not enabled - which is the system's case.
+    # Writing it already swapped makes the colour arrive right without touching the screen state.
     return ((v & 0xFF) << 8) | (v >> 8)
 
 
@@ -109,15 +109,15 @@ def converter(caminho):
             else:
                 v = rgb565(r, g, b)
                 if v == SENTINELA:
-                    v ^= 0x0001   # nunca colidir com a sentinela de verdade
+                    v ^= 0x0001   # never collide with the real sentinel
             valores.append(trocar_bytes(v))
     return valores
 
 
 def paletizar(valores):
-    """Pixels RGB565 (ja trocados) -> (paleta, indices). A sentinela vira o
-    indice 0 - o 'transparente' do desenho -, as outras cores entram na
-    ordem em que aparecem."""
+    """RGB565 pixels (already swapped) -> (palette, indices). The sentinel becomes
+    index 0 - the drawing's 'transparent' -, the other colours go in
+    in the order they appear."""
     sentinela = trocar_bytes(SENTINELA)
     paleta = [sentinela]
     pos = {sentinela: 0}
@@ -128,13 +128,13 @@ def paletizar(valores):
             paleta.append(v)
         indices.append(pos[v])
     if len(paleta) > 256:
-        raise ValueError(f"{len(paleta)} cores - nao cabe em indice de 1 byte")
+        raise ValueError(f"{len(paleta)} colours - does not fit in a 1-byte index")
     return paleta, indices
 
 
 def escrever(itens):
-    """itens = [(codigo, nome, pixels RGB565 ja trocados), ...] em ordem de
-    codigo. Grava SAIDA."""
+    """itens = [(code_point, name, RGB565 pixels already swapped), ...] in code
+    point order. Writes SAIDA."""
     linhas = [
         "// GERADO por gerar_emoji.py a partir da lista oficial de emoji do",
         "// Unicode (emoji-test.txt) e da arte do Twemoji (CC-BY 4.0,",
@@ -179,18 +179,18 @@ def escrever(itens):
     with open(SAIDA, "w") as f:
         f.write("\n".join(linhas) + "\n")
 
-    print(f"gravado {SAIDA}: {len(tabela)} emoji, {TAM}x{TAM} com paleta, "
+    print(f"wrote {SAIDA}: {len(tabela)} emoji, {TAM}x{TAM} with palette, "
           f"{total} bytes ({total/1024/1024:.2f} MB)")
 
 
 def main():
     os.makedirs(CACHE, exist_ok=True)
 
-    print("buscando a lista oficial de emoji (unicode.org)...")
+    print("fetching the official emoji list (unicode.org)...")
     lista = buscar_lista_oficial()
-    print(f"{len(lista)} emoji de um so ponto de codigo")
+    print(f"{len(lista)} single-code-point emoji")
 
-    print("baixando (20 ao mesmo tempo, cache em .emoji_cache/)...")
+    print("downloading (20 at a time, cache in .emoji_cache/)...")
     caminhos = {}
     falhas = []
     with ThreadPoolExecutor(max_workers=20) as ex:
@@ -207,11 +207,11 @@ def main():
                 print(f"  {feitos}/{len(lista)}...")
 
     if falhas:
-        print(f"AVISO: {len(falhas)} sem imagem no Twemoji (pulados):")
+        print(f"WARNING: {len(falhas)} with no image in Twemoji (skipped):")
         for cp, erro in falhas[:20]:
             print(f"  U+{cp:04X}: {erro}")
         if len(falhas) > 20:
-            print(f"  ... e mais {len(falhas) - 20}")
+            print(f"  ... and {len(falhas) - 20} more")
 
     itens = []
     for i, (cp, nome) in enumerate(lista):
@@ -220,7 +220,7 @@ def main():
             continue
         itens.append((cp, nome, converter(caminho)))
         if (i + 1) % 200 == 0:
-            print(f"  convertido {i + 1}/{len(lista)}...")
+            print(f"  converted {i + 1}/{len(lista)}...")
 
     escrever(itens)
 

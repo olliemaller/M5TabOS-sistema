@@ -1,16 +1,16 @@
-// TOCADOR DE VIDEO DO SISTEMA - ver tab5_video.hpp (o contrato) e o fim deste
-// arquivo (a API publica). Aqui: o leitor de AVI, a tarefa que decodifica e o
-// PPA que escala para a tela.
+// SYSTEM VIDEO PLAYER - see tab5_video.hpp (the contract) and the end of this
+// file (the public API). Here: the AVI reader, the decoding task and the
+// PPA that scales to the screen.
 
 #include "tab5_video.hpp"
 #include "tab5_volumes.hpp"
 #include "tab5_musica.hpp"
 #include "tab5_mutex.hpp"
-#include "tab5_h264.hpp"              // o decodificador H.264 (MP4)
-#include "tab5_midia.hpp"             // o leitor de MP4 (components/medf)
+#include "tab5_h264.hpp"              // the H.264 decoder (MP4)
+#include "tab5_midia.hpp"             // the MP4 reader (components/medf)
 #include "medf_mp4.h"
 #include "app.h"                  // sistema_avisar, AVISO_VIDEO
-#include "idioma.h"                // N_: textos de erro que o app traduz
+#include "idioma.h"                // N_: error texts the app translates
 
 #include "driver/jpeg_decode.h"
 #include "driver/ppa.h"
@@ -20,7 +20,7 @@
 #include "esp_pm.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
-#include "freertos/idf_additions.h"   // tarefa com pilha na PSRAM
+#include "freertos/idf_additions.h"   // task with its stack in PSRAM
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 
@@ -31,24 +31,24 @@
 
 static const char* TAG = "video";
 
-// A ORDEM DAS CORES SAIDA DO DECODIFICADOR. BGR = o 565 do painel (vermelho nos
-// bits altos). Se no aparelho vermelho e azul vierem trocados, e so inverter aqui.
+// THE COLOUR ORDER OUT OF THE DECODER. BGR = the panel's 565 (red in the
+// high bits). If red and blue come out swapped on the device, just flip it here.
 #define VIDEO_ORDEM_RGB  JPEG_DEC_RGB_ELEMENT_ORDER_BGR
 
-#define VIDEO_PILHA        12288  // pilha da tarefa (PSRAM)
-#define VIDEO_CAMINHO_MAX  256    // caminho absoluto do video e do mp3
-#define VIDEO_PRIO         3      // acima do worker (2), abaixo dos servicos de radio
-#define VIDEO_ESPERA_SOM_MS 3000  // quanto espera o som comecar antes de seguir sem ele
-#define VIDEO_FOLGA_SOM_MS  1500  // quanto o relogio do video pode andar a frente da ultima posicao da musica
-#define VIDEO_FALHAS_MAX   30     // quadros seguidos sem decodificar = desiste
+#define VIDEO_PILHA        12288  // task stack (PSRAM)
+#define VIDEO_CAMINHO_MAX  256    // absolute path of the video and the mp3
+#define VIDEO_PRIO         3      // above the worker (2), below the radio services
+#define VIDEO_ESPERA_SOM_MS 3000  // how long it waits for the audio to start before carrying on without it
+#define VIDEO_FOLGA_SOM_MS  1500  // how far the video clock may run ahead of the music's last position
+#define VIDEO_FALHAS_MAX   30     // consecutive frames that fail to decode = give up
 
 // ---------------------------------------------------------------------------
-// O ARQUIVO AVI
+// THE AVI FILE
 // ---------------------------------------------------------------------------
-// Um AVI e um RIFF: uma sequencia de pedacos [id 4 bytes][tamanho 4 bytes
-// little endian][dados][1 byte de alinhamento se o tamanho e impar]. Os que
-// importam: LIST 'hdrl' (cabecalhos), LIST 'movi' (os quadros: pedacos
-// "00dc") e 'idx1' (o indice: onde esta cada quadro).
+// An AVI is a RIFF: a sequence of chunks [4-byte id][4-byte little-endian
+// size][data][1 alignment byte if the size is odd]. The ones that
+// matter: LIST 'hdrl' (headers), LIST 'movi' (the frames: "00dc"
+// chunks) and 'idx1' (the index: where each frame is).
 #define FCC(a, b, c, d) ((uint32_t)(a) | ((uint32_t)(b) << 8) | ((uint32_t)(c) << 16) | ((uint32_t)(d) << 24))
 #define FCC_RIFF FCC('R', 'I', 'F', 'F')
 #define FCC_AVI  FCC('A', 'V', 'I', ' ')
@@ -65,16 +65,16 @@ static const char* TAG = "video";
 #define FCC_MJPG FCC('M', 'J', 'P', 'G')
 #define FCC_MJPG_MIN FCC('m', 'j', 'p', 'g')
 
-// Onde esta um quadro: a posicao dos DADOS no arquivo e o tamanho. tam = 0 =
-// "repita o quadro anterior" (quadro vazio, grande demais ou fora do arquivo):
-// o tempo continua certo.
+// Where a frame is: the position of the DATA in the file and the size. tam = 0 =
+// "repeat the previous frame" (empty frame, too big or outside the file):
+// the timing stays right.
 typedef struct { uint32_t off, tam; } quadro_t;
 
-// O que os cabecalhos dizem.
+// What the headers say.
 typedef struct {
-  uint32_t us_quadro;     // microssegundos entre quadros (0 = nao disse)
-  uint32_t l, a;          // do cabecalho (o JPEG do primeiro quadro manda)
-  int      v;             // numero do fluxo de video (o "00" de "00dc")
+  uint32_t us_quadro;     // microseconds between frames (0 = not stated)
+  uint32_t l, a;          // from the header (the first frame's JPEG rules)
+  int      v;             // video stream number (the "00" of "00dc")
   bool     tem_video;
   bool     mjpeg;
 } cab_t;
@@ -86,7 +86,7 @@ static bool ler_em(tab5_leitor_t* r, uint64_t pos, void* dst, size_t n)
   return tab5_leitor_ir(r, pos) && tab5_leitor_ler(r, dst, n) == (int)n;
 }
 
-// Le o cabecalho (id e tamanho) do pedaco em 'pos'. false = nao cabe ate 'fim'.
+// Reads the header (id and size) of the chunk at 'pos'. false = does not fit before 'fim'.
 static bool pedaco(tab5_leitor_t* r, uint64_t pos, uint64_t fim, uint32_t* id, uint32_t* tam)
 {
   uint8_t c[8];
@@ -96,10 +96,10 @@ static bool pedaco(tab5_leitor_t* r, uint64_t pos, uint64_t fim, uint32_t* id, u
   return true;
 }
 
-// Onde comeca o proximo pedaco depois do que esta em 'pos' (com o alinhamento).
+// Where the next chunk starts after the one at 'pos' (with alignment).
 static uint64_t depois(uint64_t pos, uint32_t tam) { return pos + 8 + (uint64_t)tam + (tam & 1); }
 
-// Um LIST 'strl' (os dados de UM fluxo): strh diz o tipo, strf o formato.
+// A LIST 'strl' (the data of ONE stream): strh gives the type, strf the format.
 static void ler_strl(tab5_leitor_t* r, uint64_t ini, uint64_t fim, int numero, cab_t* c)
 {
   uint32_t tipo = 0, handler = 0, escala = 0, taxa = 0, compressao = 0, l = 0, a = 0;
@@ -111,10 +111,10 @@ static void ler_strl(tab5_leitor_t* r, uint64_t ini, uint64_t fim, int numero, c
       tipo = u32(b); handler = u32(b + 4); escala = u32(b + 20); taxa = u32(b + 24);
     } else if (id == FCC_STRF && tam >= 20 && ler_em(r, p + 8, b, 20)) {
       l = u32(b + 4); a = (uint32_t)(int32_t)u32(b + 8); compressao = u32(b + 16);
-      if ((int32_t)a < 0) { a = (uint32_t)(-(int32_t)a); }   // altura negativa = de cima para baixo
+      if ((int32_t)a < 0) { a = (uint32_t)(-(int32_t)a); }   // negative height = top-down
     }
   }
-  if (tipo != FCC_VIDS || c->tem_video) { return; }   // so o primeiro fluxo de video
+  if (tipo != FCC_VIDS || c->tem_video) { return; }   // only the first video stream
   c->tem_video = true;
   c->v = numero;
   c->l = l;
@@ -123,7 +123,7 @@ static void ler_strl(tab5_leitor_t* r, uint64_t ini, uint64_t fim, int numero, c
   if (taxa && escala) { c->us_quadro = (uint32_t)(((uint64_t)escala * 1000000u) / taxa); }
 }
 
-// O LIST 'hdrl': avih (o tempo entre quadros) e um strl por fluxo.
+// The LIST 'hdrl': avih (the time between frames) and one strl per stream.
 static void ler_hdrl(tab5_leitor_t* r, uint64_t ini, uint64_t fim, cab_t* c)
 {
   uint32_t id, tam;
@@ -139,7 +139,7 @@ static void ler_hdrl(tab5_leitor_t* r, uint64_t ini, uint64_t fim, cab_t* c)
   }
 }
 
-// A tabela de quadros (cresce se preciso).
+// The frame table (grows if needed).
 typedef struct {
   quadro_t* v;
   uint32_t  n, cap;
@@ -159,8 +159,8 @@ static bool tabela_cabe(tabela_t* t, uint32_t quer)
   return true;
 }
 
-// Poe um quadro cujo pedaco comeca em 'cab' (o cabecalho de 8 bytes) e tem
-// 'tam' bytes de dados. Fora do arquivo ou grande demais = quadro vazio.
+// Adds a frame whose chunk starts at 'cab' (the 8-byte header) and has
+// 'tam' bytes of data. Outside the file or too big = empty frame.
 static bool tabela_por(tabela_t* t, uint64_t cab, uint32_t tam, uint64_t limite)
 {
   if (!tabela_cabe(t, t->n + 1)) { return false; }
@@ -178,9 +178,9 @@ static bool eh_quadro(uint32_t id, int v)
   return id == FCC('0' + v / 10, '0' + v % 10, 'd', 'c');
 }
 
-// O INDICE 'idx1': entradas de 16 bytes [id][flags][offset][tamanho]. O offset
-// e relativo ao 'movi' em quase todo arquivo, mas alguns gravadores poem o
-// absoluto: o primeiro quadro diz qual e (o pedaco tem que estar la mesmo).
+// THE 'idx1' INDEX: 16-byte entries [id][flags][offset][size]. The offset
+// is relative to 'movi' in almost every file, but some writers put the
+// absolute one: the first frame tells which (the chunk must really be there).
 static bool ler_idx1(tab5_leitor_t* r, uint64_t pos, uint64_t tam_idx, uint64_t movi_ini,
                      uint64_t limite, int v, tabela_t* t)
 {
@@ -196,7 +196,7 @@ static bool ler_idx1(tab5_leitor_t* r, uint64_t pos, uint64_t tam_idx, uint64_t 
       if (!eh_quadro(u32(e), v)) { continue; }
       const uint32_t off = u32(e + 8), tam = u32(e + 12);
       if (!base_ok) {
-        // Relativo ao 4o byte antes do primeiro pedaco (o 'movi'); senao absoluto.
+        // Relative to the 4th byte before the first chunk ('movi'); otherwise absolute.
         const uint64_t cand[2] = { movi_ini - 4, 0 };
         for (int c = 0; c < 2 && !base_ok; ++c) {
           uint32_t id2, tam2;
@@ -205,7 +205,7 @@ static bool ler_idx1(tab5_leitor_t* r, uint64_t pos, uint64_t tam_idx, uint64_t 
             base_ok = true;
           }
         }
-        if (!base_ok) { return false; }   // o indice nao bate com o arquivo: varre
+        if (!base_ok) { return false; }   // the index does not match the file: scan
       }
       if (!tabela_por(t, base + off, tam, limite)) { return false; }
     }
@@ -214,8 +214,8 @@ static bool ler_idx1(tab5_leitor_t* r, uint64_t pos, uint64_t tam_idx, uint64_t 
   return t->n > 0;
 }
 
-// SEM INDICE: percorre o 'movi' pedaco por pedaco (le o arquivo todo).
-// "LIST rec " (gravacao agrupada) e entrado, os outros pedacos pulados.
+// NO INDEX: walks 'movi' chunk by chunk (reads the whole file).
+// "LIST rec " (grouped recording) is entered, other chunks are skipped.
 static bool varrer_movi(tab5_leitor_t* r, uint64_t ini, uint64_t fim, uint64_t limite, int v, tabela_t* t)
 {
   uint32_t id, tam;
@@ -227,8 +227,8 @@ static bool varrer_movi(tab5_leitor_t* r, uint64_t ini, uint64_t fim, uint64_t l
   return t->n > 0;
 }
 
-// Le o arquivo todo: cabecalho + tabela. false = nao e um AVI MJPEG utilizavel
-// ('erro' diz por que).
+// Reads the whole file: header + table. false = not a usable MJPEG AVI
+// ('erro' says why).
 static bool ler_avi(tab5_leitor_t* r, cab_t* c, tabela_t* t, char* erro, size_t erro_tam)
 {
   const uint64_t arq = tab5_leitor_tamanho(r);
@@ -239,7 +239,7 @@ static bool ler_avi(tab5_leitor_t* r, cab_t* c, tabela_t* t, char* erro, size_t 
   }
   uint64_t limite = arq;
   const uint64_t riff = (uint64_t)u32(h + 4) + 8;
-  if (riff >= 12 && riff < arq) { limite = riff; }   // lixo depois do RIFF nao vale
+  if (riff >= 12 && riff < arq) { limite = riff; }   // junk after the RIFF does not count
 
   uint64_t movi_ini = 0, movi_fim = 0, idx_pos = 0, idx_tam = 0;
   bool movi_ok = false, idx_ok = false;
@@ -254,7 +254,7 @@ static bool ler_avi(tab5_leitor_t* r, cab_t* c, tabela_t* t, char* erro, size_t 
       } else if (u32(b) == FCC_MOVI && !movi_ok) {
         movi_ok = true;
         movi_ini = p + 12;
-        movi_fim = fim_pedaco < limite ? fim_pedaco : limite;   // gravacao cortada: vai ate onde ha arquivo
+        movi_fim = fim_pedaco < limite ? fim_pedaco : limite;   // truncated recording: goes as far as the file does
       }
     } else if (id == FCC_IDX1 && !idx_ok) {
       idx_ok = true;
@@ -264,11 +264,11 @@ static bool ler_avi(tab5_leitor_t* r, cab_t* c, tabela_t* t, char* erro, size_t 
   }
   if (!c->tem_video || !movi_ok) { snprintf(erro, erro_tam, N_("AVI sem vídeo")); return false; }
   if (!c->mjpeg) { snprintf(erro, erro_tam, N_("só vídeo MJPEG")); return false; }
-  if (c->us_quadro < 5000 || c->us_quadro > 1000000) { c->us_quadro = 40000; }   // 25 quadros/s se o arquivo nao diz
+  if (c->us_quadro < 5000 || c->us_quadro > 1000000) { c->us_quadro = 40000; }   // 25 frames/s if the file does not say
 
   bool ok = idx_ok && ler_idx1(r, idx_pos, idx_tam, movi_ini, limite, c->v, t);
   if (!ok) {
-    ESP_LOGW(TAG, "sem indice utilizavel: varrendo o movi");
+    ESP_LOGW(TAG, "no usable index: scanning movi");
     t->n = 0;
     ok = varrer_movi(r, movi_ini, movi_fim, limite, c->v, t);
   }
@@ -277,25 +277,25 @@ static bool ler_avi(tab5_leitor_t* r, cab_t* c, tabela_t* t, char* erro, size_t 
 }
 
 // ---------------------------------------------------------------------------
-// A SESSAO - um video por vez. Tudo daqui e da tarefa do video, menos o que a
-// trava protege (o estado publicado e os quadros prontos).
+// THE SESSION - one video at a time. Everything here belongs to the video task,
+// except what the lock protects (the published state and the ready frames).
 // ---------------------------------------------------------------------------
-static Trava s_ctrl;    // abrir/fechar: um de cada vez
-static Trava s_trava;   // estado publicado e quadros
+static Trava s_ctrl;    // open/close: one at a time
+static Trava s_trava;   // published state and frames
 
-static tab5_video_estado_t s_est;           // sob s_trava
-// Tres quadros decodificados (RGB565): o publicado, o que o app pode estar
-// escalando e o proximo, ja preparado de antemao (ver mostrar).
+static tab5_video_estado_t s_est;           // under s_trava
+// Three decoded frames (RGB565): the published one, the one the app may be
+// scaling and the next one, prepared in advance (see mostrar).
 #define VIDEO_BUFS 3
 static uint8_t*  s_buf[VIDEO_BUFS];
 static size_t    s_buf_bytes;
-static int       s_passo, s_ql, s_qa;       // pixels por linha, largura e altura uteis
-static int       s_ultimo = -1;             // o buffer do quadro mais novo publicado
-static bool      s_novo = false;            // esse quadro ainda nao foi pego
-static int       s_preso = -1;              // o buffer que o app esta usando
+static int       s_passo, s_ql, s_qa;       // pixels per line, useful width and height
+static int       s_ultimo = -1;             // the buffer of the newest published frame
+static bool      s_novo = false;            // that frame has not been taken yet
+static int       s_preso = -1;              // the buffer the app is using
 
 static TaskHandle_t       s_tarefa = nullptr;
-static SemaphoreHandle_t  s_saiu = nullptr;   // a tarefa deu: vou sair (fechar espera)
+static SemaphoreHandle_t  s_saiu = nullptr;   // the task said: I'm leaving (close waits)
 static std::atomic<bool>    s_ped_fechar{false};
 static std::atomic<bool>    s_ped_alternar{false};
 static std::atomic<int64_t> s_ped_ir{-1};
@@ -303,10 +303,10 @@ static std::atomic<int64_t> s_ped_ir{-1};
 static char s_caminho[VIDEO_CAMINHO_MAX];
 static char s_mp3[VIDEO_CAMINHO_MAX];
 
-static tab5_musica_estado_t s_mus;          // copia do estado da musica (so a tarefa usa)
+static tab5_musica_estado_t s_mus;          // copy of the music state (only the task uses it)
 
 // ---------------------------------------------------------------------------
-// PUBLICAR
+// PUBLISH
 // ---------------------------------------------------------------------------
 static void publicar_estado(const tab5_video_estado_t& e)
 {
@@ -324,16 +324,16 @@ static void publicar_estado(const tab5_video_estado_t& e)
 }
 
 // ---------------------------------------------------------------------------
-// O SOM
+// THE AUDIO
 // ---------------------------------------------------------------------------
-// O som e a musica "<video sem .avi>.mp3" na mesma pasta; so conta se existe.
+// The audio is the music "<video without .avi>.mp3" in the same folder; only counts if it exists.
 static bool tem_mp3(void)
 {
   snprintf(s_mp3, sizeof(s_mp3), "%s", s_caminho);
   char* ponto = strrchr(s_mp3, '.');
   if (!ponto) { return false; }
   snprintf(ponto, sizeof(s_mp3) - (size_t)(ponto - s_mp3), ".mp3");
-  tab5_leitor_t* t = tab5_leitor_abrir(s_mp3);   // so para saber se existe
+  tab5_leitor_t* t = tab5_leitor_abrir(s_mp3);   // only to find out whether it exists
   if (!t) { return false; }
   tab5_leitor_fechar(t);
   return true;
@@ -346,64 +346,64 @@ static bool som_nosso(void)
 }
 
 // ---------------------------------------------------------------------------
-// A TAREFA
+// THE TASK
 // ---------------------------------------------------------------------------
 typedef struct {
   tab5_leitor_t*          r;
   tabela_t                tab;
   cab_t                   cab;
-  uint8_t*                entrada;       // o JPEG do quadro (memoria do decodificador)
+  uint8_t*                entrada;       // the frame's JPEG (decoder memory)
   size_t                  entrada_bytes;
   jpeg_decoder_handle_t   dec;
   uint32_t                us_quadro;
   uint32_t                dur_ms;
-  // O RELOGIO
-  bool                    com_som;       // o relogio e o do mp3
-  bool                    som_visto;     // o som ja tocou algum instante
-  uint32_t                som_ultimo_ms; // a ultima posicao que a musica informou (ver relogio_ms)
-  bool                    som_pausado;   // fomos nos que pausamos o som
-  int64_t                 t_som;         // quando pediu o som (esp_timer, us)
-  int64_t                 base_us;       // relogio proprio: pos = agora - base
-  uint32_t                pos_ms;        // ultima posicao conhecida
-  // O QUE JA MOSTROU
-  int64_t                 ultimo;        // indice do ultimo quadro tratado (-1 = nenhum)
-  bool                    pulo_livre;    // depois de um ir: o salto nao conta como perdido
-  int64_t                 adiantado;     // indice do quadro ja decodificado de antemao (-1 = nenhum)
-  int                     adiantado_buf; // o buffer onde ele esta
-  int                     falhas;        // quadros seguidos sem decodificar
+  // THE CLOCK
+  bool                    com_som;       // the clock is the mp3's
+  bool                    som_visto;     // the audio has played at some point
+  uint32_t                som_ultimo_ms; // the last position the music reported (see relogio_ms)
+  bool                    som_pausado;   // we were the ones who paused the audio
+  int64_t                 t_som;         // when the audio was requested (esp_timer, us)
+  int64_t                 base_us;       // own clock: pos = now - base
+  uint32_t                pos_ms;        // last known position
+  // WHAT HAS BEEN SHOWN
+  int64_t                 ultimo;        // index of the last frame handled (-1 = none)
+  bool                    pulo_livre;    // after a seek: the jump does not count as lost
+  int64_t                 adiantado;     // index of the frame already decoded in advance (-1 = none)
+  int                     adiantado_buf; // the buffer it is in
+  int                     falhas;        // consecutive frames that failed to decode
   uint32_t                mostrados, perdidos;
-  // DIAGNOSTICO (vai ao log no fim): onde os quadros foram pulados e quanto
-  // custou o pior quadro - a leitura do cartao e a decodificacao separadas.
-  uint32_t                perdidos_1s;   // pulados no primeiro segundo (o som ainda abrindo)
+  // DIAGNOSTICS (go to the log at the end): where frames were skipped and what
+  // the worst frame cost - card read and decode separately.
+  uint32_t                perdidos_1s;   // skipped in the first second (audio still opening)
   uint32_t                pior_ler_us, pior_dec_us;
-  uint32_t                lentos;        // quadros que passaram de um periodo (leitura + decodificacao)
-  uint64_t                soma_dec_us;   // para a media da decodificacao
-  uint32_t                n_dec;         // quantas decodificacoes (a media divide por ela)
+  uint32_t                lentos;        // frames that took longer than one period (read + decode)
+  uint64_t                soma_dec_us;   // for the decode average
+  uint32_t                n_dec;         // how many decodes (the average divides by it)
   int64_t                 t_fps;
   uint32_t                n_fps;
   float                   fps;
-  // O MP4 (H.264) - ver "O MP4" mais abaixo
+  // THE MP4 (H.264) - see "O MP4" further down
   bool                    e_mp4;
-  medf_arena_t            arena;         // a leitura do arquivo (medf)
+  medf_arena_t            arena;         // file reading (medf)
   medf_mp4_demux_t*       mp4;
   tab5_h264_t*            h264;
-  uint8_t                 nal_tam;       // bytes do tamanho na frente de cada NAL (do avcC)
-  bool                    acabou_leitura;// o arquivo nao tem mais pacotes de video
-  bool                    drenado;       // e o decodificador ja soltou os que segurava
-  bool                    tem_q;         // ha um quadro decodificado esperando a hora
+  uint8_t                 nal_tam;       // bytes of the length in front of each NAL (from avcC)
+  bool                    acabou_leitura;// the file has no more video packets
+  bool                    drenado;       // and the decoder has released those it was holding
+  bool                    tem_q;         // a decoded frame is waiting for its time
   tab5_h264_quadro_t      q;
-  bool                    alcancar;      // atrasado demais: so quadros-chave ate alcancar o som
-  int64_t                 chave_us;      // o pts do ultimo quadro-chave decodificado
-  bool                    mostrar_ja;    // depois de um salto: mostra o primeiro quadro na hora
-  int                     escala16;      // o PPA reduz o quadro na conversao (16 = tamanho original)
-  bool                    sem_memoria;   // o video nao cabe na memoria (o decodificador disse)
+  bool                    alcancar;      // too far behind: keyframes only until catching up with the audio
+  int64_t                 chave_us;      // the pts of the last decoded keyframe
+  bool                    mostrar_ja;    // after a jump: show the first frame straight away
+  int                     escala16;      // the PPA shrinks the frame during conversion (16 = original size)
+  bool                    sem_memoria;   // the video does not fit in memory (the decoder said so)
 } sessao_t;
 
 static sessao_t s_v;
 
 static void liberar_sessao(void)
 {
-  // O app pode estar escalando um quadro agora (tab5_video_pintar): espera soltar.
+  // The app may be scaling a frame right now (tab5_video_pintar): wait for it to let go.
   for (int i = 0; i < 40; ++i) {
     s_trava.travar();
     const bool preso = s_preso >= 0;
@@ -439,14 +439,14 @@ static void falhar(const char* txt)
   publicar_estado(e);
 }
 
-// Le o quadro 'i' da tabela para a entrada. false = leitura falhou.
+// Reads frame 'i' from the table into the input. false = read failed.
 static bool ler_quadro(uint32_t i)
 {
   const quadro_t q = s_v.tab.v[i];
   return ler_em(s_v.r, q.off, s_v.entrada, q.tam);
 }
 
-// Abre o arquivo, o indice, o decodificador e os buffers. false = ja publicou o erro.
+// Opens the file, the index, the decoder and the buffers. false = error already published.
 static bool preparar(void)
 {
   char erro[64] = "";
@@ -465,7 +465,7 @@ static bool preparar(void)
   s_v.entrada = (uint8_t*)jpeg_alloc_decoder_mem(maior, &cfg_in, &s_v.entrada_bytes);
   if (!s_v.entrada) { falhar(N_("sem memória")); return false; }
 
-  // O tamanho de verdade vem do JPEG do primeiro quadro.
+  // The real size comes from the first frame's JPEG.
   jpeg_decode_picture_info_t info = { };
   if (!ler_quadro(primeiro) || jpeg_decoder_get_info(s_v.entrada, s_v.tab.v[primeiro].tam, &info) != ESP_OK) {
     falhar(N_("JPEG ilegível"));
@@ -502,13 +502,13 @@ static bool preparar(void)
   s_v.dur_ms = (uint32_t)(((uint64_t)s_v.tab.n * s_v.us_quadro) / 1000);
   s_v.ultimo = -1;
   s_v.adiantado = -1;
-  ESP_LOGI(TAG, "%s: %dx%d, %u quadros, %.1f qps, %u s", s_caminho, s_ql, s_qa, (unsigned)s_v.tab.n,
+  ESP_LOGI(TAG, "%s: %dx%d, %u frames, %.1f fps, %u s", s_caminho, s_ql, s_qa, (unsigned)s_v.tab.n,
            1e6f / (float)s_v.us_quadro, (unsigned)(s_v.dur_ms / 1000));
   return true;
 }
 
-// Um buffer livre: nem o publicado, nem o que o app esta usando, nem 'fora'
-// (o quadro adiantado que ainda vale). Com tres buffers sempre sobra um.
+// A free buffer: not the published one, not the one the app is using, not 'fora'
+// (the frame decoded in advance that is still valid). With three buffers one is always spare.
 static int buffer_livre(int fora)
 {
   Trava::Guarda g(s_trava);
@@ -518,7 +518,7 @@ static int buffer_livre(int fora)
   return -1;
 }
 
-// Le e decodifica o quadro 'i' no buffer 'b'. Mede o custo (diagnostico).
+// Reads and decodes frame 'i' into buffer 'b'. Measures the cost (diagnostics).
 static bool decodificar(uint32_t i, int b)
 {
   const jpeg_decode_cfg_t cfg = { .output_format = JPEG_DECODE_OUT_FORMAT_RGB565,
@@ -538,21 +538,21 @@ static bool decodificar(uint32_t i, int b)
   s_v.soma_dec_us += (uint64_t)(t2 - t1);
   s_v.n_dec++;
   if (err != ESP_OK) {
-    if (s_v.falhas++ < 3) { ESP_LOGW(TAG, "quadro %u: %s", (unsigned)i, lido ? esp_err_to_name(err) : "leitura falhou"); }
+    if (s_v.falhas++ < 3) { ESP_LOGW(TAG, "frame %u: %s", (unsigned)i, lido ? esp_err_to_name(err) : "read failed"); }
     return false;
   }
   s_v.falhas = 0;
   return true;
 }
 
-// Publica o quadro 'i' e ja prepara o seguinte. Sempre deixa s_v.ultimo = i
-// (um quadro que falha nao e tentado de novo).
+// Publishes frame 'i' and prepares the next one straight away. Always leaves
+// s_v.ultimo = i (a frame that fails is not retried).
 //
-// Por que adiantar: o custo de um quadro varia - a media e de poucos ms, mas
-// de vez em quando o cartao ou o JPEG por hardware levam 40-70 ms (disputa da
-// PSRAM com o som e a tela). Decodificado na hora de mostrar, esse quadro
-// passava do seu periodo e era pulado. Preparado logo depois do anterior, ele
-// tem quase dois periodos de folga.
+// Why decode ahead: the cost of a frame varies - the average is a few ms, but
+// now and then the card or the hardware JPEG take 40-70 ms (PSRAM contention
+// with the audio and the screen). Decoded at display time, that frame
+// overran its period and was skipped. Prepared right after the previous one, it
+// has almost two periods of slack.
 static void mostrar(uint32_t i)
 {
   if (s_v.ultimo >= 0 && (int64_t)i > s_v.ultimo + 1 && !s_v.pulo_livre) {
@@ -562,15 +562,15 @@ static void mostrar(uint32_t i)
   s_v.pulo_livre = false;
   s_v.ultimo = i;
 
-  // O quadro desse instante: o adiantado, se for ele; senao, decodifica agora.
+  // The frame for this instant: the one decoded ahead, if it is that one; otherwise, decode now.
   int b = -1;
   if (s_v.adiantado == (int64_t)i) {
     b = s_v.adiantado_buf;
-  } else if (s_v.tab.v[i].tam != 0) {              // quadro vazio: o anterior continua na tela
+  } else if (s_v.tab.v[i].tam != 0) {              // empty frame: the previous one stays on screen
     b = buffer_livre(-1);
     if (b >= 0 && !decodificar(i, b)) { b = -1; }
   }
-  s_v.adiantado = -1;                              // o adiantado foi usado ou nao vale mais
+  s_v.adiantado = -1;                              // the ahead frame was used or is no longer valid
 
   if (b >= 0) {
     s_trava.travar();
@@ -588,7 +588,7 @@ static void mostrar(uint32_t i)
     }
   }
 
-  // Prepara o proximo enquanto este fica na tela.
+  // Prepare the next one while this one is on screen.
   const uint32_t j = i + 1;
   if (j < s_v.tab.n && s_v.tab.v[j].tam != 0) {
     const int bj = buffer_livre(-1);
@@ -596,27 +596,27 @@ static void mostrar(uint32_t i)
   }
 }
 
-// Espera o pedido ou o tempo. Os controles acordam a tarefa por notificacao.
+// Waits for a request or for the time. The controls wake the task by notification.
 static void esperar(uint32_t ms)
 {
   ulTaskNotifyTake(pdTRUE, ms ? pdMS_TO_TICKS(ms) : 1);
 }
 
-// ---- o relogio -----------------------------------------------------------
-// A posicao de AGORA, em ms. Com som, e a do alto-falante; sem, e o esp_timer.
+// ---- the clock -----------------------------------------------------------
+// The position NOW, in ms. With audio, it is the speaker's; without, esp_timer.
 static uint32_t relogio_ms(void)
 {
   const int64_t agora = esp_timer_get_time();
   if (s_v.com_som) {
     if (som_nosso()) {
-      if (!s_mus.tocando) { return s_v.pos_ms; }   // carregando ou pausado de fora: o video espera
-      // A POSICAO DA MUSICA ANDA AOS SALTOS: ela so muda quando um bloco de
-      // audio sai (centenas de ms). Seguida ao pe da letra, o video mostrava
-      // um quadro por salto e pulava o resto (1 qps com som, 25 sem). Entao o
-      // relogio anda sozinho (esp_timer) entre os saltos e se REALINHA a cada
-      // posicao nova da musica (o som manda). O quadro mostrado nunca volta
-      // (s_v.pos_ms so cresce: se o relogio adiantou, a imagem espera o som) e
-      // nunca passa da musica mais que um bloco e pouco (som engasgou: espera).
+      if (!s_mus.tocando) { return s_v.pos_ms; }   // loading or paused from outside: the video waits
+      // THE MUSIC POSITION MOVES IN JUMPS: it only changes when a block of
+      // audio goes out (hundreds of ms). Followed literally, the video showed
+      // one frame per jump and skipped the rest (1 fps with audio, 25 without). So
+      // the clock runs on its own (esp_timer) between jumps and REALIGNS on each
+      // new music position (the audio rules). The frame shown never goes back
+      // (s_v.pos_ms only grows: if the clock got ahead, the picture waits for the audio)
+      // and never gets ahead of the music by more than a block or so (audio stalled: wait).
       if (!s_v.som_visto || s_mus.pos_ms != s_v.som_ultimo_ms) {
         s_v.som_ultimo_ms = s_mus.pos_ms;
         s_v.base_us = agora - (int64_t)s_mus.pos_ms * 1000;
@@ -628,28 +628,28 @@ static uint32_t relogio_ms(void)
       return s_v.pos_ms;
     }
     if (s_v.som_visto || agora - s_v.t_som > (int64_t)VIDEO_ESPERA_SOM_MS * 1000) {
-      // O som acabou antes do video (ou nunca veio): segue sozinho de onde estava.
-      ESP_LOGI(TAG, "%s: relogio proprio a partir de %u ms", s_v.som_visto ? "som acabou" : "sem som", (unsigned)s_v.pos_ms);
+      // The audio ended before the video (or never came): carry on alone from where it was.
+      ESP_LOGI(TAG, "%s: own clock from %u ms", s_v.som_visto ? "audio ended" : "no audio", (unsigned)s_v.pos_ms);
       s_v.com_som = false;
       s_v.base_us = agora - (int64_t)s_v.pos_ms * 1000;
     } else {
-      return s_v.pos_ms;   // o som ainda nao comecou
+      return s_v.pos_ms;   // the audio has not started yet
     }
   }
   s_v.pos_ms = (uint32_t)((agora - s_v.base_us) / 1000);
   return s_v.pos_ms;
 }
 
-// Liga o som (de novo): a musica toca do comeco e, se 'ms' > 0, vai para la.
+// Turns the audio on (again): the music plays from the start and, if 'ms' > 0, seeks there.
 static void ligar_som(uint32_t ms)
 {
   s_v.com_som = false;
   if (!s_mp3[0]) { return; }
-  // Trocando de video, a musica do anterior ainda pode estar parando: tenta
-  // por ate 1 s antes de desistir do som.
+  // Switching videos, the previous one's music may still be stopping: keep trying
+  // for up to 1 s before giving up on the audio.
   bool ligou = false;
   for (int i = 0; i < 20 && !(ligou = tab5_musica_tocar_um(s_mp3, "Vídeo")); ++i) { vTaskDelay(pdMS_TO_TICKS(50)); }
-  if (!ligou) { ESP_LOGW(TAG, "o som nao ligou"); return; }
+  if (!ligou) { ESP_LOGW(TAG, "the audio did not start"); return; }
   if (ms) { tab5_musica_ir_para(ms); }
   s_v.com_som = true;
   s_v.som_visto = false;
@@ -657,18 +657,18 @@ static void ligar_som(uint32_t ms)
   s_v.t_som = esp_timer_get_time();
 }
 
-// A musica so tem "alternar": confere se ja esta como se quer.
-// 'som_pausado' lembra o que NOS pedimos: o estado da musica demora um bloco
-// para refletir o pedido, e um pausar/tocar rapido leria o estado velho.
+// The music only has "toggle": check whether it is already as wanted.
+// 'som_pausado' remembers what WE requested: the music state takes a block
+// to reflect the request, and a quick pause/play would read the stale state.
 static void som_pausar(bool pausar)
 {
   if (!s_v.com_som || !som_nosso() || s_v.som_pausado == pausar) { return; }
-  if (pausar && !s_mus.tocando) { return; }   // ja estava parado de fora
+  if (pausar && !s_mus.tocando) { return; }   // it was already stopped from outside
   tab5_musica_tocar_pausar();
   s_v.som_pausado = pausar;
 }
 
-// Vai para 'ms': o relogio, o som e o quadro desse instante.
+// Seeks to 'ms': the clock, the audio and the frame for that instant.
 static void ir_para(uint32_t ms, bool tocando)
 {
   if (ms >= s_v.dur_ms) { ms = s_v.dur_ms ? s_v.dur_ms - 1 : 0; }
@@ -677,13 +677,13 @@ static void ir_para(uint32_t ms, bool tocando)
   s_v.pulo_livre = true;
   if (s_v.com_som && som_nosso()) {
     tab5_musica_ir_para(ms);
-    // A posicao que a musica informa ainda e a de ANTES do pulo: guardada como
-    // "ja vista", o relogio nao se realinha nela (ver relogio_ms) e segue do
-    // ponto novo ate a musica informar a posicao de depois do pulo.
+    // The position the music reports is still the one from BEFORE the jump: kept as
+    // "already seen", the clock does not realign to it (see relogio_ms) and runs on
+    // from the new point until the music reports the post-jump position.
     s_v.som_ultimo_ms = s_mus.pos_ms;
     if (tocando) { som_pausar(false); }
   } else if (s_mp3[0] && tocando) {
-    ligar_som(ms);   // o som tinha acabado: toca de novo a partir dai
+    ligar_som(ms);   // the audio had ended: play again from there
   }
 }
 
@@ -696,21 +696,21 @@ static void laco(void)
   bool tocando = true, fim = false;
   s_v.t_fps = esp_timer_get_time();
   s_v.base_us = s_v.t_fps;
-  if (tem_mp3()) { ligar_som(0); } else { s_mp3[0] = '\0'; }   // o som so conta se o .mp3 existe
+  if (tem_mp3()) { ligar_som(0); } else { s_mp3[0] = '\0'; }   // the audio only counts if the .mp3 exists
   uint32_t pub_pos = UINT32_MAX;
 
   for (;;) {
     if (s_ped_fechar) { break; }
     bool mudou = false;
 
-    // ---- pedidos ----
+    // ---- requests ----
     if (s_ped_alternar.exchange(false)) {
-      if (fim) {                                   // acabou: toca de novo do comeco
+      if (fim) {                                   // finished: play again from the start
         fim = false; tocando = true;
         ir_para(0, true);
       } else if (tocando) {
         tocando = false;
-        relogio_ms();                              // guarda a posicao de agora
+        relogio_ms();                              // keep the current position
         som_pausar(true);
       } else {
         tocando = true;
@@ -724,18 +724,18 @@ static void laco(void)
     if (ir >= 0) {
       if (fim) { fim = false; tocando = true; }
       ir_para((uint32_t)ir, tocando);
-      s_v.ultimo = -1;                             // mostra o quadro desse instante, mesmo pausado
+      s_v.ultimo = -1;                             // show this instant's frame, even when paused
       mudou = true;
     }
 
-    // ---- o quadro desse instante ----
+    // ---- the frame for this instant ----
     const uint32_t pos = tocando ? relogio_ms() : s_v.pos_ms;
     uint64_t alvo = (uint64_t)pos * 1000u / s_v.us_quadro;
     uint32_t espera = 0;
-    bool atrasado = false;                         // mostrou um quadro antes do desse instante
-    if (!fim && alvo >= s_v.tab.n) {                // passou do ultimo quadro
+    bool atrasado = false;                         // showed a frame before this instant's one
+    if (!fim && alvo >= s_v.tab.n) {                // past the last frame
       fim = true; tocando = false;
-      ESP_LOGI(TAG, "fim: %u mostrados, %u pulados (%u no 1o segundo); pior quadro: leitura %u ms, decodificacao %u ms (media %u ms); %u quadros lentos",
+      ESP_LOGI(TAG, "end: %u shown, %u skipped (%u in the 1st second); worst frame: read %u ms, decode %u ms (average %u ms); %u slow frames",
                (unsigned)s_v.mostrados, (unsigned)s_v.perdidos, (unsigned)s_v.perdidos_1s,
                (unsigned)(s_v.pior_ler_us / 1000), (unsigned)(s_v.pior_dec_us / 1000),
                (unsigned)(s_v.n_dec ? s_v.soma_dec_us / s_v.n_dec / 1000 : 0), (unsigned)s_v.lentos);
@@ -744,8 +744,8 @@ static void laco(void)
       s_v.com_som = false;
       mudou = true;
     } else if (!fim && (tocando || s_v.ultimo < 0) && (int64_t)alvo != s_v.ultimo) {
-      // Atrasou so um quadro e o que faltava ja esta pronto: mostra ele agora
-      // (um instante atrasado) em vez de pular, e o desse instante logo depois.
+      // Only one frame late and the missing one is already ready: show it now
+      // (an instant late) instead of skipping, and this instant's one right after.
       if (tocando && s_v.adiantado >= 0 && (int64_t)alvo == s_v.adiantado + 1) {
         mostrar((uint32_t)s_v.adiantado);
         atrasado = true;
@@ -763,7 +763,7 @@ static void laco(void)
       mudou = true;
     }
 
-    // ---- publica: a cada quadro novo ou mudanca, e a posicao a cada 250 ms ----
+    // ---- publish: on each new frame or change, and the position every 250 ms ----
     if (mudou || (tocando && pos / 250 != pub_pos / 250)) {
       e.tocando = tocando; e.fim = fim; e.com_som = s_v.com_som;
       e.pos_ms = s_v.pos_ms; e.mostrados = s_v.mostrados; e.perdidos = s_v.perdidos; e.fps = s_v.fps;
@@ -771,50 +771,50 @@ static void laco(void)
       publicar_estado(e);
     }
 
-    // ---- espera ate o proximo quadro (ou ate alguem pedir algo) ----
+    // ---- wait until the next frame (or until someone asks for something) ----
     if (tocando && !e.erro) {
       const int64_t falta = (int64_t)(alvo + 1) * s_v.us_quadro / 1000 - (int64_t)s_v.pos_ms;
       espera = (falta < 1 || atrasado) ? 1 : (falta > 30 ? 30 : (uint32_t)falta);
       esperar(espera);
     } else {
-      esperar(1000);   // parado: so acorda por pedido (e confere o fechar de vez em quando)
+      esperar(1000);   // stopped: only wakes on a request (and checks for close now and then)
     }
   }
-  if (s_v.com_som && som_nosso()) { tab5_musica_parar(); }   // fechar o video cala o som
+  if (s_v.com_som && som_nosso()) { tab5_musica_parar(); }   // closing the video silences the audio
 }
 
 // ---------------------------------------------------------------------------
-// O MP4 (H.264) - o video do celular e da internet
+// THE MP4 (H.264) - phone and internet video
 // ---------------------------------------------------------------------------
-// O leitor de MP4 (components/medf, pelo tab5_leitor) entrega os pacotes de
-// video na ordem de decodificacao; o decodificador (services/tab5_h264)
-// devolve os quadros na ordem de exibicao, cada um com o seu pts. O SOM e o
-// do proprio arquivo: o tocador de musica toca a faixa AAC dele (o mesmo
-// arquivo, aberto por ele) e o relogio e o mesmo do AVI + .mp3.
+// The MP4 reader (components/medf, via tab5_leitor) delivers the video packets
+// in decode order; the decoder (services/tab5_h264) returns the frames in
+// display order, each with its pts. The AUDIO comes from the file itself: the
+// music player plays its AAC track (the same file, opened by it) and the clock
+// is the same as for AVI + .mp3.
 //
-// A CPU NAO DA CONTA DE TUDO (360p ~12 qps, 720p ~2 qps): a politica de
-// atraso decide o que nao decodificar, para o video nunca se atrasar do som:
-//   - atrasado mais que VIDEO_ATRASO_PULA_MS: os quadros que ninguem usa como
-//     referencia (quadros B, quase sempre) nem sao decodificados;
-//   - atrasado mais que VIDEO_ATRASO_SALTA_MS: os quadros seguintes ja nao
-//     seriam mostrados, entao pula ate o proximo quadro-chave (o resto da
-//     sequencia depende do que foi pulado) e recomeca dele, na hora certa.
-//     Um video pesado mostra o comeco de cada sequencia (com quadro-chave a
-//     cada 1 s, como o do celular, fica fluido aos pedacos); pesado demais,
-//     vira uma sequencia de fotos - mas o som esta sempre certo;
-//   - um quadro que sai atrasado mais que VIDEO_ATRASO_MOSTRA_MS nao e
-//     mostrado (menos o quadro-chave do modo alcancar: e a unica imagem que
-//     ha). Ate la, mostra: melhor uma imagem um pouco atrasada que nenhuma.
-#define VIDEO_MP4_L_MAX        1920        // maior quadro H.264 aceito (o decodificador se ajusta)
+// THE CPU CANNOT KEEP UP WITH EVERYTHING (360p ~12 fps, 720p ~2 fps): the lateness
+// policy decides what not to decode, so the video never falls behind the audio:
+//   - more than VIDEO_ATRASO_PULA_MS late: frames nobody uses as a
+//     reference (B frames, almost always) are not even decoded;
+//   - more than VIDEO_ATRASO_SALTA_MS late: the following frames would not
+//     be shown anyway, so it skips to the next keyframe (the rest of the
+//     sequence depends on what was skipped) and restarts from it, on time.
+//     A heavy video shows the start of each sequence (with a keyframe
+//     every 1 s, like a phone's, it is choppy but smooth in bursts); too heavy,
+//     it becomes a slideshow - but the audio is always right;
+//   - a frame that comes out more than VIDEO_ATRASO_MOSTRA_MS late is not
+//     shown (except the keyframe in catch-up mode: it is the only picture
+//     there is). Up to that, show it: a slightly late picture beats none.
+#define VIDEO_MP4_L_MAX        1920        // largest accepted H.264 frame (the decoder adapts)
 #define VIDEO_MP4_A_MAX        1088
-#define VIDEO_MP4_ARENA        (1024 * 1024)   // leitura do arquivo: 768 KB antecipados + pacote de ate 256 KB
+#define VIDEO_MP4_ARENA        (1024 * 1024)   // file reading: 768 KB read-ahead + a packet of up to 256 KB
 #define VIDEO_ATRASO_PULA_MS   80
 #define VIDEO_ATRASO_MOSTRA_MS 200
-#define VIDEO_ATRASO_SALTA_MS  250   // logo acima do MOSTRA: decodificar o que nao vai aparecer e so gastar
-// Prioridade da tarefa no MP4: a mesma da bancada (tab5_h264). Com 3 (a do
-// AVI) a decodificacao perdia o nucleo para as tarefas de leitura e de rede.
+#define VIDEO_ATRASO_SALTA_MS  250   // just above MOSTRA: decoding what will not be shown is just waste
+// Task priority for MP4: the same as the benchmark (tab5_h264). With 3 (the
+// AVI one) decoding lost the core to the reading and network tasks.
 #define VIDEO_MP4_PRIO         4
-#define VIDEO_MP4_PILHA        8192        // pilha da tarefa no MP4 (interna: o decodificador usa a PIE)
+#define VIDEO_MP4_PILHA        8192        // task stack for MP4 (internal: the decoder uses the PIE)
 
 static bool e_mp4(const char* caminho)
 {
@@ -822,15 +822,15 @@ static bool e_mp4(const char* caminho)
   return ponto && (!strcasecmp(ponto, ".mp4") || !strcasecmp(ponto, ".m4v") || !strcasecmp(ponto, ".mov"));
 }
 
-// O PPA da conversao YUV -> RGB565 (outro cliente: o de tab5_video_pintar e da
-// tarefa de interface). Modo bloqueante: a tarefa do video espera o PPA, que
-// leva poucos ms, e so entao segue.
+// The PPA for the YUV -> RGB565 conversion (a separate client: the one in
+// tab5_video_pintar belongs to the UI task). Blocking mode: the video task waits
+// for the PPA, which takes a few ms, and only then carries on.
 static ppa_client_handle_t s_ppa_conv = nullptr;
 
-// O CLOCK: o H.264 e decodificado pela CPU. No ESP-IDF a CPU so vai ao maximo
-// com uma trava ESP_PM_CPU_FREQ_MAX; sem ela, fica no piso do perfil e a
-// decodificacao levava 4x mais (279 ms por quadro de 360p em vez de 71).
-// Tocando: segura. Pausado ou no fim: solta (bateria).
+// THE CLOCK SPEED: H.264 is decoded by the CPU. In ESP-IDF the CPU only runs at
+// full speed with an ESP_PM_CPU_FREQ_MAX lock; without it, it sits at the
+// profile's floor and decoding took 4x longer (279 ms per 360p frame instead of 71).
+// Playing: hold it. Paused or at the end: release it (battery).
 static esp_pm_lock_handle_t s_pm_trava = nullptr;
 static bool                 s_pm_segura = false;
 
@@ -847,15 +847,15 @@ static void mp4_ppa_soltar(void)
   if (s_ppa_conv) { ppa_unregister_client(s_ppa_conv); s_ppa_conv = nullptr; }
 }
 
-// O avcC (o cabecalho do H.264 no MP4) guarda o SPS e o PPS assim:
-// [versao][perfil][compat][nivel][tamanho-1 do comprimento][n de SPS] e cada
-// SPS com 2 bytes de tamanho na frente; depois [n de PPS] e cada PPS igual.
-// O decodificador quer NALs: viram Annex-B (00 00 00 01 antes de cada um) e
-// entram de uma vez. false = avcC estragado ou sem SPS/PPS.
+// The avcC (the H.264 header in the MP4) stores the SPS and PPS like this:
+// [version][profile][compat][level][length size - 1][number of SPS] and each
+// SPS with a 2-byte length in front; then [number of PPS] and each PPS the same.
+// The decoder wants NALs: they become Annex-B (00 00 00 01 before each one) and
+// go in all at once. false = broken avcC or no SPS/PPS.
 static bool entregar_avcc(const uint8_t* c, size_t n)
 {
   if (n < 7 || c[0] != 1) { return false; }
-  uint8_t* nal = (uint8_t*)heap_caps_malloc(n * 2 + 64, MALLOC_CAP_SPIRAM);   // cabe com folga: cada NAL ganha 2 bytes
+  uint8_t* nal = (uint8_t*)heap_caps_malloc(n * 2 + 64, MALLOC_CAP_SPIRAM);   // fits comfortably: each NAL gains 2 bytes
   if (!nal) { return false; }
   size_t k = 0, i = 5;
   int contados = 0;
@@ -879,7 +879,7 @@ static bool entregar_avcc(const uint8_t* c, size_t n)
   return contados >= 2;
 }
 
-// Abre o MP4, o decodificador e os buffers. false = ja publicou o erro.
+// Opens the MP4, the decoder and the buffers. false = error already published.
 static bool preparar_mp4(void)
 {
   tab5_midia_preparar();
@@ -901,24 +901,24 @@ static bool preparar_mp4(void)
     falhar(N_("quadro grande demais"));
     return false;
   }
-  // avcC: o 5o byte diz o tamanho do comprimento na frente de cada NAL.
+  // avcC: the 5th byte gives the size of the length field in front of each NAL.
   const uint8_t* avcc = in->video.codec_private;
   if (!avcc || in->video.codec_private_size < 7 || avcc[0] != 1) { falhar(N_("MP4 sem avcC")); return false; }
   s_v.nal_tam = (uint8_t)((avcc[4] & 3) + 1);
 
-  // presos = 1: o quadro e convertido para RGB e solto na hora (no 1080p cada
-  // quadro preso a mais e 3 MB de PSRAM).
-  // O limite e o do tamanho CODIFICADO (multiplo de 16): 854 de largura vira 864.
+  // presos = 1: the frame is converted to RGB and released at once (at 1080p each
+  // extra held frame is 3 MB of PSRAM).
+  // The limit is that of the CODED size (a multiple of 16): a width of 854 becomes 864.
   const int lado = ((l > a ? l : a) + 15) & ~15;
   const tab5_h264_cfg_t cfg = { lado, lado, TAB5_H264_AUTO, 1 };
   s_v.h264 = tab5_h264_abrir(&cfg);
   if (!s_v.h264) { falhar(N_("sem memória para o decodificador")); return false; }
-  // O SPS e o PPS vem no avcC: entram antes do primeiro pacote.
+  // The SPS and PPS come in the avcC: they go in before the first packet.
   if (!entregar_avcc(avcc, in->video.codec_private_size)) { falhar(N_("MP4 sem avcC")); return false; }
 
-  // Os quadros prontos: RGB565 na PSRAM, alinhados para o PPA, nunca maiores
-  // que a tela (1280 x 720, deitado ou em pe): o PPA reduz na conversao, em
-  // passos de 1/16. Um 1080p em tamanho cheio seria 4 MB por buffer.
+  // The ready frames: RGB565 in PSRAM, aligned for the PPA, never larger
+  // than the screen (1280 x 720, landscape or portrait): the PPA shrinks during
+  // conversion, in steps of 1/16. A full-size 1080p would be 4 MB per buffer.
   int e16 = 16;
   const int maior = l > a ? l : a, menor = l > a ? a : l;
   while (e16 > 1 && (maior * e16 / 16 > 1280 || menor * e16 / 16 > 720)) { --e16; }
@@ -947,22 +947,22 @@ static bool preparar_mp4(void)
 
   s_v.us_quadro = in->video.frame_interval_us > 1000 ? (uint32_t)in->video.frame_interval_us : 33333;
   s_v.dur_ms = in->duration_us > 0 ? (uint32_t)(in->duration_us / 1000) : 0;
-  s_v.tab.n = s_v.dur_ms ? (uint32_t)((uint64_t)s_v.dur_ms * 1000 / s_v.us_quadro) : 0;   // so para o estado
+  s_v.tab.n = s_v.dur_ms ? (uint32_t)((uint64_t)s_v.dur_ms * 1000 / s_v.us_quadro) : 0;   // only for the state
   s_v.chave_us = -1;
-  s_v.mostrar_ja = true;   // o primeiro quadro aparece logo, mesmo pausado
-  // O som: a faixa AAC do proprio arquivo (o tocador de musica toca); sem
-  // ela, um .mp3 de mesmo nome ao lado, como no AVI.
+  s_v.mostrar_ja = true;   // the first frame appears at once, even when paused
+  // The audio: the file's own AAC track (the music player plays it); without
+  // it, a .mp3 of the same name next to it, as with AVI.
   if (in->audio.codec == MEDF_MP4_AUDIO_CODEC_AAC) { snprintf(s_mp3, sizeof(s_mp3), "%s", s_caminho); }
   else if (!tem_mp3()) { s_mp3[0] = '\0'; }
-  ESP_LOGI(TAG, "%s: H.264 %dx%d (tela %dx%d), %.1f qps, %u s, som %s, arena do decodificador %u KB", s_caminho, l, a, ol, oa,
+  ESP_LOGI(TAG, "%s: H.264 %dx%d (screen %dx%d), %.1f fps, %u s, audio %s, decoder arena %u KB", s_caminho, l, a, ol, oa,
            1e6f / (float)s_v.us_quadro, (unsigned)(s_v.dur_ms / 1000),
-           in->audio.codec == MEDF_MP4_AUDIO_CODEC_AAC ? "AAC" : s_mp3[0] ? ".mp3 ao lado" : "nenhum",
+           in->audio.codec == MEDF_MP4_AUDIO_CODEC_AAC ? "AAC" : s_mp3[0] ? ".mp3 alongside" : "none",
            (unsigned)(tab5_h264_arena_bytes(s_v.h264) / 1024));
   return true;
 }
 
-// Converte o quadro decodificado (YUV420 empacotado) para RGB565 num buffer
-// livre e o publica. false = o PPA recusou (o quadro e so pulado).
+// Converts the decoded frame (packed YUV420) to RGB565 in a free buffer
+// and publishes it. false = the PPA refused (the frame is just skipped).
 static bool publicar_quadro_mp4(const tab5_h264_quadro_t& q)
 {
   const int b = buffer_livre(-1);
@@ -987,7 +987,7 @@ static bool publicar_quadro_mp4(const tab5_h264_quadro_t& q)
   c.rotation_angle     = PPA_SRM_ROTATION_ANGLE_0;
   c.scale_x = c.scale_y = (float)e16 / 16.0f;
   c.mode               = PPA_TRANS_MODE_BLOCKING;
-  if (ppa_do_scale_rotate_mirror(s_ppa_conv, &c) != ESP_OK) { ESP_LOGW(TAG, "o PPA recusou o quadro"); return false; }
+  if (ppa_do_scale_rotate_mirror(s_ppa_conv, &c) != ESP_OK) { ESP_LOGW(TAG, "the PPA refused the frame"); return false; }
 
   s_trava.travar();
   s_ultimo = b;
@@ -1004,8 +1004,8 @@ static bool publicar_quadro_mp4(const tab5_h264_quadro_t& q)
   return true;
 }
 
-// Decodifica ate sair o proximo quadro (fica em s_v.q), aplicando a politica
-// de atraso. 'pos' = o relogio agora (ms). false = nao ha mais quadros.
+// Decodes until the next frame comes out (kept in s_v.q), applying the lateness
+// policy. 'pos' = the clock now (ms). false = no more frames.
 static bool proximo_quadro_mp4(uint32_t pos)
 {
   medf_buffer_t* leitura = medf_mp4_demux_buffer(s_v.mp4);
@@ -1013,7 +1013,7 @@ static bool proximo_quadro_mp4(uint32_t pos)
     if (tab5_h264_quadro(s_v.h264, &s_v.q)) { s_v.tem_q = true; return true; }
     if (s_v.acabou_leitura) {
       if (s_v.drenado) { return false; }
-      tab5_h264_fim(s_v.h264);        // solta os que estavam na fila de reordenacao
+      tab5_h264_fim(s_v.h264);        // releases those in the reorder queue
       s_v.drenado = true;
       continue;
     }
@@ -1025,16 +1025,16 @@ static bool proximo_quadro_mp4(uint32_t pos)
     if (p.type != MEDF_MP4_PACKET_VIDEO) { medf_buffer_release(leitura, p.ref); continue; }
 
     const int64_t atraso_ms = (int64_t)pos - p.pts_us / 1000;
-    // Alcancar: muito atrasado, so quadros-chave (o resto depende do que foi pulado).
+    // Catch up: far too late, keyframes only (the rest depends on what was skipped).
     if (!s_v.mostrar_ja && atraso_ms > VIDEO_ATRASO_SALTA_MS) { s_v.alcancar = true; }
     if (s_v.alcancar && !p.keyframe) { medf_buffer_release(leitura, p.ref); ++s_v.perdidos; continue; }
     if (s_v.alcancar && p.keyframe) {
-      tab5_h264_recomecar(s_v.h264);   // esquece as referencias puladas
+      tab5_h264_recomecar(s_v.h264);   // forgets the skipped references
       s_v.chave_us = p.pts_us;
-      if (atraso_ms <= VIDEO_ATRASO_PULA_MS) { s_v.alcancar = false; }   // alcancou o som
+      if (atraso_ms <= VIDEO_ATRASO_PULA_MS) { s_v.alcancar = false; }   // caught up with the audio
     } else if (!s_v.mostrar_ja && atraso_ms > VIDEO_ATRASO_PULA_MS
                && tab5_h264_descartavel(p.data, p.size, s_v.nal_tam)) {
-      medf_buffer_release(leitura, p.ref);   // ninguem depende dele: nem decodifica
+      medf_buffer_release(leitura, p.ref);   // nothing depends on it: do not even decode
       ++s_v.perdidos;
       continue;
     }
@@ -1049,23 +1049,23 @@ static bool proximo_quadro_mp4(uint32_t pos)
     s_v.soma_dec_us += dec_us;
     s_v.n_dec++;
     if (r == H264_DEC_NO_MEMORY) {
-      // Os quadros de referencia nao cabem na PSRAM (1080p com muitas
-      // referencias e quadros B): nao adianta insistir.
+      // The reference frames do not fit in PSRAM (1080p with many
+      // references and B frames): no point insisting.
       s_v.sem_memoria = true;
       return false;
     }
     if (r != H264_DEC_OK && r != H264_DEC_NO_PICTURE) {
-      if (s_v.falhas++ < 3) { ESP_LOGW(TAG, "pacote em %lld ms: %s", (long long)(p.pts_us / 1000), tab5_h264_erro(s_v.h264)); }
+      if (s_v.falhas++ < 3) { ESP_LOGW(TAG, "packet at %lld ms: %s", (long long)(p.pts_us / 1000), tab5_h264_erro(s_v.h264)); }
     } else {
       s_v.falhas = 0;
     }
   }
-  return false;   // so por fechar (ou um arquivo so de pacotes ruins: tenta de novo na proxima volta)
+  return false;   // only on close (or a file of nothing but bad packets: try again next round)
 }
 
-// Vai para 'ms': o relogio e o som (ir_para) e o leitor, no quadro-chave
-// antes desse ponto. Os quadros entre a chave e 'ms' sao decodificados e
-// pulados pela politica de atraso, ate o desse instante.
+// Seeks to 'ms': the clock and the audio (ir_para) and the reader, at the keyframe
+// before that point. The frames between the keyframe and 'ms' are decoded and
+// skipped by the lateness policy, up to this instant's one.
 static void saltar_mp4(uint32_t ms, bool tocando)
 {
   if (s_v.tem_q) { tab5_h264_soltar(s_v.h264, s_v.q.id); s_v.tem_q = false; }
@@ -1096,9 +1096,9 @@ static void laco_mp4(void)
     if (s_ped_fechar) { break; }
     bool mudou = false;
 
-    // ---- pedidos ----
+    // ---- requests ----
     if (s_ped_alternar.exchange(false)) {
-      if (fim) {                                   // acabou: toca de novo do comeco
+      if (fim) {                                   // finished: play again from the start
         fim = false; tocando = true;
         saltar_mp4(0, true);
       } else if (tocando) {
@@ -1122,11 +1122,11 @@ static void laco_mp4(void)
 
     const uint32_t pos = tocando ? relogio_ms() : s_v.pos_ms;
 
-    // ---- o proximo quadro: decodifica se ainda nao ha um esperando ----
+    // ---- the next frame: decode if there is not one waiting already ----
     if (!fim && !s_v.tem_q && (tocando || s_v.mostrar_ja)) {
       if (!proximo_quadro_mp4(pos) && s_v.drenado) {
         fim = true; tocando = false;
-        ESP_LOGI(TAG, "fim: %u mostrados, %u pulados; pior pacote: leitura %u ms, decodificacao %u ms (media %u ms); %u lentos",
+        ESP_LOGI(TAG, "end: %u shown, %u skipped; worst packet: read %u ms, decode %u ms (average %u ms); %u slow",
                  (unsigned)s_v.mostrados, (unsigned)s_v.perdidos, (unsigned)(s_v.pior_ler_us / 1000),
                  (unsigned)(s_v.pior_dec_us / 1000),
                  (unsigned)(s_v.n_dec ? s_v.soma_dec_us / s_v.n_dec / 1000 : 0), (unsigned)s_v.lentos);
@@ -1137,14 +1137,14 @@ static void laco_mp4(void)
       }
     }
 
-    // ---- mostra quando chega a hora (ou ja, depois de um salto) ----
+    // ---- show it when its time comes (or at once, after a jump) ----
     const uint32_t agora = tocando ? relogio_ms() : s_v.pos_ms;
     if (s_v.tem_q) {
       const int64_t pts_ms = s_v.q.marca / 1000;
       if (s_v.mostrar_ja || pts_ms <= (int64_t)agora) {
         const bool chave = s_v.q.marca == s_v.chave_us;
         if (!s_v.mostrar_ja && !chave && pts_ms + VIDEO_ATRASO_MOSTRA_MS < (int64_t)agora) {
-          ++s_v.perdidos;                          // saiu tarde demais: nao mostra
+          ++s_v.perdidos;                          // came out too late: not shown
         } else {
           publicar_quadro_mp4(s_v.q);
           s_v.mostrar_ja = false;
@@ -1161,14 +1161,14 @@ static void laco_mp4(void)
                s_v.sem_memoria ? N_("vídeo pesado demais para a memória (converta para 720p)")
                                : N_("não consegui decodificar os quadros"));
       s_v.falhas = 0;
-      if (s_v.sem_memoria) { fim = true; }   // nao tenta de novo
+      if (s_v.sem_memoria) { fim = true; }   // do not retry
       if (s_v.com_som && som_nosso()) { tab5_musica_parar(); s_v.com_som = false; }
       mudou = true;
     }
 
-    clock_maximo(tocando || s_v.mostrar_ja);   // decodificando: CPU no maximo
+    clock_maximo(tocando || s_v.mostrar_ja);   // decoding: CPU at full speed
 
-    // ---- publica: a cada quadro novo ou mudanca, e a posicao a cada 250 ms ----
+    // ---- publish: on each new frame or change, and the position every 250 ms ----
     if (mudou || (tocando && agora / 250 != pub_pos / 250)) {
       e.tocando = tocando; e.fim = fim; e.com_som = s_v.com_som;
       e.pos_ms = s_v.pos_ms; e.mostrados = s_v.mostrados; e.perdidos = s_v.perdidos; e.fps = s_v.fps;
@@ -1176,7 +1176,7 @@ static void laco_mp4(void)
       publicar_estado(e);
     }
 
-    // ---- espera a hora do quadro que esta pronto (ou um pedido) ----
+    // ---- wait for the time of the ready frame (or a request) ----
     if (tocando && !e.erro) {
       int64_t falta = s_v.tem_q ? s_v.q.marca / 1000 - (int64_t)agora : 0;
       esperar(falta < 1 ? 1 : (falta > 30 ? 30 : (uint32_t)falta));
@@ -1196,23 +1196,23 @@ static void tarefa_video(void*)
   liberar_sessao();
   mp4_ppa_soltar();
   xSemaphoreGive(s_saiu);
-  // Quem fecha apaga a tarefa. No MP4 ela foi criada por tab5_h264_criar_tarefa
-  // (pilha interna): apagar pela mesma via de sempre (vTaskDeleteWithCaps).
+  // The closer deletes the task. For MP4 it was created by tab5_h264_criar_tarefa
+  // (internal stack): delete it the usual way (vTaskDeleteWithCaps).
   for (;;) { ulTaskNotifyTake(pdTRUE, portMAX_DELAY); }
 }
 
 // ---------------------------------------------------------------------------
-// PPA - escala o quadro para a superficie
+// PPA - scales the frame onto the surface
 // ---------------------------------------------------------------------------
 static Trava              s_ppa_trava;
 static ppa_client_handle_t s_ppa = nullptr;
 static SemaphoreHandle_t   s_ppa_fim = nullptr;
-// O retangulo pintado por ultimo: quando muda, o fundo e refeito (preto).
+// The rectangle painted last: when it changes, the background is redone (black).
 static struct { void* dst; int x, y, l, a, ql, qa; } s_geom;
 
-// O mesmo cuidado de hal/tab5_camera: modo NAO bloqueante, com um semaphore
-// nosso dado pela ISR do PPA - assim uma espera abortada nao deixa a tarefa
-// sair com o hardware ainda lendo o buffer.
+// The same care as hal/tab5_camera: NON-blocking mode, with our own semaphore
+// given by the PPA ISR - so an aborted wait does not let the task leave
+// with the hardware still reading the buffer.
 static bool IRAM_ATTR ao_fim_ppa(ppa_client_handle_t, ppa_event_data_t*, void* sem)
 {
   BaseType_t acordou = pdFALSE;
@@ -1239,7 +1239,7 @@ static void ppa_soltar(void)
 {
   Trava::Guarda g(s_ppa_trava);
   if (s_ppa) {
-    if (ppa_unregister_client(s_ppa) != ESP_OK) { ESP_LOGW(TAG, "o PPA ainda estava ocupado"); }
+    if (ppa_unregister_client(s_ppa) != ESP_OK) { ESP_LOGW(TAG, "the PPA was still busy"); }
     s_ppa = nullptr;
   }
   memset(&s_geom, 0, sizeof(s_geom));
@@ -1250,8 +1250,8 @@ bool tab5_video_pintar(void* destino, size_t destino_bytes, int pic_l, int pic_a
 {
   if (!destino || l <= 0 || a <= 0 || x < 0 || y < 0 || x + l > pic_l || y + a > pic_a) { return false; }
 
-  // O quadro: o novo, ou (so_se_novo = false) o ultimo que saiu. O app fica
-  // com ele so durante esta funcao.
+  // The frame: the new one, or (so_se_novo = false) the last one out. The app holds
+  // it only for the duration of this function.
   const uint16_t* px; int ql, qa, passo;
   if (so_se_novo) {
     if (!tab5_video_pegar_quadro(&px, &ql, &qa, &passo)) { return false; }
@@ -1267,7 +1267,7 @@ bool tab5_video_pintar(void* destino, size_t destino_bytes, int pic_l, int pic_a
   {
     Trava::Guarda g(s_ppa_trava);
     if (ppa_pronto()) {
-      // Escala uniforme que cabe, em passos de 1/16 (a precisao do PPA).
+      // Uniform scale that fits, in steps of 1/16 (the PPA's precision).
       int s16 = (l * 16) / ql;
       const int s16a = (a * 16) / qa;
       if (s16a < s16) { s16 = s16a; }
@@ -1275,8 +1275,8 @@ bool tab5_video_pintar(void* destino, size_t destino_bytes, int pic_l, int pic_a
       const int sl = ql * s16 / 16, sa = qa * s16 / 16;
       const int ox = x + (l - sl) / 2, oy = y + (a - sa) / 2;
 
-      // MUDOU O RETANGULO OU O VIDEO: fundo preto de novo. As linhas vao para a
-      // memoria ANTES do PPA, que invalida o cache do destino.
+      // THE RECTANGLE OR THE VIDEO CHANGED: black background again. The lines go to
+      // memory BEFORE the PPA, which invalidates the destination cache.
       if (s_geom.dst != destino || s_geom.x != x || s_geom.y != y || s_geom.l != l || s_geom.a != a
        || s_geom.ql != ql || s_geom.qa != qa) {
         uint8_t* base = (uint8_t*)destino;
@@ -1305,11 +1305,11 @@ bool tab5_video_pintar(void* destino, size_t destino_bytes, int pic_l, int pic_a
       c.mode               = PPA_TRANS_MODE_NON_BLOCKING;
       c.user_data          = s_ppa_fim;
       if (ppa_do_scale_rotate_mirror(s_ppa, &c) == ESP_OK) {
-        // Uma operacao leva poucos ms; 1 s so estoura se o PPA travou.
+        // One operation takes a few ms; 1 s only runs out if the PPA has hung.
         for (int i = 0; i < 20 && !ok; ++i) { ok = xSemaphoreTake(s_ppa_fim, pdMS_TO_TICKS(50)) == pdTRUE; }
-        if (!ok) { ESP_LOGW(TAG, "o PPA nao terminou"); }
+        if (!ok) { ESP_LOGW(TAG, "the PPA did not finish"); }
       } else {
-        ESP_LOGW(TAG, "o PPA recusou o quadro");
+        ESP_LOGW(TAG, "the PPA refused the frame");
       }
     }
   }
@@ -1318,7 +1318,7 @@ bool tab5_video_pintar(void* destino, size_t destino_bytes, int pic_l, int pic_a
 }
 
 // ---------------------------------------------------------------------------
-// API PUBLICA
+// PUBLIC API
 // ---------------------------------------------------------------------------
 bool tab5_video_suportado(const char* nome)
 {
@@ -1329,11 +1329,11 @@ bool tab5_video_suportado(const char* nome)
 bool tab5_video_abrir(const char* caminho)
 {
   if (!caminho || !tab5_video_suportado(caminho) || strlen(caminho) >= sizeof(s_caminho)) { return false; }
-  tab5_video_fechar();   // um video por vez
+  tab5_video_fechar();   // one video at a time
   Trava::Guarda g(s_ctrl);
   if (!s_saiu) { s_saiu = xSemaphoreCreateBinary(); }
   if (!s_saiu) { return false; }
-  xSemaphoreTake(s_saiu, 0);   // zera um aviso antigo
+  xSemaphoreTake(s_saiu, 0);   // clears an old signal
 
   snprintf(s_caminho, sizeof(s_caminho), "%s", caminho);
   s_mp3[0] = '\0';
@@ -1350,8 +1350,8 @@ bool tab5_video_abrir(const char* caminho)
   if (ponto) { *ponto = '\0' ; }
   s_trava.destravar();
 
-  // O MP4 decodifica com a PIE (pilha interna, ver tab5_h264); o AVI usa o
-  // JPEG por hardware e cabe na PSRAM.
+  // MP4 decodes with the PIE (internal stack, see tab5_h264); AVI uses the
+  // hardware JPEG and fits in PSRAM.
   const BaseType_t criou = e_mp4(caminho)
       ? tab5_h264_criar_tarefa(tarefa_video, "video", VIDEO_MP4_PILHA, nullptr, VIDEO_MP4_PRIO, 0, &s_tarefa)
       : xTaskCreatePinnedToCoreWithCaps(tarefa_video, "video", VIDEO_PILHA, nullptr, VIDEO_PRIO, &s_tarefa,
@@ -1359,7 +1359,7 @@ bool tab5_video_abrir(const char* caminho)
   if (criou != pdPASS) {
     s_tarefa = nullptr;
     s_trava.travar(); memset(&s_est, 0, sizeof(s_est)); s_trava.destravar();
-    ESP_LOGE(TAG, "a tarefa nao subiu");
+    ESP_LOGE(TAG, "the task did not start");
     return false;
   }
   sistema_avisar(AVISO_VIDEO);
@@ -1372,10 +1372,10 @@ void tab5_video_fechar(void)
   if (s_tarefa) {
     s_ped_fechar = true;
     xTaskNotifyGive(s_tarefa);
-    // A tarefa solta tudo e avisa; espera um quadro mal decodificado, uma leitura longa...
+    // The task releases everything and signals; wait out a badly decoded frame, a long read...
     for (int i = 0; i < 100 && xSemaphoreTake(s_saiu, pdMS_TO_TICKS(50)) != pdTRUE; ++i) {}
-    // Ja bloqueada esperando para ser apagada? (Apagar uma tarefa que roda em
-    // outro nucleo nao pode.)
+    // Already blocked waiting to be deleted? (A task running on the other
+    // core cannot be deleted.)
     for (int i = 0; i < 100 && eTaskGetState(s_tarefa) != eBlocked; ++i) { vTaskDelay(1); }
     vTaskDeleteWithCaps(s_tarefa);
     s_tarefa = nullptr;

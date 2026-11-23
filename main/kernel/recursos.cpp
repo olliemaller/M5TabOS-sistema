@@ -1,4 +1,4 @@
-// Recursos - ver recursos.h.
+// Resources - see recursos.h.
 #include "recursos.h"
 
 #include <stdio.h>
@@ -8,27 +8,27 @@
 #include "app.h"
 #include "tab5_hora.hpp"
 #include "tab5_wifi.hpp"
-#include "idioma.h"   // N_(): os nomes sao traduzidos na tela (tr), nao no log
+#include "idioma.h"   // N_(): names are translated on screen (tr), not in the log
 
 static const char* TAG = "recursos";
 
-// A POLITICA: o que a suspensao preserva para cada recurso. Um lugar so - quem
-// declara nao escolhe, so diz o que usa.
-//   sem_sono  o sono leve fica proibido (o periferico nao acorda o P4, ou perde dado)
-//   radio     o receptor do Wi-Fi fica ligado (modem sleep perde quadros)
-//   rede      o Wi-Fi nao cochila (o servico atende quem chega)
-//   tela      a tela fica acesa
+// THE POLICY: what suspension preserves for each resource. A single place - whoever
+// declares does not choose, it only says what it uses.
+//   sem_sono  light sleep is forbidden (the peripheral does not wake the P4, or loses data)
+//   radio     the Wi-Fi receiver stays on (modem sleep loses frames)
+//   rede      Wi-Fi does not nap (the service answers whoever arrives)
+//   tela      the screen stays on
 typedef struct { const char* nome; bool sem_sono; bool radio, rede, tela; } politica_t;
 static const politica_t POLITICA[RECURSO_N] = {
-  /* CAMERA          */ { N_("camera"),          true,  false, false, false },   // o ISP e o PPA nao acordam o P4 do sono leve
-  /* SOM             */ { N_("som"),             true,  false, false, false },   // o I2S nao acorda o P4 do sono leve
-  /* PROCESSAMENTO   */ { N_("processamento"),   false, false, false, false },   // so conta pesada: o sono leve segue valendo
-  /* REDE            */ { N_("rede"),            true,  false, true,  false },   // o SDIO do C6 nao acorda o P4 do sono leve
-  /* RADIO_ESCUTA    */ { N_("radio"),           false, true,  false, false },   // sem_sono=false: quem trava o sono e tab5_wifi_cochilo (ECONOMIA_SEGURA_WIFI), so com Wi-Fi conectado e receptor pedido
-  /* SERIAL_GROVE    */ { N_("serial do Grove"), true,  false, false, false },   // a UART perde bytes acordando do sono leve
-  /* USB_HOST        */ { N_("USB-A"),           true,  false, false, false },   // o barramento USB nao dorme
-  /* CARTAO          */ { N_("cartao"),          true,  false, false, false },   // gravacao longa: sem pausas
-  /* ENERGIA_EXTERNA */ { N_("tomada"),          true,  false, false, false },   // na tomada a resposta vale mais que a economia
+  /* CAMERA          */ { N_("camera"),          true,  false, false, false },   // the ISP and PPA do not wake the P4 from light sleep
+  /* SOM             */ { N_("som"),             true,  false, false, false },   // I2S does not wake the P4 from light sleep
+  /* PROCESSAMENTO   */ { N_("processamento"),   false, false, false, false },   // heavy maths only: light sleep still applies
+  /* REDE            */ { N_("rede"),            true,  false, true,  false },   // the C6's SDIO does not wake the P4 from light sleep
+  /* RADIO_ESCUTA    */ { N_("radio"),           false, true,  false, false },   // sem_sono=false: what holds off sleep is tab5_wifi_cochilo (ECONOMIA_SEGURA_WIFI), only with Wi-Fi connected and the receiver requested
+  /* SERIAL_GROVE    */ { N_("serial do Grove"), true,  false, false, false },   // the UART loses bytes waking from light sleep
+  /* USB_HOST        */ { N_("USB-A"),           true,  false, false, false },   // the USB bus does not sleep
+  /* CARTAO          */ { N_("cartao"),          true,  false, false, false },   // long write: no pauses
+  /* ENERGIA_EXTERNA */ { N_("tomada"),          true,  false, false, false },   // on mains power responsiveness is worth more than saving
   /* TELA_ACESA      */ { N_("tela acesa"),      false, false, false, true  },
 };
 
@@ -38,8 +38,8 @@ static portMUX_TYPE  s_mux = portMUX_INITIALIZER_UNLOCKED;
 
 const char* sistema_recurso_nome(recurso_t r) { return r < RECURSO_N ? POLITICA[r].nome : "?"; }
 
-// A uniao das politicas em uso, aplicada aos mecanismos de baixo. Fora da trava:
-// eles tem as proprias e sao idempotentes.
+// The union of the policies in use, applied to the mechanisms below. Outside the lock:
+// they have their own and are idempotent.
 static void aplicar(void)
 {
   bool sem_sono = false, radio = false, rede = false, tela = false;
@@ -81,9 +81,9 @@ bool sistema_recurso(recurso_t r, const char* quem, bool usando)
     mudou = true;
   }
   taskEXIT_CRITICAL(&s_mux);
-  if (!ok) { ESP_LOGE(TAG, "sem vaga para %s (%s): %d usos ao mesmo tempo", POLITICA[r].nome, quem, RECURSOS_MAX); return false; }
+  if (!ok) { ESP_LOGE(TAG, "no slot for %s (%s): %d uses at the same time", POLITICA[r].nome, quem, RECURSOS_MAX); return false; }
   if (!mudou) { return true; }
-  ESP_LOGI(TAG, "%s %s: %s", usando ? "usando" : "solto", POLITICA[r].nome, quem);
+  ESP_LOGI(TAG, "%s %s: %s", usando ? "using" : "released", POLITICA[r].nome, quem);
   aplicar();
   return true;
 }

@@ -20,14 +20,14 @@ BERRY_API void be_writebuffer(const char *buffer, size_t length)
     be_fwrite(stdout, buffer, length);
 }
 
-/* M5tabOS: NINGUEM DIGITA PARA UM SCRIPT. O input() lia do stdin do console
- * e esperava a linha dentro de codigo nativo - onde o gancho de tempo nao
- * roda: a tarefa do Berry parava, e com ela a interface que esperava por
- * ela. Aqui o input() devolve "" na hora. */
+/* M5tabOS: NOBODY TYPES INTO A SCRIPT. input() used to read from the console's
+ * stdin and wait for the line inside native code - where the time hook does
+ * not run: the Berry task stalled, and with it the UI that was waiting on
+ * it. Here input() returns "" straight away. */
 BERRY_API char* be_readstring(char *buffer, size_t size)
 {
     if (size) {
-        buffer[0] = '\0';   /* o input() usa o buffer mesmo sem leitura */
+        buffer[0] = '\0';   /* input() uses the buffer even with nothing read */
     }
     return NULL;
 }
@@ -35,14 +35,14 @@ BERRY_API char* be_readstring(char *buffer, size_t size)
 /* use the standard library implementation file API. */
 #if !defined(USE_FATFS)
 
-/* M5tabOS: SO O SISTEMA ABRE ARQUIVO. Com BE_USE_FILE_SYSTEM o Berry ganha o
- * open()/load()/save() globais (be_baselib, tabela pre-compilada - nao da
- * para tirar o nome), e com eles qualquer script leria e gravaria o cartao
- * inteiro (wifi.txt, os dados dos outros apps) e o pendrive, por cima da
- * caixa de areia do modulo cartao (services/berry_apps.cpp, so a pasta do
- * app). Toda abertura passa por aqui: fechada por padrao, aberta so enquanto
- * o sistema carrega um .be (berry_executar, services/berry_vm.cpp). Os
- * scripts usam o modulo cartao. */
+/* M5tabOS: ONLY THE SYSTEM OPENS FILES. With BE_USE_FILE_SYSTEM Berry gets the
+ * global open()/load()/save() (be_baselib, a precompiled table - the name
+ * cannot be removed), and with them any script could read and write the whole
+ * SD card (wifi.txt, other apps' data) and the USB flash drive, bypassing the
+ * sandbox of the cartao (SD card) module (services/berry_apps.cpp, only the
+ * app's folder). Every open goes through here: closed by default, open only
+ * while the system loads a .be (berry_executar, services/berry_vm.cpp).
+ * Scripts use the cartao module. */
 static volatile int s_m5_arquivos_liberados = 0;
 
 void be_port_liberar_arquivos(int sim)

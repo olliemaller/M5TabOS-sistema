@@ -1,5 +1,5 @@
-// Modulo Berry 'camera' (o preview ao vivo e a foto). Ver berry_apps.cpp (o
-// motor) e berry_interno.hpp.
+// Berry module 'camera' (the live preview and the photo). See berry_apps.cpp (the
+// engine) and berry_interno.hpp.
 
 #include <dirent.h>
 #include "idioma.h"
@@ -14,41 +14,41 @@
 #include "berry_interno.hpp"
 
 // ---------------------------------------------------------------------------
-// MODULO 'camera' - o preview ao vivo e a foto, o mesmo servico do app Camera
+// MODULE 'camera' - the live preview and the photo, the same service as the Camera app
 // ---------------------------------------------------------------------------
-// O SCRIPT SO PEDE (camera.ligar/desligar/foto); quem mexe no sensor e a
-// interface, depois que o trabalho volta (cam_aplicar, em pedir): o
-// tab5_camera_iniciar fala I2C, coisa so da tarefa de interface (ver
-// hal/tab5_camera.hpp) - o mesmo jeito do teclado virtual acima.
-// O PREVIEW e escrito pelo PPA da camera DIRETO na tela virtual
-// (sistema_superficie), sem passar pelo script: largura inteira, com o app em
-// pe, topo e altura em multiplos de 8. O desenhar() do app nao apaga essa
-// faixa (cam_limpar_fora) e pode desenhar POR CIMA dela (uma mira, um texto):
-// o quadro da camera entra antes do desenhar(). Um app Berry aberto por vez,
-// entao um estado so.
+// THE SCRIPT ONLY REQUESTS (camera.ligar/desligar/foto); what touches the sensor is the
+// UI, after the job comes back (cam_aplicar, in pedir): the
+// tab5_camera_iniciar talks I2C, which is only for the UI task (see
+// hal/tab5_camera.hpp) - the same approach as the on-screen keyboard above.
+// The PREVIEW is written by the camera's PPA STRAIGHT into the virtual screen
+// (sistema_superficie), without going through the script: full width, with the app in
+// portrait, top and height in multiples of 8. The app's desenhar() does not clear that
+// band (cam_limpar_fora) and may draw ON TOP of it (a crosshair, some text):
+// the camera frame goes in before desenhar(). One Berry app open at a time,
+// so a single state.
 enum { CAM_NADA, CAM_LIGAR, CAM_DESLIGAR };
 enum { FOTO_NADA, FOTO_CAPTURANDO, FOTO_GRAVANDO, FOTO_OK, FOTO_FALHOU };
 typedef struct {
-  int       pedido;          // CAM_*, do script para a interface
-  int       ped_y, ped_a;    // a faixa pedida, em coordenadas da area
-  bool      ligada;          // o preview esta no ar
-  area_t    r;               // a faixa do preview, em coordenadas de TELA
-  char      erro[80];        // por que nao ligou ("" = nada)
+  int       pedido;          // CAM_*, from the script to the UI
+  int       ped_y, ped_a;    // the requested band, in area coordinates
+  bool      ligada;          // the preview is live
+  area_t    r;               // the preview band, in SCREEN coordinates
+  char      erro[80];        // why it did not turn on ("" = nothing)
   bool      foto_pedida;
   char      foto_nome[40];   // "" = foto_NNNN
-  uint16_t* foto;            // a captura em curso: do app ate virar trabalho
-  volatile int foto_estado;  // FOTO_* (o fim da gravacao vem do worker)
-  char      ultima[48];      // o ultimo .bmp gravado
+  uint16_t* foto;            // the capture in progress: from the app until it becomes a job
+  volatile int foto_estado;  // FOTO_* (the end of the write comes from the worker)
+  char      ultima[48];      // the last .bmp written
 } cam_t;
 static cam_t s_cam;
 
-// O preview esta no ar? (a interface nao apaga a faixa dele)
+// Is the preview live? (the UI does not clear its band)
 bool cam_no_ar(void) { return s_cam.ligada; }
 
 static int cam_ligar(bvm* vm)
 {
-  // camera.ligar([y [, altura]]): o preview na largura toda, de y ate y+altura
-  // (padrao: a area inteira que sobra abaixo de y).
+  // camera.ligar([y [, altura]]): the preview across the full width, from y to y+altura
+  // (default: the whole area left below y).
   if (!so_janela(vm, "a camera")) { be_return_nil(vm); }
   const int y = arg_int(vm, 1, 0);
   s_cam.ped_y = y;
@@ -62,8 +62,8 @@ static int cam_ligada(bvm* vm)   { be_pushbool(vm, s_cam.ligada); be_return(vm);
 static int cam_erro(bvm* vm)     { be_pushstring(vm, s_cam.erro); be_return(vm); }
 static int cam_ultima(bvm* vm)   { be_pushstring(vm, s_cam.ultima); be_return(vm); }
 
-// camera.faixa(): [y, altura] do preview no ar, em coordenadas da area (nil
-// desligada) - ja arredondada para os multiplos de 8.
+// camera.faixa(): [y, altura] of the live preview, in area coordinates (nil
+// when off) - already rounded to multiples of 8.
 static int cam_faixa(bvm* vm)
 {
   if (!s_cam.ligada) { be_return_nil(vm); }
@@ -74,9 +74,9 @@ static int cam_faixa(bvm* vm)
   be_return(vm);
 }
 
-// camera.foto([nome]): tira a foto (1200x1600) e grava <nome>.bmp na pasta do
-// app (sem nome: foto_0001.bmp, foto_0002.bmp...). false = camera desligada
-// ou ja ha uma foto em curso. O andamento: camera.foto_estado().
+// camera.foto([nome]): takes the photo (1200x1600) and writes <nome>.bmp to the
+// app's folder (no name: foto_0001.bmp, foto_0002.bmp...). false = camera off
+// or a photo already in progress. Progress: camera.foto_estado().
 static int cam_foto(bvm* vm)
 {
   if (!so_janela(vm, "a camera")) { be_return_nil(vm); }
@@ -105,15 +105,15 @@ static int cam_foto_estado(bvm* vm)
   be_return(vm);
 }
 
-// ---- a parte da interface ----------------------------------------------------
+// ---- the UI side -------------------------------------------------------------
 static void cam_soltar_foto(void)
 {
   if (s_cam.foto) { heap_caps_free(s_cam.foto); s_cam.foto = nullptr; }
 }
 
-// Liga o sensor com o preview em s_cam.r. A superficie primeiro: com a tela
-// deitada ela nao existe, e ai nem vale ligar o sensor.
-static char s_cam_quem[24] = "Berry";   // o app que ligou: o mesmo nome ao soltar
+// Turns the sensor on with the preview in s_cam.r. The surface first: with the screen
+// in landscape it does not exist, and then there is no point turning the sensor on.
+static char s_cam_quem[24] = "Berry";   // the app that turned it on: the same name when releasing
 
 static bool cam_subir(void)
 {
@@ -122,7 +122,7 @@ static bool cam_subir(void)
     snprintf(s_cam.erro, sizeof(s_cam.erro), tr("o preview so funciona com o app em pe"));
     return false;
   }
-  // Quem usa a camera e o app Berry aberto (aparece nos recursos com o nome dele).
+  // The camera user is the open Berry app (it appears in the resources under its name).
   snprintf(s_cam_quem, sizeof(s_cam_quem), "%s", sistema_app_atual() ? sistema_app_atual() : "Berry");
   if (!tab5_camera_iniciar(s_cam_quem)) {
     snprintf(s_cam.erro, sizeof(s_cam.erro), tr("a camera nao ligou (ver o log)"));
@@ -134,8 +134,8 @@ static bool cam_subir(void)
   return true;
 }
 
-// Desliga: espera a tarefa da camera (nenhum PPA escrevendo depois daqui) e
-// so entao devolve o buffer de uma foto que nao chegou a virar trabalho.
+// Turns off: waits for the camera task (no PPA writing after this point) and
+// only then returns the buffer of a photo that never became a job.
 static void cam_descer(void)
 {
   tab5_camera_parar(s_cam_quem);
@@ -144,7 +144,7 @@ static void cam_descer(void)
   cam_soltar_foto();
 }
 
-// Chamada pela interface a cada pedido; sem nada pedido nao faz nada.
+// Called by the UI on every request; with nothing requested it does nothing.
 void cam_aplicar(void)
 {
   if (s_cam.pedido == CAM_DESLIGAR) {
@@ -156,7 +156,7 @@ void cam_aplicar(void)
     const int y = s_cam.ped_y < 0 ? 0 : s_cam.ped_y;
     int al = s_cam.ped_a;
     if (y + al > a.altura) { al = a.altura - y; }
-    const int topo = (a.y + y + 7) & ~7;               // o topo desce ate o multiplo de 8
+    const int topo = (a.y + y + 7) & ~7;               // the top goes down to the multiple of 8
     al = (al - (topo - (a.y + y))) & ~7;
     const area_t r = { a.x, topo, a.largura, al };
     if (al < 64) {
@@ -178,18 +178,18 @@ void cam_aplicar(void)
   }
 }
 
-// A GRAVACAO leva tudo o que precisa: o trabalho e solto e pode terminar com
-// o app ja fechado (o buffer passa a ser dele).
+// THE WRITE takes everything it needs: the job is detached and may finish with
+// the app already closed (the buffer becomes its own).
 typedef struct {
   uint16_t* px;
-  char      app[48];     // a pasta relativa (pasta_rel): Berry/<nome do app>
+  char      app[48];     // the relative folder (pasta_rel): Berry/<app name>
   char      nome[40];
 } cam_gravacao_t;
 
 static void cam_trabalho_gravar(void* arg)
 {
   cam_gravacao_t* g = (cam_gravacao_t*)arg;
-  if (!g->nome[0]) {   // sem nome: o maior foto_NNNN da pasta + 1
+  if (!g->nome[0]) {   // no name: the highest foto_NNNN in the folder + 1
     unsigned maior = 0;
     char pasta[96];
     if (tab5_sd_montar()) {
@@ -214,8 +214,8 @@ static void cam_trabalho_gravar(void* arg)
   sistema_pedir_redesenho();
 }
 
-// A cada desenhar, antes do script: o quadro novo vai para a tela e a foto
-// que chegou vai para o cartao.
+// On every desenhar, before the script: the new frame goes to the screen and the photo
+// that arrived goes to the card.
 void cam_quadro(const berry_app_t* app)
 {
   if (!s_cam.ligada) { return; }
@@ -237,7 +237,7 @@ void cam_quadro(const berry_app_t* app)
   s_cam.foto_estado = FOTO_FALHOU;
 }
 
-// A area sem a faixa do preview (o PPA ja escreveu la; apagar seria piscar).
+// The area without the preview band (the PPA has already written there; clearing it would flicker).
 void cam_limpar_fora(const area_t& a)
 {
   const int r0 = s_cam.r.y, r1 = s_cam.r.y + s_cam.r.altura;
@@ -245,18 +245,18 @@ void cam_limpar_fora(const area_t& a)
   if (r1 < a.y + a.altura)   { tab5_tela_limpar(a.x, r1, a.largura, a.y + a.altura - r1, TFT_BLACK); }
 }
 
-// Repouso: nada aqui. O sistema pausa a camera do app aberto com a tela
-// apagada e a religa ao acordar (kernel/core.cpp, tab5_camera_pausar) - o
-// script nem fica sabendo.
+// Idle: nothing here. The system pauses the open app's camera with the screen
+// off and turns it back on when waking (kernel/core.cpp, tab5_camera_pausar) - the
+// script does not even find out.
 
-// O app fechou: tudo desce, e o estado volta ao zero para o proximo.
+// The app closed: everything comes down, and the state goes back to zero for the next one.
 void cam_fechar(void)
 {
   if (s_cam.ligada) { cam_descer(); }
   cam_soltar_foto();
   const int e = s_cam.foto_estado;
   s_cam = cam_t{};
-  if (e == FOTO_GRAVANDO) { s_cam.foto_estado = FOTO_GRAVANDO; }   // o trabalho solto ainda escreve aqui
+  if (e == FOTO_GRAVANDO) { s_cam.foto_estado = FOTO_GRAVANDO; }   // the detached job is still writing here
 }
 
 const membro_t BERRY_MOD_CAMERA[] = {

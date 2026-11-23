@@ -4,7 +4,7 @@
 #include "tab5_wifi.hpp"
 #include "tab5_hora.hpp"      // tab5_agora_ms
 #include "pool_tarefas.h"
-#include "parada.hpp"      // pedir/confirmar a saida da tarefa (o mesmo do GPS e do Mesh)
+#include "parada.hpp"      // request/confirm the task's exit (the same as GPS and Mesh)
 #include "tab5_mutex.hpp"
 #include "eh_host_feat_peer_data.h"
 #include "esp_heap_caps.h"
@@ -18,8 +18,8 @@
 
 static const char* TAG = "farejo";
 
-// O C6 desliga sozinho em C6_FAREJO_VALIDADE_MS sem renovacao. Renovar a cada
-// 3 s aguenta dois pedidos perdidos seguidos.
+// The C6 switches off by itself after C6_FAREJO_VALIDADE_MS without renewal. Renewing every
+// 3 s survives two lost requests in a row.
 #define RENOVA_MS 3000
 
 static StaticSemaphore_t s_mtx_buf;
@@ -27,23 +27,23 @@ static SemaphoreHandle_t s_mtx = nullptr;
 static StaticSemaphore_t s_info_buf;
 static SemaphoreHandle_t s_info_sem = nullptr;
 
-static c6_farejo_cfg_t s_cfg;          // o pedido em vigor (sob s_mtx)
-static volatile bool   s_quer = false; // o P4 quer farejar
-// LIGAR E DESLIGAR, SEM CORRIDA (o mesmo do CSI). Antes, religar logo
-// depois de desligar achava 's_rodando' ainda de pe, nao voltava s_quer a
-// true, e a tarefa que estava saindo desligava o farejo e LIBERAVA A TABELA
-// depois de 'ligar' ter respondido true. Agora desligar PEDE a saida
-// (parada_t) e ligar com uma execucao saindo espera ela confirmar antes de
-// alocar a tabela e criar a nova.
+static c6_farejo_cfg_t s_cfg;          // the request in force (under s_mtx)
+static volatile bool   s_quer = false; // the P4 wants to sniff
+// SWITCHING ON AND OFF, WITHOUT A RACE (the same as CSI). Previously, switching on right
+// after switching off found 's_rodando' still up, didn't set s_quer back to
+// true, and the task that was exiting switched sniffing off and FREED THE TABLE
+// after 'ligar' had returned true. Now switching off REQUESTS the exit
+// (parada_t) and switching on with a run exiting waits for it to confirm before
+// allocating the table and creating the new one.
 static parada_t          s_parada = { };
 static Trava s_trava_cmd;
 static pool_id_t       s_id = POOL_ID_VAZIO;
 
-static farejo_item_t* s_tab = nullptr; // PSRAM, so com o farejo ligado
+static farejo_item_t* s_tab = nullptr; // PSRAM, only with sniffing on
 static int            s_n = 0;
 static std::atomic<uint32_t> s_lotes = 0, s_perdidos = 0;
 
-static volatile uint8_t s_proto = 0, s_caps = 0;   // 0 = ainda nao sabemos
+static volatile uint8_t s_proto = 0, s_caps = 0;   // 0 = don't know yet
 static c6_info_t s_info;
 static volatile bool s_tem_info = false;
 static bool s_registrado = false;
@@ -57,9 +57,9 @@ static void iniciar_travas(void)
 }
 
 // ---------------------------------------------------------------------------
-// Vindo do C6 - na tarefa de eventos do esp_hosted: so junta e sai.
+// Coming from the C6 - in esp_hosted's event task: just gather and leave.
 // ---------------------------------------------------------------------------
-static int achar_mac(const uint8_t mac[6])   // sob s_mtx
+static int achar_mac(const uint8_t mac[6])   // under s_mtx
 {
   for (int i = 0; i < s_n; ++i) {
     if (memcmp(s_tab[i].mac, mac, 6) == 0) { return i; }
@@ -67,7 +67,7 @@ static int achar_mac(const uint8_t mac[6])   // sob s_mtx
   return -1;
 }
 
-static int vaga_para(const uint8_t mac[6])   // sob s_mtx; cheio: o mais antigo
+static int vaga_para(const uint8_t mac[6])   // under s_mtx; full: the oldest
 {
   int j = achar_mac(mac);
   if (j >= 0) { return j; }
@@ -80,7 +80,7 @@ static int vaga_para(const uint8_t mac[6])   // sob s_mtx; cheio: o mais antigo
   return pior;
 }
 
-static tab5_ouvinte_t<tab5_farejo_ouvinte_t> s_ouvinte;   // remover espera a chamada em voo
+static tab5_ouvinte_t<tab5_farejo_ouvinte_t> s_ouvinte;   // removing waits for the in-flight call
 
 static void juntar_lote(const uint8_t* d, size_t n)
 {
@@ -92,8 +92,8 @@ static void juntar_lote(const uint8_t* d, size_t n)
   if (k > cab.n) { k = cab.n; }
   const uint32_t agora = tab5_agora_ms();
 
-  // O lote chega quando o periodo FECHA: o RSSI medio dele e do meio do
-  // periodo. (O caminho C6 -> P4 leva poucos ms; o periodo leva 100+.)
+  // The batch arrives when the period CLOSES: its mean RSSI is from the middle of the
+  // period. (The C6 -> P4 path takes a few ms; the period takes 100+.)
   if (s_ouvinte.fn.load()) {
     uint16_t lote_ms = s_cfg.lote_ms ? s_cfg.lote_ms : 250;
     if (lote_ms < 50) { lote_ms = 50; }
@@ -109,7 +109,7 @@ static void juntar_lote(const uint8_t* d, size_t n)
   if (s_tab) {
     for (int i = 0; i < k; ++i) {
       c6_farejo_reg_t g;
-      memcpy(&g, reg + i * sizeof(g), sizeof(g));   // reg pode estar desalinhado
+      memcpy(&g, reg + i * sizeof(g), sizeof(g));   // reg may be unaligned
       int j = vaga_para(g.mac);
       farejo_item_t* it = &s_tab[j];
       memcpy(it->mac, g.mac, 6);
@@ -135,7 +135,7 @@ static void ao_peer_data(uint32_t msg_id, const uint8_t* dados, size_t n, void*)
       break;
     case C6_MSG_INFO:
       if (n >= C6_INFO_V1_TAM) {
-        // Um C6 mais velho manda o INFO curto (sem o diagnostico): o resto fica zero.
+        // An older C6 sends the short INFO (without the diagnostics): the rest stays zero.
         memset((void*)&s_info, 0, sizeof(c6_info_t));
         memcpy((void*)&s_info, dados, n < sizeof(c6_info_t) ? n : sizeof(c6_info_t));
         s_proto = s_info.proto;
@@ -150,7 +150,7 @@ static void ao_peer_data(uint32_t msg_id, const uint8_t* dados, size_t n, void*)
 }
 
 // ---------------------------------------------------------------------------
-// Renovacao - vaga do pool, so enquanto ligado.
+// Renewal - a pool slot, only while on.
 // ---------------------------------------------------------------------------
 static void vTarefaRenova(void*)
 {
@@ -162,11 +162,11 @@ static void vTarefaRenova(void*)
     cfg.liga = 1;
     eh_host_peer_data_send(C6_MSG_HOST_FAREJO, (const uint8_t*)&cfg, sizeof(cfg));
 
-    // Dorme ate a proxima renovacao; um desligar (ou config nova) acorda ja.
+    // Sleeps until the next renewal; switching off (or a new config) wakes it at once.
     parada_dormir(&s_parada, RENOVA_MS);
   }
 
-  // Desliga no C6 e solta a tabela.
+  // Switches off on the C6 and releases the table.
   c6_farejo_cfg_t off = { 0 };
   eh_host_peer_data_send(C6_MSG_HOST_FAREJO, (const uint8_t*)&off, sizeof(off));
 
@@ -176,8 +176,8 @@ static void vTarefaRenova(void*)
   xSemaphoreGive(s_mtx);
 
   sistema_recurso(RECURSO_RADIO_ESCUTA, "farejo", false);
-  ESP_LOGI(TAG, "farejo desligado");
-  parada_confirmar(&s_parada);   // a ULTIMA coisa: daqui em diante um ligar pode criar outra
+  ESP_LOGI(TAG, "sniffing off");
+  parada_confirmar(&s_parada);   // the LAST thing: from here on a 'ligar' may create another
 }
 
 // ---------------------------------------------------------------------------
@@ -210,12 +210,12 @@ bool tab5_farejo_ligar(const c6_farejo_cfg_t* cfg)
   s_trava_cmd.travar();
   const bool vivo = parada_rodando(&s_parada);
   if (vivo && parada_pedida(&s_parada) && !parada_pedir(&s_parada, 1500)) {
-    // Saindo e nao saiu: ligar agora dividiria a tabela com quem a libera.
+    // Exiting and hasn't exited: switching on now would share the table with whoever frees it.
     s_trava_cmd.destravar();
-    ESP_LOGE(TAG, "a tarefa anterior do farejo ainda nao saiu - nao liguei");
+    ESP_LOGE(TAG, "the previous sniffing task hasn't exited yet - not switched on");
     return false;
   }
-  const bool de_pe = vivo && parada_rodando(&s_parada);   // nao estava saindo
+  const bool de_pe = vivo && parada_rodando(&s_parada);   // wasn't exiting
 
   xSemaphoreTake(s_mtx, portMAX_DELAY);
   s_cfg = *cfg;
@@ -227,9 +227,9 @@ bool tab5_farejo_ligar(const c6_farejo_cfg_t* cfg)
   }
   const bool sem_tab = (s_tab == nullptr);
   xSemaphoreGive(s_mtx);
-  if (sem_tab) { s_trava_cmd.destravar(); ESP_LOGE(TAG, "sem PSRAM para a tabela"); return false; }
+  if (sem_tab) { s_trava_cmd.destravar(); ESP_LOGE(TAG, "no PSRAM for the table"); return false; }
 
-  // Receptor sempre ligado: o promiscuo perde o que chega durante o cochilo.
+  // Receiver always on: promiscuous mode loses whatever arrives during a doze.
   sistema_recurso(RECURSO_RADIO_ESCUTA, "farejo", true);
 
   s_quer = true;
@@ -241,17 +241,17 @@ bool tab5_farejo_ligar(const c6_farejo_cfg_t* cfg)
       s_quer = false;
       sistema_recurso(RECURSO_RADIO_ESCUTA, "farejo", false);
       s_trava_cmd.destravar();
-      ESP_LOGE(TAG, "sem vaga para a tarefa do farejo");
+      ESP_LOGE(TAG, "no slot for the sniffing task");
       return false;
     }
   } else {
-    // Ja rodando: acorda o cochilo e a volta seguinte manda a config nova.
-    // (Antes era pool_acordar = xTaskAbortDelay, que tambem arranca a tarefa
-    // de um xSemaphoreTake(s_mtx) - o risco descrito em kernel/parada.hpp.)
+    // Already running: wake it from its doze and the next round sends the new config.
+    // (It used to be pool_acordar = xTaskAbortDelay, which also yanks the task
+    // out of an xSemaphoreTake(s_mtx) - the risk described in kernel/parada.hpp.)
     parada_cutucar(&s_parada);
   }
   s_trava_cmd.destravar();
-  ESP_LOGI(TAG, "farejo ligado: mascara 0x%04x, lote %u ms",
+  ESP_LOGI(TAG, "sniffing on: mask 0x%04x, batch %u ms",
            (unsigned)cfg->canais, (unsigned)cfg->lote_ms);
   return true;
 }
@@ -260,8 +260,8 @@ void tab5_farejo_desligar(void)
 {
   s_trava_cmd.travar();
   s_quer = false;
-  // Pede a saida e nao espera (quem desliga e a tela): a tarefa sai na volta
-  // seguinte, solta a tabela e confirma.
+  // Requests the exit and doesn't wait (the one switching off is the screen): the task exits on the next
+  // round, releases the table and confirms.
   if (parada_rodando(&s_parada)) { s_parada.pedido = true; parada_cutucar(&s_parada); }
   s_trava_cmd.destravar();
 }
@@ -307,7 +307,7 @@ bool tab5_farejo_info_c6(c6_info_t* out, uint32_t espera_ms)
   if (!tab5_wifi_c6_nosso() || !tab5_wifi_c6_enlace()) { return false; }
   registrar();
   s_tem_info = false;
-  if (s_info_sem) { xSemaphoreTake(s_info_sem, 0); }   // esvazia
+  if (s_info_sem) { xSemaphoreTake(s_info_sem, 0); }   // drain it
   const uint8_t chave = C6_AJ_INFO;
   uint8_t pedido[2] = { C6_AJ_INFO, 0 };
   (void)chave;
@@ -321,7 +321,7 @@ bool tab5_farejo_info_c6(c6_info_t* out, uint32_t espera_ms)
 
 void tab5_farejo_anotar_pronto(const uint8_t* dados, uint16_t n)
 {
-  // PRONTO v2: 6B MAC + 1B canal + 1B proto + 1B caps. Antigo: so 7 bytes.
+  // PRONTO v2: 6B MAC + 1B channel + 1B proto + 1B caps. Old: only 7 bytes.
   if (n >= 9) { s_proto = dados[7]; s_caps = dados[8]; }
   else        { s_proto = 1; s_caps = C6_CAP_ESPNOW; }
 }

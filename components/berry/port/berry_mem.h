@@ -1,4 +1,4 @@
- /* M5tabOS: a conta da memoria do Berry (port/be_port_m5.c). */
+ /* M5tabOS: accounting of Berry's memory (port/be_port_m5.c). */
 #pragma once
 
 #include <stddef.h>
@@ -7,18 +7,18 @@
 extern "C" {
 #endif
 
-/* O teto de TODAS as maquinas Berry juntas. Um app medido gasta dezenas de KB
- * (o maior exemplo, ~60 KB no pico): 4 MB e folga para muitos apps vivos ao
- * mesmo tempo e ainda deixa a PSRAM para quem e do sistema. As camadas
- * (tela.camada) NAO entram aqui - sao do M5GFX e tem o limite delas. */
+/* The ceiling for ALL Berry VMs together. A measured app uses tens of KB
+ * (the largest example, ~60 KB at peak): 4 MB leaves room for many live apps
+ * at once and still leaves PSRAM for the system's own users. Layers
+ * (tela.camada) do NOT count here - they belong to M5GFX and have their own limit. */
 #define BERRY_ORCAMENTO (4u * 1024u * 1024u)
 
-/* Uma maquina nova monta os modulos FORA de qualquer pcall: sem memoria ali o
- * Berry abortaria o aparelho. Quem cria confere antes que cabe isto. */
+/* A new VM loads its modules OUTSIDE any pcall: out of memory there, Berry
+ * would abort the device. Whoever creates one checks beforehand that it fits. */
 #define BERRY_FOLGA_VM  (64u * 1024u)
 
-size_t berry_mem_usada(void);   /* bytes em uso agora, todas as maquinas */
-size_t berry_mem_pico(void);    /* o maior ja visto desde o boot */
+size_t berry_mem_usada(void);   /* bytes in use right now, all VMs */
+size_t berry_mem_pico(void);    /* the highest seen since boot */
 int    berry_mem_cabe(size_t n);
 
 #ifdef __cplusplus

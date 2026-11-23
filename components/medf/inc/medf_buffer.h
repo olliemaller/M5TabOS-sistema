@@ -25,19 +25,20 @@ typedef struct {
     bool direct;
 } medf_arena_t;
 
-/* M5tabOS: o arquivo e lido por funcoes de fora. O sistema so le o cartao
-   pelas portas dele (services/tab5_volumes: tab5_leitor), entao registra
-   aqui as suas. Sem registro, vale o POSIX de antes (open/lseek/read). */
+/* M5tabOS: the file is read through external functions. The system only reads
+   the SD card through its own entry points (services/tab5_volumes: tab5_leitor),
+   so it registers them here. Without registration, the previous POSIX path
+   applies (open/lseek/read). */
 typedef struct {
-    void  *(*open)(const char *path, off_t *size);   /* NULL = nao abriu */
+    void  *(*open)(const char *path, off_t *size);   /* NULL = failed to open */
     size_t (*read_at)(void *file, off_t offset, void *out, size_t size);
     void   (*close)(void *file);
-    /* A tarefa de leitura antecipada: prioridade e nucleo (0 e 0 = o original,
-       prioridade 3 no nucleo 0). Ler o cartao e quase so esperar o DMA: com
-       prioridade alta ela nao atrapalha ninguem e nao fica sem CPU quando um
-       decodificador ocupa o nucleo. */
+    /* The read-ahead task: priority and core (0 and 0 = the original,
+       priority 3 on core 0). Reading the SD card is almost all waiting for DMA:
+       with a high priority it gets in nobody's way and does not starve of CPU
+       when a decoder occupies the core. */
     int    readahead_prio;
-    int    readahead_core;   /* -1 = qualquer nucleo */
+    int    readahead_core;   /* -1 = any core */
 } medf_io_t;
 void medf_set_io(const medf_io_t *io);
 

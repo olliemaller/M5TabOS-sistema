@@ -1,5 +1,5 @@
-// Comandos do console - SISTEMA: estado, tarefas, memoria, energia, musica, fundo, log, berry, pendrive, usb.
-// (Partido de console.cpp; a tabela COMANDOS e a ajuda continuam la.)
+// Console commands - SISTEMA (SYSTEM): estado, tarefas, memoria, energia, musica, fundo, log, berry, pendrive, usb.
+// (Split from console.cpp; the COMANDOS table and the help remain there.)
 
 #include "tab5_heap_psram.hpp"
 #include "tab5_musica.hpp"
@@ -20,9 +20,9 @@
 #include "tab5_teclado.hpp"
 #include "tab5_wifi.hpp"
 #include "tab5_grove.hpp"
-#include "tab5_mesh_admin.hpp"  // mesh_cfg_ler (Wi-Fi do no)
+#include "tab5_mesh_admin.hpp"  // mesh_cfg_ler (the node's Wi-Fi)
 #include "lwip/netdb.h"
-#include "esp_app_desc.h"   // esp_app_desc_t (versao do programa)
+#include "esp_app_desc.h"   // esp_app_desc_t (program version)
 #include "registro.h"
 #include "tab5_log.hpp"
 #include "ajustes.h"
@@ -31,21 +31,21 @@
 #include "tab5_monitor.hpp"   // tab5_mem_extrato
 #include "console/console_interno.hpp"
 
-// LE O QUE O MONITOR JA MEDIU (tab5_monitor_foto), em vez de tirar duas fotos
-// proprias de uxTaskGetSystemState: cada foto e uma secao critica longa (a que
-// ja derrubou frame do painel) e o retrato pedia 2 x 40 TaskStatus_t de
-// malloc interno. A foto do monitor e do ultimo segundo, com os donos.
+// READS WHAT THE MONITOR HAS ALREADY MEASURED (tab5_monitor_foto), instead of taking two
+// snapshots of its own with uxTaskGetSystemState: each snapshot is a long critical section (the one that
+// once dropped a panel frame) and the report needed 2 x 40 TaskStatus_t of
+// internal malloc. The monitor's snapshot is from the last second, with the owners.
 static void cmd_tarefas(void)
 {
   mon_foto_t* f = (mon_foto_t*)heap_caps_malloc(sizeof(mon_foto_t), MALLOC_CAP_SPIRAM);
   if (!f) { printf("%s", tr("sem memoria para o retrato\n")); return; }
   if (!tab5_monitor_foto(f)) { heap_caps_free(f); printf("%s", tr("monitor ainda sem a primeira amostra\n")); return; }
 
-  // EM QUE ESTADO ISTO FOI MEDIDO. Sem esta linha a medida e ambigua: o mesmo
-  // comando com a tela acesa e com ela apagada da numeros muito diferentes, e
-  // nada no retrato dizia qual dos dois voce estava olhando. Digitar no serial
-  // NAO acorda a tela (so o toque acorda), entao da para medir o repouso de
-  // verdade - mas so se der para conferir que era repouso mesmo.
+  // WHAT STATE THIS WAS MEASURED IN. Without this line the measurement is ambiguous: the same
+  // command with the screen on and with it off gives very different numbers, and
+  // nothing in the report said which of the two you were looking at. Typing on the serial port
+  // does NOT wake the screen (only touch does), so idle can be really
+  // measured - but only if you can confirm it really was idle.
   printf(tr("--- %d tarefas   [%s]   CPU %.1f%%   foto %lu us (pior %lu) ---\n"), f->n,
          tab5_power_em_repouso() ? tr("EM REPOUSO - tela apagada") : tr("tela acesa"),
          (double)f->cpu, (unsigned long)f->foto_us, (unsigned long)f->foto_pior_us);
@@ -53,32 +53,32 @@ static void cmd_tarefas(void)
 
   for (int i = 0; i < f->n; ++i) {
     const mon_tarefa_t& t = f->t[i];
-    // xCoreID vale tskNO_AFFINITY (0x7FFFFFFF) quando a tarefa roda nos dois -
-    // testar por negativo nunca acerta, e imprimir cru mostra um numero
-    // gigante. Foi um bug real na coluna CORE do app.
+    // xCoreID is tskNO_AFFINITY (0x7FFFFFFF) when the task runs on both -
+    // testing for negative never works, and printing it raw shows a
+    // huge number. It was a real bug in the app's CORE column.
     char nucleo[8];
     if (t.core == tskNO_AFFINITY) { snprintf(nucleo, sizeof(nucleo), "0e1"); }
     else                          { snprintf(nucleo, sizeof(nucleo), "%d", (int)t.core); }
-    // "onde": a pilha na SRAM interna (escassa) ou na PSRAM.
+    // "onde" (where): the stack in internal SRAM (scarce) or in PSRAM.
     printf("  %-16s %3u %6s %6.1f %8u B %5s  %s\n",
            t.nome, (unsigned)t.prioridade, nucleo, (double)t.pct,
            (unsigned)t.pilha_livre, t.pilha_psram ? "PSRAM" : "SRAM", t.dono);
   }
-  // A CONTA E DO APARELHO, NAO POR NUCLEO: as porcentagens somam 100% (os
-  // dois nucleos juntos), a mesma conta do app Tarefas. Os dois IDLE juntos
-  // sao a ociosidade do aparelho; um nucleo inteiro ocupado aparece como 50%.
+  // THE SUM IS PER DEVICE, NOT PER CORE: the percentages add up to 100% (the
+  // two cores together), the same sum as the Tarefas app. The two IDLEs together
+  // are the device's idleness; a whole busy core shows as 50%.
   printf("%s", tr("\n  CPU%% do aparelho (os dois nucleos somam 100%%): um nucleo cheio = 50%%.\n"));
   heap_caps_free(f);
 }
 
 static void cmd_memoria(void)
 {
-  // O QUE O idf.py size NAO CONTA.
+  // WHAT idf.py size DOES NOT COUNT.
   //
-  // O relatorio da compilacao mostra so o ESTATICO: .text, .data, .bss. Ele nao
-  // sabe nada do que e alocado depois - stack de tarefa, buffer de UART, queue
-  // do WiFi, os dois framebuffers de 1,8MB do painel. E justamente isso que
-  // decide se cabe mais um app.
+  // The build report shows only the STATIC part: .text, .data, .bss. It knows
+  // nothing about what is allocated later - task stacks, UART buffers, WiFi
+  // queues, the panel's two 1.8MB framebuffers. And that is precisely what
+  // decides whether one more app fits.
   printf("%s", tr("--- memoria ---\n"));
 
   const size_t i_liv = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
@@ -98,8 +98,8 @@ static void cmd_memoria(void)
          (unsigned)((i_tot - i_liv) / 1024), (unsigned)(i_tot / 1024),
          (unsigned)(i_tot ? ((i_tot - i_liv) * 100 / i_tot) : 0),
          (unsigned)(i_liv / 1024));
-  // O "minimo ja visto" e o numero que importa para saber se falta: o livre de
-  // agora nao mostra o pico de uso que ja passou.
+  // The "minimum ever seen" is the number that matters to know whether memory is short: the current
+  // free value does not show the usage peak that has already passed.
   printf(tr("                minimo ja visto %u KB, maior bloco %u KB\n"),
          (unsigned)(i_min / 1024), (unsigned)(i_blk / 1024));
 
@@ -116,20 +116,20 @@ static void cmd_memoria(void)
   }
 }
 
-// MAPA DA RAM INTERNA - onde esta cada byte e quao picotado esta o livre.
+// MAP OF INTERNAL RAM - where each byte is and how chopped up the free space is.
 //
-// "livre 80 KB" nao diz se da para alocar 16 KB: se o livre estiver em 40
-// pedacos de 2 KB, nao da. O heap do IDF (TLSF) e dividido em REGIOES (cada
-// faixa de endereco que sobrou depois do .bss, a TCM, a RAM do LP, a reserva
-// DMA); um bloco nunca atravessa regioes. Aqui cada bloco de cada regiao e
-// visitado (heap_caps_walk) e contado por faixa de tamanho, usados e livres.
+// "free 80 KB" does not say whether 16 KB can be allocated: if the free space is in 40
+// pieces of 2 KB, it cannot. The IDF heap (TLSF) is divided into REGIONS (each
+// address range left after .bss, the TCM, the LP RAM, the DMA
+// reserve); a block never crosses regions. Here each block of each region is
+// visited (heap_caps_walk) and counted by size range, used and free.
 //
-// COMO LER:
-//   - blocos LIVRES pequenos e muitos = fragmentacao. O que importa e o
-//     "maior" de cada regiao, nao a soma;
-//   - blocos USADOS entre 4 e 16 KB sao malloc() comuns que o
-//     SPIRAM_MALLOC_ALWAYSINTERNAL (4096) obriga a ficar na interna. Se forem
-//     muitos, baixar esse limite os manda para a PSRAM.
+// HOW TO READ IT:
+//   - many small FREE blocks = fragmentation. What matters is the
+//     "largest" of each region, not the sum;
+//   - USED blocks between 4 and 16 KB are ordinary malloc()s that
+//     SPIRAM_MALLOC_ALWAYSINTERNAL (4096) forces to stay internal. If there are
+//     many, lowering that limit sends them to PSRAM.
 #define MAPA_FAIXAS 6
 static const uint32_t s_faixa_lim[MAPA_FAIXAS] = { 64, 256, 1024, 4096, 16384, UINT32_MAX };
 static const char*    s_faixa_nome[MAPA_FAIXAS] = { "<64", "<256", "<1K", "<4K", "<16K", ">=16K" };
@@ -147,7 +147,7 @@ typedef struct {
   bool estourou;
 } mapa_t;
 
-// Roda com a trava do heap presa: nada de printf nem malloc aqui dentro.
+// Runs with the heap lock held: no printf nor malloc in here.
 static bool mapa_visitar(walker_heap_into_t h, walker_block_info_t b, void* u)
 {
   mapa_t* m = (mapa_t*)u;
@@ -174,7 +174,7 @@ static bool mapa_visitar(walker_heap_into_t h, walker_block_info_t b, void* u)
 
 static void cmd_mem_mapa(void)
 {
-  // static: ~1 KB, fora da pilha do console.
+  // static: ~1 KB, off the console stack.
   static mapa_t m;
   memset(&m, 0, sizeof(m));
   heap_caps_walk(MALLOC_CAP_INTERNAL, mapa_visitar, &m);
@@ -202,18 +202,18 @@ static void cmd_mem_mapa(void)
   }
 }
 
-// CACA AO VAZAMENTO: 'mem marca' tira uma foto do heap; 'mem delta' diz o que
-// mudou desde ela. O uso e abrir e fechar o app (ou ligar e desligar o servico)
-// algumas vezes entre os dois: o que NAO volta ao valor da marca e o que ficou
-// preso. Compara bytes e QUANTIDADE de blocos usados (uma lista que cresce de
-// 1 em 1 bloco escapa da conta em bytes), por faixa de tamanho na interna (a
-// faixa que cresce diz o tipo de coisa: pilha, buffer, objeto pequeno), e as
-// tarefas vivas (uma tarefa que nao morre segura a pilha dela).
+// LEAK HUNTING: 'mem marca' takes a snapshot of the heap; 'mem delta' says what
+// changed since then. The idea is to open and close the app (or start and stop the service)
+// a few times between the two: what does NOT return to the mark's value is what got
+// stuck. Compares bytes and the NUMBER of used blocks (a list growing
+// 1 block at a time escapes the byte count), by size range in internal RAM (the
+// range that grows tells the kind of thing: stack, buffer, small object), and the
+// live tasks (a task that does not die holds on to its stack).
 typedef struct {
   bool     ok;
-  mapa_t   mapa;                 // so a interna, por faixa
-  uint32_t i_bytes, i_blocos;    // total usado, internal
-  uint32_t p_bytes, p_blocos;    // total usado, PSRAM
+  mapa_t   mapa;                 // internal only, by range
+  uint32_t i_bytes, i_blocos;    // total used, internal
+  uint32_t p_bytes, p_blocos;    // total used, PSRAM
   uint32_t tarefas;
 } marca_mem_t;
 static marca_mem_t s_marca_mem;
@@ -282,32 +282,32 @@ static void cmd_mem_extrato(void)
   if (n == MEM_MARCOS_N) { printf("%s", tr("  (cheio: marcos seguintes descartados)\n")); }
 }
 
-// QUEM ESTA PROIBINDO O LIGHT SLEEP.
+// WHO IS PREVENTING LIGHT SLEEP.
 //
-// Toda a economia de energia do IDF passa pelas travas de PM. Um driver que
-// precisa de clock estavel cria uma trava na inicializacao e a segura; enquanto
-// houver UMA trava viva, o sistema nao desce para o modo que ela proibe - e nao
-// ha aviso nenhum, o esp_pm simplesmente nao dorme.
+// All of the IDF's power saving goes through PM locks. A driver that
+// needs a stable clock creates a lock at initialisation and holds it; while
+// there is ONE live lock, the system does not go down to the mode it forbids - and there
+// is no warning at all, esp_pm simply does not sleep.
 //
-// Foi assim que se descobriu que o painel DPI segurava duas travas
-// desde a criacao e so as soltava no destrutor - o que levou ao
-// DESMONTAR_DSI_NO_REPOUSO em tab5_power.cpp. Sem este despejo, aquilo teria
-// sido adivinhacao.
+// That is how it was discovered that the DPI panel held two locks
+// from creation and only released them in the destructor - which led to
+// DESMONTAR_DSI_NO_REPOUSO in tab5_power.cpp. Without this dump, that would have
+// been guesswork.
 //
-// COMO USAR: o numero que interessa nao e este, com a tela acesa. E o de DENTRO
-// do repouso - e por isso o comando aceita um atraso em segundos:
+// HOW TO USE: the number that matters is not this one, with the screen on. It is the one from INSIDE
+// idle - which is why the command accepts a delay in seconds:
 //
-//     energia travas 30      (deixa a tela apagar e so entao despeja)
+//     energia travas 30      (lets the screen go off and only then dumps)
 //
-// Tipos que importam: NO_LIGHT_SLEEP proibe dormir; CPU_FREQ_MAX prende o
-// clock no teto; APB_FREQ_MAX prende o barramento - e este tambem impede o
-// light sleep, porque dormir pararia o APB.
+// Types that matter: NO_LIGHT_SLEEP forbids sleeping; CPU_FREQ_MAX pins the
+// clock at the ceiling; APB_FREQ_MAX pins the bus - and this one also prevents
+// light sleep, because sleeping would stop the APB.
 static void cmd_travas(int segundos)
 {
 #if CONFIG_PM_ENABLE
-  // O tempo de tela vem de Ajustes e pode ser qualquer coisa. Dizer qual e
-  // evita a medida inutil mais provavel: esperar menos que ele e despejar as
-  // travas com a tela ainda acesa, quando o painel ainda segura as duas.
+  // The screen timeout comes from Settings and can be anything. Saying what it is
+  // avoids the most likely useless measurement: waiting less than it and dumping the
+  // locks with the screen still on, when the panel still holds both.
   const int tela = (int)ajustes_tela_s();
   if (segundos > 0 && segundos <= tela) {
     printf(tr("AVISO: a tela apaga em %d s e voce pediu %d. Vai medir acordado.\n"
@@ -342,30 +342,30 @@ static void cmd_travas(int segundos)
 #endif
 }
 
-// FORCA O REPOUSO AGORA, no clock que voce escolher - para descobrir se um
-// piso MENOR que os 40MHz de hoje (ver o "int piso = ... : 40" em
-// core.cpp) e aceito pelo silicio e pelo painel, sem regravar a cada
-// numero novo. Mesma ideia do 'tela relogio <mhz>' - comparar em execucao em
-// vez de adivinhar.
+// FORCES IDLE NOW, at the clock you choose - to find out whether a
+// floor LOWER than today's 40MHz (see the "int piso = ... : 40" in
+// core.cpp) is accepted by the silicon and the panel, without reflashing for each
+// new number. Same idea as 'tela relogio <mhz>' - comparing at run time
+// instead of guessing.
 //
-// SEGURO CHAMAR DO CONSOLE (uma tarefa diferente da interface): reli
-// tab5_power_repouso()/retomar() e nenhuma das duas toca I2C - so mexem no
-// painel DSI, no PM (esp_pm_configure) e no AXI-ICM. A regra de "so a
-// interface fala com o barramento interno" e sobre o INA226/touch/teclado/
-// IMU, e nao vale aqui.
+// SAFE TO CALL FROM THE CONSOLE (a task other than the UI): I re-read
+// tab5_power_repouso()/retomar() and neither touches I2C - they only touch the
+// DSI panel, PM (esp_pm_configure) and the AXI-ICM. The rule "only the
+// UI talks to the internal bus" is about the INA226/touch/keyboard/
+// IMU, and does not apply here.
 //
-// UM CUIDADO QUE FICA COM QUEM TESTA: se o repouso AUTOMATICO (o timer de
-// ociosidade da tela, em Ajustes) disparar no MESMO instante que este comando,
-// as duas chamadas correm sem trava nenhuma por cima do mesmo estado
-// (s_em_repouso e companhia sao globais do modulo, sem mutex) - e o resultado
-// seria desmontar o painel duas vezes. Na pratica a janela e estreitissima
-// (o guard "ja em repouso?" barra o caso comum), mas para testar com sossego
-// aumente o tempo de tela em Ajustes antes, ou teste logo depois de tocar a
-// tela (o relogio de ociosidade acabou de reiniciar).
+// ONE CAVEAT FOR WHOEVER TESTS: if AUTOMATIC idle (the screen's
+// inactivity timer, in Settings) fires at the SAME instant as this command,
+// the two calls race with no lock at all over the same state
+// (s_em_repouso and friends are module globals, with no mutex) - and the result
+// would be tearing down the panel twice. In practice the window is extremely narrow
+// (the "already idle?" guard blocks the common case), but to test in peace
+// increase the screen timeout in Settings first, or test right after touching the
+// screen (the inactivity clock has just restarted).
 //
-// Se o MHz pedido nao existir nesta revisao de silicio (validos: 360, 180,
-// 90 e XTAL/N -> 40, 20, 10, 8, 5, 4, 2, 1), tab5_power_repouso() ja desfaz
-// sozinho e devolve false - a tela volta a acender, sem travar nada.
+// If the requested MHz does not exist on this silicon revision (valid: 360, 180,
+// 90 and XTAL/N -> 40, 20, 10, 8, 5, 4, 2, 1), tab5_power_repouso() already undoes it
+// by itself and returns false - the screen comes back on, without locking anything.
 static void cmd_repouso_forcar(int mhz)
 {
   if (mhz <= 0) {
@@ -393,11 +393,11 @@ static void cmd_repouso_forcar(int mhz)
   }
 }
 
-// TETO DO CPU COM A TELA ACORDADA - ver o aviso grande em tab5_power.hpp.
-// Diferente de 'energia repouso', a tela NAO apaga: o painel continua ligado,
-// desenhando, no relogio de pixel que estiver configurado agora ('tela
-// relogio <mhz>'). Existe para testar a combinacao que faltava: painel devagar
-// E CPU devagar, os dois ACORDADOS ao mesmo tempo.
+// CPU CEILING WITH THE SCREEN AWAKE - see the big notice in tab5_power.hpp.
+// Unlike 'energia repouso', the screen does NOT go off: the panel stays on,
+// drawing, at whatever pixel clock is configured now ('tela
+// relogio <mhz>'). It exists to test the missing combination: slow panel
+// AND slow CPU, both AWAKE at the same time.
 static void cmd_teto_cpu(int mhz)
 {
   if (mhz <= 0) {
@@ -424,12 +424,12 @@ static void cmd_teto_cpu(int mhz)
 
 static void cmd_energia(void)
 {
-  // LEITURA DE CACHE, NAO DO INA226.
+  // CACHE READING, NOT FROM THE INA226.
   //
-  // O I2C_Class do M5Unified nao tem mutex: se esta tarefa for ao INA226
-  // enquanto a interface le o touch, as duas transacoes se intercalam e voce le
-  // registrador errado - sem erro nenhum, so numero sem sentido. A interface
-  // mede uma vez por segundo e deixa o valor aqui; e daqui que se le.
+  // M5Unified's I2C_Class has no mutex: if this task goes to the INA226
+  // while the UI reads the touch, the two transactions interleave and you read
+  // the wrong register - with no error at all, just a meaningless number. The UI
+  // measures once a second and leaves the value here; this is where it is read from.
   const tab5_medida_t m = tab5_power_ultima();
 
   printf("%s", tr("--- energia ---\n"));
@@ -439,8 +439,8 @@ static void cmd_energia(void)
          (m.mA > 20)  ? tr("carregando")
        : (m.mA < -20) ? tr("na bateria") : tr("parado / na tomada sem carregar"));
 
-  // O ESTIMADOR, ao vivo - ver estimar_pct() em tab5_power.cpp. A diferenca
-  // entre "estimador" e "curva" e o que a contagem de mAh esta corrigindo.
+  // The ESTIMATOR, live - see estimar_pct() in tab5_power.cpp. The difference
+  // between "estimator" and "curve" is what the mAh count is correcting.
   {
     float soc, curva, desde; const char* fonte;
     tab5_power_soc_debug(&soc, &curva, &fonte, &desde);
@@ -462,8 +462,8 @@ static void cmd_energia(void)
     return;
   }
 
-  // Escala da barra pelo MAIOR consumo da janela, e nao por um teto fixo: com
-  // teto fixo, uma janela inteira em repouso viraria uma coluna de nada.
+  // Bar scale by the HIGHEST consumption in the window, and not by a fixed ceiling: with
+  // a fixed ceiling, a whole window at idle would become a column of nothing.
   float pico = 1.0f;
   for (int i = 0; i < n; ++i) { const float v = fabsf(h[i].mA); if (v > pico) pico = v; }
 
@@ -471,9 +471,9 @@ static void cmd_energia(void)
          (n * TAB5_HIST_SEG) / 60, pico);
   printf("  %6s %7s %11s\n", tr("quando"), tr("tensao"), tr("corrente"));
 
-  // De duas em duas amostras: com TAB5_HIST_SEG=30 isso da uma linha por
-  // minuto, e 30 linhas cabem numa tela de terminal. Todas as 60 obrigariam a
-  // rolar para ver o comeco.
+  // Every other sample: with TAB5_HIST_SEG=30 that gives one line per
+  // minute, and 30 lines fit on a terminal screen. All 60 would force
+  // scrolling to see the start.
   for (int i = 0; i < n; i += 2) {
     const int min_atras = ((n - 1 - i) * TAB5_HIST_SEG) / 60;
     char barra[33];
@@ -487,20 +487,20 @@ static void cmd_energia(void)
 }
 
 // ---------------------------------------------------------------------------
-// SISTEMA
+// SYSTEM
 // ---------------------------------------------------------------------------
 
-// Uma linha por servico do sistema, no mesmo lugar. A primeira pergunta quando
-// algo estranho acontece e "o que esta de pe agora?" - e sem isto a resposta
-// exigia cacar linha de log de tres tarefas diferentes.
+// One line per system service, in the same place. The first question when
+// something strange happens is "what is up right now?" - and without this the answer
+// meant hunting log lines from three different tasks.
 void c_estado(int, char**)
 {
   const esp_app_desc_t* app = esp_app_get_description();
   const uint32_t s = (uint32_t)(esp_timer_get_time() / 1000000);
   const char* aberto = sistema_app_atual();
   printf(tr("--- M5tabOS %s ---\n"), app->version);
-  // Bloqueada, a interface mostra so a tela de bloqueio: o app aberto NAO
-  // desenha ate alguem destravar (no teste pelo console isso parecia defeito).
+  // When locked, the UI shows only the lock screen: the open app does NOT
+  // draw until someone unlocks (in testing from the console this looked like a fault).
   const char* situacao = sistema_bloqueado()     ? tr("   (tela bloqueada: o app nao desenha)")
                        : tab5_power_em_repouso() ? tr("   (em repouso)") : "";
   printf(tr("  ligado ha: %luh%02lum%02lus   app aberto: %s%s\n"),
@@ -560,7 +560,7 @@ void c_estado(int, char**)
 
 void c_tarefas(int argc, char** argv)
 {
-  if (argc >= 2 && eh(argv[1], "memoria")) { cmd_memoria(); }   // forma antiga
+  if (argc >= 2 && eh(argv[1], "memoria")) { cmd_memoria(); }   // old form
   else                                      { cmd_tarefas(); }
 }
 
@@ -576,9 +576,9 @@ void c_mem(int argc, char** argv)
   else if (eh(o, "marca"))   { cmd_mem_marca(); }
   else if (eh(o, "delta"))   { cmd_mem_delta(); }
   else if (eh(o, "integridade")) {
-    // O heap inteiro (interna e PSRAM): a estrutura e, com o envenenamento
-    // leve ligado (sdkconfig.defaults), as marcas antes e depois de cada
-    // bloco. true = imprime o que achou de errado e onde.
+    // The whole heap (internal and PSRAM): the structure and, with light
+    // poisoning enabled (sdkconfig.defaults), the markers before and after each
+    // block. true = prints what it found wrong and where.
     printf("%s", tr("conferindo o heap inteiro...\n"));
     fflush(stdout);
     const bool ok = heap_caps_check_integrity_all(true);
@@ -597,8 +597,8 @@ void c_energia(int argc, char** argv)
   if (argc < 2)                   { cmd_energia(); }
   else if (eh(argv[1], "travas"))  { cmd_travas(argc >= 3 ? atoi(argv[2]) : 0); }
   else if (eh(argv[1], "quem")) {
-    // QUEM SEGURA O QUE (kernel/recursos.h): o que cada servico declarou e o
-    // que a suspensao preserva por causa disso.
+    // WHO HOLDS WHAT (kernel/recursos.h): what each service declared and
+    // what suspend preserves because of it.
     recurso_uso_t u[RECURSOS_MAX];
     const int n = sistema_recursos(u, RECURSOS_MAX);
     const uint32_t agora = tab5_agora_ms();
@@ -610,7 +610,7 @@ void c_energia(int argc, char** argv)
   else if (eh(argv[1], "repouso")) { cmd_repouso_forcar(argc >= 3 ? atoi(argv[2]) : 0); }
   else if (eh(argv[1], "teto"))    { cmd_teto_cpu(argc >= 3 ? atoi(argv[2]) : 0); }
   else if (eh(argv[1], "sono")) {
-    // O sono leve do P4 em repouso (contrato de economia, kernel/app.h).
+    // The P4's light sleep at idle (power-saving contract, kernel/app.h).
     if (argc >= 3 && (eh(argv[2], "on") || eh(argv[2], "off"))) {
       ajustes_definir_sono_leve(eh(argv[2], "on"));
       printf(tr("sono leve em repouso: %s (vale no proximo repouso)\n"), ajustes_sono_leve() ? tr("ligado") : tr("desligado"));
@@ -632,7 +632,7 @@ void c_energia(int argc, char** argv)
     }
   }
   else if (eh(argv[1], "ensaio")) {
-    // O consumo de cada servico com a tela apagada - ver services/tab5_ensaio.hpp.
+    // Each service's consumption with the screen off - see services/tab5_ensaio.hpp.
     if (argc >= 3 && eh(argv[2], "parar")) { tab5_ensaio_parar(); printf("%s", tr("parando - os ajustes voltam em 1 s\n")); }
     else if (argc >= 3 && eh(argv[2], "comecar")) {
       const int min = argc >= 4 ? atoi(argv[3]) : 6;
@@ -648,9 +648,9 @@ void c_energia(int argc, char** argv)
   else                             { mostrar_uso("energia"); }
 }
 
-// As partes de fundo dos apps (kernel/fundo.h). A parada pedida daqui
-// acontece na interface (fundo_manter), como toda parada.
-// MUSICA - o tocador do sistema (services/tab5_musica), pela serial.
+// The apps' background parts (kernel/fundo.h). A stop requested from here
+// happens on the UI (fundo_manter), like every stop.
+// MUSICA (MUSIC) - the system player (services/tab5_musica), over the serial port.
 void c_musica(int argc, char** argv)
 {
   if (argc >= 2 && eh(argv[1], "lista")) {
@@ -672,7 +672,7 @@ void c_musica(int argc, char** argv)
     return;
   }
   if (argc >= 3 && eh(argv[1], "tocar")) {
-    // musica tocar <n> [subpasta] - o n e o da 'musica lista'.
+    // musica tocar <n> [subfolder] - n is the one from 'musica lista'.
     const char* rel = argc >= 4 ? argv[3] : "";
     tab5_musica_zerar_diag();
     printf(tab5_musica_tocar(rel, atoi(argv[2]), nullptr) ? tr("tocando\n") : tr("nao tocou (o item e musica?)\n"));
@@ -706,7 +706,7 @@ void c_musica(int argc, char** argv)
     return;
   }
   if (argc >= 3 && eh(argv[1], "playlist")) {
-    // musica playlist <nome> [criar|apagar|tocar [n]|por <caminho>|tirar <caminho>]
+    // musica playlist <name> [criar|apagar|tocar [n]|por <path>|tirar <path>]
     const char* nome = argv[2];
     const char* o = argc >= 4 ? argv[3] : "";
     if (eh(o, "criar"))  { char nc[TAB5_MUSICA_NOME_MAX]; printf(tab5_musica_playlist_criar(nome, nc, sizeof(nc)) ? tr("criada: %s\n") : tr("nao criou (ja existe?): %s\n"), nc); return; }
@@ -763,8 +763,8 @@ void c_musica(int argc, char** argv)
          (unsigned long)e.ler_soma_ms, (unsigned long)e.ler_no_pior_us, (unsigned long)e.esp_max_us);
 }
 
-// VIDEO - o tocador de video do sistema (services/tab5_video), pela serial:
-// da para testar a decodificacao e o sincronismo sem olhar a tela.
+// VIDEO - the system video player (services/tab5_video), over the serial port:
+// decoding and sync can be tested without looking at the screen.
 void c_video(int argc, char** argv)
 {
   if (argc >= 3 && eh(argv[1], "abrir")) {
@@ -777,9 +777,9 @@ void c_video(int argc, char** argv)
   if (argc >= 3 && eh(argv[1], "ir")) { tab5_video_ir_ms((uint32_t)(atof(argv[2]) * 1000.0)); printf("%s", tr("pedido\n")); return; }
   if (argc >= 2 && eh(argv[1], "fechar")) { tab5_video_fechar(); printf("%s", tr("fechado\n")); return; }
   if (argc >= 3 && eh(argv[1], "h264")) {
-    // BANCADA do decodificador H.264 (services/tab5_h264): sem tela, mede a
-    // decodificacao de um .h264 cru e, com 'hash', imprime o FNV de cada
-    // quadro para comparar com o teste do Mac (testes/rodar_h264.sh).
+    // BENCH for the H.264 decoder (services/tab5_h264): without a screen, measures
+    // decoding of a raw .h264 and, with 'hash', prints the FNV of each
+    // frame to compare with the Mac test (testes/rodar_h264.sh).
     char caminho[TAB5_ARQ_CAMINHO_MAX];
     resolver(argv[2], caminho, sizeof(caminho));
     tab5_h264_onde_t onde = TAB5_H264_AUTO;
@@ -832,10 +832,10 @@ void c_fundo(int argc, char** argv)
   }
 }
 
-// Devolve (ou tira) o barulho de uma etiqueta em tempo de execucao. O sistema
-// silencia "eh_sdio" e "sdmmc_io" no boot - eles inundam o console quando o
-// enlace com o C6 morre. Silenciar sem deixar como reverter seria esconder
-// informacao; com isto, o cru esta a um comando de distancia.
+// Restores (or removes) the noise of a log tag at run time. The system
+// silences "eh_sdio" and "sdmmc_io" at boot - they flood the console when the
+// link with the C6 dies. Silencing without leaving a way to revert would be hiding
+// information; with this, the raw output is one command away.
 static const char* const NIVEL_NOME[6] = { "nada", "erro", "aviso", "info", "debug", "verboso" };
 
 static int nivel_log(const char* s)
@@ -863,9 +863,9 @@ void c_log(int argc, char** argv)
   printf(tr("'%s' agora em %s (%d)\n"), argv[1], NIVEL_NOME[n], n);
 }
 
-// 'boasvindas': abre o assistente de primeiro uso agora (kernel/boas_vindas).
-// Para testar num aparelho que ja foi configurado - ele so abre sozinho num
-// aparelho novo. Concluir ou fechar marca como feito de novo.
+// 'boasvindas': opens the first-use wizard now (kernel/boas_vindas).
+// To test on a device that has already been set up - it only opens by itself on a
+// new device. Finishing or closing marks it as done again.
 void c_boasvindas(int, char**)
 {
   extern const app_t APP_BOAS_VINDAS;
@@ -907,10 +907,10 @@ void c_fuso(int argc, char** argv)
 
 #if M5_COM_BERRY
 // ---------------------------------------------------------------------------
-// BERRY - o interpretador de script. A maquina do console e uma so, criada no
-// primeiro uso e mantida entre comandos: o que uma linha define, a proxima
-// enxerga (como um REPL). Roda na tarefa do Berry (services/berry_vm), com o
-// mesmo prazo de um app: um laco infinito vira erro, nao trava o console.
+// BERRY - the script interpreter. The console has a single VM, created on
+// first use and kept between commands: what one line defines, the next one
+// sees (like a REPL). It runs on the Berry task (services/berry_vm), with the
+// same deadline as an app: an infinite loop becomes an error, it does not lock the console.
 // ---------------------------------------------------------------------------
 #include "berry_vm.hpp"
 #include "berry_apps.hpp"
@@ -918,8 +918,8 @@ void c_fuso(int argc, char** argv)
 #include <atomic>
 
 static bvm* s_berry = nullptr;
-// 'saida': o stdout de quem pediu - o Berry roda na tarefa dele, e o print
-// tem que cair onde o comando foi digitado (a serial ou o Terminal).
+// 'saida': the stdout of whoever asked - Berry runs on its own task, and print
+// has to land where the command was typed (the serial port or the Terminal).
 typedef struct { const char* codigo; bool arquivo; bool apagar; FILE* saida; } berry_cmd_t;
 
 static void berry_rodar_console(const berry_cmd_t* c);
@@ -968,15 +968,15 @@ void c_berry(int argc, char** argv)
     return;
   }
   if (eh(argv[1], "verificar") && argc >= 3) {
-    // Compila o arquivo sem rodar (o mesmo 'Verificar' do Editor).
+    // Compiles the file without running it (the same 'Verificar' (check) as the Editor).
     char tmp[sizeof(buf)];
     const char* caminho = caminho_sd(argv[2], tmp, sizeof(tmp));
     com_cartao([&]() -> int {
       FILE* f = fopen(caminho, "r");
       if (!f) { printf(tr("nao abriu %s\n"), caminho); return 1; }
-      // O arquivo INTEIRO: com um buffer fixo de 16 KB, um app maior era
-      // cortado no meio e "dava erro" de sintaxe na linha do corte (o
-      // Mostruario, 18 KB, aparecia quebrado na linha 445 sem estar).
+      // The WHOLE file: with a fixed 16 KB buffer, a larger app was
+      // cut in the middle and "gave" a syntax error on the cut line (the
+      // Mostruario, 18 KB, appeared broken at line 445 without being so).
       const long tam = tab5_sd_tamanho(f);
       if (tam < 0 || tam > 512 * 1024) {
         fclose(f);
@@ -1005,7 +1005,7 @@ void c_berry(int argc, char** argv)
     strlcpy(buf, caminho_sd(argv[2], tmp, sizeof(tmp)), sizeof(buf));
     c.arquivo = true;
   } else {
-    // A linha inteira depois de 'berry' (o executar() quebrou em palavras).
+    // The whole line after 'berry' (executar() split it into words).
     for (int i = 1; i < argc; ++i) {
       if (i > 1) { strlcat(buf, " ", sizeof(buf)); }
       strlcat(buf, argv[i], sizeof(buf));
@@ -1021,9 +1021,9 @@ void c_berry(int argc, char** argv)
 }
 #endif
 
-// BANCADA DO PENDRIVE: ligar e devolver sem tocar na tela. Ligar tira o
-// console do USB-C (o computador passa a ver o disco, nao a porta serial); ele
-// volta quando o computador ejeta. O que aconteceu fica no log do cartao.
+// FLASH DRIVE BENCH: turn on and return without touching the screen. Turning on takes the
+// console off USB-C (the computer starts seeing the disk, not the serial port); it
+// comes back when the computer ejects. What happened stays in the SD card log.
 void c_pendrive(int argc, char** argv)
 {
   if (argc >= 2 && eh(argv[1], "ligar")) {
@@ -1040,8 +1040,8 @@ void c_pendrive(int argc, char** argv)
          e.oferta ? tr("sim") : tr("nao"), tab5_pendrive_pc_presente() ? tr("sim") : tr("nao"));
 }
 
-// O USB-A (services/tab5_usb): o que esta plugado, a velocidade que ele
-// negociou e quanto o pendrive rende lendo.
+// USB-A (services/tab5_usb): what is plugged in, the speed it
+// negotiated and how fast the flash drive reads.
 void c_usb(int argc, char** argv)
 {
   if (argc >= 2 && (eh(argv[1], "ligar") || eh(argv[1], "desligar"))) {
@@ -1050,7 +1050,7 @@ void c_usb(int argc, char** argv)
     return;
   }
   if (argc >= 3 && eh(argv[1], "ler")) {
-    // Le o arquivo inteiro em pedacos de 32 KB (o mesmo do tocador) e mede.
+    // Reads the whole file in 32 KB chunks (the same as the player) and measures.
     char c[300];
     snprintf(c, sizeof(c), argv[2][0] == '/' ? "%s" : TAB5_USB_RAIZ "/%s", argv[2]);
     if (!tab5_volume_montar(c)) { printf(tr("sem o disco de %s\n"), c); return; }

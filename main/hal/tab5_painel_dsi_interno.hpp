@@ -1,26 +1,26 @@
 #pragma once
 
-// GAMBIARRA CONTIDA - PONTO UNICO, consolidado.
+// CONTAINED HACK - SINGLE POINT, consolidated.
 //
-// tab5_tela.cpp (double buffer) e tab5_power.cpp (repouso/desmontagem do
-// painel) precisam chegar em membros PROTEGIDOS de lgfx::Panel_DSI que o
-// M5GFX nao expoe por getter publico: o handle do painel DPI
-// (_disp_panel_handle), o vetor de ponteiros de linha (_lines_buffer), o
-// buffer guardado em _config_detail e as dimensoes em _cfg.
-// cada arquivo tinha a SUA PROPRIA subclasse fazendo a mesma coisa
-// (PainelAberto num, PainelDSIAberto no outro) - duas copias do mesmo truque,
-// cada uma expondo um subconjunto diferente dos mesmos campos. O risco disso
-// nao e teorico: se o M5GFX reorganizar Panel_DSI, as duas podem quebrar em
-// momentos DIFERENTES (uma ainda compila "por acaso" enquanto a outra ja
-// parou), escondendo o problema atras de um comportamento parcialmente
-// migrado em vez de um erro de compilacao limpo e imediato.
+// tab5_tela.cpp (double buffer) and tab5_power.cpp (panel idle/tear-down)
+// need to reach PROTECTED members of lgfx::Panel_DSI that M5GFX does not
+// expose through a public getter: the DPI panel handle (_disp_panel_handle),
+// the line pointer array (_lines_buffer), the buffer kept in _config_detail
+// and the dimensions in _cfg.
+// Each file had ITS OWN subclass doing the same thing (PainelAberto in one,
+// PainelDSIAberto in the other) - two copies of the same trick, each exposing
+// a different subset of the same fields. The risk was not theoretical: if
+// M5GFX reorganises Panel_DSI, the two could break at DIFFERENT times (one
+// still compiling "by luck" while the other had stopped), hiding the problem
+// behind partially migrated behaviour instead of a clean, immediate
+// compilation error.
 //
-// Um ponto so, usado pelos dois arquivos: quebra (em tempo de COMPILACAO, nao
-// silenciosamente em runtime - a mesma garantia de antes) atinge os dois ao
-// mesmo tempo, do mesmo jeito, e o conserto e feito uma vez so.
+// A single point, used by both files: breakage (at COMPILE time, not
+// silently at run time - the same guarantee as before) hits both at once, in
+// the same way, and the fix is made only once.
 //
-// Nao instanciamos esta classe nunca - ela so serve de "chave" no
-// static_cast, igual as duas que ela substitui.
+// We never instantiate this class - it only serves as a "key" in the
+// static_cast, just like the two it replaces.
 #include "lgfx/v1/platforms/esp32p4/Panel_DSI.hpp"
 #include "esp_lcd_mipi_dsi.h"
 
@@ -39,8 +39,8 @@ namespace {
     int       altura(void)                     { return _cfg.panel_height; }
   };
 
-  // Devolve nullptr se o painel atual nao for um Panel_DSI (repouso em
-  // andamento, por exemplo) - todo chamador ja trata esse caso.
+  // Returns nullptr if the current panel is not a Panel_DSI (idle in
+  // progress, for example) - every caller already handles that case.
   inline PainelDSIInterno* tab5_painel_dsi_interno(void)
   {
     auto* p = M5.Display.panel();

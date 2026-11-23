@@ -30,13 +30,13 @@
 #define LUMA_ABOVE 4
 #define CHROMA_ABOVE 2
 #define BITS_PADDING 8
-/* M5tabOS: folga depois do buffer de bits. A leitura so confere o fim no fim
-   de cada macrobloco (e de cada SPS), entao um arquivo malformado pode ler
-   alguns KB alem do que foi carregado antes de ser recusado. A folga mantem
-   essa leitura dentro da memoria do proprio buffer (o conteudo nao importa). */
+/* M5tabOS: slack after the bit buffer. Reading only checks for the end at the
+   end of each macroblock (and of each SPS), so a malformed file can read a
+   few KB past what was loaded before it is rejected. The slack keeps that
+   read inside the buffer's own memory (the contents do not matter). */
 #define BITS_FOLGA 4096
 #define BITS_MB_RESERVE 1024
-#define BITS_CHUNK 4096   /* M5tabOS: 16 KB no original; 4 KB poupa 12 KB de SRAM (a recarga e um memmove pequeno) */
+#define BITS_CHUNK 4096   /* M5tabOS: 16 KB in the original; 4 KB saves 12 KB of SRAM (the reload is a small memmove) */
 
 #define NAL_SLICE 1
 #define NAL_IDR 5
@@ -415,8 +415,8 @@ struct h264_dec {
     uint64_t prof[H264_PROF_COUNT];
 #endif
     const char *error;
-    /* M5tabOS: a ultima ativacao de SPS falhou por falta de memoria (arena
-       ou quadros), e nao por formato - quem chama pode tentar com mais. */
+    /* M5tabOS: the last SPS activation failed for lack of memory (arena
+       or frames), not because of the format - the caller can retry with more. */
     bool sem_memoria;
 
     sps_t sps[MAX_SPS];
@@ -437,8 +437,8 @@ struct h264_dec {
     uint32_t luma_stride;
     uint32_t chroma_stride;
 
-    /* M5tabOS: um bloco por quadro (era um bloco so para todos). No 1080p
-       sao 5 x 3 MB, e a PSRAM fragmentada nao tem 16 MB contiguos. */
+    /* M5tabOS: one block per frame (it used to be a single block for all). At
+       1080p that is 5 x 3 MB, and fragmented PSRAM has no 16 MB contiguous. */
     uint8_t *frame_mem[MAX_POOL];
     frame_t frames[MAX_POOL];
     uint8_t pool_size;
@@ -541,7 +541,7 @@ struct h264_dec {
     int16_t *ls8;
     const pps_t *ls_pps;
 
-    /* M5tabOS: a arena em pedacos (o primeiro e config.work). */
+    /* M5tabOS: the arena in chunks (the first is config.work). */
     uint8_t n_work;
     uint8_t *work_base[1 + H264_DEC_WORK_EXTRA];
     size_t work_bytes[1 + H264_DEC_WORK_EXTRA];

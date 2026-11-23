@@ -1,27 +1,27 @@
-// O SCCB DA CAMERA PELA MESMA TRAVA DO RESTO DO I2C INTERNO.
+// THE CAMERA SCCB THROUGH THE SAME LOCK AS THE REST OF THE INTERNAL I2C.
 //
-// O PROBLEMA. O barramento I2C interno (I2C_NUM_1: toque GT911, INA226, IMU,
-// RTC, expansores, sensor da camera) tem DOIS drivers em cima do mesmo
-// controlador:
-//   - o do M5GFX/M5Unified, que mexe direto nos registradores e protege cada
-//     transacao com um mutex por porta (common.cpp, i2c_context_t::lock);
-//   - o do IDF (i2c_master), usado pelo SCCB do sensor da camera via esp_video.
-// O proprio M5GFX avisa que os dois lados "nao sao serializados entre si - a
-// aplicacao nao deve roda-los ao mesmo tempo". E o esp_video roda: o controle
-// automatico de ganho/exposicao (IPA: AGC, AEN) escreve no sensor DURANTE a
-// captura, na tarefa dele, enquanto a interface le o toque. A "ponte da
-// camera" (kernel/core.cpp) so protegia o iniciar/parar.
+// THE PROBLEM. The internal I2C bus (I2C_NUM_1: GT911 touch, INA226, IMU,
+// RTC, expanders, camera sensor) has TWO drivers on top of the same
+// controller:
+//   - the M5GFX/M5Unified one, which pokes the registers directly and protects each
+//     transaction with a per-port mutex (common.cpp, i2c_context_t::lock);
+//   - the IDF one (i2c_master), used by the camera sensor's SCCB via esp_video.
+// M5GFX itself warns that the two sides "are not serialised with each other - the
+// application must not run them at the same time". And esp_video does: the automatic
+// gain/exposure control (IPA: AGC, AEN) writes to the sensor DURING
+// capture, in its own task, while the UI reads the touch panel. The "camera
+// bridge" (kernel/core.cpp) only protected start/stop.
 //
-// A SOLUCAO. O esp_video cria o canal do sensor chamando sccb_new_i2c_io()
-// (esp_video_init.c:255). O link desvia essa chamada para ca
-// (-Wl,--wrap=sccb_new_i2c_io, main/CMakeLists.txt) e entregamos um canal
-// SCCB cujas operacoes sao transacoes do M5GFX - que passam pela trava da
-// porta. A partir dai TODO o I2C interno e serializado por UMA trava so, de
-// qualquer tarefa, e nenhum componente de terceiros foi editado.
+// THE SOLUTION. esp_video creates the sensor channel by calling sccb_new_i2c_io()
+// (esp_video_init.c:255). The linker redirects that call here
+// (-Wl,--wrap=sccb_new_i2c_io, main/CMakeLists.txt) and we hand back an SCCB
+// channel whose operations are M5GFX transactions - which go through the
+// port lock. From then on ALL internal I2C is serialised by ONE single lock, from
+// any task, and no third-party component was edited.
 //
-// Toda operacao SCCB se reduz a tres formas (ver sccb_i2c.c do componente):
-// escrever, escrever-e-ler, ler. Os bytes de registrador/valor ja vem montados
-// no buffer por quem chama; aqui so se transporta.
+// Every SCCB operation boils down to three forms (see the component's sccb_i2c.c):
+// write, write-then-read, read. The register/value bytes come already assembled
+// in the buffer by the caller; here we only transport them.
 
 #include <stdlib.h>
 #include <M5Unified.h>
@@ -33,7 +33,7 @@
 
 static const char* TAG = "sccb";
 
-static const int PORTA_INTERNA = 1;   // I2C_NUM_1 - ver o aviso da numeracao em tab5-sistema-apps
+static const int PORTA_INTERNA = 1;   // I2C_NUM_1 - see the numbering warning in tab5-sistema-apps
 
 typedef struct {
   esp_sccb_io_t base;
@@ -81,8 +81,8 @@ extern "C" esp_err_t __wrap_sccb_new_i2c_io(i2c_master_bus_handle_t bus, const s
 {
   if (!bus || !cfg || !io) { return ESP_ERR_INVALID_ARG; }
 
-  // So o barramento INTERNO e compartilhado com o M5GFX. Qualquer outro segue
-  // o caminho normal do componente.
+  // Only the INTERNAL bus is shared with M5GFX. Any other one takes
+  // the component's normal path.
   i2c_master_bus_handle_t interno = nullptr;
   if (i2c_master_get_bus_handle((i2c_port_num_t)PORTA_INTERNA, &interno) != ESP_OK || bus != interno
    || cfg->dev_addr_length != I2C_ADDR_BIT_LEN_7) {
@@ -111,7 +111,7 @@ extern "C" esp_err_t __wrap_sccb_new_i2c_io(i2c_master_bus_handle_t bus, const s
   s->base.del          = apagar;
 
   *io = &s->base;
-  ESP_LOGI(TAG, "sensor 0x%02X no I2C interno pela trava do M5GFX (%lu Hz)",
+  ESP_LOGI(TAG, "sensor 0x%02X on internal I2C via the M5GFX lock (%lu Hz)",
            (unsigned)s->endereco, (unsigned long)s->freq);
   return ESP_OK;
 }

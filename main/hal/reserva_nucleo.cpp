@@ -3,13 +3,14 @@
 #include <string.h>
 
 // ---------------------------------------------------------------------------
-// O registro na flash
+// The record in flash
 // ---------------------------------------------------------------------------
-//   [cabecalho 36 B][app][arquivo][cabecalho do arquivo][dados][0xFF ate multiplo de 4]
+//   [header 36 B][app][file name][file header][data][0xFF up to a multiple of 4]
 //
-// O CRC cobre o cabecalho ate 'crc' (exclusive) e o resto do registro, menos o
-// enchimento. 'aplicado' fica de fora: e o unico byte regravado depois.
-#define RESERVA_MAGIA 0x31565352u   // "RSV1" em little endian
+// The CRC covers the header up to 'crc' (exclusive) and the rest of the
+// record, minus the padding. 'aplicado' is left out: it is the only byte
+// rewritten later.
+#define RESERVA_MAGIA 0x31565352u   // "RSV1" in little endian
 
 typedef struct {
   uint32_t magia;
@@ -19,7 +20,7 @@ typedef struct {
   uint32_t base_tam, base_data;
   uint8_t  base_existia, livre2[3];
   uint32_t crc;
-  uint8_t  aplicado;      // 0xFF = pendente, 0x00 = ja esta no cartao
+  uint8_t  aplicado;      // 0xFF = pending, 0x00 = already on the card
   uint8_t  livre3[3];
 } reserva_cab_t;
 static_assert(sizeof(reserva_cab_t) == 36, "o formato na flash nao pode mudar sem mudar a magia");
@@ -53,7 +54,7 @@ static bool tudo_ff(const void* b, size_t n)
   return true;
 }
 
-// Cabecalho com cara de registro e cabendo no meio a partir de 'pos'.
+// Header that looks like a record and fits in the medium from 'pos'.
 static bool cab_plausivel(const reserva_t* r, uint32_t pos, const reserva_cab_t* c)
 {
   if (c->magia != RESERVA_MAGIA) { return false; }
@@ -64,7 +65,7 @@ static bool cab_plausivel(const reserva_t* r, uint32_t pos, const reserva_cab_t*
   return (uint64_t)pos + tam <= r->meio.tamanho;
 }
 
-// CRC do corpo lendo a flash em blocos (sem precisar do registro inteiro na RAM).
+// CRC of the body, reading flash in blocks (no need for the whole record in RAM).
 static bool crc_confere(const reserva_t* r, uint32_t pos, const reserva_cab_t* c)
 {
   uint32_t crc = crc32_mais(0, c, CRC_ATE);
@@ -90,12 +91,12 @@ static bool apagar_tudo(reserva_t* r)
 }
 
 // ---------------------------------------------------------------------------
-// Varredura
+// Scan
 // ---------------------------------------------------------------------------
-// Para cada posicao: cabecalho todo 0xFF = fim do diario; registro inteiro e
-// com CRC certo = vale; qualquer outra coisa = lixo de uma gravacao
-// interrompida, e a busca segue no proximo setor (onde a gravacao seguinte
-// recomecou). Termina com 'fim' sempre numa area apagada.
+// At each position: header all 0xFF = end of the journal; complete record
+// with a correct CRC = valid; anything else = garbage from an interrupted
+// write, and the search continues at the next sector (where the following
+// write started again). Ends with 'fim' always in an erased area.
 static bool varrer(reserva_t* r, uint32_t* validos, uint32_t* pendentes, uint32_t* fim, bool* sujo)
 {
   *validos = 0; *pendentes = 0; *sujo = false;
@@ -122,15 +123,15 @@ bool reserva_abrir(reserva_t* r, const reserva_meio_t* meio)
   memset(r, 0, sizeof(*r));
   r->meio = *meio;
   if (!varrer(r, &r->validos, &r->pendentes, &r->fim, &r->sujo)) { return false; }
-  // Nada a aplicar mas algo escrito (tudo ja aplicado antes de um reinicio,
-  // ou so lixo): apaga ja - o diario vazio e o estado normal.
+  // Nothing to apply but something written (all applied before a reboot, or
+  // just garbage): erase now - an empty journal is the normal state.
   if (r->pendentes == 0 && r->fim > 0 && !apagar_tudo(r)) { return false; }
   r->pronto = true;
   return true;
 }
 
 // ---------------------------------------------------------------------------
-// Gravar
+// Write
 // ---------------------------------------------------------------------------
 bool reserva_gravar(reserva_t* r, const reserva_reg_t* reg)
 {
@@ -140,7 +141,7 @@ bool reserva_gravar(reserva_t* r, const reserva_reg_t* reg)
   if (reg->tipo != RESERVA_ACRESCENTAR && reg->tipo != RESERVA_SUBSTITUIR) { return false; }
 
   reserva_cab_t c;
-  memset(&c, 0xFF, sizeof(c));   // os campos livres ficam como a flash apagada
+  memset(&c, 0xFF, sizeof(c));   // spare fields stay as erased flash
   c.magia = RESERVA_MAGIA;
   c.tipo = reg->tipo; c.flags = reg->flags;
   c.n_app = (uint8_t)n_app; c.n_arq = (uint8_t)n_arq;
@@ -152,7 +153,7 @@ bool reserva_gravar(reserva_t* r, const reserva_reg_t* reg)
   c.aplicado = 0xFF;
 
   const uint32_t tam = arredonda4((uint32_t)sizeof(c) + corpo(&c));
-  if ((uint64_t)r->fim + tam > r->meio.tamanho) { return false; }   // cheio
+  if ((uint64_t)r->fim + tam > r->meio.tamanho) { return false; }   // full
 
   uint32_t crc = crc32_mais(0, &c, CRC_ATE);
   crc = crc32_mais(crc, reg->app, n_app);
@@ -161,8 +162,8 @@ bool reserva_gravar(reserva_t* r, const reserva_reg_t* reg)
   if (c.n_dados) { crc = crc32_mais(crc, reg->dados, c.n_dados); }
   c.crc = crc;
 
-  // Em sequencia: uma queda em qualquer ponto deixa um registro que falha o
-  // CRC, e a varredura pula para o proximo setor.
+  // In sequence: power loss at any point leaves a record that fails the CRC,
+  // and the scan jumps to the next sector.
   uint32_t p = r->fim;
   bool ok = r->meio.gravar(r->meio.ctx, p, &c, sizeof(c));
   p += sizeof(c);
@@ -171,9 +172,9 @@ bool reserva_gravar(reserva_t* r, const reserva_reg_t* reg)
   if (ok && c.n_cab)   { ok = r->meio.gravar(r->meio.ctx, p, reg->cabecalho, c.n_cab); p += c.n_cab; }
   if (ok && c.n_dados) { ok = r->meio.gravar(r->meio.ctx, p, reg->dados, c.n_dados); }
   if (!ok) {
-    // O que chegou a ser gravado nao volta a 0xFF: o proximo registro
-    // comeca no primeiro setor ainda apagado, como depois de uma queda (um
-    // registro grande pode ter sujado mais de um).
+    // What was written does not go back to 0xFF: the next record starts at
+    // the first sector still erased, as after a power loss (a large record
+    // may have dirtied more than one).
     r->sujo = true;
     uint32_t q = prox_setor(r->fim);
     while (q + sizeof(reserva_cab_t) <= r->meio.tamanho) {
@@ -191,7 +192,7 @@ bool reserva_gravar(reserva_t* r, const reserva_reg_t* reg)
 }
 
 // ---------------------------------------------------------------------------
-// Aplicar
+// Apply
 // ---------------------------------------------------------------------------
 int reserva_aplicar(reserva_t* r, reserva_aplicar_fn fn, void* ctx)
 {
@@ -205,14 +206,14 @@ int reserva_aplicar(reserva_t* r, reserva_aplicar_fn fn, void* ctx)
     const uint32_t tam = arredonda4((uint32_t)sizeof(c) + corpo(&c));
     if (c.aplicado != 0xFF) { pos += tam; continue; }
 
-    // O registro inteiro na memoria, com NUL depois de cada texto:
-    //   [app][0][arquivo][0][cabecalho][dados]
-    // Os nomes ficam no MESMO bloco, nao na pilha: quem aplica pode ser
-    // qualquer tarefa que le o cartao (tab5_sd_abrir aplica antes de abrir),
-    // e a descida ate o FAT ja e funda - 512 B a menos nela.
+    // The whole record in memory, with a NUL after each string:
+    //   [app][0][file name][0][header][data]
+    // The names live in the SAME block, not on the stack: the applier can be
+    // any task that reads the card (tab5_sd_abrir applies before opening),
+    // and the call chain down to FAT is already deep - 512 B less on it.
     const uint32_t n = corpo(&c);
     uint8_t* b = (uint8_t*)r->meio.alocar((size_t)n + 2);
-    if (!b) { return aplicados; }   // sem memoria agora: tenta depois, na mesma ordem
+    if (!b) { return aplicados; }   // no memory now: try later, in the same order
     const uint32_t ini = pos + (uint32_t)sizeof(c);
     char* app = (char*)b;
     char* arq = app + c.n_app + 1;

@@ -1,6 +1,6 @@
-// TOCADOR DE MUSICA - o arquivo aberto: MP3/WAV/MP4, a etiqueta ID3, a leitura
-// do cartao, o salto para um ponto e a decodificacao de um bloco de PCM.
-// Ver tab5_musica_interno.hpp.
+// MUSIC PLAYER - the open file: MP3/WAV/MP4, the ID3 tag, reading
+// the card, seeking to a point and decoding a block of PCM.
+// See tab5_musica_interno.hpp.
 #include "tab5_musica_interno.hpp"
 #include "idioma.h"
 
@@ -14,43 +14,43 @@
 
 #include "minimp3_externo.h"
 
-// MP4/M4A: o leitor de conteiner (components/medf) e o AAC (components/audf).
+// MP4/M4A: the container reader (components/medf) and AAC (components/audf).
 #include "medf_mp4.h"
 #include "audf_aac.h"
 #include "tab5_midia.hpp"
 
 static const char* TAG = "musica";
 
-// So o nome do arquivo de um caminho.
+// Just the file name from a path.
 static const char* base_de(const char* caminho)
 {
   const char* b = strrchr(caminho, '/');
   return b ? b + 1 : caminho;
 }
 
-// Os buffers (alocados no ao_iniciar de tab5_musica.cpp) e o decodificador de MP3.
+// The buffers (allocated in ao_iniciar in tab5_musica.cpp) and the MP3 decoder.
 uint8_t*  g_musica_arq_buf = nullptr;
-uint8_t*  g_musica_ler_buf = nullptr;   // alinhado, capaz de DMA (PSRAM)
+uint8_t*  g_musica_ler_buf = nullptr;   // aligned, DMA-capable (PSRAM)
 mp3dec_t* g_musica_mp3 = nullptr;
 
 // ---------------------------------------------------------------------------
-// O ARQUIVO ABERTO
+// THE OPEN FILE
 // ---------------------------------------------------------------------------
-// MP4/M4A (o som de um video do celular, ou musica .m4a): o leitor de MP4 tem
-// a propria leitura do cartao (pelo tab5_leitor, com leitura antecipada) e
-// entrega so os pacotes de AAC; o decodificador do audf os transforma em PCM.
-// A arena de 512 KB: 384 KB de leitura antecipada + 128 KB do maior pacote.
+// MP4/M4A (the sound of a phone video, or .m4a music): the MP4 reader has
+// its own card reading (via tab5_leitor, with read-ahead) and
+// delivers only the AAC packets; the audf decoder turns them into PCM.
+// The 512 KB arena: 384 KB of read-ahead + 128 KB for the largest packet.
 static medf_arena_t       s_mp4_arena = { };
 static medf_mp4_demux_t*  s_mp4 = nullptr;
 static audf_decoder_t*    s_aac = nullptr;
 
-// POSIX (open/read), NAO stdio. Medido no aparelho, lendo 256 KB do cartao:
-// fread sem buffer 52 KB/s (a newlib le UM BYTE por chamada ao FAT), fread
-// com buffer 572 KB/s, read() 4593 KB/s - o pedido inteiro vai ao FatFs, que
-// faz DMA de varios setores direto no buffer alinhado.
+// POSIX (open/read), NOT stdio. Measured on the device, reading 256 KB from the card:
+// unbuffered fread 52 KB/s (newlib reads ONE BYTE per call to FAT), buffered
+// fread 572 KB/s, read() 4593 KB/s - the whole request goes to FatFs, which
+// DMAs several sectors straight into the aligned buffer.
 static int       s_fd = -1;
 
-// Le exatamente n bytes (menos so no fim do arquivo).
+// Reads exactly n bytes (fewer only at end of file).
 static size_t ler(void* dst, size_t n)
 {
   size_t feito = 0;
@@ -62,27 +62,27 @@ static size_t ler(void* dst, size_t n)
   return feito;
 }
 formato_t g_musica_fmt = FMT_NADA;
-long      g_musica_dados_ini = 0, g_musica_dados_fim = 0;   // bytes de audio [ini, fim)
-static size_t    s_buf_n = 0, s_buf_pos = 0;         // o que ha em g_musica_arq_buf
-static long      s_lido_ate = 0;                     // posicao do arquivo depois do buffer
-static size_t    s_pular = 0;                        // bytes a descartar da proxima leitura (alinhamento)
+long      g_musica_dados_ini = 0, g_musica_dados_fim = 0;   // audio bytes [ini, fim)
+static size_t    s_buf_n = 0, s_buf_pos = 0;         // what is in g_musica_arq_buf
+static long      s_lido_ate = 0;                     // file position after the buffer
+static size_t    s_pular = 0;                        // bytes to discard from the next read (alignment)
 uint32_t  g_musica_hz = 0;
 static uint8_t   s_canais = 0;
 static uint8_t   s_wav_bits = 16;
-uint64_t  g_musica_quadros = 0;                      // ja enfileirados (posicao)
-uint32_t  g_musica_ult_q = 0;                        // quadros do ultimo bloco enfileirado
-uint32_t  g_musica_ler_us = 0;                       // tempo lendo o cartao no bloco atual
-uint64_t  g_musica_total_quadros = 0;                // 0 = desconhecido
-uint32_t  g_musica_mp3_kbps_soma = 0, g_musica_mp3_quadros = 0;   // media de bitrate (VBR sem Xing)
-bool      g_musica_dur_exata = false;                // a duracao veio do Xing (ou e WAV)
-// Um quadro de MP3 decodificado que nao coube no bloco (mudou a taxa ou os
-// canais no meio): abre o proximo bloco. Decodificar de novo estragaria o
-// reservatorio de bits do minimp3.
-int16_t*  g_musica_quadro = nullptr;                 // 1152 x 2 amostras (PSRAM)
+uint64_t  g_musica_quadros = 0;                      // already queued (position)
+uint32_t  g_musica_ult_q = 0;                        // frames in the last queued block
+uint32_t  g_musica_ler_us = 0;                       // time reading the card in the current block
+uint64_t  g_musica_total_quadros = 0;                // 0 = unknown
+uint32_t  g_musica_mp3_kbps_soma = 0, g_musica_mp3_quadros = 0;   // average bitrate (VBR without Xing)
+bool      g_musica_dur_exata = false;                // the duration came from Xing (or it is WAV)
+// A decoded MP3 frame that did not fit in the block (the rate or channels changed
+// midway): it opens the next block. Decoding again would spoil minimp3's
+// bit reservoir.
+int16_t*  g_musica_quadro = nullptr;                 // 1152 x 2 samples (PSRAM)
 static int       s_pend_n = 0, s_pend_canais = 0;
 static uint32_t  s_pend_hz = 0;
 
-// Ha uma musica aberta? (MP3/WAV pelo s_fd; MP4 pelo leitor de MP4.)
+// Is a track open? (MP3/WAV via s_fd; MP4 via the MP4 reader.)
 bool musica_arquivo_aberto(void) { return s_fd >= 0 || s_mp4 != nullptr; }
 
 void musica_fechar_arquivo(void)
@@ -97,7 +97,7 @@ void musica_fechar_arquivo(void)
 }
 
 
-// Texto de um quadro ID3v2 (com o byte de codificacao na frente) -> UTF-8.
+// Text of an ID3v2 frame (with the encoding byte in front) -> UTF-8.
 static void id3_texto(const uint8_t* p, size_t n, char* out, size_t tam)
 {
   out[0] = '\0';
@@ -109,7 +109,7 @@ static void id3_texto(const uint8_t* p, size_t n, char* out, size_t tam)
     for (size_t i = 0; i < n && p[i]; ++i) { if (!musica_utf8_por(out, tam, &k, p[i])) { break; } }
   } else if (enc == 3) {   // UTF-8
     for (size_t i = 0; i < n && p[i] && k + 1 < tam; ++i) { out[k++] = (char)p[i]; }
-  } else {   // 1 = UTF-16 com BOM, 2 = UTF-16BE
+  } else {   // 1 = UTF-16 with BOM, 2 = UTF-16BE
     bool be = (enc == 2);
     size_t i = 0;
     if (enc == 1 && n >= 2) {
@@ -119,7 +119,7 @@ static void id3_texto(const uint8_t* p, size_t n, char* out, size_t tam)
     for (; i + 1 < n; i += 2) {
       const uint32_t c = be ? (uint32_t)(p[i] << 8 | p[i + 1]) : (uint32_t)(p[i + 1] << 8 | p[i]);
       if (!c) { break; }
-      if (c >= 0xD800 && c < 0xE000) { continue; }   // fora do plano basico: pula
+      if (c >= 0xD800 && c < 0xE000) { continue; }   // outside the basic plane: skip
       if (!musica_utf8_por(out, tam, &k, c)) { break; }
     }
   }
@@ -127,7 +127,7 @@ static void id3_texto(const uint8_t* p, size_t n, char* out, size_t tam)
   while (k && (out[k - 1] == ' ')) { out[--k] = '\0'; }
 }
 
-// ID3v2 no comeco: le titulo, artista e album e devolve onde o audio comeca.
+// ID3v2 at the start: reads title, artist and album and returns where the audio starts.
 static long id3v2_pular(char* titulo, size_t tt, char* artista, size_t ta, char* album, size_t tal)
 {
   uint8_t h[10];
@@ -135,13 +135,13 @@ static long id3v2_pular(char* titulo, size_t tt, char* artista, size_t ta, char*
   const uint8_t ver = h[3];
   const uint32_t tam = syncsafe(h + 6);
   const long fim = 10 + (long)tam + ((h[5] & 0x10) ? 10 : 0);
-  // So o comeco da etiqueta: titulo e artista vem antes da capa, quase sempre.
+  // Only the start of the tag: title and artist come before the cover, almost always.
   const size_t n_tag = tam < 16 * 1024 ? tam : 16 * 1024;
   if (ver < 3 || ver > 4 || (h[5] & 0x40) || ler(g_musica_arq_buf, n_tag) != n_tag) { return fim; }
   size_t i = 0;
   while (i + 10 <= n_tag) {
     const uint8_t* q = g_musica_arq_buf + i;
-    if (!q[0]) { break; }   // enchimento
+    if (!q[0]) { break; }   // padding
     const uint32_t n = (ver == 4) ? syncsafe(q + 4) : be32(q + 4);
     if (n == 0 || i + 10 + n > n_tag) { break; }
     if      (!memcmp(q, "TIT2", 4)) { id3_texto(q + 10, n, titulo, tt); }
@@ -152,7 +152,7 @@ static long id3v2_pular(char* titulo, size_t tt, char* artista, size_t ta, char*
   return fim;
 }
 
-// Le UM pedaco do cartao para o fim do buffer, se couber. false = nada a ler.
+// Reads ONE chunk from the card onto the end of the buffer, if it fits. false = nothing to read.
 static bool recarregar(void)
 {
   if (s_buf_pos > 0) {
@@ -162,12 +162,12 @@ static bool recarregar(void)
   }
   if (s_lido_ate >= g_musica_dados_fim || ARQ_BUF - s_buf_n < LER_PEDACO) { return false; }
   const int64_t t0 = esp_timer_get_time();
-  const size_t n = ler(g_musica_ler_buf, LER_PEDACO);   // de inicio de setor, para buffer alinhado: DMA direto
+  const size_t n = ler(g_musica_ler_buf, LER_PEDACO);   // from a sector start, into an aligned buffer: direct DMA
   g_musica_ler_us += (uint32_t)(esp_timer_get_time() - t0);
   if (n == 0) { s_lido_ate = g_musica_dados_fim; return false; }
   s_lido_ate += (long)n;
   size_t uteis = n > s_pular ? n - s_pular : 0;
-  if (s_lido_ate > g_musica_dados_fim) {   // passou do audio (etiqueta ID3v1 no fim)
+  if (s_lido_ate > g_musica_dados_fim) {   // went past the audio (ID3v1 tag at the end)
     const long sobra = s_lido_ate - g_musica_dados_fim;
     uteis = (long)uteis > sobra ? uteis - (size_t)sobra : 0;
     s_lido_ate = g_musica_dados_fim;
@@ -178,8 +178,8 @@ static bool recarregar(void)
   return uteis > 0;
 }
 
-// Vai para o byte 'b' do arquivo: le a partir do setor dele, e descarta o
-// comeco (ver LEITURA DO CARTAO, la em cima).
+// Goes to byte 'b' of the file: reads from its sector, and discards the
+// start (see SD CARD READING, up above).
 static void ir_para_byte(long b)
 {
   if (b < g_musica_dados_ini) { b = g_musica_dados_ini; }
@@ -191,7 +191,7 @@ static void ir_para_byte(long b)
   s_buf_n = s_buf_pos = 0;
 }
 
-// O cabecalho Xing/Info (MP3 VBR) diz quantos quadros a musica tem.
+// The Xing/Info header (MP3 VBR) says how many frames the track has.
 static uint32_t xing_quadros(const uint8_t* q, size_t n)
 {
   if (n < 4) { return 0; }
@@ -206,7 +206,7 @@ static uint32_t xing_quadros(const uint8_t* q, size_t n)
 static bool abrir_mp3(void)
 {
   mp3dec_init(g_musica_mp3);
-  // Primeiro quadro: taxa, canais e, se houver, o Xing.
+  // First frame: rate, channels and, if present, Xing.
   recarregar();
   mp3dec_frame_info_t info;
   for (int tentativas = 0; tentativas < 8; ++tentativas) {
@@ -224,8 +224,8 @@ static bool abrir_mp3(void)
         g_musica_total_quadros = (uint64_t)(g_musica_dados_fim - g_musica_dados_ini) * 8u * g_musica_hz / ((uint64_t)info.bitrate_kbps * 1000u);
       }
       g_musica_mp3_kbps_soma = 0; g_musica_mp3_quadros = 0;
-      // Volta ao comeco: o primeiro quadro tambem e audio (ou o Xing, que o
-      // minimp3 decodifica como silencio - inofensivo).
+      // Back to the start: the first frame is audio too (or the Xing, which
+      // minimp3 decodes as silence - harmless).
       ir_para_byte(g_musica_dados_ini);
       mp3dec_init(g_musica_mp3);
       return g_musica_hz > 0 && s_canais > 0;
@@ -272,27 +272,27 @@ static bool abrir_wav(void)
   return false;
 }
 
-// Abre a faixa de som de um MP4. So AAC (o som de quase todo celular e video
-// da internet). false = sem som, outro formato ou sem memoria.
+// Opens an MP4's sound track. AAC only (the sound of nearly every phone and internet
+// video). false = no sound, another format or out of memory.
 static bool abrir_mp4(const char* caminho)
 {
   tab5_midia_preparar();
   if (!tab5_midia_arena(&s_mp4_arena, MP4_ARENA)) { return false; }
   const char* erro = nullptr;
   s_mp4 = medf_mp4_demux_open(caminho, &s_mp4_arena, false, &erro);
-  if (!s_mp4) { ESP_LOGW(TAG, "mp4: %s", erro ? erro : "nao abriu"); return false; }
-  medf_mp4_demux_drop_video(s_mp4);   // o video (se houver) e de quem toca o video
+  if (!s_mp4) { ESP_LOGW(TAG, "mp4: %s", erro ? erro : "did not open"); return false; }
+  medf_mp4_demux_drop_video(s_mp4);   // the video (if any) belongs to whoever plays the video
   const medf_mp4_info_t* in = medf_mp4_demux_info(s_mp4);
   if (in->audio.codec != MEDF_MP4_AUDIO_CODEC_AAC) {
-    ESP_LOGW(TAG, "mp4: som que nao e AAC (codigo %d)", (int)in->audio.codec);
+    ESP_LOGW(TAG, "mp4: sound that is not AAC (code %d)", (int)in->audio.codec);
     return false;
   }
   audf_aac_config_t cfg = { };
   cfg.asc          = in->audio.codec_private;
   cfg.asc_len      = in->audio.codec_private_size;
   cfg.adts         = false;
-  cfg.he           = AUDF_AAC_HE_V2;           // HE-AAC (SBR e estereo parametrico) tambem
-  cfg.alloc_caps   = MALLOC_CAP_SPIRAM;        // a SRAM interna fica para o Wi-Fi
+  cfg.he           = AUDF_AAC_HE_V2;           // HE-AAC (SBR and parametric stereo) too
+  cfg.alloc_caps   = MALLOC_CAP_SPIRAM;        // internal SRAM is kept for Wi-Fi
   cfg.scratch_caps = MALLOC_CAP_SPIRAM;
   if (audf_aac_decoder_create(&cfg, &s_aac) != ESP_OK) { s_aac = nullptr; return false; }
   g_musica_hz = audf_aac_decoder_rate(s_aac);
@@ -304,8 +304,8 @@ static bool abrir_mp4(const char* caminho)
 }
 
 
-// Abre a musica da posicao 'pos' da ORDEM. false = arquivo ruim (o laco pula
-// para a proxima).
+// Opens the track at position 'pos' of the ORDER. false = bad file (the loop skips
+// to the next).
 bool musica_abrir_item(int pos)
 {
   musica_fechar_arquivo();
@@ -337,7 +337,7 @@ bool musica_abrir_item(int pos)
     } else {
       g_musica_fmt = FMT_MP3;
       g_musica_dados_ini = id3v2_pular(titulo, sizeof(titulo), artista, sizeof(artista), album, sizeof(album));
-      // ID3v1 no fim: 128 bytes que nao sao audio.
+      // ID3v1 at the end: 128 bytes that are not audio.
       if (g_musica_dados_fim >= 128) {
         uint8_t tag[3];
         lseek(s_fd, g_musica_dados_fim - 128, SEEK_SET);
@@ -366,12 +366,12 @@ bool musica_abrir_item(int pos)
   g_musica_trava.destravar();
 
   if (!ok) {
-    ESP_LOGW(TAG, "nao abriu %s", caminho);
+    ESP_LOGW(TAG, "did not open %s", caminho);
     musica_fechar_arquivo();
     return false;
   }
   musica_capa_pedir(rel, titulo, artista, album);
-  ESP_LOGI(TAG, "%s: %s, %lu Hz, %u canal(is), %lu s", nome, g_musica_fmt == FMT_MP3 ? "MP3" : g_musica_fmt == FMT_MP4 ? "AAC" : "WAV",
+  ESP_LOGI(TAG, "%s: %s, %lu Hz, %u channel(s), %lu s", nome, g_musica_fmt == FMT_MP3 ? "MP3" : g_musica_fmt == FMT_MP4 ? "AAC" : "WAV",
            (unsigned long)g_musica_hz, (unsigned)s_canais, (unsigned long)(g_musica_est.dur_ms / 1000));
   return true;
 }
@@ -381,7 +381,7 @@ void musica_ir_para_ms(uint32_t ms)
   if (!g_musica_hz) { return; }
   uint64_t q = (uint64_t)ms * g_musica_hz / 1000u;
   if (g_musica_fmt == FMT_MP4) {
-    // O MP4 tem a tabela de cada pacote: o salto cai no pacote certo.
+    // MP4 has a table of every packet: the seek lands on the right packet.
     int64_t caiu_us = 0;
     if (!s_mp4 || !medf_mp4_demux_seek(s_mp4, (int64_t)ms * 1000, &caiu_us)) { return; }
     audf_decoder_reset(s_aac);
@@ -392,8 +392,8 @@ void musica_ir_para_ms(uint32_t ms)
     const uint32_t por = s_canais * (s_wav_bits / 8);
     ir_para_byte(g_musica_dados_ini + (long)(q * por));
   } else {
-    // MP3 sem indice: proporcional ao tamanho. O minimp3 ressincroniza no
-    // proximo quadro. (VBR sem tabela erra um pouco - e o que da sem ler tudo.)
+    // MP3 without an index: proportional to the size. minimp3 resyncs on the
+    // next frame. (VBR without a table is a little off - that is the best without reading everything.)
     if (!g_musica_total_quadros) { return; }
     const long b = g_musica_dados_ini + (long)((uint64_t)(g_musica_dados_fim - g_musica_dados_ini) * q / g_musica_total_quadros);
     ir_para_byte(b);
@@ -403,14 +403,14 @@ void musica_ir_para_ms(uint32_t ms)
   g_musica_quadros = q;
 }
 
-// Decodifica ate um bloco em 'saida'. Devolve os quadros (0 = acabou a
-// musica). 'hz'/'estereo' sao os do bloco: um bloco nunca mistura taxas.
+// Decodes up to one block into 'saida'. Returns the frames (0 = the track
+// ended). 'hz'/'estereo' are the block's: a block never mixes rates.
 size_t musica_decodificar_bloco(int16_t* saida, uint32_t* hz, bool* estereo)
 {
   size_t q = 0;
   if (g_musica_fmt == FMT_MP4) {
-    // Pacote a pacote (1024 ou 2048 quadros cada), direto no bloco, enquanto
-    // couber o maior pacote possivel. O AAC tem taxa e canais fixos.
+    // Packet by packet (1024 or 2048 frames each), straight into the block, while
+    // the largest possible packet fits. AAC has a fixed rate and channels.
     const size_t maior = audf_decoder_max_frames(s_aac);
     medf_buffer_t* leitura = medf_mp4_demux_buffer(s_mp4);
     while (q + maior <= BLOCO_QUADROS) {
@@ -418,17 +418,17 @@ size_t musica_decodificar_bloco(int16_t* saida, uint32_t* hz, bool* estereo)
       const int64_t t0 = esp_timer_get_time();
       const bool tem = medf_mp4_demux_read(s_mp4, &p, true);
       g_musica_ler_us += (uint32_t)(esp_timer_get_time() - t0);
-      if (!tem) {                                              // fim da faixa
-        if (q == 0) { ESP_LOGI(TAG, "mp4: fim dos pacotes de som"); }
+      if (!tem) {                                              // end of the track
+        if (q == 0) { ESP_LOGI(TAG, "mp4: end of the sound packets"); }
         break;
       }
       if (p.type != MEDF_MP4_PACKET_AUDIO) { medf_buffer_release(leitura, p.ref); continue; }
       size_t n = 0;
       const esp_err_t err = audf_decoder_decode(s_aac, p.data, p.size, saida + q * s_canais, &n);
       medf_buffer_release(leitura, p.ref);
-      if (err != ESP_OK) {                                     // pacote ruim: silencio curto, segue
+      if (err != ESP_OK) {                                     // bad packet: short silence, carry on
         static uint32_t avisos = 0;
-        if (avisos++ < 5) { ESP_LOGW(TAG, "aac: pacote de %u bytes em %lld ms: %s", (unsigned)p.size, (long long)(p.pts_us / 1000), esp_err_to_name(err)); }
+        if (avisos++ < 5) { ESP_LOGW(TAG, "aac: packet of %u bytes at %lld ms: %s", (unsigned)p.size, (long long)(p.pts_us / 1000), esp_err_to_name(err)); }
         continue;
       }
       q += n;
@@ -438,8 +438,8 @@ size_t musica_decodificar_bloco(int16_t* saida, uint32_t* hz, bool* estereo)
     return q;
   }
   if (g_musica_fmt == FMT_WAV) {
-    // Pelo mesmo buffer do MP3 (a leitura rapida e a dele): um bloco de WAV
-    // estereo e 72 KB, entao enche ate caber ou o arquivo acabar.
+    // Through the same buffer as MP3 (the fast read is its): a stereo WAV block
+    // is 72 KB, so it fills until it fits or the file ends.
     const uint32_t por = s_canais * (s_wav_bits / 8);
     while (s_buf_n - s_buf_pos < (size_t)BLOCO_QUADROS * por && recarregar()) { }
     q = (s_buf_n - s_buf_pos) / por;
@@ -448,7 +448,7 @@ size_t musica_decodificar_bloco(int16_t* saida, uint32_t* hz, bool* estereo)
     const uint8_t* src = g_musica_arq_buf + s_buf_pos;
     if (s_wav_bits == 16) {
       memcpy(saida, src, q * por);
-    } else {   // 8 bits sem sinal -> 16 com sinal
+    } else {   // 8-bit unsigned -> 16-bit signed
       for (size_t i = 0; i < q * s_canais; ++i) { saida[i] = (int16_t)(((int)src[i] - 128) << 8); }
     }
     s_buf_pos += q * por;
@@ -457,7 +457,7 @@ size_t musica_decodificar_bloco(int16_t* saida, uint32_t* hz, bool* estereo)
     return q;
   }
 
-  // MP3: quadro a quadro, enquanto couber um quadro inteiro no bloco.
+  // MP3: frame by frame, while a whole frame fits in the block.
   int canais_bloco = 0;
   uint32_t hz_bloco = 0;
   auto aceitar = [&](int n, int ch, uint32_t hz) -> bool {
@@ -470,11 +470,11 @@ size_t musica_decodificar_bloco(int16_t* saida, uint32_t* hz, bool* estereo)
   if (s_pend_n) { aceitar(s_pend_n, s_pend_canais, s_pend_hz); s_pend_n = 0; }
   while (q + 1152 <= BLOCO_QUADROS) {
     if (s_buf_n - s_buf_pos < 16 * 1024) { recarregar(); }
-    if (s_buf_n <= s_buf_pos) { break; }   // fim do arquivo
+    if (s_buf_n <= s_buf_pos) { break; }   // end of file
     mp3dec_frame_info_t info;
     const int n = mp3dec_decode_frame(g_musica_mp3, g_musica_arq_buf + s_buf_pos, (int)(s_buf_n - s_buf_pos), g_musica_quadro, &info);
     if (info.frame_bytes == 0) {
-      // Nenhum quadro no que sobrou do buffer: descarta e recarrega.
+      // No frame in what is left of the buffer: discard and reload.
       s_buf_pos = s_buf_n;
       if (s_lido_ate >= g_musica_dados_fim) { break; }
       continue;

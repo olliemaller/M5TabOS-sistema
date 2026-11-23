@@ -1,107 +1,107 @@
-// PONTE PRIVADA entre core.cpp e shell.cpp - NUNCA incluido por um app.
+// PRIVATE BRIDGE between core.cpp and shell.cpp - NEVER included by an app.
 //
 // -------------------------------------------------------------------------
-// POR QUE ISTO EXISTE (Etapa 1 do docs/ARQUITETURA.md)
+// WHY THIS EXISTS (Stage 1 of docs/ARQUITETURA.md)
 // -------------------------------------------------------------------------
-// sistema.cpp tinha crescido de 1129 para 2457 linhas fazendo oito coisas
-// diferentes, compartilhando estaticas sem fronteira nenhuma - "o arquivo
-// onde o proximo bug vai se esconder", nas palavras do proprio documento.
-// Ele foi partido em dois, SEM MUDAR UMA LINHA DE LOGICA:
+// sistema.cpp had grown from 1129 to 2457 lines doing eight different
+// things, sharing statics with no boundary at all - "the file
+// where the next bug will hide", in the document's own words.
+// It was split in two, WITHOUT CHANGING A LINE OF LOGIC:
 //
-//   core.cpp   o MOTOR - agenda de desenho, ciclo de vida dos apps
-//              (abrir/fechar), politica de energia. Decide O QUE roda e
-//              QUANDO.
-//   shell.cpp  a APARENCIA - tela inicial, barra de status, roteamento de
-//              toque para o app certo, calibracao do toque. E "shell" no
-//              sentido de SO (Windows Shell, GNOME Shell): a camada visual
-//              em volta dos apps. NAO E o mesmo "shell" de console.cpp (a
-//              interface de linha de comando pela serial) - dois conceitos
-//              diferentes, dois arquivos diferentes, sem relacao.
+//   core.cpp   the ENGINE - drawing schedule, app life cycle
+//              (open/close), power policy. Decides WHAT runs and
+//              WHEN.
+//   shell.cpp  the APPEARANCE - home screen, status bar, routing
+//              touch to the right app, touch calibration. "Shell" in the
+//              OS sense (Windows Shell, GNOME Shell): the visual layer
+//              around the apps. NOT the same "shell" as console.cpp (the
+//              command-line interface over serial) - two different
+//              concepts, two different files, unrelated.
 //
-// A UNICA excecao ao "zero mudanca de logica": tratar_toque() (agora em
-// shell.cpp) chamava a funcao PRIVADA area_util() para pegar a geometria da
-// area util; ela virou a chamada a sistema_area() (a mesma coisa, publica -
-// sistema_area() e literalmente "return area_util();"). Trocar por isso
-// evita expor uma funcao inteira so para uma chamada, sem mudar nenhum
-// resultado.
+// The ONLY exception to "zero logic change": tratar_toque() (now in
+// shell.cpp) called the PRIVATE function area_util() to get the geometry of the
+// usable area; it became the call to sistema_area() (the same thing, public -
+// sistema_area() is literally "return area_util();"). Switching to that
+// avoids exposing a whole function just for one call, without changing any
+// result.
 //
-// Depois da Etapa 1, core.cpp e shell.cpp foram partidos por assunto (so
-// mudou de arquivo): core_*.cpp e shell_*.cpp. Cada grupo tem o seu interno
-// (core_interno.hpp, shell_interno.hpp), que inclui este.
+// After Stage 1, core.cpp and shell.cpp were split by topic (only
+// moved between files): core_*.cpp and shell_*.cpp. Each group has its own internal header
+// (core_interno.hpp, shell_interno.hpp), which includes this one.
 //
-// app.h continua sendo o UNICO contrato que um app enxerga. Este header e
-// deliberadamente mais cru que ele - variaveis extern em vez de getters -
-// porque o objetivo aqui nao e API bonita, e nao duplicar estado entre os
-// dois arquivos.
+// app.h is still the ONLY contract an app sees. This header is
+// deliberately rawer than it - extern variables instead of getters -
+// because the goal here is not a pretty API, it is not duplicating state between the
+// two files.
 #pragma once
 
 #include "app.h"
 #include "rolagem.hpp"
 
 // ---------------------------------------------------------------------------
-// GEOMETRIA COMPARTILHADA - usada por core.cpp (area_util(), calculos de
-// toque) e shell.cpp (desenho da barra, da home, da navegacao).
+// SHARED GEOMETRY - used by core.cpp (area_util(), touch
+// calculations) and shell.cpp (drawing the bar, home, navigation).
 // ---------------------------------------------------------------------------
 static const int ALTURA_BARRA = 64;
-static const int ALTURA_NAV   = 72;   // era 96 - alta demais com a fonte suave
+static const int ALTURA_NAV   = 72;   // was 96 - too tall with the smooth font
 
-// CORRECAO VERTICAL DO TOQUE (o dedo encosta abaixo de onde o olho mira) - o
-// porque esta em shell.cpp, junto de tratar_toque(). Mora aqui porque os DOIS
-// caminhos de toque precisam dela: o clique (shell.cpp) e o toque por nivel
-// (core.cpp). Antes so o clique corrigia, e o teclado virtual - que decide a
-// tecla pelo nivel - acertava 10 px abaixo do que o mesmo dedo acertava num botao.
+// VERTICAL TOUCH CORRECTION (the finger lands below where the eye aims) - the
+// why is in shell.cpp, next to tratar_toque(). It lives here because BOTH
+// touch paths need it: the click (shell.cpp) and level touch
+// (core.cpp). Before, only the click corrected, and the virtual keyboard - which picks the
+// key by level - hit 10 px below where the same finger hit on a button.
 static const int TOQUE_DY = 10;
 
 // ---------------------------------------------------------------------------
-// ANIMACAO DE BOOT (kernel/boot_anim.hpp) - a teia com o nome decifrado.
-// Comente a linha abaixo para tirar a animacao enquanto desenvolve: quem
-// reinicia o aparelho toda hora nao precisa assistir a ela a cada vez.
+// BOOT ANIMATION (kernel/boot_anim.hpp) - the web with the name decoded.
+// Comment out the line below to remove the animation while developing: whoever
+// restarts the device all the time does not need to watch it every time.
 // ---------------------------------------------------------------------------
 #define TAB5_MOSTRAR_ANIM_BOOT
 
 // ---------------------------------------------------------------------------
-// ESTADO COMPARTILHADO - definido em core.cpp, lido (nunca escrito) por
+// SHARED STATE - defined in core.cpp, read (never written) by
 // shell.cpp.
 // ---------------------------------------------------------------------------
-extern const app_t* s_app;             // NULL = tela inicial
-extern const app_t* s_app_carregando;  // app com montagem de SD pendente
-extern const app_t* s_app_recusado;    // app que o sistema nao abriu (tela de motivo no lugar)
-extern rolagem_t    s_rol;             // rolagem do app aberto - mecanismo em kernel/rolagem.hpp
-extern bool         s_sujo_layout;     // a TELA mudou - pede repintura completa
-extern bool         s_sujo_dados;      // so um VALOR mudou - pede repintura incremental
-extern bool         s_nav_travada;     // navegacao travada (teclado/captura na tela)
-extern bool         s_bloqueado;       // tela de bloqueio na frente de tudo (home ou app ficam por baixo)
-extern bool         s_painel_avisos;   // central de avisos aberta por cima do app/home
+extern const app_t* s_app;             // NULL = home screen
+extern const app_t* s_app_carregando;  // app with an SD mount pending
+extern const app_t* s_app_recusado;    // app the system did not open (reason screen in its place)
+extern rolagem_t    s_rol;             // scroll of the open app - mechanism in kernel/rolagem.hpp
+extern bool         s_sujo_layout;     // the SCREEN changed - requests a full repaint
+extern bool         s_sujo_dados;      // only a VALUE changed - requests an incremental repaint
+extern bool         s_nav_travada;     // navigation locked (keyboard/capture on screen)
+extern bool         s_bloqueado;       // lock screen in front of everything (home or app stay underneath)
+extern bool         s_painel_avisos;   // notification centre open over the app/home
 
-// O APP ESTA ESCONDIDO atras de algo do sistema (bloqueio ou central de
-// avisos). Enquanto for verdade ele nao recebe toque, tecla nem aviso - nao
-// esta visivel, e um app que "le" o que mostra (conversa) marcaria como lido
-// o que ninguem viu. UMA regra so, para nao esquecer um dos dois em algum
-// dos caminhos de entrada.
+// THE APP IS HIDDEN behind something of the system's (lock screen or notification
+// centre). While true it receives no touch, key or notice - it is not
+// visible, and an app that "reads" what it shows (conversation) would mark as read
+// what nobody saw. ONE rule only, so as not to forget one of the two on any
+// of the input paths.
 static inline bool sistema_app_encoberto(void) { return s_bloqueado || s_painel_avisos; }
 
-// HA UM APP ABERTO DE VERDADE: ao_abrir() ja rodou. Nem "abrindo..." (SD
-// montando) nem recusado (tela de motivo do sistema) - nesses dois o app nao
-// tem estado nenhum, e nenhuma funcao dele pode ser chamada. UMA regra so,
-// para todos os caminhos que chamam o app.
+// THERE IS AN APP REALLY OPEN: ao_abrir() has already run. Neither "abrindo..." (SD
+// mounting) nor refused (system reason screen) - in those two the app has
+// no state at all, and none of its functions may be called. ONE rule only,
+// for all the paths that call the app.
 static inline bool app_vivo(void) { return s_app && s_app != s_app_carregando && s_app != s_app_recusado; }
 
 // ---------------------------------------------------------------------------
-// FUNCOES DE core.cpp, chamadas por shell.cpp (ciclo de vida dos apps).
+// FUNCTIONS IN core.cpp, called by shell.cpp (app life cycle).
 // ---------------------------------------------------------------------------
-// Quem chamou esta rodando na tarefa de interface?
+// Is the caller running on the UI task?
 bool sistema_na_interface(void);
 
-// Troca o relogio do painel (destroi e recria as paginas) NA TAREFA DE
-// INTERFACE - de outra tarefa, deixa o pedido e espera ate 5 s.
+// Changes the panel clock (destroys and recreates the pages) ON THE UI
+// TASK - from another task, leaves the request and waits up to 5 s.
 bool sistema_trocar_relogio_painel(int mhz);
-// O mesmo, para a velocidade do link DSI (so teste: nao grava).
+// The same, for the DSI link speed (test only: does not save).
 bool sistema_trocar_link_painel(int mbps);
 
-// PASSADA COMPLETA POR APP (abrir app, voltar a home), acumulado desde o
-// boot, para o 'tela' do console. As tres fases somam o total aproximado:
-// barra de status, limpeza da area (+ barra de navegacao) e o conteudo
-// (o desenhar() do app, ou a home).
+// FULL PASS PER APP (open app, back to home), accumulated since
+// boot, for the console's 'tela'. The three phases add up to the approximate total:
+// status bar, clearing the area (+ navigation bar) and the content
+// (the app's desenhar(), or home).
 typedef struct {
   const char* nome;
   uint32_t n;
@@ -114,56 +114,56 @@ bool abrir_app(const app_t* app);
 void fechar_app(void);
 
 // ---------------------------------------------------------------------------
-// FUNCOES DE shell.cpp, chamadas por core.cpp (desenho e o loop principal).
+// FUNCTIONS IN shell.cpp, called by core.cpp (drawing and the main loop).
 // ---------------------------------------------------------------------------
 void tratar_toque(int tx, int ty);
 void desenhar_barra_status(lgfx::LovyanGFX& d, bool completo);
-bool recado_pendente(void);   // o recado da barra mudou (sistema_recado): repintar ja
+bool recado_pendente(void);   // the bar message changed (sistema_recado): repaint now
 bool barra_mudou(void);
 void desenhar_barra_nav(lgfx::LovyanGFX& d);
 void desenhar_home(lgfx::LovyanGFX& d, const area_t& a);
-// PAGINAS DA HOME. Quantas linhas de icones cabem por pagina; com mais apps
-// que isso a home ganha bolinhas embaixo e o arraste lateral troca de pagina.
-// 4 = tudo o que a area comporta hoje (12 apps). Baixe para 3 para testar a
-// segunda pagina com os apps que ja existem.
+// HOME PAGES. How many rows of icons fit per page; with more apps
+// than that, home gets dots at the bottom and a sideways drag changes page.
+// 4 = all the area holds today (12 apps). Lower it to 3 to test the
+// second page with the apps that already exist.
 #define TAB5_HOME_LINHAS_MAX 4
 
-// GESTOS: chamado na soltura do dedo com o deslocamento total (dx, dy) desde a
-// descida, ja descartados o dedo que acordou a tela e o clique comum. Na home
-// troca de pagina; com o bloqueio ligado, arrastar para cima desbloqueia.
-void tratar_gesto(int dx, int dy, int y0);   // y0: onde o dedo desceu (cru)
+// GESTURES: called on finger release with the total displacement (dx, dy) since
+// it went down, with the finger that woke the screen and the ordinary click already discarded. On home
+// changes page; with the lock screen on, dragging up unlocks.
+void tratar_gesto(int dx, int dy, int y0);   // y0: where the finger went down (raw)
 
-// MOVER ICONE NA HOME. home_segurar() e chamado a cada volta com o dedo na
-// tela (home aberta, sem bloqueio): depois de HOME_SEGURAR_MS parado sobre um
-// icone ele "levanta" e passa a seguir o dedo; devolve true enquanto ha icone
-// levantado, e entao o toque nao vira clique nem gesto. home_soltar() na
-// soltura grava a ordem nova. home_ordem_carregar() uma vez, antes do laco.
+// MOVING AN ICON ON HOME. home_segurar() is called on every turn with the finger on the
+// screen (home open, not locked): after HOME_SEGURAR_MS still over an
+// icon it "lifts" and starts following the finger; returns true while there is an icon
+// lifted, and then the touch becomes neither a click nor a gesture. home_soltar() on
+// release saves the new order. home_ordem_carregar() once, before the loop.
 bool home_segurar(int tx, int ty, uint32_t agora, uint32_t segurando_ms, int desvio);
 bool home_soltar(void);
 void home_ordem_carregar(void);
 
-// BLOQUEIO. desenhar_bloqueio() pinta a area util inteira (completo) ou so o
-// que mudou desde a ultima vez (relogio, aviso); a barra de status de cima
-// continua a de sempre. bloquear_tela()/desbloquear_tela() so mexem no estado
-// e pedem repintura completa.
+// LOCK SCREEN. desenhar_bloqueio() paints the whole usable area (full) or only
+// what changed since last time (clock, notice); the status bar on top
+// stays as usual. bloquear_tela()/desbloquear_tela() only change the state
+// and request a full repaint.
 void desenhar_bloqueio(lgfx::LovyanGFX& d, const area_t& a, bool completo);
 void bloquear_tela(void);
-// A TELA ACABOU DE LIGAR (boot ou despertar): a UNICA regra de quando a
-// tela de bloqueio aparece. Ajuste ligado e ainda nao bloqueada: bloqueia;
-// ja bloqueada: sorteia outra animacao. Quem liga a tela chama isto, e so.
+// THE SCREEN HAS JUST TURNED ON (boot or wake): the ONLY rule for when the
+// lock screen appears. Setting on and not yet locked: lock;
+// already locked: pick another animation. Whatever turns the screen on calls this, and only this.
 void bloqueio_ao_ligar_tela(void);
 void desbloquear_tela(void);
 
-// CENTRAL DE AVISOS (shell.cpp). Tocar a barra de status abre uma lista de
-// TODAS as fontes ativas (notif_listar), uma linha por app, por cima da area
-// util; tocar uma linha abre o app dela, tocar fora (ou a barra de novo)
-// fecha. painel_avisos_mudou() diz ao loop que a lista aberta envelheceu.
+// NOTIFICATION CENTRE (shell.cpp). Tapping the status bar opens a list of
+// ALL active sources (notif_listar), one line per app, over the usable
+// area; tapping a line opens its app, tapping outside (or the bar again)
+// closes it. painel_avisos_mudou() tells the loop the open list has aged.
 void painel_avisos_abrir(bool abrir);
 bool painel_avisos_mudou(void);
-bool painel_avisos_dados_mudou(void);   // so o miniplayer (passada de dados)
+bool painel_avisos_dados_mudou(void);   // only the mini player (data pass)
 void desenhar_painel_avisos(lgfx::LovyanGFX& d, const area_t& a, bool completo);
 
-void atualizar_linha_servicos(void);   // testa e redesenha a faixa GROVE/CARTAO da home, se mudou
+void atualizar_linha_servicos(void);   // checks and redraws home's GROVE/CARTAO strip, if it changed
 
-// Diagnostico de toque ligado pelo console ('toque') - kernel/shell.cpp.
+// Touch diagnostics turned on by the console ('toque') - kernel/shell.cpp.
 bool diag_toque_ligado(void);

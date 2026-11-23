@@ -1,43 +1,43 @@
-// RTC (RX8130) - cristal e bateria propria, guarda a hora entre boots.
-// M5.begin() ja chama M5.Rtc.setSystemTimeFromRtc() sozinho (ver M5Unified.cpp)
-// e le o RTC so uma vez; depois disso o relogio do sistema anda pelo clock
-// interno (no sono leve, um RC de ~5%). O RTC, com cristal, e a referencia
-// precisa: services/tab5_hora.cpp o rele para corrigir essa deriva.
+// RTC (RX8130) - own crystal and battery, keeps the time between boots.
+// M5.begin() already calls M5.Rtc.setSystemTimeFromRtc() itself (see M5Unified.cpp)
+// and reads the RTC only once; after that the system clock runs off the
+// internal clock (in light sleep, an RC of ~5%). The RTC, with a crystal, is the
+// precise reference: services/tab5_hora.cpp re-reads it to correct that drift.
 //
-// Sem alguem AJUSTAR o RX8130 pelo menos uma vez, ele guarda uma hora sem
-// sentido (de fabrica) - a bateria preserva o que foi gravado, nao inventa a
-// hora certa sozinha. Ver services/tab5_hora.hpp para QUEM decide quando
-// ajustar e de qual fonte.
+// Unless someone SETS the RX8130 at least once, it holds a meaningless
+// (factory) time - the battery preserves what was written, it doesn't make up
+// the right time by itself. See services/tab5_hora.hpp for WHO decides when to
+// set it and from which source.
 //
-// TUDO AQUI SO DA TAREFA DE INTERFACE - o RX8130 e I2C interno (mesmo
-// barramento do toque/IMU/PMIC), mesma regra documentada em tab5_power.hpp.
+// EVERYTHING HERE IS UI TASK ONLY - the RX8130 is internal I2C (same
+// bus as touch/IMU/PMIC), same rule documented in tab5_power.hpp.
 #pragma once
 
 #include <stdbool.h>
 #include <time.h>
 
-// Faixa de datas aceita como hora de verdade: 2025-01-01 a 2040-01-01 (UTC).
+// Date range accepted as real time: 2025-01-01 to 2040-01-01 (UTC).
 bool tab5_rtc_plausivel(time_t e);
 
-// Converte data/hora UTC (struct tm) em epoch, sem depender de timegm().
+// Converts a UTC date/time (struct tm) to epoch, without relying on timegm().
 time_t tab5_rtc_utc_para_epoch(const struct tm* t);
 
-// Le o RTC. So devolve true se a hora e confiavel: RTC ligado, leitura ok,
-// flag VLF desligado e epoch plausivel. 'epoch_utc' em segundos desde 1970.
+// Reads the RTC. Only returns true if the time is trustworthy: RTC on, read ok,
+// VLF flag clear and plausible epoch. 'epoch_utc' in seconds since 1970.
 bool tab5_rtc_ler(time_t* epoch_utc);
 
-// Byte de flags do RX8130 (registrador 0x1D) para diagnostico, ou -1 se o RTC
-// esta desligado ou a leitura falhou. Bit 0x02 = VLF (hora invalida), bit 0x80
-// = VBLF (bateria de backup fraca, so aviso).
+// RX8130 flags byte (register 0x1D) for diagnostics, or -1 if the RTC
+// is off or the read failed. Bit 0x02 = VLF (time invalid), bit 0x80
+// = VBLF (backup battery low, warning only).
 int tab5_rtc_flags(void);
 
-// Escreve o RTC E o relogio do sistema (settimeofday) NA MESMA CHAMADA - sem
-// o segundo passo, so a PROXIMA vez que o aparelho ligar e que a sessao
-// passaria a responder certo em time()/gmtime(); com os dois juntos, quem
-// chamar time() JA AGORA ve a hora certa.
+// Writes the RTC AND the system clock (settimeofday) IN THE SAME CALL - without
+// the second step, only the NEXT time the device powered on would the session
+// start answering correctly in time()/gmtime(); with both together, whoever
+// calls time() RIGHT NOW sees the correct time.
 //
-// Recusa epoch fora de tab5_rtc_plausivel() (false, nada e gravado). Depois de
-// gravar, le de volta e confere (+-2 s): se nao bater devolve false, mas o
-// relogio do sistema ja foi acertado. Conferido, limpa o flag VLF do chip.
-// 'epoch_utc' em segundos desde 1970, UTC.
+// Rejects an epoch outside tab5_rtc_plausivel() (false, nothing written). After
+// writing, reads back and checks (+-2 s): if it doesn't match returns false, but the
+// system clock has already been set. Once verified, clears the chip's VLF flag.
+// 'epoch_utc' in seconds since 1970, UTC.
 bool tab5_rtc_definir(time_t epoch_utc);

@@ -1,14 +1,14 @@
-// O MESH NO NAVEGADOR DO PC - as rotas do servidor web (tab5_web) para
-// conversar pela malha: os canais e as conversas diretas a esquerda, as
-// mensagens a direita, uma caixa para escrever. A pagina (tab5_mesh_web.html,
-// na flash) pergunta /api/estado a cada 2 s e so rele o que mudou.
+// MESH IN THE PC'S BROWSER - the web server (tab5_web) routes for chatting
+// over the mesh: channels and direct conversations on the left, messages
+// on the right, a box to write in. The page (tab5_mesh_web.html, in flash)
+// polls /api/estado every 2 s and only re-reads what changed.
 //
-// So interface sobre o servico tab5_mesh: conversas, historico (do cartao,
-// pela chave), envio e o estado de entrega sao os dele - o mesmo que o app
-// Mesh mostra. Ler uma conversa pelo PC a marca como lida, como no app.
+// Only an interface over the tab5_mesh service: conversations, history (from
+// the SD card, by key), sending and delivery state are the service's - the
+// same as the Mesh app shows. Reading a conversation on the PC marks it read, as in the app.
 //
-// As rotas, em http://<ip>/mesh/ (conversa = c=1&idx=<canal> ou no=<numero>):
-//   GET  /                   a pagina
+// The routes, at http://<ip>/mesh/ (conversation = c=1&idx=<channel> or no=<number>):
+//   GET  /                   the page
 //   GET  /api/estado         {"eu","eu_nome","no_ar","conv","msgs","envios","nao_lidas"}
 //   GET  /api/conversas      [{"canal","idx","no","nome","sub","nao_lidas","ultima"}]
 //   GET  /api/canais         [{"idx","nome","visivel"}]
@@ -16,12 +16,12 @@
 //                              "bat","mv","mqtt","fav","lat","lon"}]   (lat/lon: graus x 1e7)
 //   GET  /api/msgs?conversa  [{"de","nome","texto","quando","minha","envio","erro","mqtt","saltos","snr10","rssi"}]
 //   GET  /api/saude          {"uso_canal10","airtime10","ruido","online","total","tx","rx",...,"enlace"}
-//   POST /api/enviar?conversa   corpo = o texto (ate MESH_PAYLOAD_MAX bytes)
+//   POST /api/enviar?conversa   body = the text (up to MESH_PAYLOAD_MAX bytes)
 //   POST /api/favorito?no=N&sim=1|0
-// Numeros com casa decimal vao como inteiros (snr10 = SNR x 10): sem %f, que
-// e o que mais gasta a pilha do printf (a do httpd ja estourou uma vez).
+// Numbers with decimals go as integers (snr10 = SNR x 10): no %f, which is
+// what uses the most printf stack (the httpd one has overflowed once already).
 #pragma once
 
-// Abre a parte do Mesh no servidor (/mesh/). Da tarefa de interface.
-// false = ver tab5_web_abrir.
+// Opens the Mesh part of the server (/mesh/). From the interface task.
+// false = see tab5_web_abrir.
 bool tab5_mesh_web_ligar(void);

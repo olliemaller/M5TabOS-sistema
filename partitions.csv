@@ -1,42 +1,42 @@
-# Tabela de particoes do M5tabOS.
+# M5tabOS partition table.
 #
-# Saiu da "singleapp_large" do IDF (1500K de app) porque ela ja estava em 68% e
-# o chip do Tab5 tem 16MB - estavamos apertados numa fatia que usava 9% da
+# It came from IDF's "singleapp_large" (1500K of app) because that was already at 68% and
+# the Tab5's chip has 16MB - we were squeezed into a slice using 9% of the
 # flash.
 #
-# CRESCEU DE 2MB PARA 4MB, para caber a tabela de 1391 emoji
-# (~1,5MB de bitmap, ver tab5_emoji_dados.cpp) com folga de sobra. O chip tem
-# 16MB; mesmo com 4MB de app, sobram 12MB sem ninguem em cima - nao e motivo
-# para ficar espremendo bitmap.
+# IT GREW FROM 2MB TO 4MB, to fit the table of 1391 emoji
+# (~1.5MB of bitmap, see tab5_emoji_dados.cpp) with plenty of headroom. The chip has
+# 16MB; even with 4MB of app, 12MB is left with nothing on it - no reason
+# to keep squeezing bitmaps.
 #
-# nvs E phy_init FICAM NO MESMO LUGAR, DE PROPOSITO.
+# nvs AND phy_init STAY IN THE SAME PLACE, ON PURPOSE.
 #
-# A NVS guarda as preferencias do usuario: brilho, WiFi, teclado, Grove. Mudar
-# o offset dela apagaria tudo isso na primeira gravacao - o aparelho voltaria
-# ao brilho padrao e esqueceria a rede. Como so a particao do app cresce, e
-# ela vem DEPOIS das duas, os ajustes atravessam a mudanca intactos - inclusive
-# esta, de 2 para 4MB.
+# NVS stores the user's preferences: brightness, WiFi, keyboard, Grove. Changing
+# its offset would erase all that on the first flash - the device would go back
+# to the default brightness and forget the network. As only the app partition grows, and
+# it comes AFTER those two, the settings survive the change intact - including
+# this one, from 2 to 4MB.
 #
-# O 0x400000 (4096K) e redondo de proposito: particao de app quer offset
-# alinhado em 64K, e deixar o tamanho alinhado tambem evita surpresa no dia em
-# que alguem acrescentar uma particao depois desta.
+# 0x400000 (4096K) is round on purpose: an app partition wants an offset
+# aligned to 64K, and keeping the size aligned too avoids surprises on the day
+# someone adds a partition after this one.
 #
-# CRESCEU DE 4MB PARA 8MB, para as fontes suaves (Roboto em
-# ~20 alturas nativas, regular e negrito, ~2,4MB - ver gerar_fontes.py). Mesma
-# regra: nvs e phy_init nao se mexem, so o app cresce.
+# IT GREW FROM 4MB TO 8MB, for the smooth fonts (Roboto at
+# ~20 native heights, regular and bold, ~2.4MB - see gerar_fontes.py). Same
+# rule: nvs and phy_init do not move, only the app grows.
 #
-# RESERVA (2 MB, depois do app): o diario das gravacoes feitas enquanto o
-# cartao esta emprestado ao computador (modo pendrive) - ver
-# hal/tab5_reserva.hpp. Fica vazia quase sempre. Mesma regra de sempre: entra
-# DEPOIS das outras, nvs e phy_init nao se mexem, os ajustes continuam. Sobram
-# ~5,9 MB livres no fim da flash.
+# RESERVA (2 MB, after the app): the journal of writes made while the
+# SD card is lent to the computer (flash-drive mode) - see
+# hal/tab5_reserva.hpp. It is almost always empty. The usual rule: it goes
+# AFTER the others, nvs and phy_init do not move, the settings carry on. That leaves
+# ~5.9 MB free at the end of the flash.
 #
-# COREDUMP (1 MB, depois da reserva): o retrato do travamento (panic,
-# watchdog) que o proprio sistema grava na hora - o boot seguinte anota no log
-# do cartao a tarefa, o PC e o RA (services/tab5_log), e o 'idf.py
-# coredump-info' le o resto pela serial. Nasceu de um travamento com a musica
-# tocando que aconteceu "na mao", longe do computador, sem log nenhum.
-# Mesma regra: entra no fim, nada se mexe.
+# COREDUMP (1 MB, after reserva): the crash snapshot (panic,
+# watchdog) the system itself writes on the spot - the next boot notes in the
+# SD card log the task, PC and RA (services/tab5_log), and 'idf.py
+# coredump-info' reads the rest over serial. It was born from a crash with music
+# playing that happened "in the wild", far from the computer, with no log at all.
+# Same rule: it goes at the end, nothing moves.
 #
 # Name,     Type, SubType, Offset,   Size,     Flags
 nvs,        data, nvs,     0x9000,   24K,

@@ -13,18 +13,18 @@
 #include <cctype>
 #include <cstdio>
 
-static const float TAM     = 3.2f;   // a mesma letra da barra de escrita da conversa
+static const float TAM     = 3.2f;   // the same letter size as the conversation's compose bar
 static const int   MARGEM  = 16;
-static const int   ARRASTO = 12;     // px de dedo antes de virar rolagem
-static const int   MENU_BT_L = 160, MENU_BT_A = 76, MENU_VAO = 12;   // o menu do toque longo (4 botoes)
-static const int   MENU_N = 4;                                        // Palavra, Linha, Tudo, Colar
-// MODO CODIGO: a coluna dos numeros de linha tem a largura dos DIGITOS do
-// maior numero, encostada na borda - a tela e pequena, e o que sobra e do
-// codigo. Nada de vao fixo a esquerda de "1".
-static const int   CALHA_BORDA = 4;  // da borda ate os numeros
-static const int   CALHA_VAO   = 10; // dos numeros ate o texto (com o fio no meio)
+static const int   ARRASTO = 12;     // px of finger movement before it becomes a scroll
+static const int   MENU_BT_L = 160, MENU_BT_A = 76, MENU_VAO = 12;   // the long-press menu (4 buttons)
+static const int   MENU_N = 4;                                        // Word, Line, All, Paste
+// CODE MODE: the line-number column is as wide as the DIGITS of the
+// largest number, hugging the edge - the screen is small, and what is left belongs to the
+// code. No fixed gap to the left of "1".
+static const int   CALHA_BORDA = 4;  // from the edge to the numbers
+static const int   CALHA_VAO   = 10; // from the numbers to the text (with the rule in the middle)
 
-// A fonte do editor: a do corpo, ou a monoespacada no modo codigo.
+// The editor font: the body one, or the monospaced one in code mode.
 static void fonte(const editor_t* e, lgfx::LovyanGFX& d)
 {
   if (e->codigo) { d.setFont(&fonts::FreeMono12pt7b); d.setTextSize(1); }
@@ -32,8 +32,8 @@ static void fonte(const editor_t* e, lgfx::LovyanGFX& d)
 }
 static int margem(const editor_t* e) { return e->codigo ? e->calha : MARGEM; }
 
-// A calha para o texto de agora: os digitos das linhas do ARQUIVO (os '\n', nao
-// as da tela - que dependem da largura, que depende da calha).
+// The gutter for the current text: the digits of the FILE's lines (the '\n's, not
+// the screen's - which depend on the width, which depends on the gutter).
 static void medir_calha(editor_t* e, lgfx::LovyanGFX& d)
 {
   int linhas = 1;
@@ -44,7 +44,7 @@ static void medir_calha(editor_t* e, lgfx::LovyanGFX& d)
 }
 
 // ---------------------------------------------------------------------------
-// TEXTO - sempre em fronteira de caractere UTF-8
+// TEXT - always on a UTF-8 character boundary
 // ---------------------------------------------------------------------------
 static int seguinte(const char* s, int i, int fim) { return tab5_utf8_seguinte(s, i, fim); }
 static int anterior(const char* s, int i)          { return tab5_utf8_anterior(s, i); }
@@ -60,7 +60,7 @@ static void inserir(editor_t* e, const char* t, int n)
 {
   const int len = (int)strlen(e->txt);
   if (len + n > e->cap - 1) { n = e->cap - 1 - len; }
-  n = tab5_utf8_corte(t, n);   // nunca corta um caractere
+  n = tab5_utf8_corte(t, n);   // never cuts a character
   if (n <= 0) { return; }
   memmove(e->txt + e->cursor + n, e->txt + e->cursor, len - e->cursor + 1);
   memcpy(e->txt + e->cursor, t, n);
@@ -82,8 +82,8 @@ static void apagar(editor_t* e, bool depois)
 }
 
 // ---------------------------------------------------------------------------
-// QUEBRA EM LINHAS: por palavra; por caractere so quando uma palavra sozinha
-// nao cabe. O '\n' fecha a linha e pertence a ela. ini[k] = inicio da linha k.
+// LINE WRAPPING: by word; by character only when a single word does not
+// fit. The '\n' closes the line and belongs to it. ini[k] = start of line k.
 // ---------------------------------------------------------------------------
 static bool cabe(lgfx::LovyanGFX& d, const char* s, int n, int larg)
 {
@@ -110,7 +110,7 @@ static int fim_da_linha(lgfx::LovyanGFX& d, const char* s, int i, int fp, int la
   if (bom > i) { return bom; }
   int c = i;
   for (int nx = seguinte(s, c, fp); c < fp && cabe(d, s + i, nx - i, larg); nx = seguinte(s, c, fp)) { c = nx; }
-  return c > i ? c : seguinte(s, i, fp);   // sempre anda
+  return c > i ? c : seguinte(s, i, fp);   // always moves forward
 }
 
 static void quebrar(editor_t* e, lgfx::LovyanGFX& d)
@@ -126,8 +126,8 @@ static void quebrar(editor_t* e, lgfx::LovyanGFX& d)
     const int fim = fim_da_linha(d, s, i, fp, e->larg);
     if (fim < fp) { i = fim; e->ini[n++] = (int16_t)i; continue; }
     if (fp == len) { break; }
-    i = fp + 1;                     // o '\n' e desta linha; a seguinte comeca depois
-    e->ini[n++] = (int16_t)i;       // texto terminando em '\n' ganha a linha vazia do cursor
+    i = fp + 1;                     // the '\n' belongs to this line; the next one starts after it
+    e->ini[n++] = (int16_t)i;       // text ending in '\n' gets the cursor's empty line
   }
   e->ini[n] = (int16_t)len;
   e->n_lin = n;
@@ -141,7 +141,7 @@ static int linha_do(const editor_t* e, int pos)
   return k;
 }
 
-// Fim visivel da linha k (sem o '\n').
+// Visible end of line k (without the '\n').
 static int fim_visivel(const editor_t* e, int k)
 {
   int f = e->ini[k + 1];
@@ -149,7 +149,7 @@ static int fim_visivel(const editor_t* e, int k)
   return f;
 }
 
-// A posicao da linha k mais perto de 'alvo' px a partir da margem.
+// The position on line k closest to 'alvo' px from the margin.
 static int posicao_em(editor_t* e, int k, int alvo)
 {
   lgfx::LovyanGFX& d = *e->disp;
@@ -178,7 +178,7 @@ static int x_do_cursor(editor_t* e)
 }
 
 // ---------------------------------------------------------------------------
-// CICLO DE VIDA
+// LIFE CYCLE
 // ---------------------------------------------------------------------------
 bool editor_abrir(editor_t* e, char* buf, int cap)
 {
@@ -210,7 +210,7 @@ void editor_fechar_teclado(editor_t* e)
 }
 
 // ---------------------------------------------------------------------------
-// MODO CODIGO: as cores da sintaxe do Berry
+// CODE MODE: Berry syntax colours
 // ---------------------------------------------------------------------------
 static bool palavra_chave(const char* s, int n)
 {
@@ -221,8 +221,8 @@ static bool palavra_chave(const char* s, int n)
   return false;
 }
 
-// A linha do arquivo que comeca em 'ini' tem um '#' fora de aspas antes de
-// 'ate'? E o que diz se a continuacao de uma linha quebrada e comentario.
+// Does the file line starting at 'ini' have a '#' outside quotes before
+// 'ate'? That is what says whether the continuation of a wrapped line is a comment.
 static bool comentario_antes(const char* s, int ini, int ate)
 {
   char aspa = 0;
@@ -235,21 +235,21 @@ static bool comentario_antes(const char* s, int ini, int ate)
   return false;
 }
 
-// Uma linha da tela, colorida por pedaco: comentario (#...), texto entre
-// aspas, numero, palavra-chave, nome seguido de '(' (chamada) e o resto.
-// Linha quebrada pela largura recomeca do zero - um comentario ou texto que
-// atravessa a quebra sai sem cor na continuacao (raro em codigo).
+// One screen line, coloured piece by piece: comment (#...), quoted text,
+// number, keyword, name followed by '(' (call) and the rest.
+// A line wrapped by width starts afresh - a comment or string that
+// crosses the wrap comes out uncoloured on the continuation (rare in code).
 static void pintar_codigo(lgfx::LovyanGFX& d, const char* t, int x, int y, bool comentario)
 {
-  // Realce de sintaxe e DADO: cada categoria tem um tom proprio, tirado da
-  // paleta do tema (mesma luz) para ficar legivel sobre o fundo escuro.
+  // Syntax highlighting is DATA: each category has its own tone, taken from the
+  // theme palette (same lightness) so it stays legible on the dark background.
   const uint16_t C_COMENT = TEMA_TEXTO_3, C_TEXTO = TEMA_APP_VERDE,
                  C_NUM = TEMA_APP_LARANJA, C_CHAVE = TEMA_APP_ROXO,
                  C_FUNC = TEMA_DESTAQUE, C_RESTO = TEMA_TEXTO;
   char pedaco[160];
   int i = 0;
   const int n = (int)strlen(t);
-  if (comentario) { d.setTextColor(C_COMENT); d.drawString(t, x, y); return; }   // continuacao de um comentario
+  if (comentario) { d.setTextColor(C_COMENT); d.drawString(t, x, y); return; }   // continuation of a comment
   while (i < n) {
     int j = i;
     uint16_t cor = C_RESTO;
@@ -281,7 +281,7 @@ static void pintar_codigo(lgfx::LovyanGFX& d, const char* t, int x, int y, bool 
   }
 }
 
-// O recuo (espacos do comeco) da linha do arquivo onde esta o cursor.
+// The indent (leading spaces) of the file line where the cursor is.
 static int recuo_atual(const editor_t* e)
 {
   int i = e->cursor;
@@ -291,7 +291,7 @@ static int recuo_atual(const editor_t* e)
   return n;
 }
 
-// Enter: no modo codigo, a linha nova nasce com o mesmo recuo.
+// Enter: in code mode, the new line starts with the same indent.
 static void nova_linha(editor_t* e)
 {
   char t[1 + 40];
@@ -306,14 +306,14 @@ void editor_modo_codigo(editor_t* e)
 {
   e->codigo = true;
   e->requebrar = e->sujo = true;
-  if (tecvirt_aberto(&e->kb)) { tecvirt_tipo(&e->kb, TECVIRT_CODIGO); }   // codigo: sem maiuscula nem ". " automaticos
+  if (tecvirt_aberto(&e->kb)) { tecvirt_tipo(&e->kb, TECVIRT_CODIGO); }   // code: no automatic capital or ". "
 }
 
 void editor_marcar_erro(editor_t* e, int linha)
 {
   e->linha_erro = linha;
   if (linha > 0) {
-    // O cursor vai para o comeco da linha do erro (a tela rola ate ela).
+    // The cursor goes to the start of the error line (the screen scrolls to it).
     int i = 0;
     for (int l = 1; l < linha && e->txt[i]; ++i) { if (e->txt[i] == '\n') { ++l; } }
     e->cursor = i;
@@ -323,7 +323,7 @@ void editor_marcar_erro(editor_t* e, int linha)
 }
 
 // ---------------------------------------------------------------------------
-// DESENHO
+// DRAWING
 // ---------------------------------------------------------------------------
 void editor_desenhar(editor_t* e, lgfx::LovyanGFX& d, const area_t& r, bool completo)
 {
@@ -341,7 +341,7 @@ void editor_desenhar(editor_t* e, lgfx::LovyanGFX& d, const area_t& r, bool comp
   e->linhas_vis = e->alt_texto / e->passo;
   if (e->linhas_vis < 1) { e->linhas_vis = 1; }
 
-  // O cursor sempre a vista (menos enquanto o dedo rola).
+  // The cursor always in view (except while the finger scrolls).
   if (!e->arrastando) {
     const int lc = linha_do(e, e->cursor);
     if (lc < e->topo) { e->topo = lc; }
@@ -353,8 +353,8 @@ void editor_desenhar(editor_t* e, lgfx::LovyanGFX& d, const area_t& r, bool comp
 
   if (e->sujo || completo) {
     e->sujo = false;
-    // Fundo da area de texto: o mesmo que o sistema usa para a area do app
-    // (certo tambem para app que ainda nao ligou fundo_tema).
+    // Background of the text area: the same the system uses for the app area
+    // (also right for an app that has not yet turned on fundo_tema).
     const uint16_t fundo = sistema_cor_fundo();
     tab5_tela_limpar(r.x, r.y, r.largura, e->alt_texto, fundo);
     if (e->codigo) { d.drawFastVLine(r.x + e->calha - CALHA_VAO / 2, r.y, e->alt_texto, TEMA_LINHA); }
@@ -362,8 +362,8 @@ void editor_desenhar(editor_t* e, lgfx::LovyanGFX& d, const area_t& r, bool comp
     d.setTextColor(TEMA_TEXTO, fundo);
     const int lc = linha_do(e, e->cursor);
     char t[160];
-    // Modo codigo: o numero da linha (a do arquivo, nao a da tela) da
-    // primeira linha visivel - os '\n' antes dela.
+    // Code mode: the line number (the file's, not the screen's) of the
+    // first visible line - the '\n's before it.
     int num = 1;
     if (e->codigo) { for (int i = 0; i < e->ini[e->topo]; ++i) { if (e->txt[i] == '\n') { ++num; } } }
     for (int k = e->topo; k < e->n_lin && k < e->topo + e->linhas_vis; ++k) {
@@ -372,7 +372,7 @@ void editor_desenhar(editor_t* e, lgfx::LovyanGFX& d, const area_t& r, bool comp
       memcpy(t, e->txt + e->ini[k], n); t[n] = 0;
       const int y = r.y + 4 + (k - e->topo) * e->passo;
       if (e->codigo) {
-        const bool comeca = k == 0 || e->txt[e->ini[k] - 1] == '\n';   // continuacao de linha quebrada nao conta
+        const bool comeca = k == 0 || e->txt[e->ini[k] - 1] == '\n';   // the continuation of a wrapped line does not count
         if (k > e->topo && comeca) { ++num; }
         if (e->linha_erro && num == e->linha_erro) {
           d.fillRect(r.x, y - 2, r.largura, e->passo - 2, d.color565(70, 16, 16));
@@ -397,7 +397,7 @@ void editor_desenhar(editor_t* e, lgfx::LovyanGFX& d, const area_t& r, bool comp
       d.setTextColor(TEMA_TEXTO_3, fundo);
       d.drawString(tr("toque para escrever"), r.x + margem(e) + 8, r.y + 4);
     }
-    // O MENU DO TOQUE LONGO, por cima do texto (fechar repinta o texto).
+    // THE LONG-PRESS MENU, on top of the text (closing it repaints the text).
     if (e->menu) {
       static const char* const ROT[MENU_N] = { N_("Palavra"), N_("Linha"), N_("Tudo"), N_("Colar") };
       for (int b = 0; b < MENU_N; ++b) {
@@ -413,17 +413,17 @@ void editor_desenhar(editor_t* e, lgfx::LovyanGFX& d, const area_t& r, bool comp
 }
 
 // ---------------------------------------------------------------------------
-// TOQUE E TECLAS
+// TOUCH AND KEYS
 // ---------------------------------------------------------------------------
 static void aplicar(editor_t* e, int acao)
 {
   if (acao > 0) { char u[4]; inserir(e, u, tecvirt_utf8(acao, u)); return; }
   if (acao == TECVIRT_APAGAR) { apagar(e, false); return; }
-  if (acao == TECVIRT_ENVIAR || acao == TECVIRT_LINHA) { nova_linha(e); return; }   // no editor, ENTER e linha nova
+  if (acao == TECVIRT_ENVIAR || acao == TECVIRT_LINHA) { nova_linha(e); return; }   // in the editor, ENTER is a new line
   if (acao == TECVIRT_FECHAR) { editor_fechar_teclado(e); }
 }
 
-// A posicao do texto (bytes) sob um ponto da tela.
+// The text position (bytes) under a screen point.
 static int pos_no_ponto(editor_t* e, int xs, int ys)
 {
   if (!e->disp || e->passo <= 0) { return e->cursor; }
@@ -434,7 +434,7 @@ static int pos_no_ponto(editor_t* e, int xs, int ys)
   return posicao_em(e, k, xs - e->ret.x - margem(e));
 }
 
-// Copia o trecho [de, ate) do texto para a area de transferencia.
+// Copies the range [de, ate) of the text to the clipboard.
 static void copiar_trecho(editor_t* e, int de, int ate, const char* recado)
 {
   if (ate <= de) { return; }
@@ -447,14 +447,14 @@ static void copiar_trecho(editor_t* e, int de, int ate, const char* recado)
   sistema_recado(recado);
 }
 
-// A PALAVRA sob 'p': ate espaco, quebra ou pontuacao. Byte >= 0x80 (acento,
-// emoji) conta como letra - "ação" e uma palavra so.
+// The WORD under 'p': up to a space, line break or punctuation. A byte >= 0x80 (accent,
+// emoji) counts as a letter - "ação" is a single word.
 static bool separa(char c) { return c == ' ' || c == '\n' || c == '\t' || (c > 0 && strchr(".,;:!?()[]{}\"'", c)); }
 static void copiar_palavra(editor_t* e, int p)
 {
   const int n = (int)strlen(e->txt);
   if (p >= n) { p = n - 1; }
-  if (p < 0 || separa(e->txt[p])) {            // no vao entre palavras: a da esquerda
+  if (p < 0 || separa(e->txt[p])) {            // in the gap between words: the one on the left
     while (p > 0 && separa(e->txt[p])) { --p; }
     if (p < 0 || separa(e->txt[p])) { return; }
   }
@@ -464,7 +464,7 @@ static void copiar_palavra(editor_t* e, int p)
   copiar_trecho(e, de, ate, tr("Palavra copiada"));
 }
 
-// A LINHA sob 'p': o paragrafo inteiro, de uma quebra a outra.
+// The LINE under 'p': the whole paragraph, from one break to the next.
 static void copiar_linha(editor_t* e, int p)
 {
   const int n = (int)strlen(e->txt);
@@ -496,7 +496,7 @@ void editor_tocar_nivel(editor_t* e, int x, int y, bool pressionado)
   const bool no_texto = ys >= e->ret.y && ys < e->ret.y + e->alt_texto;
   if (toque_longo(&e->lp, x, y, pressionado) && no_texto) {
     sistema_consumir_toque();
-    // O menu logo acima do dedo, inteiro dentro do texto.
+    // The menu just above the finger, entirely inside the text.
     e->menu_pos = pos_no_ponto(e, a.x + x, ys);
     const int l = MENU_N * MENU_BT_L + (MENU_N - 1) * MENU_VAO;
     int mx = a.x + x - l / 2, my = ys - MENU_BT_A - 40;
@@ -507,7 +507,7 @@ void editor_tocar_nivel(editor_t* e, int x, int y, bool pressionado)
     marcar(e, false);
     return;
   }
-  // ROLAR COM O DEDO: por linhas inteiras, sem mexer no cursor.
+  // SCROLL WITH THE FINGER: by whole lines, without moving the cursor.
   if (!pressionado) { e->arrastando = false; e->arr_y = -1; return; }
   if (!no_texto) { return; }
   if (e->arr_y < 0) { e->arr_y = y; e->arr_topo = e->topo; return; }
@@ -527,7 +527,7 @@ void editor_tocar(editor_t* e, int x, int y)
     if (ac) { aplicar(e, ac); }
     return;
   }
-  if (e->menu) {   // qualquer toque fecha o menu; num botao, faz o que ele diz
+  if (e->menu) {   // any touch closes the menu; on a button, it does what the button says
     e->menu = false;
     marcar(e, false);
     if (ys >= e->menu_y && ys < e->menu_y + MENU_BT_A && xs >= e->menu_x) {
@@ -546,7 +546,7 @@ void editor_tocar(editor_t* e, int x, int y)
   if (!e->disp || e->passo <= 0 || ys < e->ret.y || ys >= e->ret.y + e->alt_texto) { return; }
   e->cursor = pos_no_ponto(e, xs, ys);
   if (!tecvirt_aberto(&e->kb) && !tab5_teclado_presente()) {
-    tecvirt_abrir(&e->kb, e->codigo ? TECVIRT_CODIGO : TECVIRT_PARAGRAFO);   // a tecla verde e a de nova linha
+    tecvirt_abrir(&e->kb, e->codigo ? TECVIRT_CODIGO : TECVIRT_PARAGRAFO);   // the green key is the new-line key
     pedir_completo();
   }
   tecvirt_contexto(&e->kb, e->txt, e->cursor);

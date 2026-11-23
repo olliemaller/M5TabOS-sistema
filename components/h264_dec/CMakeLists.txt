@@ -1,9 +1,9 @@
-# h264_dec (Hiroki Kawakami, MIT) - o decodificador H.264 do servico de video
-# (services/tab5_video). Codigo de terceiro, com a licenca ao lado; a origem
-# exata esta em ORIGEM.txt e o que mudamos nele, em MUDANCAS.md.
+# h264_dec (Hiroki Kawakami, MIT) - the H.264 decoder of the video service
+# (services/tab5_video). Third-party code, with the licence alongside; the exact
+# origin is in ORIGEM.txt and what we changed in it, in MUDANCAS.md.
 #
-# Junta os dois componentes do projeto original (h264_dec e vdec_common): os
-# nucleos comuns (vdec_kernels_*) so servem a este decodificador aqui.
+# Merges the original project's two components (h264_dec and vdec_common): the
+# common kernels (vdec_kernels_*) only serve this decoder here.
 idf_component_register(
     SRCS
         "src/bits.c"
@@ -23,16 +23,16 @@ idf_component_register(
         "src/vdec_kernels_c.c"
     INCLUDE_DIRS "include")
 
-# No P4, as rotinas quentes em assembly da extensao PIE (SIMD de 128 bits).
+# On the P4, the hot routines in PIE extension assembly (128-bit SIMD).
 if(IDF_TARGET STREQUAL "esp32p4")
     target_sources(${COMPONENT_LIB} PRIVATE "src/kernels_p4.S" "src/vdec_kernels_p4.S")
     target_compile_definitions(${COMPONENT_LIB} PRIVATE H264_DEC_PIE VDEC_PIE)
 endif()
 
-# -O2 como no original (o -Os do resto do sistema custa velocidade aqui).
+# -O2 as in the original (the -Os of the rest of the system costs speed here).
 target_compile_options(${COMPONENT_LIB} PRIVATE -O2)
 
-# Medicao por etapa (bancada 'video h264' imprime): idf.py ... -DH264_DEC_PROFILE=1
+# Per-stage measurement (the 'video h264' benchmark prints it): idf.py ... -DH264_DEC_PROFILE=1
 if(H264_DEC_PROFILE)
     target_compile_definitions(${COMPONENT_LIB} PUBLIC H264_DEC_PROFILE)
 endif()

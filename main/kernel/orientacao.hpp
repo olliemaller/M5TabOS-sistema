@@ -1,40 +1,40 @@
-// ORIENTACAO DA TELA - quem decide se o app aberto fica em pe ou deitado.
+// SCREEN ORIENTATION - decides whether the open app is portrait or landscape.
 //
-// O app declara (app_t.orientacao, ver kernel/app.h); este modulo aplica. Para
-// ORI_EM_PE e ORI_DEITADO e so a rotacao certa na abertura. Para
-// ORI_SEGUE_IMU ele tambem vigia a gravidade enquanto o app esta aberto e
-// gira entre os DOIS estados que existem - em pe (rotacao 0) e deitado
-// (rotacao 3, ExtPort1 embaixo). Nunca o lado oposto de nenhum deles.
+// The app declares it (app_t.orientacao, see kernel/app.h); this module applies it. For
+// ORI_EM_PE and ORI_DEITADO it is just the right rotation on opening. For
+// ORI_SEGUE_IMU it also watches gravity while the app is open and
+// rotates between the TWO states that exist - portrait (rotation 0) and landscape
+// (rotation 3, ExtPort1 at the bottom). Never the opposite side of either.
 //
-// NAO E UMA TAREFA. O IMU fica no I2C interno, que so a tarefa de interface
-// pode usar (ver hal/tab5_imu.hpp); entao a vigia e uma funcao que o laco da
-// interface chama a cada volta. Com nenhum app seguindo o IMU ela retorna na
-// primeira linha: quem nao usa nao paga leitura nenhuma.
+// IT IS NOT A TASK. The IMU sits on the internal I2C, which only the UI task
+// may use (see hal/tab5_imu.hpp); so the watcher is a function the UI
+// loop calls on every turn. With no app following the IMU it returns on the
+// first line: whoever does not use it pays for no reading at all.
 //
-// TUDO AQUI E DA TAREFA DE INTERFACE.
+// EVERYTHING HERE BELONGS TO THE UI TASK.
 #pragma once
 
 #include <stdint.h>
 #include "app.h"
 
-// Aplica a orientacao inicial do app que esta abrindo. Chamar ANTES do perfil
-// e de qualquer desenho: girar muda largura e altura, e tudo que for
-// calculado a partir delas precisa ver o valor novo.
+// Applies the initial orientation of the app being opened. Call BEFORE the profile
+// and any drawing: rotating changes width and height, and everything
+// calculated from them needs to see the new value.
 void orientacao_ao_abrir(const app_t* app);
 
-// O app fechou: volta em pe (a home e em pe; deitada com o teclado fisico
-// encaixado) e para de vigiar o IMU.
+// The app closed: back to portrait (home is portrait; landscape with the physical keyboard
+// docked) and stops watching the IMU.
 void orientacao_ao_fechar(void);
 
-// Uma volta da vigia. 'pode_girar' = nenhum dedo na tela, nada na frente
-// (bloqueio). A amostragem continua mesmo quando nao pode - so a troca
-// espera. Vale tambem na home: encaixar ou tirar o teclado fisico gira a tela
-// de qualquer um (ver s_teclado no .cpp); o IMU so para app ORI_SEGUE_IMU.
+// One turn of the watcher. 'pode_girar' = no finger on the screen, nothing in front
+// (lock screen). Sampling continues even when it cannot - only the switch
+// waits. Also applies on home: docking or removing the physical keyboard rotates the screen
+// for anyone (see s_teclado in the .cpp); the IMU only for ORI_SEGUE_IMU apps.
 //
-// Devolve true quando GIROU nesta chamada: quem chama pede a passada
-// completa e avisa o app (ao_girar).
+// Returns true when it ROTATED on this call: the caller requests the full
+// pass and notifies the app (ao_girar).
 bool orientacao_vigiar(uint32_t agora_ms, bool pode_girar);
 
-// Quanto falta para a proxima amostra, em ms - para a interface parada nao
-// dormir alem dela. UINT32_MAX quando nenhum app segue o IMU.
+// How long until the next sample, in ms - so the still UI does not
+// sleep past it. UINT32_MAX when no app follows the IMU.
 uint32_t orientacao_prazo_ms(uint32_t agora_ms);

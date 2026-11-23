@@ -1,7 +1,7 @@
 #include "tab5_monitor.hpp"
 #include "tab5_donos.hpp"
 #include "tab5_marcos.hpp"
-#include "esp_attr.h"   // EXT_RAM_BSS_ATTR - buffers grandes na PSRAM
+#include "esp_attr.h"   // EXT_RAM_BSS_ATTR - large buffers in PSRAM
 
 #include <string.h>
 #include "pool_tarefas.h"
@@ -20,52 +20,52 @@
 #include "tab5_sd.hpp"
 #include "tab5_hora.hpp"
 #include "tab5_quadro.hpp"
-#include "compositor.hpp"   // contador de underrun do painel
+#include "compositor.hpp"   // panel underrun counter
 #include "app.h"            // sistema_app_atual
 
 static const char* TAG = "monitor";
 static const char* PASTA = "Tarefas";
 
-// Foto do compositor no ultimo minuto gravado (quadros-*.csv).
+// Compositor snapshot at the last recorded minute (quadros-*.csv).
 static comp_estat_t s_qd_ant = {};
 static uint32_t     s_qd_amostras = 0;
 
 // ---------------------------------------------------------------------------
-// OS GATILHOS - pequenos e baratos, todos por BORDA
+// THE TRIGGERS - small and cheap, all EDGE-triggered
 // ---------------------------------------------------------------------------
-// Cada um dispara UMA vez ao cruzar o limite e so rearma depois de voltar com
-// folga (histerese) - uma memoria oscilando em volta do limite nao vira uma
-// enxurrada de eventos.
-static const uint32_t RAM_BAIXA      = 48 * 1024;    // RAM interna livre abaixo disto
+// Each fires ONCE on crossing the limit and only re-arms after coming back with
+// margin (hysteresis) - memory oscillating around the limit does not turn into a
+// flood of events.
+static const uint32_t RAM_BAIXA      = 48 * 1024;    // free internal RAM below this
 static const uint32_t RAM_FOLGA      = 16 * 1024;
-static const uint32_t BLOCO_BAIXO    = 16 * 1024;    // maior bloco interno abaixo disto (fragmentacao)
+static const uint32_t BLOCO_BAIXO    = 16 * 1024;    // largest internal block below this (fragmentation)
 static const uint32_t BLOCO_FOLGA    =  8 * 1024;
 static const uint32_t PSRAM_BAIXA    = 2 * 1024 * 1024;
 static const uint32_t PSRAM_FOLGA    = 512 * 1024;
-static const uint32_t NOVO_MIN_PASSO =  4 * 1024;    // novo recorde de RAM baixa, de 4KB em 4KB
-static const uint32_t QUEDA_BRUSCA   = 32 * 1024;    // RAM interna caiu isto em 1 s
-static const uint32_t PILHA_BAIXA    = 512;          // bytes que sobraram na stack de uma tarefa
+static const uint32_t NOVO_MIN_PASSO =  4 * 1024;    // new low-RAM record, in 4 KB steps
+static const uint32_t QUEDA_BRUSCA   = 32 * 1024;    // internal RAM dropped this much in 1 s
+static const uint32_t PILHA_BAIXA    = 512;          // bytes left on a task's stack
 static const float    CPU_TAREFA_ALTA = 60.0f, CPU_TAREFA_OK = 40.0f;
-static const int      CPU_TAREFA_SEG  = 3;           // segundos seguidos acima
+static const int      CPU_TAREFA_SEG  = 3;           // consecutive seconds above
 static const float    CPU_TOTAL_ALTA  = 90.0f, CPU_TOTAL_OK = 70.0f;
 static const int      CPU_TOTAL_SEG   = 5;
-static const uint32_t ACOMODAR_S      = 20;          // o boot aloca de tudo: recorde so depois disto
+static const uint32_t ACOMODAR_S      = 20;          // boot allocates all sorts: records only after this
 
-// Tarefas de vida curta do proprio kernel: nascer e sumir e o trabalho delas,
-// nao noticia (uma por abertura de app).
+// The kernel's own short-lived tasks: being born and vanishing is their job,
+// not news (one per app opening).
 static bool efemera(const char* n)
 {
   return strcmp(n, "sd_monta") == 0 || strcmp(n, "sd_desmonta") == 0;
 }
 
 // ---------------------------------------------------------------------------
-// ESTADO
+// STATE
 // ---------------------------------------------------------------------------
 static SemaphoreHandle_t s_mutex = nullptr;
 EXT_RAM_BSS_ATTR static mon_foto_t s_foto;
 static bool              s_tem_foto = false;
 
-// Na PSRAM (3,6 KB): lido 1x/s, so pelo app Tarefas - a RAM interna e das pilhas e do DMA.
+// In PSRAM (3.6 KB): read 1x/s, only by the Tasks app - internal RAM is for stacks and DMA.
 EXT_RAM_BSS_ATTR static float    s_h_cpu[MON_HIST_N];
 EXT_RAM_BSS_ATTR static uint32_t s_h_ram[MON_HIST_N], s_h_psram[MON_HIST_N];
 static int      s_h_n = 0, s_h_i = 0;
@@ -74,12 +74,12 @@ EXT_RAM_BSS_ATTR static mon_evento_t s_ev[MON_EVENTOS_N];
 static int          s_ev_n = 0, s_ev_i = 0;
 static uint32_t     s_ev_total = 0;
 
-// Linhas esperando o cartao (gravadas uma vez por volta, nao a cada evento).
+// Lines waiting for the card (written once per round, not on every event).
 #define PENDENTES_N 16
-EXT_RAM_BSS_ATTR static char s_pend[PENDENTES_N][112];   // idem (1,8 KB)
+EXT_RAM_BSS_ATTR static char s_pend[PENDENTES_N][112];   // likewise (1.8 KB)
 static int  s_n_pend = 0;
 
-// Memoria da tarefa de amostragem (so ela toca).
+// Memory of the sampling task (only it touches this).
 typedef struct { UBaseType_t numero; uint64_t tempo; int seg_alta; bool alerta_cpu; bool alerta_pilha; } anterior_t;
 static anterior_t    s_ant[MON_MAX_TAREFAS];
 static int           s_n_ant = 0;
@@ -91,13 +91,13 @@ static uint32_t s_ram_recorde_avisado = UINT32_MAX;
 static uint32_t s_ram_anterior = 0;
 static uint32_t s_underruns_ant = 0;
 static uint32_t s_atrasos_ant = 0;
-static int64_t  s_foto_pior_us = 0;   // a pior duracao de uxTaskGetSystemState
+static int64_t  s_foto_pior_us = 0;   // the worst duration of uxTaskGetSystemState
 static uint32_t s_dsi_erros_ant = 0;
 
-// PILHA MINIMA POR NOME DE TAREFA, para dimensionar as pilhas com dado real.
-// O high water mark de uma tarefa some quando ela morre (sd_monta, grove_sonda,
-// tarefas de app), e o app Tarefas so mostra quem esta vivo AGORA. Esta tabela
-// guarda o menor valor ja visto por nome e vai ao cartao a cada 10 min.
+// MINIMUM STACK PER TASK NAME, to size stacks with real data.
+// A task's high water mark vanishes when it dies (sd_monta, grove_sonda,
+// app tasks), and the Tasks app only shows who is alive NOW. This table
+// keeps the lowest value ever seen per name and goes to the card every 10 min.
 #define PILHAS_N        48
 #define PILHAS_PERIODO  600
 EXT_RAM_BSS_ATTR static char s_pilha_nome[PILHAS_N][MON_NOME];
@@ -106,21 +106,21 @@ static int      s_pilha_n = 0;
 static uint32_t s_pilha_gravada_em = 0;
 EXT_RAM_BSS_ATTR static char s_pilha_linha[PILHAS_N * (MON_NOME + 10) + 32];
 
-// Memoria do minuto (fragmentacao da RAM interna).
+// The minute's memory (internal RAM fragmentation).
 static uint32_t s_mm_ram_min = UINT32_MAX, s_mm_bloco_min = UINT32_MAX, s_mm_psram_min = UINT32_MAX;
 static uint32_t s_mm_blocos_max = 0, s_mm_ocupadas_max = 0;
 static float    s_mm_frag_max = 0;
 static int      s_mm_amostras = 0;
 
-// Resumo do minuto.
+// The minute's summary.
 static float    s_min_cpu_max = 0;
 static uint32_t s_min_ram = UINT32_MAX, s_min_psram = UINT32_MAX, s_min_bloco = UINT32_MAX;
 static int      s_min_amostras = 0;
 
-// ---- extrato da RAM interna (ver tab5_monitor.hpp) ----
-// Sem trava: o indice e reservado com um incremento atomico, entao dois
-// marcos simultaneos caem em vagas diferentes. Cheio, os marcos novos sao
-// descartados - o que interessa e o boot e a primeira subida de cada radio.
+// ---- internal RAM statement (see tab5_monitor.hpp) ----
+// No lock: the index is reserved with an atomic increment, so two
+// simultaneous milestones land in different slots. When full, new milestones are
+// discarded - what matters is boot and the first start of each radio.
 static mem_marco_t s_marcos[MEM_MARCOS_N];
 static uint32_t    s_marcos_n = 0;
 static uint32_t    s_marco_livre_ant = 0;
@@ -133,7 +133,7 @@ void tab5_mem_marco(const char* etapa)
   const uint32_t ant   = __atomic_exchange_n(&s_marco_livre_ant, livre, __ATOMIC_RELAXED);
   const int32_t  delta = ant ? (int32_t)livre - (int32_t)ant : 0;
 
-  ESP_LOGI("mem", "%-26s RAM livre %6lu B (%+7ld)  maior bloco %6lu B  minimo %6lu B",
+  ESP_LOGI("mem", "%-26s free RAM %6lu B (%+7ld)  largest block %6lu B  minimum %6lu B",
            etapa, (unsigned long)livre, (long)delta, (unsigned long)hi.largest_free_block,
            (unsigned long)hi.minimum_free_bytes);
 
@@ -178,7 +178,7 @@ static void hora_texto(char* out, size_t tam)
 }
 
 // ---------------------------------------------------------------------------
-// EVENTO: memoria + log + queue do cartao
+// EVENT: memory + log + card queue
 // ---------------------------------------------------------------------------
 static void evento(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
 static void evento(const char* fmt, ...)
@@ -208,7 +208,7 @@ static void evento(const char* fmt, ...)
   }
 }
 
-// Pelo gravador do sistema (hal/tab5_sd.hpp) - entrega e segue.
+// Through the system writer (hal/tab5_sd.hpp) - hands over and carries on.
 static void anexar(const char* prefixo, const char* cabecalho, const char* linhas, int n, size_t passo)
 {
   if (n <= 0) { return; }
@@ -218,7 +218,7 @@ static void anexar(const char* prefixo, const char* cabecalho, const char* linha
 }
 
 // ---------------------------------------------------------------------------
-// A AMOSTRA DE UM SEGUNDO
+// THE ONE-SECOND SAMPLE
 // ---------------------------------------------------------------------------
 static anterior_t* anterior_de(UBaseType_t numero)
 {
@@ -251,8 +251,8 @@ static void anotar_pilha(const char* nome, uint32_t livre)
   }
 }
 
-// Vaga do pool com uma execucao dentro: o nome util e o do DONO ("Mesh"), nao
-// o da vaga ("pool2").
+// A pool slot with a run inside: the useful name is the OWNER's ("Mesh"), not
+// the slot's ("pool2").
 static const char* nome_efetivo(const TaskStatus_t& st)
 {
   const char* n = st.pcTaskName ? st.pcTaskName : "?";
@@ -267,33 +267,33 @@ static const char* nome_efetivo(const TaskStatus_t& st)
 static void amostrar(bool primeira)
 {
   const uint32_t agora = uptime_s();
-  // uxTaskGetSystemState roda INTEIRA numa secao critica (no SMP do IDF:
-  // interrupcoes desligadas neste core), medindo a stack livre de cada
-  // tarefa la dentro - ~0,8 ms com a CPU a 360 MHz. E mais que a folga de
-  // ~0,5 ms que o DMA do painel tem entre frames: caindo nela, perde um
-  // frame inteiro. ERA A CAUSA do "FRAME ATRASADO" com os dois cores em
-  // IDLE - este loop roda em fase fixa de 1 s, e todos os
-  // atrasos tinham a mesma fracao de segundo. Por isso a foto so e tirada
-  // logo DEPOIS de um fim de frame (tab5_quadro_esperar_fim).
-  // EM REPOUSO O PAINEL ESTA DESMONTADO: nao ha fim de quadro para esperar
-  // (nem quadro para perder). A espera so vencia pelo prazo - 40 despertares
-  // de 1 tick, todo segundo, com a tela apagada.
+  // uxTaskGetSystemState runs ENTIRELY in a critical section (on IDF SMP:
+  // interrupts off on this core), measuring each task's free stack
+  // in there - ~0.8 ms with the CPU at 360 MHz. That is more than the
+  // ~0.5 ms slack the panel DMA has between frames: landing in it loses a
+  // whole frame. IT WAS THE CAUSE of the "FRAME ATRASADO" (late frame) with both cores
+  // IDLE - this loop runs at a fixed 1 s phase, and all the
+  // delays had the same fraction of a second. That is why the snapshot is only taken
+  // right AFTER an end of frame (tab5_quadro_esperar_fim).
+  // IN IDLE MODE THE PANEL IS TORN DOWN: there is no end of frame to wait for
+  // (nor a frame to lose). The wait only ended by timeout - 40 wake-ups
+  // of 1 tick, every second, with the screen off.
   if (!tab5_power_em_repouso()) { tab5_quadro_esperar_fim(40); }
   const int64_t t_foto = esp_timer_get_time();
   const UBaseType_t n = uxTaskGetSystemState(s_status, MON_MAX_TAREFAS, nullptr);
   const int64_t us_foto = esp_timer_get_time() - t_foto;
-  tab5_marco("monitor: foto das tarefas us", (int32_t)us_foto);
+  tab5_marco("monitor: task snapshot us", (int32_t)us_foto);
   if (us_foto > s_foto_pior_us) {
     s_foto_pior_us = us_foto;
-    // Acima de 5 ms nem a janela entre frames cobre (~14 ms, mas o limite
-    // de verdade depende de onde a espera acordou) - vale saber.
+    // Above 5 ms not even the window between frames covers it (~14 ms, but the real
+    // limit depends on where the wait woke up) - worth knowing.
     if (us_foto > 5000 && !tab5_power_em_repouso()) {
       evento("foto das tarefas segurou o nucleo %d por %lld us", (int)xPortGetCoreID(), (long long)us_foto);
     }
   }
   if (n == 0) {
-    // Mais tarefas que vagas: o FreeRTOS nao preenche nada. Avisa uma vez, em
-    // vez de a foto parar em silencio.
+    // More tasks than slots: FreeRTOS fills in nothing. Warn once, instead
+    // of the snapshot silently stopping.
     static bool avisou = false;
     if (!avisou) {
       avisou = true;
@@ -307,13 +307,13 @@ static void amostrar(bool primeira)
   for (UBaseType_t i = 0; i < n; ++i) {
     const anterior_t* a = anterior_de(s_status[i].xTaskNumber);
     const uint64_t atual = (uint64_t)s_status[i].ulRunTimeCounter;
-    const uint64_t antes = a ? a->tempo : atual;   // tarefa nova: comeca do zero
+    const uint64_t antes = a ? a->tempo : atual;   // new task: starts from zero
     deltas[i] = (atual >= antes) ? (atual - antes) : atual;
     total += deltas[i];
   }
 
-  // Estaticas: ~1,7KB cada, e so esta tarefa as usa - na stack, junto do
-  // fprintf do cartao, apertariam os 6KB dela.
+  // Static: ~1.7 KB each, and only this task uses them - on the stack, together with the
+  // card's fprintf, they would squeeze its 6 KB.
   EXT_RAM_BSS_ATTR static mon_foto_t nova, velha;
   memset(&nova, 0, sizeof(nova));
   xSemaphoreTake(s_mutex, portMAX_DELAY);
@@ -331,9 +331,9 @@ static void amostrar(bool primeira)
     t.numero      = s_status[i].xTaskNumber;
     t.prioridade  = s_status[i].uxCurrentPriority;
     t.pilha_livre = (uint32_t)s_status[i].usStackHighWaterMark * sizeof(StackType_t);
-    // ONDE MORA A PILHA: so o endereco do comeco, sem ler nada da tarefa (ela
-    // pode ter morrido depois da foto). O TAMANHO nao sai daqui com seguranca:
-    // o FreeRTOS nao o guarda, e o retrato que o teria so vale no panico.
+    // WHERE THE STACK LIVES: just the start address, without reading anything from the task (it
+    // may have died after the snapshot). The SIZE cannot be got from here safely:
+    // FreeRTOS does not keep it, and the snapshot that would have it is only valid in a panic.
     t.pilha_psram = esp_ptr_external_ram(s_status[i].pxStackBase);
     const char* dono = nullptr;
     t.tipo = (uint8_t)tab5_dono_de(s_status[i].xHandle, &dono);
@@ -346,7 +346,7 @@ static void amostrar(bool primeira)
     t.pct = total ? (100.0f * (float)deltas[i] / (float)total) : 0.0f;
     if (strncmp(t.nome, "IDLE", 4) == 0) { idle += t.pct; }
 
-    // O pico desta tarefa vem da foto anterior (se ela ja existia).
+    // This task's peak comes from the previous snapshot (if it already existed).
     t.pct_pico = t.pct; t.pct_pico_em = agora;
     for (int k = 0; k < velha.n; ++k) {
       if (velha.t[k].numero == t.numero && velha.t[k].pct_pico > t.pct) {
@@ -354,16 +354,16 @@ static void amostrar(bool primeira)
       }
     }
   }
-  // Ordem estavel na tela: por xTaskNumber (ordem de criacao).
+  // Stable order on screen: by xTaskNumber (creation order).
   for (int i = 1; i < nova.n; ++i) {
     mon_tarefa_t c = nova.t[i]; int j = i - 1;
     while (j >= 0 && nova.t[j].numero > c.numero) { nova.t[j + 1] = nova.t[j]; --j; }
     nova.t[j + 1] = c;
   }
 
-  // Pilha minima por nome (so esta tarefa toca na tabela). Vagas do pool
-  // entram pelo nome da EXECUCAO (mais abaixo); aqui ficam so as tarefas comuns
-  // e as vagas com dono conhecido.
+  // Minimum stack per name (only this task touches the table). Pool slots
+  // go in under the RUN's name (further down); here only ordinary tasks
+  // and slots with a known owner.
   for (int i = 0; i < nova.n; ++i) {
     const mon_tarefa_t& t = nova.t[i];
     if (strncmp(t.nome, "IDLE", 4) == 0 || strncmp(t.nome, "pool", 4) == 0) { continue; }
@@ -399,7 +399,7 @@ static void amostrar(bool primeira)
   if (s_h_n < MON_HIST_N) { ++s_h_n; }
   xSemaphoreGive(s_mutex);
 
-  // ---- gatilhos -----------------------------------------------------------
+  // ---- triggers -----------------------------------------------------------
   if (!primeira) {
     const mon_mem_t& r = nova.ram;
     if (!s_ram_alerta && r.livre < RAM_BAIXA) {
@@ -423,7 +423,7 @@ static void amostrar(bool primeira)
     }
     if (agora >= ACOMODAR_S && r.livre + NOVO_MIN_PASSO <= s_ram_recorde_avisado) {
       if (s_ram_recorde_avisado != UINT32_MAX) {
-        evento("novo minimo de RAM: %luK livres", (unsigned long)(r.livre / 1024));
+        evento("new RAM low: %luK free", (unsigned long)(r.livre / 1024));
       }
       s_ram_recorde_avisado = r.livre;
     }
@@ -434,7 +434,7 @@ static void amostrar(bool primeira)
     if (nova.cpu > CPU_TOTAL_ALTA) {
       if (++s_cpu_seg_alta >= CPU_TOTAL_SEG && !s_cpu_alerta) {
         s_cpu_alerta = true;
-        evento("CPU acima de %.0f%% ha %ds", (double)CPU_TOTAL_ALTA, s_cpu_seg_alta);
+        evento("CPU above %.0f%% for %ds", (double)CPU_TOTAL_ALTA, s_cpu_seg_alta);
       }
     } else {
       s_cpu_seg_alta = 0;
@@ -443,63 +443,63 @@ static void amostrar(bool primeira)
   }
   s_ram_anterior = nova.ram.livre;
 
-  // O FRAME AZUL VIRA EVENTO. O vigia de underrun
-  // (hal/tab5_quadro) conta cada vez que o painel ficou sem dados; aqui cada
-  // aumento vira evento com o APP QUE ESTAVA ABERTO - a piscada azul deixa de
-  // ser relato e passa a ter hora e lugar.
+  // THE BLUE FRAME BECOMES AN EVENT. The underrun watcher
+  // (hal/tab5_quadro) counts each time the panel ran out of data; here each
+  // increase becomes an event with the APP THAT WAS OPEN - the blue flash stops
+  // being anecdote and gets a time and place.
   const uint32_t und = tab5_quadro_underruns();
   if (!primeira && und > s_underruns_ant) {
     const char* app = sistema_app_atual();
-    evento("UNDERRUN do painel (+%lu) com %s aberto", (unsigned long)(und - s_underruns_ant),
+    evento("panel UNDERRUN (+%lu) with %s open", (unsigned long)(und - s_underruns_ant),
            app ? app : "a home");
   }
   s_underruns_ant = und;
 
-  // A INTERFACE PAROU? (tela travada, sem toque, sem nada no log). O loop dela conta voltas e deixa o nome do passo em que esta
-  // (kernel/core.cpp, ETAPA). Parado ha mais de 3 s: evento com o passo - uma
-  // vez so, e outro quando voltar. O watchdog de tarefas pega o loop
-  // BLOQUEADO; isto pega tambem o loop que parou de dar volta por outro motivo.
+  // HAS THE INTERFACE STOPPED? (screen frozen, no touch, nothing in the log). Its loop counts rounds and leaves the name of the step it is on
+  // (kernel/core.cpp, ETAPA). Stopped for more than 3 s: an event with the step - just
+  // once, and another when it comes back. The task watchdog catches the BLOCKED
+  // loop; this also catches a loop that stopped going round for some other reason.
   {
     static bool     s_presa = false;
     static uint32_t s_presa_desde = 0;
     sistema_diag_t d;
     sistema_diag_interface(&d);
-    // Em repouso o laco espera de proposito ate o prazo do contrato de
-    // economia (5-10 s, app.h): 3 s ali era alarme falso - e logo ao acordar,
-    // a ultima volta ainda e a de antes do sono.
+    // In idle mode the loop deliberately waits up to the power-saving contract's
+    // timeout (5-10 s, app.h): 3 s there was a false alarm - and right on waking,
+    // the last round is still the one from before sleep.
     const bool dormindo = d.repouso || (d.etapa && strncmp(d.etapa, "repouso", 7) == 0);
     const uint32_t limite = dormindo ? 12000 : 3000;
     if (!s_presa && d.voltas > 0 && d.ms_desde_volta > limite) {
       s_presa = true;
       s_presa_desde = d.voltas;
       evento("INTERFACE PRESA ha %lus em: %s", (unsigned long)(d.ms_desde_volta / 1000), d.etapa);
-      evento("  com %s%s; dedo lido ha %lds", d.app ? d.app : "a home",
+      evento("  with %s%s; finger read %lds ago", d.app ? d.app : "a home",
              d.repouso ? " (repouso)" : "",
              d.ms_desde_dedo == UINT32_MAX ? -1L : (long)(d.ms_desde_dedo / 1000));
     } else if (s_presa && d.voltas != s_presa_desde) {
       s_presa = false;
-      evento("interface voltou (parada em: %s)", d.etapa);
+      evento("UI came back (stalled in: %s)", d.etapa);
     }
   }
 
-  // Os detectores que nao dependem do log do driver (ver hal/tab5_quadro):
-  // frame que atrasou (DMA religado tarde) e erro no DSI host.
+  // The detectors that do not depend on the driver log (see hal/tab5_quadro):
+  // a late frame (DMA restarted late) and a DSI host error.
   {
     uint32_t pior_us = 0, periodo_us = 0;
     const uint32_t atr = tab5_quadro_atrasos(&pior_us, &periodo_us);
     if (!primeira && atr > s_atrasos_ant) {
       const char* app = sistema_app_atual();
-      evento("QUADRO ATRASADO (+%lu) pior %lu.%lums (normal %lu.%lums) com %s",
+      evento("LATE FRAME (+%lu) worst %lu.%lums (normal %lu.%lums) with %s",
              (unsigned long)(atr - s_atrasos_ant),
              (unsigned long)(pior_us / 1000), (unsigned long)(pior_us % 1000 / 100),
              (unsigned long)(periodo_us / 1000), (unsigned long)(periodo_us % 1000 / 100),
              app ? app : "a home");
       int nucleo = -1; char t0[16], t1[16];
       tab5_quadro_atraso_quem(&nucleo, t0, t1);
-      evento("  atraso: ISR no nucleo %d; rodando c0=%s c1=%s; pc 0x%08lx", nucleo, t0, t1,
+      evento("  delay: ISR on core %d; running c0=%s c1=%s; pc 0x%08lx", nucleo, t0, t1,
              (unsigned long)tab5_quadro_atraso_pc());
-      // O QUE ACONTECEU PERTO: quanto tempo antes do atraso o cartao montou/
-      // desmontou de verdade e saiu o ultimo frame (e de que tamanho).
+      // WHAT HAPPENED NEARBY: how long before the delay the card actually mounted/
+      // unmounted and the last frame went out (and what size).
       const int64_t t = tab5_quadro_atraso_quando();
       int64_t mont = 0, desm = 0, qd = 0; uint32_t px = 0;
       tab5_sd_ultimas_transicoes(&mont, &desm);
@@ -508,13 +508,13 @@ static void amostrar(bool primeira)
       evento("  em %ld.%03lds: sd +%ldms -%ldms, quadro %ldms antes (%luKpx)",
              (long)(t / 1000000), (long)(t / 1000 % 1000), ms(mont), ms(desm), ms(qd),
              (unsigned long)(px / 1000));
-      // OS MARCOS DOS 300 ms ANTERIORES (hal/tab5_marcos): trocas de clock da
-      // CPU (e com elas o reajuste do barramento da PSRAM), repouso, sondagem
-      // do Grove... Direto no log, e nao em evento(), porque a linha e longa.
+      // THE MILESTONES OF THE PREVIOUS 300 ms (hal/tab5_marcos): CPU clock
+      // changes (and with them the PSRAM bus readjustment), idle mode, Grove
+      // probing... Straight to the log, not via evento(), because the line is long.
       tab5_marco_t m[12];
       const int nm = tab5_marcos_entre(t - 300000, t + 2000, m, 12);
       if (nm == 0) {
-        ESP_LOGW(TAG, "  marcos: nenhum nos 300 ms antes");
+        ESP_LOGW(TAG, "  milestones: none in the 300 ms before");
       } else {
         char linha[400];
         int k = snprintf(linha, sizeof(linha), "  marcos:");
@@ -531,15 +531,15 @@ static void amostrar(bool primeira)
     const uint32_t err = tab5_quadro_erros_dsi(&st0, &st1);
     if (!primeira && err > s_dsi_erros_ant) {
       const char* app = sistema_app_atual();
-      evento("DSI host: erro st0=%08lx st1=%08lx (+%lu quadros) com %s",
+      evento("DSI host: error st0=%08lx st1=%08lx (+%lu frames) with %s",
              (unsigned long)st0, (unsigned long)st1, (unsigned long)(err - s_dsi_erros_ant),
              app ? app : "a home");
     }
     s_dsi_erros_ant = err;
   }
 
-  // Por tarefa: CPU presa em alta, stack no fim, nascimento. O estado anterior
-  // de cada uma e reconstruido aqui - as que sumiram ficam de fora.
+  // Per task: CPU stuck high, stack nearly exhausted, birth. The previous state
+  // of each is rebuilt here - those that vanished are left out.
   static anterior_t novo_ant[MON_MAX_TAREFAS];
   for (UBaseType_t i = 0; i < n; ++i) {
     const char* nome = nome_efetivo(s_status[i]);
@@ -558,7 +558,7 @@ static void amostrar(bool primeira)
       if (pct > CPU_TAREFA_ALTA) {
         if (++b.seg_alta >= CPU_TAREFA_SEG && !b.alerta_cpu) {
           b.alerta_cpu = true;
-          evento("%s em %.0f%% de CPU ha %ds", nome, (double)pct, b.seg_alta);
+          evento("%s at %.0f%% CPU for %ds", nome, (double)pct, b.seg_alta);
         }
       } else {
         b.seg_alta = 0;
@@ -568,7 +568,7 @@ static void amostrar(bool primeira)
     const uint32_t pilha = (uint32_t)s_status[i].usStackHighWaterMark * sizeof(StackType_t);
     if (!b.alerta_pilha && pilha < PILHA_BAIXA) {
       b.alerta_pilha = true;
-      evento("pilha de %s quase no fim: %luB livres", nome, (unsigned long)pilha);
+      evento("stack of %s nearly full: %luB free", nome, (unsigned long)pilha);
     }
   }
   if (!primeira) {
@@ -585,9 +585,9 @@ static void amostrar(bool primeira)
   memcpy(s_ant, novo_ant, sizeof(anterior_t) * n);
   s_n_ant = (int)n;
 
-  // ---- memoria do minuto: a fragmentacao vira numero ----------------------
-  // frag % = 1 - (maior bloco / livre): 0 = tudo num pedaco so; quanto maior,
-  // mais picado esta o heap interno. 'blocos' = pedacos livres separados.
+  // ---- the minute's memory: fragmentation becomes a number ----------------
+  // frag % = 1 - (largest block / free): 0 = all in one piece; the higher,
+  // the more chopped up the internal heap. 'blocos' = separate free chunks.
   {
     multi_heap_info_t hi;
     heap_caps_get_info(&hi, MALLOC_CAP_INTERNAL);
@@ -617,12 +617,12 @@ static void amostrar(bool primeira)
     }
   }
 
-  // ---- quadros do minuto: o custo da interface ----------------------------
-  // So grava minuto que TEVE quadro: tela parada nao gasta escrita no cartao.
-  // MB de copia = leitura + escrita na PSRAM (x4 por pixel); desenhado = so
-  // escrita (x2); ms = media por quadro. p1..p4mais = voltas da interface que
-  // terminaram em quadro, por quantos periodos do painel levaram - acima de
-  // 1 o quadro perdeu a vez.
+  // ---- the minute's frames: the cost of the interface ---------------------
+  // Only writes a minute that HAD frames: an idle screen costs no card writes.
+  // Copy MB = read + write in PSRAM (x4 per pixel); drawn = write
+  // only (x2); ms = average per frame. p1..p4mais = interface rounds that
+  // ended in a frame, by how many panel periods they took - above
+  // 1 the frame missed its turn.
   if (++s_qd_amostras >= 60) {
     s_qd_amostras = 0;
     comp_estat_t a;
@@ -645,8 +645,8 @@ static void amostrar(bool primeira)
                ms(a.us_volta - b.us_volta),
                (unsigned long)(a.voltas[0] - b.voltas[0]), (unsigned long)(a.voltas[1] - b.voltas[1]),
                (unsigned long)(a.voltas[2] - b.voltas[2]), (unsigned long)(a.voltas[3] - b.voltas[3]));
-      // O formato mudou com o modo direto: arquivo novo ("quadros2"), para
-      // nao misturar colunas com o do dia.
+      // The format changed with direct mode: a new file ("quadros2"), so as
+      // not to mix columns with the day's one.
       anexar("quadros2",
              "hora,uptime_s,quadros,cheios,estouros,mb_desenhado,mb_sinc,mb_rolagem_dma,"
              "ms_desenho,ms_copia,ms_espera,ms_rolagem,ms_volta,p1,p2,p3,p4mais\n",
@@ -655,7 +655,7 @@ static void amostrar(bool primeira)
     s_qd_ant = a;
   }
 
-  // ---- resumo do minuto ---------------------------------------------------
+  // ---- the minute's summary -----------------------------------------------
   if (nova.cpu > s_min_cpu_max)          { s_min_cpu_max = nova.cpu; }
   if (nova.ram.livre < s_min_ram)        { s_min_ram = nova.ram.livre; }
   if (nova.psram.livre < s_min_psram)    { s_min_psram = nova.psram.livre; }
@@ -671,9 +671,9 @@ static void amostrar(bool primeira)
     s_min_cpu_max = 0; s_min_ram = s_min_psram = s_min_bloco = UINT32_MAX; s_min_amostras = 0;
   }
 
-  // Pilha minima por tarefa: uma linha a cada 10 min, "nome=livreB" separados
-  // por ';'. O arquivo e curto (144 linhas/dia) e da para comparar com o
-  // tamanho declarado de cada tarefa.
+  // Minimum stack per task: one line every 10 min, "nome=livreB" separated
+  // by ';'. The file is short (144 lines/day) and can be compared with the
+  // declared size of each task.
   if (agora - s_pilha_gravada_em >= PILHAS_PERIODO && s_pilha_n > 0) {
     s_pilha_gravada_em = agora;
     char h[12];
@@ -687,7 +687,7 @@ static void amostrar(bool primeira)
     anexar("pilhas", "hora,uptime_s,tarefa=pilha_livre_min_bytes\n", s_pilha_linha, 1, sizeof(s_pilha_linha));
   }
 
-  // Eventos pendentes vao ao cartao de uma vez.
+  // Pending events go to the card in one go.
   if (s_n_pend > 0) {
     anexar("eventos", "hora,uptime_s,evento\n", &s_pend[0][0], s_n_pend, sizeof(s_pend[0]));
     s_n_pend = 0;
@@ -702,13 +702,13 @@ static void vTaskMonitor(void*)
   amostrar(true);
   TickType_t marca = xTaskGetTickCount();
   for (;;) {
-    // TELA APAGADA: uma amostra a cada 10 s, e a tarefa DORME os 10 s - antes
-    // ela acordava todo segundo so para pular nove (cada acordada tira o P4
-    // do sono leve). A foto das tarefas e uma secao critica (~1 ms, a pilha
-    // de cada tarefa lida byte a byte) e ninguem olha o app Tarefas no
-    // escuro; os alarmes de RAM/CPU chegam ate 10 s depois. Ao acordar, volta
-    // a 1 s na proxima volta - ate 10 s depois (a CPU de cada janela vem de
-    // deltas, vale para qualquer intervalo).
+    // SCREEN OFF: one sample every 10 s, and the task SLEEPS the 10 s - before,
+    // it woke every second just to skip nine (each wake-up pulls the P4 out
+    // of light sleep). The task snapshot is a critical section (~1 ms, each task's
+    // stack read byte by byte) and nobody looks at the Tasks app in the
+    // dark; RAM/CPU alarms arrive up to 10 s later. On waking, it goes back
+    // to 1 s on the next round - up to 10 s later (each window's CPU comes from
+    // deltas, valid for any interval).
     vTaskDelayUntil(&marca, pdMS_TO_TICKS(tab5_power_em_repouso() ? 10000 : 1000));
     if (s_zerar_pedido) { s_zerar_pedido = false; zerar_agora(); }
     amostrar(false);
@@ -722,17 +722,17 @@ void tab5_monitor_iniciar(void)
 {
   if (s_mutex) { return; }
 #if ( configGENERATE_RUN_TIME_STATS != 1 )
-  ESP_LOGE(TAG, "CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS desligado - sem CPU por tarefa");
+  ESP_LOGE(TAG, "CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS disabled - no per-task CPU");
 #endif
   s_mutex  = xSemaphoreCreateMutex();
-  // Na PSRAM: so a tarefa do monitor le isto, e o uxTaskGetSystemState
-  // suspende o escalonador, nao desliga o cache.
+  // In PSRAM: only the monitor task reads this, and uxTaskGetSystemState
+  // suspends the scheduler, it does not turn the cache off.
   s_status = (TaskStatus_t*)heap_caps_malloc(MON_MAX_TAREFAS * sizeof(TaskStatus_t), MALLOC_CAP_SPIRAM);
-  if (!s_mutex || !s_status) { ESP_LOGE(TAG, "sem memoria"); return; }
+  if (!s_mutex || !s_status) { ESP_LOGE(TAG, "out of memory"); return; }
   {
     TaskHandle_t h = nullptr;
     xTaskCreatePinnedToCore(vTaskMonitor, "monitor", 6144, nullptr, 1, &h, tskNO_AFFINITY);
-    tab5_dono_registrar(h, DONO_SERVICO, "Monitor");   // ver hal/tab5_donos.hpp
+    tab5_dono_registrar(h, DONO_SERVICO, "Monitor");   // see hal/tab5_donos.hpp
   }
 }
 
@@ -776,9 +776,9 @@ int tab5_monitor_eventos(mon_evento_t* out, int max)
 
 uint32_t tab5_monitor_total_eventos(void) { return s_ev_total; }
 
-// Chamada pela INTERFACE: so pede. Quem zera e a tarefa do monitor, no
-// comeco da proxima amostra - o estado dos gatilhos e a queue do cartao sao
-// dela, e mexer neles de outra tarefa seria corrida.
+// Called by the INTERFACE: it only asks. The monitor task does the reset, at the
+// start of the next sample - the trigger state and the card queue are
+// its, and touching them from another task would be a race.
 void tab5_monitor_zerar_picos(void) { s_zerar_pedido = true; }
 
 bool tab5_monitor_programa(uint32_t* usado, uint32_t* total)

@@ -39,8 +39,14 @@ come from upstream and are in Portuguese.
   root from the time zone (Australia/New Zealand `msh/ANZ`, Europe
   `msh/EU_868`, North America `msh/US`, Japan, India; Brazil keeps Mesh
   Brasil) instead of always Mesh Brasil, and shows which in its name.
-- README and the docs MESHTASTIC, BERRY_API, VARIANTES, VERSIONAMENTO and
-  TERCEIROS in English.
+- README and all the reference docs in English (API, ARQUITETURA, BERRY,
+  BERRY_API, COMPOSITOR, ESCREVENDO_APPS, MESHTASTIC, RADIO_C6, TERCEIROS,
+  USB_A_E_FONE, VARIANTES, VERSIONAMENTO).
+- Code comments, serial-log messages (`ESP_LOGx`), console diagnostics, the
+  system monitor's events and the build scripts' comments and messages in
+  English. Identifiers, the Berry API, settings keys and SD paths are unchanged.
+- Berry example apps: English comments, on-screen text in the interface
+  language (`idioma.escolher`).
 
 ### Fixed
 - Wi-Fi: a 32-character SSID or a 64-digit hex key was cut by one character

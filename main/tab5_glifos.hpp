@@ -1,35 +1,35 @@
-// CACHE DE GLIFOS - texto suave sem refazer a letra a cada desenho.
+// GLYPH CACHE - smooth text without re-rendering the letter on every draw.
 //
-// O M5GFX desenha uma letra VLW assim (lgfx_fonts.cpp, VLWfont::drawChar):
-// le o bitmap de cinza da letra e, para CADA pixel de borda suavizada, calcula
-// a mistura com o fundo e faz um writeFillRect de 1x1 - mais um por linha de
-// fundo. Uma letra de 30 px vira ~200 chamadas, cada uma passando pelo
-// rastreador do compositor. A medida por app mostrou que isso e quase todo o
-// custo de abrir um app com texto (Tarefas, Energia, Ajustes, home).
+// M5GFX draws a VLW letter like this (lgfx_fonts.cpp, VLWfont::drawChar):
+// it reads the letter's greyscale bitmap and, for EACH antialiased edge pixel, computes
+// the blend with the background and does a 1x1 writeFillRect - plus one per
+// background line. A 30 px letter becomes ~200 calls, each one going through the
+// compositor's tracker. Per-app measurement showed this is almost all the
+// cost of opening an app with text (Tasks, Power, Settings, home).
 //
-// Aqui a letra e desenhada UMA vez, pelo proprio M5GFX, num rascunho - o
-// resultado e o mesmo pixel a pixel - e guardada como imagem RGB565 para
-// aquela combinacao de fonte, cor e fundo. Da segunda vez em diante, a letra
-// inteira e UM pushImage.
+// Here the letter is drawn ONCE, by M5GFX itself, on a scratch sprite - the
+// result is identical pixel for pixel - and stored as an RGB565 image for
+// that combination of font, colour and background. From the second time on, the whole
+// letter is ONE pushImage.
 //
-// So entra no cache o que da para reproduzir exatamente:
-//   - texto com FUNDO (cor de fundo diferente da de frente): o bloco da letra
-//     e todo escrito, fundo incluso, e nao depende do que havia embaixo;
-//   - texto TRANSPARENTE: guarda a mascara de cinza (vale para toda cor); o
-//     bloco e lido UMA vez, misturado com a mesma conta do original e escrito
-//     UMA vez - o original le e escreve linha por linha;
-//   - tamanho 1 (fontes no tamanho nativo, que e o padrao do sistema);
-//   - letra que nao invade a anterior (o M5GFX nao repinta o fundo onde a
-//     letra de antes ja pintou - ali ele cai no caminho original).
-// Todo o resto (texto transparente, espaco, letra que falta na fonte) segue
-// pelo caminho original, sem diferenca nenhuma.
+// Only what can be reproduced exactly goes into the cache:
+//   - text WITH A BACKGROUND (background colour different from the foreground): the letter's
+//     block is written in full, background included, and does not depend on what was underneath;
+//   - TRANSPARENT text: stores the grey mask (valid for any colour); the
+//     block is read ONCE, blended with the same sum as the original and written
+//     ONCE - the original reads and writes line by line;
+//   - size 1 (fonts at native size, which is the system default);
+//   - a letter that does not overlap the previous one (M5GFX does not repaint the background where the
+//     previous letter has already painted - there it falls back to the original path).
+// Everything else (transparent text, space, a letter missing from the font) goes
+// through the original path, with no difference at all.
 
 #pragma once
 
 #include <M5Unified.h>
 
-// Uma fonte VLW do M5GFX com o cache na frente do drawChar. Mesmo tipo
-// (ft_vlw), mesma carga (loadFont), mesmas metricas - so desenha mais rapido.
+// An M5GFX VLW font with the cache in front of drawChar. Same type
+// (ft_vlw), same loading (loadFont), same metrics - it just draws faster.
 struct FonteRapida : public lgfx::VLWfont
 {
   size_t drawChar(lgfx::LGFXBase* gfx, int32_t x, int32_t y, uint16_t c,
@@ -42,24 +42,24 @@ private:
 };
 
 typedef struct {
-  uint32_t acertos;    // letras desenhadas pela imagem guardada
-  uint32_t faltas;     // letras desenhadas pela 1a vez (e guardadas)
-  uint32_t recusas;    // letras que seguiram o caminho original
-  uint32_t rec_espaco;     // ...espaco (so fundo: ja e barato)
-  uint32_t rec_sem_fundo;  // ...texto transparente num canvas que nao se le
-  uint32_t rec_invade;     // ...a letra de antes invade esta
-  uint32_t rec_destino;    // ...canvas que nao e de 16 bits, ou com paleta
-  uint32_t rec_escala;     // ...tamanho escalado (setTextSize != 1)
-  uint32_t rec_outro;      // ...letra fora da fonte, grande demais, sem memoria
-  uint32_t limpezas;   // vezes que o cache encheu e recomecou
-  uint32_t entradas;   // letras guardadas agora
-  uint32_t bytes;      // PSRAM usada pelas imagens agora
+  uint32_t acertos;    // letters drawn from the stored image
+  uint32_t faltas;     // letters drawn for the 1st time (and stored)
+  uint32_t recusas;    // letters that took the original path
+  uint32_t rec_espaco;     // ...space (background only: already cheap)
+  uint32_t rec_sem_fundo;  // ...transparent text on a canvas that cannot be read
+  uint32_t rec_invade;     // ...the previous letter overlaps this one
+  uint32_t rec_destino;    // ...canvas that is not 16-bit, or has a palette
+  uint32_t rec_escala;     // ...scaled size (setTextSize != 1)
+  uint32_t rec_outro;      // ...letter not in the font, too big, out of memory
+  uint32_t limpezas;   // times the cache filled up and restarted
+  uint32_t entradas;   // letters stored now
+  uint32_t bytes;      // PSRAM used by the images now
 } glifos_estat_t;
 
 void tab5_glifos_estat(glifos_estat_t* out);
 
-// UM CANVAS RGB565 SEM GIRO cuja memoria o texto transparente pode tocar
-// direto (uma camada de app Berry): quem desenha nele avisa aqui, e desliga
-// (nullptr) ao parar. Sem isto, texto num canvas que nao e a tela vai pelo
-// readRect do M5GFX, que copia pixel a pixel (~40 us por letra).
+// AN UNROTATED RGB565 CANVAS whose memory transparent text may touch
+// directly (a Berry app layer): whoever draws on it registers here, and clears it
+// (nullptr) on stopping. Without this, text on a canvas that is not the screen goes through
+// M5GFX's readRect, which copies pixel by pixel (~40 us per letter).
 void tab5_glifos_canvas_direto(const lgfx::LGFXBase* gfx, uint16_t* buf, int largura, int altura);

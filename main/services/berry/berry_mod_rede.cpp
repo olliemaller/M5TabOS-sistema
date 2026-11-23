@@ -1,28 +1,28 @@
-// Modulo Berry 'rede' - a internet para o script (services/tab5_rede.hpp).
-// Ver berry_apps.cpp (o motor) e berry_interno.hpp.
+// Berry module 'rede' - the internet for the script (services/tab5_rede.hpp).
+// See berry_apps.cpp (the engine) and berry_interno.hpp.
 //
-// O SCRIPT NUNCA ESPERA A REDE. O script roda com prazo curto (PRAZO_EVENTO_MS,
-// 2 s) e desenhar() trava a interface: um GET que demora segundos no meio
-// deles derrubaria o script e congelaria a tela. Por isso e em DOIS tempos:
-// rede.pedir(url) so ENTREGA o pedido a uma tarefa propria e volta na
-// hora; o app olha rede.estado() no desenhar() e, com "pronto", le
-// rede.resposta(). O trabalho redesenha o app quando termina.
+// THE SCRIPT NEVER WAITS FOR THE NETWORK. The script runs with a short deadline (PRAZO_EVENTO_MS,
+// 2 s) and desenhar() blocks the UI: a GET that takes seconds in the middle of
+// them would bring down the script and freeze the screen. That is why it works in TWO steps:
+// rede.pedir(url) only HANDS the request to a dedicated task and returns
+// straight away; the app checks rede.estado() in desenhar() and, on "pronto", reads
+// rede.resposta(). The job redraws the app when it finishes.
 //
-// UM PEDIDO POR VEZ NO SISTEMA INTEIRO (a tarefa e uma so), e a resposta e do
-// app que pediu: nenhum outro a ve.
+// ONE REQUEST AT A TIME ACROSS THE WHOLE SYSTEM (there is only one task), and the reply belongs to the
+// app that asked: no other sees it.
 //
-// POR QUE UMA TAREFA PROPRIA ("rede_berry"), e nao o worker do sistema: o TLS
-// precisa de ~12 KB de pilha (a capa da Musica usa o mesmo numero) e o worker
-// tem 6 KB, compartilhados com todo mundo - e um download lento o prenderia. A
-// pilha fica na PSRAM (nao gasta RAM interna) e a tarefa e criada no primeiro
-// pedido e MANTIDA viva, dormindo, para nao recriar pilha a cada pedido. O servico tab5_rede ja
-// declara a rede e o processamento como em uso durante a transferencia
-// (kernel/recursos.h), entao o repouso nao entra no meio do download.
+// WHY A DEDICATED TASK ("rede_berry"), and not the system worker: TLS
+// needs ~12 KB of stack (Music's cover art uses the same number) and the worker
+// has 6 KB, shared with everyone - and a slow download would hold it up. The
+// stack lives in PSRAM (it does not use internal RAM) and the task is created on the first
+// request and KEPT alive, sleeping, so as not to recreate the stack on every request. The tab5_rede service already
+// declares the network and processing as in use during the transfer
+// (kernel/recursos.h), so idle does not kick in mid-download.
 //
-// O DONO SAIU: rede_soltar() (chamada pelo motor quando a maquina do app e
-// apagada) marca "cancelar". Se o trabalho ja terminou, o buffer e liberado
-// ali mesmo; se ainda roda, o proprio trabalho larga o que baixou ao ver que
-// o dono saiu - o buffer nunca fica orfao.
+// THE OWNER LEFT: rede_soltar() (called by the engine when the app's machine is
+// deleted) marks "cancel". If the job has already finished, the buffer is freed
+// right there; if it is still running, the job itself drops what it downloaded when it sees that
+// the owner has left - the buffer is never orphaned.
 
 #include <stdio.h>
 #include "idioma.h"
@@ -30,14 +30,14 @@
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "freertos/idf_additions.h"   // xTaskCreatePinnedToCoreWithCaps - a pilha na PSRAM
+#include "freertos/idf_additions.h"   // xTaskCreatePinnedToCoreWithCaps - the stack in PSRAM
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "tab5_rede.hpp"
 #include "berry_interno.hpp"
 
-static const size_t CORPO_PADRAO = 64 * 1024;    // o max_bytes de rede.pedir quando o script nao diz
-static const size_t CORPO_TETO   = 256 * 1024;   // e o maximo que ele pode pedir (a resposta vira texto do Berry)
+static const size_t CORPO_PADRAO = 64 * 1024;    // rede.pedir's max_bytes when the script does not say
+static const size_t CORPO_TETO   = 256 * 1024;   // and the most it may ask for (the reply becomes Berry text)
 #define URL_MAX 256
 #define PILHA_REDE 12288   // TLS + HTTP
 
@@ -46,22 +46,22 @@ static const char* TAG = "berry.rede";
 enum { R_PARADO, R_BAIXANDO, R_PRONTO, R_ERRO };
 
 typedef struct {
-  const berry_app_t* dono;   // quem pediu (nullptr = ninguem)
-  bool  rodando;             // o trabalho solto esta vivo
-  bool  cancelar;            // o dono desistiu ou saiu: o trabalho descarta o que vier
-  bool  tem_resposta;        // terminou: buf e info esperam o dono
-  char* buf;                 // o corpo, com '\0' (nullptr = falhou: info.erro diz por que)
+  const berry_app_t* dono;   // who asked (nullptr = nobody)
+  bool  rodando;             // the detached job is alive
+  bool  cancelar;            // the owner gave up or left: the job discards whatever comes
+  bool  tem_resposta;        // finished: buf and info wait for the owner
+  char* buf;                 // the body, with '\0' (nullptr = failed: info.erro says why)
   tab5_rede_http_t info;
-  size_t max;                // o limite do corpo deste pedido
+  size_t max;                // this request's body limit
   char   url[URL_MAX];
 } pedido_rede_t;
 
 static pedido_rede_t s_p;
-static portMUX_TYPE  s_trava = portMUX_INITIALIZER_UNLOCKED;   // so campos: nada pesado dentro dela
-static TaskHandle_t  s_tarefa = nullptr;   // criada no primeiro rede.pedir e mantida viva
+static portMUX_TYPE  s_trava = portMUX_INITIALIZER_UNLOCKED;   // fields only: nothing heavy inside it
+static TaskHandle_t  s_tarefa = nullptr;   // created on the first rede.pedir and kept alive
 
-// O estado que 'app' enxerga. Chamar com a trava. Cancelado ja e "parado"
-// (o trabalho ainda esta acabando, mas o script nao tem mais o que esperar).
+// The state 'app' sees. Call with the lock held. Cancelled is already "parado" (stopped)
+// (the job is still finishing, but the script has nothing more to wait for).
 static int estado_de(const berry_app_t* app)
 {
   if (!app || s_p.dono != app || s_p.cancelar) { return R_PARADO; }
@@ -70,7 +70,7 @@ static int estado_de(const berry_app_t* app)
   return R_PARADO;
 }
 
-// O 'parar' do tab5_rede_http: o laco de leitura pergunta a cada pedaco.
+// tab5_rede_http's 'parar': the read loop asks on every chunk.
 static bool cancelado(void)
 {
   portENTER_CRITICAL(&s_trava);
@@ -79,9 +79,9 @@ static bool cancelado(void)
   return c;
 }
 
-// A tarefa: dorme ate rede.pedir acorda-la, baixa, guarda o resultado e volta
-// a dormir. url e max foram gravados por r_pedir antes de acordar, e ninguem
-// mexe neles enquanto 'rodando'.
+// The task: sleeps until rede.pedir wakes it, downloads, stores the result and goes back
+// to sleep. url and max were written by r_pedir before waking it, and nobody
+// touches them while 'rodando'.
 static void tarefa_rede(void*)
 {
   for (;;) {
@@ -94,7 +94,7 @@ static void tarefa_rede(void*)
     char* descartar = nullptr;
     portENTER_CRITICAL(&s_trava);
     s_p.rodando = false;
-    if (s_p.cancelar) {   // ninguem espera: o que baixou nao tem dono
+    if (s_p.cancelar) {   // nobody is waiting: what was downloaded has no owner
       descartar = buf;
       s_p.cancelar = false;
       s_p.dono = nullptr;
@@ -106,11 +106,11 @@ static void tarefa_rede(void*)
     }
     portEXIT_CRITICAL(&s_trava);
     free(descartar);
-    sistema_pedir_redesenho();   // o app ve o "pronto" no proximo desenhar()
+    sistema_pedir_redesenho();   // the app sees "pronto" on the next desenhar()
   }
 }
 
-// O app fechou (ou cancelou): ver o comentario do topo.
+// The app closed (or cancelled): see the comment at the top.
 void rede_soltar(const berry_app_t* app)
 {
   char* liberar = nullptr;
@@ -129,8 +129,8 @@ void rede_soltar(const berry_app_t* app)
   free(liberar);
 }
 
-// ip() - {conectado, ip, mascara, gateway, dns1, dns2, ipv6, mac, nome} do
-// aparelho na rede, ou nil sem interface de Wi-Fi. Sem IP: conectado false.
+// ip() - {conectado, ip, mascara, gateway, dns1, dns2, ipv6, mac, nome} of the
+// device on the network, or nil with no Wi-Fi interface. Without an IP: conectado false.
 static int r_ip(bvm* vm)
 {
   tab5_rede_ip_t r;
@@ -151,12 +151,12 @@ static int r_ip(bvm* vm)
   be_return(vm);
 }
 
-// pedir(url [, max_bytes]) - comeca um GET (http:// ou https://, ate 255
-// letras; segue redirecionamentos). O corpo e guardado ate max_bytes (padrao
-// 64 KB, no maximo 256 KB; o que passar e cortado). true = comecou; false =
-// ja ha um pedido em curso no sistema (de qualquer app), URL invalida ou a
-// tarefa nao subiu. Com uma resposta que ninguem leu: se for deste app ela e
-// descartada e o pedido novo comeca; se for de OUTRO app, recusa (false).
+// pedir(url [, max_bytes]) - starts a GET (http:// or https://, up to 255
+// characters; follows redirects). The body is kept up to max_bytes (default
+// 64 KB, at most 256 KB; anything beyond is cut). true = started; false =
+// there is already a request in progress in the system (from any app), invalid URL or the
+// task did not come up. With a reply nobody has read: if it is this app's it is
+// discarded and the new request starts; if it belongs to ANOTHER app, it refuses (false).
 static int r_pedir(bvm* vm)
 {
   const berry_app_t* app = C->app;
@@ -185,9 +185,9 @@ static int r_pedir(bvm* vm)
     if (ok && !s_tarefa &&
         xTaskCreatePinnedToCoreWithCaps(tarefa_rede, "rede_berry", PILHA_REDE, nullptr, 1, &s_tarefa,
                                         tskNO_AFFINITY, MALLOC_CAP_SPIRAM) != pdPASS) {
-      ESP_LOGW(TAG, "a tarefa da rede nao subiu");
+      ESP_LOGW(TAG, "the network task did not come up");
       s_tarefa = nullptr;
-      portENTER_CRITICAL(&s_trava);   // desfaz o que este pedido gravou
+      portENTER_CRITICAL(&s_trava);   // undo what this request wrote
       s_p.rodando = false;
       s_p.dono = nullptr;
       portEXIT_CRITICAL(&s_trava);
@@ -199,8 +199,8 @@ static int r_pedir(bvm* vm)
   be_return(vm);
 }
 
-// estado() - "parado" (nada pedido, ou ja lido/cancelado), "baixando",
-// "pronto" (rede.resposta() tem o resultado) ou "erro" (resposta() tem o motivo).
+// estado() - "parado" (nothing requested, or already read/cancelled), "baixando" (downloading),
+// "pronto" (rede.resposta() has the result) or "erro" (resposta() has the reason).
 static int r_estado(bvm* vm)
 {
   static const char* const NOME[] = { "parado", "baixando", "pronto", "erro" };
@@ -211,11 +211,11 @@ static int r_estado(bvm* vm)
   be_return(vm);
 }
 
-// resposta() - {status, texto, tipo, final, ms, erro} quando o estado e
-// "pronto" ou "erro", e LIBERA o resultado (o estado volta a "parado"); nil
-// se nao ha resposta deste app. status: o HTTP (200, 404...; 0 = nao
-// conectou, e 'erro' diz por que); texto: o corpo; tipo: o Content-Type;
-// final: a URL depois dos redirecionamentos; ms: quanto levou.
+// resposta() - {status, texto, tipo, final, ms, erro} when the state is
+// "pronto" or "erro", and RELEASES the result (the state goes back to "parado"); nil
+// if there is no reply for this app. status: the HTTP one (200, 404...; 0 = did not
+// connect, and 'erro' says why); texto: the body; tipo: the Content-Type;
+// final: the URL after redirects; ms: how long it took.
 static int r_resposta(bvm* vm)
 {
   portENTER_CRITICAL(&s_trava);
@@ -225,9 +225,9 @@ static int r_resposta(bvm* vm)
   portEXIT_CRITICAL(&s_trava);
   if (e != R_PRONTO && e != R_ERRO) { be_return_nil(vm); }
 
-  // O resultado so e tirado do estado DEPOIS de o mapa pronto: se montar o
-  // texto estourar a memoria do Berry (erro no script), o buffer segue com o
-  // estado e e liberado ao fechar o app - nunca fica orfao.
+  // The result is only taken out of the state AFTER the map is ready: if building the
+  // text runs Berry out of memory (an error in the script), the buffer stays with the
+  // state and is freed when the app closes - it is never orphaned.
   mapa_novo(vm);
   m_int(vm, "status", info.status);
   m_txt(vm, "texto", corpo);
@@ -247,17 +247,17 @@ static int r_resposta(bvm* vm)
   be_return(vm);
 }
 
-// cancelar() - desiste do pedido em curso (ou joga fora a resposta que
-// ninguem leu). So o do proprio app.
+// cancelar() - gives up on the request in progress (or throws away the reply
+// nobody read). Only the app's own.
 static int r_cancelar(bvm* vm)
 {
   rede_soltar(C->app);
   be_return_nil(vm);
 }
 
-// codificar(texto) - o texto para usar dentro de uma URL ("a b&c" -> "a+b%26c").
-// O buffer cabe o maximo de uma URL (URL_MAX letras): o que passar disso nao
-// serviria para rede.pedir de qualquer jeito.
+// codificar(texto) - the text for use inside a URL ("a b&c" -> "a+b%26c").
+// The buffer holds the maximum of a URL (URL_MAX characters): anything beyond that would not
+// work for rede.pedir anyway.
 static int r_codificar(bvm* vm)
 {
   char out[URL_MAX * 3];

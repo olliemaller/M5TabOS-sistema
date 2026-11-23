@@ -1,21 +1,21 @@
-// Animacao do bloqueio: Onda de pendulos: cada bola num ritmo um pouco diferente.
-// (parte do bloqueio_anim; o que e comum a todas esta no bloqueio_anim_interno.hpp).
+// Lock screen animation: Pendulum wave: each ball at a slightly different rhythm.
+// (part of bloqueio_anim; what is common to all of them is in bloqueio_anim_interno.hpp).
 
 #include "bloqueio_anim_interno.hpp"
 
 namespace bq_anim {
 
 // ---------------------------------------------------------------------------
-// 8. PENDULOS - a "onda de pendulos": cada bola num ritmo um pouco diferente,
-//    e os desenhos (serpente, duas fileiras, caos, fileira de novo) se repetem
+// 8. PENDULUMS - the "pendulum wave": each ball at a slightly different rhythm,
+//    and the patterns (serpent, two rows, chaos, a row again) repeat
 // ---------------------------------------------------------------------------
 namespace {
 static const int N_PEND = 18;
 struct Pendulos { float t; float ox[N_PEND]; };
 }
 
-// Bola i faz (K + i) idas e vindas a cada CICLO segundos: no fim do ciclo
-// todas voltam juntas, e no meio passam pelas figuras.
+// Ball i makes (K + i) swings back and forth every CICLO seconds: at the end of the cycle
+// they all come back together, and in between they pass through the figures.
 static const float PEND_CICLO = 60.0f;
 static const int   PEND_K     = 12;
 static const int   PEND_R     = 12;
@@ -33,7 +33,7 @@ static float pend_y(int i)
 void pendulos_iniciar(void)
 {
   Pendulos& s = bq_estado_como<Pendulos>();
-  s.t = 0;   // todas juntas, comecando a se separar
+  s.t = 0;   // all together, starting to separate
   for (int i = 0; i < N_PEND; ++i) { s.ox[i] = pend_x(i, 0); }
 }
 

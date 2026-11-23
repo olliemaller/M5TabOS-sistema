@@ -1,39 +1,39 @@
-# ESTATICOS DOS APPS E SERVICOS NA PSRAM, SEM TOCAR NOS ARQUIVOS.
+# STATICS OF APPS AND SERVICES IN PSRAM, WITHOUT TOUCHING THE FILES.
 #
-# O .bss de cada arquivo desta lista (variaveis static e globais sem valor
-# inicial) sai da SRAM interna e vai para a secao .ext_ram.bss, na PSRAM. E o
-# mesmo efeito de marcar cada variavel com EXT_RAM_BSS_ATTR, so que por arquivo
-# inteiro: um vetor novo que alguem acrescente num app ja nasce no lugar certo.
+# The .bss of each file in this list (static and global variables with no
+# initial value) leaves internal SRAM and goes to the .ext_ram.bss section, in PSRAM. It is the
+# same effect as marking each variable with EXT_RAM_BSS_ATTR, but per whole
+# file: a new array someone adds to an app is born in the right place already.
 #
-# POR QUE ISSO IMPORTA. A SRAM interna do P4 e ~320 KB de heap e e dela que
-# saem as pilhas de TODAS as tarefas, as filas do FreeRTOS, os buffers DMA do
-# SDIO do C6 e os do painel. Cada KB de .bss interno e um KB a menos para isso,
-# para sempre - inclusive os buffers de um app que esta fechado. Aqui estavam
-# ~75 KB nessa situacao (historico do monitor, pontos do mapa da Trilha, alvos
-# do Radar, quadros do MQTT...).
+# WHY IT MATTERS. The P4's internal SRAM is ~320 KB of heap and from it
+# come the stacks of ALL tasks, the FreeRTOS queues, the DMA buffers of the
+# C6's SDIO and the panel's. Every KB of internal .bss is one KB less for that,
+# forever - including the buffers of an app that is closed. There were
+# ~75 KB in that situation here (monitor history, Trilha map points, Radar
+# targets, MQTT frames...).
 #
-# REGRA PARA ENTRAR NA LISTA. O arquivo nao pode ter NENHUMA variavel que seja
-#   - lida ou escrita dentro de ISR (IRAM_ATTR): durante escrita na flash o
-#     cache fica desligado e a PSRAM some; uma ISR que tocasse nela travaria;
-#   - buffer de DMA: a linha de cache L2 e de 128 B e o DMA exige alinhamento
-#     a ela na PSRAM (ver a piscada azul);
-#   - portMUX / StaticSemaphore_t / StaticTask_t / pilha de tarefa: travas e
-#     pilhas ficam na interna.
-# Conferido arquivo por arquivo. FICAM DE FORA, de proposito: pool_tarefas
-# (pilhas), tab5_marcos (DRAM_ATTR, lido com o cache desligado), tab5_tela e
-# tab5_quadro (ISR do DSI), tab5_camera (ISR), core (ISR do toque), tab5_power,
-# tab5_sd, tab5_log, tab5_donos e fundo (portMUX), e o app_cobra, que nao e
-# mexido daqui.
+# RULE FOR GETTING ON THE LIST. The file may NOT have ANY variable that is
+#   - read or written inside an ISR (IRAM_ATTR): during a flash write the
+#     cache is off and PSRAM disappears; an ISR touching it would hang;
+#   - a DMA buffer: the L2 cache line is 128 B and DMA requires alignment
+#     to it in PSRAM (see the blue flicker);
+#   - portMUX / StaticSemaphore_t / StaticTask_t / a task stack: locks and
+#     stacks stay internal.
+# Checked file by file. LEFT OUT, on purpose: pool_tarefas
+# (stacks), tab5_marcos (DRAM_ATTR, read with the cache off), tab5_tela and
+# tab5_quadro (DSI ISR), tab5_camera (ISR), core (touch ISR), tab5_power,
+# tab5_sd, tab5_log, tab5_donos and fundo (portMUX), and app_cobra, which is not
+# touched from here.
 #
-# PARA CONFERIR depois de compilar: o arquivo sai da lista de DIRAM do
+# TO CHECK after building: the file leaves the DIRAM list of
 #   idf.py size-files
-# e passa a aparecer em "External RAM".
+# and starts appearing under "External RAM".
 
-# O esquema "extram_bss" do IDF mora no esp_wifi/linker.lf, que NAO entra no
-# build do P4 (o WiFi roda no C6, o esp_wifi daqui nao compila). Sem ele o
-# mapeamento abaixo nao casava com nada e o ldgen ficava calado - o .bss
-# continuava na interna. Por isso o esquema e declarado aqui, igual ao dele:
-# as secoes .bss e COMMON do arquivo vao para o alvo extern_ram do sections.ld.
+# IDF's "extram_bss" scheme lives in esp_wifi/linker.lf, which does NOT go into
+# the P4 build (WiFi runs on the C6, esp_wifi here does not compile). Without it the
+# mapping below matched nothing and ldgen stayed silent - the .bss
+# stayed internal. That is why the scheme is declared here, the same as its:
+# the file's .bss and COMMON sections go to the extern_ram target of sections.ld.
 [scheme:m5tabos_extram_bss]
 entries:
   bss -> extern_ram
@@ -43,7 +43,7 @@ entries:
 archive: libmain.a
 entries:
   if SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
-    # apps (so a tarefa de interface e a vaga do proprio app tocam nisto)
+    # apps (only the UI task and the app's own slot touch this)
     app_arquivos (m5tabos_extram_bss)
     app_azimutal (m5tabos_extram_bss)
     app_config (m5tabos_extram_bss)
@@ -68,7 +68,7 @@ entries:
     app_radar (m5tabos_extram_bss)
     app_tarefas (m5tabos_extram_bss)
     app_trilha (m5tabos_extram_bss)
-    # servicos (tarefas proprias, nenhuma ISR)
+    # services (own tasks, no ISR)
     tab5_monitor (m5tabos_extram_bss)
     tab5_mesh (m5tabos_extram_bss)
     tab5_mesh_hora (m5tabos_extram_bss)
@@ -91,15 +91,15 @@ entries:
     tab5_musica_duracao (m5tabos_extram_bss)
     tab5_musica_capa (m5tabos_extram_bss)
     tab5_musica_rede (m5tabos_extram_bss)
-    # imagem e GIF: tarefa do worker, sem ISR nem DMA (o buffer do leitor e heap)
+    # image and GIF: worker task, no ISR or DMA (the reader buffer is heap)
     tab5_imagem (m5tabos_extram_bss)
     tab5_gif (m5tabos_extram_bss)
     tab5_gif_nucleo (m5tabos_extram_bss)
     tab5_video (m5tabos_extram_bss)
     tab5_h264 (m5tabos_extram_bss)
     tab5_terminal (m5tabos_extram_bss)
-    # Fase 4 (12/11): motor que saiu dos apps Trilha, Azimutal e Arquivos.
-    # Tarefa do fundo e worker; nenhuma ISR nem DMA.
+    # Phase 4 (12/11): engine moved out of the Trilha, Azimutal and Arquivos apps.
+    # Background task and worker; no ISR or DMA.
     tab5_trilha (m5tabos_extram_bss)
     tab5_gnss (m5tabos_extram_bss)
     tab5_linhas (m5tabos_extram_bss)
@@ -113,15 +113,15 @@ entries:
     tab5_terminal_web (m5tabos_extram_bss)
     tab5_grove (m5tabos_extram_bss)
     nmea (m5tabos_extram_bss)
-    # IPA da camera (tarefa do ISP e console). O portMUX dele tem valor
-    # inicial diferente de zero: vai para .data, que fica na interna.
+    # Camera IPA (ISP task and console). Its portMUX has a non-zero
+    # initial value: it goes to .data, which stays internal.
     tab5_camera_ipa (m5tabos_extram_bss)
     registro (m5tabos_extram_bss)
     notificacao (m5tabos_extram_bss)
-    # interface (tabelas de fonte e medidas de texto)
+    # UI (font tables and text measurements)
     tab5_ui (m5tabos_extram_bss)
     conversa (m5tabos_extram_bss)
-    # animacoes do bloqueio (so a tarefa de interface desenha; sem ISR nem DMA)
+    # lock-screen animations (only the UI task draws; no ISR or DMA)
     bloqueio_anim (m5tabos_extram_bss)
     bloqueio_anim_bolas (m5tabos_extram_bss)
     bloqueio_anim_fogos (m5tabos_extram_bss)
@@ -135,15 +135,15 @@ entries:
     bloqueio_anim_cometas (m5tabos_extram_bss)
     bloqueio_anim_solar (m5tabos_extram_bss)
     bloqueio_anim_logo (m5tabos_extram_bss)
-    # console (tarefa propria, nenhuma ISR). Ele grava na NVS, mas isso so
-    # proibe PILHA na PSRAM, nao .bss: a escrita na flash copia o que vem da
-    # PSRAM por um buffer interno.
+    # console (own task, no ISR). It writes to NVS, but that only
+    # forbids a STACK in PSRAM, not .bss: the flash write copies what comes from
+    # PSRAM through an internal buffer.
     console (m5tabos_extram_bss)
-    # Os comandos do console, um arquivo por assunto (main/console/): so a
-    # tarefa do console os roda. Conferido (12/11/2026): nenhum portMUX, ISR,
-    # pilha ou buffer de DMA estatico - o DMA de console_sistema e heap.
-    # Eram ~9 KB de textos e retratos (mapa da memoria, energia do C6) que
-    # ficavam na interna para sempre.
+    # The console commands, one file per subject (main/console/): only the
+    # console task runs them. Checked (12/11/2026): no portMUX, ISR,
+    # stack or static DMA buffer - console_sistema's DMA is heap.
+    # It was ~9 KB of text and snapshots (memory map, C6 power) that
+    # stayed internal forever.
     console_bancada (m5tabos_extram_bss)
     console_cartao (m5tabos_extram_bss)
     console_mesh (m5tabos_extram_bss)
@@ -152,19 +152,19 @@ entries:
     console_sistema (m5tabos_extram_bss)
     console_tela (m5tabos_extram_bss)
     console_testes (m5tabos_extram_bss)
-    # Berry (so a variante berry compila; nas outras a linha nao casa com
-    # nada). As vagas dos apps, a camera e o teclado do script: ~9 KB que
-    # ficavam na interna para sempre. So a interface e a tarefa do Berry -
-    # cuja pilha ja e PSRAM - tocam nisto.
+    # Berry (only the berry variant compiles it; in the others the line matches
+    # nothing). The app slots, the camera and the script keyboard: ~9 KB that
+    # stayed internal forever. Only the UI and the Berry task -
+    # whose stack is already PSRAM - touch this.
     berry_apps (m5tabos_extram_bss)
     berry_vm (m5tabos_extram_bss)
     berry_web (m5tabos_extram_bss)
     berry_scripts (m5tabos_extram_bss)
 
-# O lwIP do IDF pede o mesmo (lwip/linker.lf: "* (extram_bss)" quando o .bss
-# pode ir para a PSRAM) e caia no mesmo buraco do esquema ausente. O IDF ja
-# considera o .bss do lwIP seguro fora da interna; aqui so se cumpre o que ele
-# pretendia.
+# IDF's lwIP asks for the same (lwip/linker.lf: "* (extram_bss)" when .bss
+# may go to PSRAM) and fell into the same hole of the missing scheme. IDF already
+# considers lwIP's .bss safe outside internal memory; here we just carry out what it
+# intended.
 [mapping:m5tabos_lwip_extram_bss]
 archive: liblwip.a
 entries:

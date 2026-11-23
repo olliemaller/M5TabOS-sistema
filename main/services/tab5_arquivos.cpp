@@ -32,23 +32,23 @@
 
 static const char* TAG = "arquivos";
 
-// Bloco de copia: o mesmo tamanho que mede 4,6 MB/s lendo do cartao.
+// Copy block: the same size that measures 4.6 MB/s reading from the SD card.
 #define BLOCO            (64 * 1024)
-// Pastas dentro de pastas: alem disso o resto e pulado (e avisado no log).
+// Folders within folders: beyond this the rest is skipped (and noted in the log).
 #define PROFUNDIDADE     8
-// De quanto em quanto o progresso acorda a interface e a barra.
+// How often the progress wakes the UI and the bar.
 #define AVISO_US         (250 * 1000)
-// O que sobra no destino alem dos bytes (o FAT gasta por cluster e diretorio).
+// What is needed on the destination beyond the bytes (FAT spends per cluster and directory).
 #define FOLGA_ESPACO     (1024 * 1024)
-// Caminhos da recursao: cabem os mais longos que o FAT aceita aqui (LFN 128
-// por nome, varios niveis).
+// Recursion paths: the longest ones FAT accepts here fit (LFN 128
+// per name, several levels).
 #define CAMINHO_TRAB     512
 
 #define APPS_RAIZ   TAB5_SD_APPS
 #define BERRY_RAIZ  TAB5_SD_APPS "/Berry"
 
 // ---------------------------------------------------------------------------
-// CAMINHOS
+// PATHS
 // ---------------------------------------------------------------------------
 static bool comeca(const char* c, const char* prefixo)
 {
@@ -97,23 +97,23 @@ static bool existe(const char* c)
 }
 
 // ---------------------------------------------------------------------------
-// PERMISSOES
+// PERMISSIONS
 // ---------------------------------------------------------------------------
-// O que os sistemas deixam nos discos e ninguem quer ver. O '.' cobre a nossa
-// .Lixeira, o "." e o ".." (sem subir de pasta por nome) e o lixo do Mac.
+// What operating systems leave on disks and nobody wants to see. The '.' covers our
+// .Lixeira (recycle bin), "." and ".." (no climbing up folders by name) and the Mac's junk.
 static bool nome_escondido(const char* n)
 {
   return n[0] == '.' || !strcasecmp(n, "System Volume Information") || !strcasecmp(n, "$RECYCLE.BIN");
 }
 
-// Arquivos com senha (cifrada, mas ainda assim) que o sistema guarda em apps/.
+// Files with passwords (encrypted, but even so) that the system keeps in apps/.
 static const char* const SIGILOSOS[] = { "wifi.txt", "wifi_no.txt" };
 
 bool tab5_arq_visivel(const char* c)
 {
   const char* r = raiz_de(c);
   if (!r) { return false; }
-  // Cada parte do caminho depois da raiz.
+  // Each part of the path after the root.
   const char* p = c + strlen(r);
   while (*p) {
     while (*p == '/') { ++p; }
@@ -156,11 +156,11 @@ bool tab5_arq_nome_valido(const char* n)
     if (*p < 0x20 || strchr("/\\:*?\"<>|", *p)) { return false; }
   }
   const char u = n[strlen(n) - 1];
-  return u != ' ' && u != '.';   // o Windows nao abre nome que termina assim
+  return u != ' ' && u != '.';   // Windows won't open a name ending like that
 }
 
 // ---------------------------------------------------------------------------
-// TIPOS
+// TYPES
 // ---------------------------------------------------------------------------
 static bool ext_em(const char* ponto, const char* const* lista)
 {
@@ -181,14 +181,14 @@ tab5_arq_tipo_t tab5_arq_tipo(const char* nome)
   const char* ponto = strrchr(nome, '.');
   if (!ponto || ponto == nome) { return TAB5_ARQ_OUTRO; }
   if (ext_em(ponto, MUSICA)) { return TAB5_ARQ_MUSICA; }
-  if (tab5_imagem_suportada(nome)) { return TAB5_ARQ_IMAGEM; }   // as extensoes de imagem sao do servico
+  if (tab5_imagem_suportada(nome)) { return TAB5_ARQ_IMAGEM; }   // the image extensions belong to the service
   if (ext_em(ponto, TEXTO))  { return TAB5_ARQ_TEXTO; }
   if (!strcasecmp(ponto, ".be")) { return TAB5_ARQ_BERRY; }
   return TAB5_ARQ_OUTRO;
 }
 
 // ---------------------------------------------------------------------------
-// LISTAR
+// LISTING
 // ---------------------------------------------------------------------------
 static bool passa_filtro(const char* nome, const char* filtro)
 {
@@ -206,8 +206,8 @@ static bool passa_filtro(const char* nome, const char* filtro)
   return false;
 }
 
-// Tres comparadores em vez de um com a ordem numa estatica: listar e chamado
-// de mais de uma tarefa (o worker do app, o Berry).
+// Three comparators instead of one with the order in a static: listing is called
+// from more than one task (the app's worker, Berry).
 static int pastas_antes(const tab5_arq_item_t* a, const tab5_arq_item_t* b)
 {
   const bool pa = a->tipo == TAB5_ARQ_PASTA, pb = b->tipo == TAB5_ARQ_PASTA;
@@ -242,7 +242,7 @@ int tab5_arq_listar(const char* pasta, tab5_arq_item_t* out, int max, int* total
 {
   if (total) { *total = 0; }
   if (!tab5_arq_visivel(pasta) || !tab5_volume_montar(pasta)) { return -1; }
-  // O que o gravador do cartao ainda segura tem que aparecer (tamanho, arquivo novo).
+  // What the SD card writer still holds must show up (size, new file).
   if (tab5_volume_de(pasta) == TAB5_VOL_CARTAO) { tab5_sd_gravar_pendentes(); }
   DIR* d = opendir(pasta);
   if (!d) { tab5_volume_desmontar(pasta); return -1; }
@@ -262,7 +262,7 @@ int tab5_arq_listar(const char* pasta, tab5_arq_item_t* out, int max, int* total
     it->tipo  = dir ? TAB5_ARQ_PASTA : tab5_arq_tipo(e->d_name);
     it->bytes = 0;
     it->data  = 0;
-    // stat le so a entrada de diretorio (nao abre o arquivo).
+    // stat reads only the directory entry (doesn't open the file).
     struct stat st;
     if (stat(cheio, &st) == 0) {
       if (!dir && st.st_size > 0) { it->bytes = (uint64_t)st.st_size; }
@@ -329,7 +329,7 @@ uint32_t tab5_arq_maior_numero(const char* pasta, const char* formato)
 }
 
 // ---------------------------------------------------------------------------
-// O ESTADO DO TRABALHO
+// THE JOB STATE
 // ---------------------------------------------------------------------------
 static Trava s_trava;   // s_t
 static tab5_arq_trabalho_t s_t = { };
@@ -339,7 +339,7 @@ static int                 s_notif = -1;
 static int64_t             s_inicio_us = 0;
 static int64_t             s_aviso_us = 0;
 
-// A barra e a interface: "Copiando 45%". 'forcar' = agora, sem esperar o passo.
+// The bar and the UI: "Copying 45%". 'forcar' (force) = now, without waiting for the step.
 static void publicar(bool forcar)
 {
   const int64_t agora = esp_timer_get_time();
@@ -393,12 +393,12 @@ static void anotar_erro(const char* fmt, const char* detalhe)
   char msg[sizeof(s_t.erro)];
   snprintf(msg, sizeof(msg), fmt, detalhe ? detalhe : "");
   s_trava.travar();
-  if (!s_t.erro[0]) { snprintf(s_t.erro, sizeof(s_t.erro), "%s", msg); }   // o primeiro erro e a causa
+  if (!s_t.erro[0]) { snprintf(s_t.erro, sizeof(s_t.erro), "%s", msg); }   // the first error is the cause
   s_trava.destravar();
   ESP_LOGW(TAG, "%s", msg);
 }
 
-// Um pedaco andou: 'bytes' copiados e/ou um arquivo terminado.
+// A chunk progressed: 'bytes' copied and/or a file finished.
 static void passo(uint64_t bytes, bool arquivo, const char* atual)
 {
   const int64_t ms = (esp_timer_get_time() - s_inicio_us) / 1000;
@@ -434,7 +434,7 @@ void tab5_arq_trabalho_visto(void)
 }
 
 // ---------------------------------------------------------------------------
-// OPERACOES RAPIDAS
+// QUICK OPERATIONS
 // ---------------------------------------------------------------------------
 const char* tab5_arq_erro_texto(tab5_arq_erro_t e)
 {
@@ -451,8 +451,8 @@ const char* tab5_arq_erro_texto(tab5_arq_erro_t e)
   }
 }
 
-// O primeiro nome livre em 'pasta': "x.mp3", "x (2).mp3", "x (3).mp3"...
-// Pasta nao tem extensao: "Rock (2)".
+// The first free name in 'pasta': "x.mp3", "x (2).mp3", "x (3).mp3"...
+// A folder has no extension: "Rock (2)".
 static bool nome_livre(const char* pasta, const char* nome, bool e_pasta, char* out, size_t tam)
 {
   snprintf(out, tam, "%s/%s", pasta, nome);
@@ -491,8 +491,8 @@ tab5_arq_erro_t tab5_arq_novo_abrir(tab5_arq_novo_t* a, const char* pasta, const
   if (!eh_pasta(pasta)) { tab5_volume_desmontar(pasta); return TAB5_ARQ_ERRO_DISCO; }
   if (!nome_livre(pasta, nome, false, a->caminho, sizeof(a->caminho))) { tab5_volume_desmontar(pasta); return TAB5_ARQ_ERRO_EXISTE; }
   a->fd = open(a->caminho, O_WRONLY | O_CREAT | O_TRUNC, 0664);
-  if (a->fd < 0) { ESP_LOGW(TAG, "criar %s: %d", a->caminho, errno); tab5_volume_desmontar(pasta); return TAB5_ARQ_ERRO_FALHOU; }
-  return TAB5_ARQ_OK;   // o disco fica seguro ate tab5_arq_novo_fechar
+  if (a->fd < 0) { ESP_LOGW(TAG, "create %s: %d", a->caminho, errno); tab5_volume_desmontar(pasta); return TAB5_ARQ_ERRO_FALHOU; }
+  return TAB5_ARQ_OK;   // the disk stays held until tab5_arq_novo_fechar
 }
 
 bool tab5_arq_novo_escrever(tab5_arq_novo_t* a, const void* dados, size_t n)
@@ -501,7 +501,7 @@ bool tab5_arq_novo_escrever(tab5_arq_novo_t* a, const void* dados, size_t n)
   const uint8_t* p = (const uint8_t*)dados;
   while (n) {
     const ssize_t k = write(a->fd, p, n);
-    if (k <= 0) { return false; }   // disco cheio ou saiu
+    if (k <= 0) { return false; }   // disk full or removed
     p += k;
     n -= (size_t)k;
   }
@@ -528,7 +528,7 @@ tab5_arq_erro_t tab5_arq_renomear(const char* caminho, const char* novo)
   char c[TAB5_ARQ_CAMINHO_MAX + TAB5_ARQ_NOME_MAX];
   snprintf(c, sizeof(c), "%s/%s", pai, novo);
   tab5_arq_erro_t r = TAB5_ARQ_OK;
-  // So trocar maiuscula ("rock" -> "Rock"): o FAT acha o mesmo item, e vale.
+  // Only changing case ("rock" -> "Rock"): FAT finds the same item, and that's allowed.
   const bool mesmo = !strcasecmp(nome_de(caminho), novo);
   if (!strcmp(nome_de(caminho), novo))    { r = TAB5_ARQ_OK; }
   else if (!mesmo && existe(c))           { r = TAB5_ARQ_ERRO_EXISTE; }
@@ -538,22 +538,22 @@ tab5_arq_erro_t tab5_arq_renomear(const char* caminho, const char* novo)
 }
 
 // ---------------------------------------------------------------------------
-// O INDICE DA LIXEIRA
+// THE RECYCLE BIN INDEX
 // ---------------------------------------------------------------------------
-// <raiz>/.Lixeira/.indice, texto, uma linha por item:
-//   nome_na_lixeira<TAB>caminho_original<TAB>epoch_segundos
-// Epoch 0 = o relogio estava sem hora certa. Escondido como a propria lixeira.
+// <root>/.Lixeira/.indice, text, one line per item:
+//   name_in_bin<TAB>original_path<TAB>epoch_seconds
+// Epoch 0 = the clock didn't have the right time. Hidden like the bin itself.
 #define INDICE_NOME      ".indice"
-#define INDICE_MAX       (128 * 1024)   // o que se le de uma vez (cerca de 400 itens)
-#define EPOCH_VALIDA     1700000000     // abaixo disso o relogio nao tinha hora certa
+#define INDICE_MAX       (128 * 1024)   // what is read in one go (about 400 items)
+#define EPOCH_VALIDA     1700000000     // below this the clock didn't have the right time
 
 static void indice_caminho(const char* raiz, char* out, size_t tam)
 {
   snprintf(out, tam, "%s/" TAB5_ARQ_LIXEIRA "/" INDICE_NOME, raiz);
 }
 
-// O indice inteiro, terminado em '\0', na PSRAM (quem chama libera com
-// heap_caps_free). nullptr = nao ha indice.
+// The whole index, '\0'-terminated, in PSRAM (the caller frees it with
+// heap_caps_free). nullptr = there is no index.
 static char* indice_ler(const char* raiz, size_t* tam)
 {
   char c[80];
@@ -577,7 +577,7 @@ static char* indice_ler(const char* raiz, size_t* tam)
   return b;
 }
 
-// Acha a linha de 'nome' em 'indice'; devolve o inicio dela ou nullptr.
+// Finds the line for 'nome' in 'indice'; returns its start or nullptr.
 static const char* indice_linha(const char* indice, const char* nome)
 {
   const size_t ln = strlen(nome);
@@ -589,7 +589,7 @@ static const char* indice_linha(const char* indice, const char* nome)
   return nullptr;
 }
 
-// Tira do indice as linhas de 'nome' (apaga o arquivo se nao sobrar nenhuma).
+// Removes the lines for 'nome' from the index (deletes the file if none are left).
 static void indice_tirar(const char* raiz, const char* nome)
 {
   size_t n = 0;
@@ -627,12 +627,12 @@ static void indice_tirar(const char* raiz, const char* nome)
   heap_caps_free(b);
 }
 
-// Acrescenta a linha do item que acabou de ir para a lixeira.
+// Appends the line for the item that has just gone to the bin.
 static void indice_acrescentar(const char* raiz, const char* nome, const char* origem)
 {
-  // Nome com TAB ou quebra de linha estragaria o formato: fica sem linha (origem desconhecida).
+  // A name with a TAB or line break would break the format: it gets no line (unknown origin).
   if (strpbrk(nome, "\t\n") || strpbrk(origem, "\t\n")) { return; }
-  indice_tirar(raiz, nome);   // sobra de um item que saiu da lixeira por fora
+  indice_tirar(raiz, nome);   // leftover from an item that left the bin by other means
   const time_t agora = time(nullptr);
   char linha[TAB5_ARQ_NOME_MAX + TAB5_ARQ_CAMINHO_MAX + TAB5_ARQ_NOME_MAX + 32];
   const int n = snprintf(linha, sizeof(linha), "%s\t%s\t%lu\n", nome, origem,
@@ -641,8 +641,8 @@ static void indice_acrescentar(const char* raiz, const char* nome, const char* o
   char c[80];
   indice_caminho(raiz, c, sizeof(c));
   const int fd = open(c, O_WRONLY | O_CREAT | O_APPEND, 0664);
-  if (fd < 0) { ESP_LOGW(TAG, "indice da lixeira: %d", errno); return; }
-  if (write(fd, linha, (size_t)n) != n) { ESP_LOGW(TAG, "indice da lixeira: escrita incompleta"); }
+  if (fd < 0) { ESP_LOGW(TAG, "recycle bin index: %d", errno); return; }
+  if (write(fd, linha, (size_t)n) != n) { ESP_LOGW(TAG, "recycle bin index: incomplete write"); }
   close(fd);
 }
 
@@ -661,7 +661,7 @@ tab5_arq_erro_t tab5_arq_apagar(const char* caminho)
     r = TAB5_ARQ_ERRO_EXISTE;
   } else if (rename(caminho, dst) != 0) {
     r = TAB5_ARQ_ERRO_FALHOU;
-    ESP_LOGW(TAG, "para a lixeira %s: %d", caminho, errno);
+    ESP_LOGW(TAG, "to the recycle bin %s: %d", caminho, errno);
   }
   if (r == TAB5_ARQ_OK) { indice_acrescentar(raiz_de(caminho), nome_de(dst), caminho); }
   tab5_volume_desmontar(caminho);
@@ -669,20 +669,20 @@ tab5_arq_erro_t tab5_arq_apagar(const char* caminho)
 }
 
 // ---------------------------------------------------------------------------
-// O TRABALHO DE FUNDO
+// THE BACKGROUND JOB
 // ---------------------------------------------------------------------------
 typedef enum { OP_COPIAR, OP_ESVAZIAR } op_t;
 
 typedef struct {
   op_t     op;
   bool     mover;
-  uint32_t area_geracao;   // recortar+colar: a area que deu origem (0 = nao veio dela)
+  uint32_t area_geracao;   // cut+paste: the clipboard it came from (0 = didn't come from one)
   int      n;
   char     origens[TAB5_ARQ_ITENS_MAX][TAB5_ARQ_CAMINHO_MAX];
   char     destino[TAB5_ARQ_CAMINHO_MAX];
-  bool     segura[TAB5_VOL_N];   // os discos que o trabalho segura do comeco ao fim
-  char     a[CAMINHO_TRAB];      // a origem da vez (a recursao anda nela)
-  char     b[CAMINHO_TRAB];      // o destino da vez
+  bool     segura[TAB5_VOL_N];   // the disks the job holds from start to finish
+  char     a[CAMINHO_TRAB];      // the current source (the recursion walks it)
+  char     b[CAMINHO_TRAB];      // the current destination
   uint8_t* buf;
 } job_t;
 
@@ -705,7 +705,7 @@ static bool segurar_disco(job_t* j, const char* caminho)
   return true;
 }
 
-// Arquivos e bytes de um item (pasta: tudo o que ha dentro e se ve).
+// Files and bytes of an item (folder: everything visible inside it).
 static void contar(job_t* j, int prof, int* itens, uint64_t* bytes)
 {
   struct stat st;
@@ -755,22 +755,22 @@ static bool copiar_arquivo(job_t* j)
     }
     if (!ok) { break; }
     passo((uint64_t)r, false, nullptr);
-    // O cartao e um so: entre os blocos o tocador e o gravador do sistema leem.
+    // There is only one SD card: between blocks the player and the system writer read.
     vTaskDelay(1);
   }
   close(fa);
   if (close(fb) != 0 && ok) { anotar_erro(tr("erro fechando %s"), nome); ok = false; }
-  if (!ok) { unlink(j->b); return false; }   // nada de arquivo pela metade
+  if (!ok) { unlink(j->b); return false; }   // no half-written files
   passo(0, true, nullptr);
   return true;
 }
 
-// Copia j->a para j->b (j->b ainda nao existe). Pasta: a arvore visivel.
+// Copies j->a to j->b (j->b doesn't exist yet). Folder: the visible tree.
 static bool copiar_item(job_t* j, int prof)
 {
   if (!eh_pasta(j->a)) { return copiar_arquivo(j); }
   if (mkdir(j->b, 0775) != 0 && errno != EEXIST) { anotar_erro(tr("não criou a pasta %s"), nome_de(j->b)); return false; }
-  if (prof >= PROFUNDIDADE) { ESP_LOGW(TAG, "funda demais, pulada: %s", j->a); return true; }
+  if (prof >= PROFUNDIDADE) { ESP_LOGW(TAG, "too deep, skipped: %s", j->a); return true; }
   DIR* d = opendir(j->a);
   if (!d) { anotar_erro(tr("não abriu a pasta %s"), nome_de(j->a)); return false; }
   const size_t la = strlen(j->a), lb = strlen(j->b);
@@ -781,7 +781,7 @@ static bool copiar_item(job_t* j, int prof)
     if (nome_escondido(e->d_name)) { continue; }
     const size_t ln = strlen(e->d_name);
     if (la + 1 + ln >= sizeof(j->a) || lb + 1 + ln >= sizeof(j->b)) {
-      ESP_LOGW(TAG, "caminho longo demais, pulado: %s/%s", j->a, e->d_name);
+      ESP_LOGW(TAG, "path too long, skipped: %s/%s", j->a, e->d_name);
       continue;
     }
     j->a[la] = '/'; memcpy(j->a + la + 1, e->d_name, ln + 1);
@@ -794,11 +794,11 @@ static bool copiar_item(job_t* j, int prof)
   return ok;
 }
 
-// Apaga 'c' (arquivo ou arvore). 'so_visiveis': a origem de um mover - o
-// que ficou escondido (e por isso nao foi copiado) nao e apagado, e a pasta
-// que o contem fica.
-// 'contar': cada arquivo apagado conta no progresso (a lixeira; no mover os
-// arquivos ja contaram ao copiar).
+// Deletes 'c' (file or tree). 'so_visiveis' (visible only): the source of a move - what
+// was hidden (and so wasn't copied) is not deleted, and the folder
+// containing it stays.
+// 'contar' (count): each deleted file counts towards progress (the bin; in a move the
+// files were already counted when copying).
 static bool apagar_tudo(char* c, size_t cap, bool so_visiveis, bool contar, int prof)
 {
   if (!eh_pasta(c)) {
@@ -835,14 +835,14 @@ static tab5_arq_fase_t executar_copia(job_t* j)
   }();
   const bool so_renomear = j->mover && mesmo_disco_tudo;
 
-  // 1. MEDIR - para o progresso e para saber se cabe. Mover no mesmo disco
-  // nao copia nada: so muda de pasta.
+  // 1. MEASURE - for progress and to know whether it fits. Moving on the same disk
+  // copies nothing: it just changes folder.
   int itens = 0;
   uint64_t bytes = 0;
   if (so_renomear) {
     itens = j->n;
   } else {
-    // O que o gravador do cartao ainda segura tem que ir junto na copia.
+    // What the SD card writer still holds has to go along in the copy.
     for (int i = 0; i < j->n; ++i) {
       if (tab5_volume_de(j->origens[i]) == TAB5_VOL_CARTAO) { tab5_sd_gravar_pendentes(); break; }
     }
@@ -864,7 +864,7 @@ static tab5_arq_fase_t executar_copia(job_t* j)
   s_trava.destravar();
   if (s_cancelar.load()) { return TAB5_ARQ_CANCELADO; }
 
-  // 2. COPIAR (ou mudar de pasta)
+  // 2. COPY (or change folder)
   mudar_fase(TAB5_ARQ_COPIANDO);
   s_inicio_us = esp_timer_get_time();
   for (int i = 0; i < j->n; ++i) {
@@ -883,10 +883,10 @@ static tab5_arq_fase_t executar_copia(job_t* j)
     snprintf(j->a, sizeof(j->a), "%s", orig);
     if (!copiar_item(j, 0)) { return s_cancelar.load() ? TAB5_ARQ_CANCELADO : TAB5_ARQ_FALHOU; }
     if (j->mover) {
-      // Entre discos: a origem so sai depois de o item inteiro estar no destino.
+      // Between disks: the source only goes after the whole item is at the destination.
       snprintf(j->a, sizeof(j->a), "%s", orig);
       if (!apagar_tudo(j->a, sizeof(j->a), true, false, 0) && existe(orig)) {
-        ESP_LOGW(TAG, "a origem %s ficou (havia escondidos dentro?)", orig);
+        ESP_LOGW(TAG, "the source %s stayed (were there hidden items inside?)", orig);
       }
     }
   }
@@ -902,10 +902,10 @@ static tab5_arq_fase_t executar_esvaziar(job_t* j)
   return s_cancelar.load() ? TAB5_ARQ_CANCELADO : TAB5_ARQ_FEITO;
 }
 
-// A area de transferencia (definida mais abaixo) - o fim de um recortar+colar
-// a esvazia.
+// The clipboard (defined further down) - the end of a cut+paste
+// empties it.
 static Trava s_area_trava;
-static uint32_t          s_area_geracao = 1;   // muda a cada area_por/limpar (sob s_area_trava)
+static uint32_t          s_area_geracao = 1;   // changes on every area_por/limpar (under s_area_trava)
 static void area_limpar_se(uint32_t geracao);
 
 static void corpo(void* arg)
@@ -916,22 +916,22 @@ static void corpo(void* arg)
   soltar_discos(j);
   sistema_recurso(RECURSO_CARTAO, "Arquivos", false);
   if (fim == TAB5_ARQ_FEITO && j->area_geracao) {
-    // Recortar + colar deu certo: a area esvazia - se ninguem pos outra coisa nela.
+    // Cut + paste succeeded: the clipboard empties - if nobody put something else in it.
     area_limpar_se(j->area_geracao);
   }
   tab5_arq_trabalho_t t;
   tab5_arq_trabalho(&t);
-  ESP_LOGI(TAG, "%s: fase %d, %d/%d arquivo(s), %llu KB, %lu KB/s%s%s",
-           j->op == OP_ESVAZIAR ? "esvaziar" : (j->mover ? "mover" : "copiar"), (int)fim,
+  ESP_LOGI(TAG, "%s: stage %d, %d/%d file(s), %llu KB, %lu KB/s%s%s",
+           j->op == OP_ESVAZIAR ? "empty" : (j->mover ? "move" : "copy"), (int)fim,
            t.itens_feitos, t.itens, (unsigned long long)(t.bytes_feitos / 1024), (unsigned long)t.kbps,
            t.erro[0] ? " - " : "", t.erro);
   heap_caps_free(j->buf);
   heap_caps_free(j);
-  s_ocupado = false;   // antes de publicar: quem acordar com o aviso ja pode pedir outro
+  s_ocupado = false;   // before publishing: whoever wakes on the notice can already ask for another
   mudar_fase(fim);
 }
 
-// Comeca: o job ja tem os discos seguros. false = nao subiu (e tudo foi solto).
+// Starts: the job already holds the disks. false = didn't start (and everything was released).
 static bool comecar(job_t* j)
 {
   s_trava.travar();
@@ -944,9 +944,9 @@ static bool comecar(job_t* j)
   s_cancelar = false;
   s_inicio_us = esp_timer_get_time();
   j->buf = (uint8_t*)heap_caps_aligned_alloc(128, BLOCO, MALLOC_CAP_SPIRAM | MALLOC_CAP_DMA);
-  // Prioridade 1: abaixo do gravador do cartao (2), do tocador e da interface.
+  // Priority 1: below the SD card writer (2), the player and the UI.
   if (!j->buf || !pool_criar(nullptr, corpo, j, "arquivos", 4096, 1)) {
-    ESP_LOGE(TAG, "o trabalho nao subiu (memoria?)");
+    ESP_LOGE(TAG, "the job didn't start (memory?)");
     soltar_discos(j);
     heap_caps_free(j->buf);
     heap_caps_free(j);
@@ -974,10 +974,10 @@ static tab5_arq_erro_t copiar_de_area(const char* const* origens, int n, const c
     const char* o = origens[i];
     if (!o || strlen(o) >= TAB5_ARQ_CAMINHO_MAX) { return TAB5_ARQ_ERRO_NOME; }
     if (mover ? !tab5_arq_mexivel(o) : (!tab5_arq_visivel(o) || eh_raiz(o))) { return TAB5_ARQ_ERRO_PROTEGIDO; }
-    if (comeca(destino, o)) { return TAB5_ARQ_ERRO_DENTRO; }   // a pasta para dentro dela (ou dela mesma)
+    if (comeca(destino, o)) { return TAB5_ARQ_ERRO_DENTRO; }   // moving a folder into a folder within it (or into itself)
     char pai[TAB5_ARQ_CAMINHO_MAX];
     pai_de(o, pai, sizeof(pai));
-    if (mover && !strcmp(pai, destino)) { return TAB5_ARQ_ERRO_EXISTE; }   // ja esta aqui
+    if (mover && !strcmp(pai, destino)) { return TAB5_ARQ_ERRO_EXISTE; }   // already here
   }
   if (s_ocupado.exchange(true)) { return TAB5_ARQ_ERRO_OCUPADO; }
   job_t* j = job_novo();
@@ -996,7 +996,7 @@ static tab5_arq_erro_t copiar_de_area(const char* const* origens, int n, const c
     s_ocupado = false;
     return TAB5_ARQ_ERRO_DISCO;
   }
-  // Com o disco seguro, os itens tem que existir de verdade.
+  // With the disk held, the items have to really exist.
   for (int i = 0; i < n; ++i) {
     if (!existe(origens[i])) {
       soltar_discos(j);
@@ -1030,9 +1030,9 @@ int tab5_arq_lixeira_itens(const char* raiz)
 }
 
 // ---------------------------------------------------------------------------
-// LIXEIRA POR ITEM (listar, restaurar, excluir)
+// RECYCLE BIN PER ITEM (list, restore, delete)
 // ---------------------------------------------------------------------------
-// Tamanho de um item: arquivo = o tamanho; pasta = a soma de tudo dentro.
+// Size of an item: file = its size; folder = the sum of everything inside.
 static uint64_t tamanho_de(char* c, size_t cap, int prof)
 {
   struct stat st;
@@ -1057,7 +1057,7 @@ static uint64_t tamanho_de(char* c, size_t cap, int prof)
   return soma;
 }
 
-// Do mais recente para o mais antigo; sem data (0) no fim.
+// From most recent to oldest; undated (0) at the end.
 static int comparar_lixo(const void* a, const void* b)
 {
   const tab5_arq_lixo_t* x = (const tab5_arq_lixo_t*)a;
@@ -1083,7 +1083,7 @@ int tab5_arq_lixeira_listar(const char* raiz, tab5_arq_lixo_t* out, int max, uin
       if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..") || !strcmp(e->d_name, INDICE_NOME)) { continue; }
       const size_t ln = strlen(e->d_name);
       if (ln >= TAB5_ARQ_NOME_MAX || lc + 1 + ln >= sizeof(c)) {
-        ESP_LOGW(TAG, "lixeira: nome longo demais, fora da lista: %s", e->d_name);
+        ESP_LOGW(TAG, "recycle bin: name too long, left out of the list: %s", e->d_name);
         continue;
       }
       c[lc] = '/';
@@ -1092,7 +1092,7 @@ int tab5_arq_lixeira_listar(const char* raiz, tab5_arq_lixo_t* out, int max, uin
       const uint64_t bytes = tamanho_de(c, sizeof(c), 0);
       c[lc] = '\0';
       total += bytes;
-      if (n >= max) { continue; }   // o total continua somando o que nao coube
+      if (n >= max) { continue; }   // the total keeps adding what didn't fit
       tab5_arq_lixo_t* it = &out[n++];
       memset(it, 0, sizeof(*it));
       memcpy(it->nome, e->d_name, ln + 1);
@@ -1120,14 +1120,14 @@ int tab5_arq_lixeira_listar(const char* raiz, tab5_arq_lixo_t* out, int max, uin
   return n;
 }
 
-// O nome de um item da lixeira tem que ser so um nome (nada de subir de pasta).
+// A recycle bin item's name has to be just a name (no climbing up folders).
 static bool nome_lixo_valido(const char* nome)
 {
   return nome && nome[0] && strlen(nome) < TAB5_ARQ_NOME_MAX && !strchr(nome, '/') &&
          strcmp(nome, ".") && strcmp(nome, "..") && strcmp(nome, INDICE_NOME);
 }
 
-// Cria as pastas que faltam de 'pasta' (sempre dentro de 'raiz').
+// Creates the missing folders of 'pasta' (always inside 'raiz').
 static bool criar_pastas(const char* raiz, const char* pasta)
 {
   char c[TAB5_ARQ_CAMINHO_MAX];
@@ -1151,8 +1151,8 @@ tab5_arq_erro_t tab5_arq_lixeira_restaurar(const char* raiz, const char* nome)
   if (!existe(orig)) {
     r = TAB5_ARQ_ERRO_FALHOU;
   } else {
-    // Para onde volta: a origem do indice; sem ela (ou fora do disco, ou numa
-    // area que nao aceita gravar) vai para a raiz do disco.
+    // Where it goes back to: the origin from the index; without it (or outside the disk, or in an
+    // area that doesn't accept writes) it goes to the disk's root.
     char pasta[TAB5_ARQ_CAMINHO_MAX];
     char nome_final[TAB5_ARQ_NOME_MAX];
     snprintf(pasta, sizeof(pasta), "%s", raiz);
@@ -1182,7 +1182,7 @@ tab5_arq_erro_t tab5_arq_lixeira_restaurar(const char* raiz, const char* nome)
       r = TAB5_ARQ_ERRO_EXISTE;
     } else if (rename(orig, dst) != 0) {
       r = TAB5_ARQ_ERRO_FALHOU;
-      ESP_LOGW(TAG, "restaurar %s: %d", orig, errno);
+      ESP_LOGW(TAG, "restore %s: %d", orig, errno);
     }
   }
   if (r == TAB5_ARQ_OK) { indice_tirar(raiz, nome); }
@@ -1190,7 +1190,7 @@ tab5_arq_erro_t tab5_arq_lixeira_restaurar(const char* raiz, const char* nome)
   return r;
 }
 
-// Apaga um item (sem trava de disco: quem chama ja montou).
+// Deletes an item (no disk lock: the caller has already mounted).
 static tab5_arq_erro_t excluir_item(const char* raiz, const char* nome)
 {
   char c[CAMINHO_TRAB];
@@ -1200,13 +1200,13 @@ static tab5_arq_erro_t excluir_item(const char* raiz, const char* nome)
     r = TAB5_ARQ_ERRO_FALHOU;
   } else if (!apagar_tudo(c, sizeof(c), false, false, 0)) {
     r = TAB5_ARQ_ERRO_FALHOU;
-    ESP_LOGW(TAG, "excluir da lixeira %s: %d", nome, errno);
+    ESP_LOGW(TAG, "delete from recycle bin %s: %d", nome, errno);
   }
-  indice_tirar(raiz, nome);   // tambem limpa a linha de um item que ja nao existe
+  indice_tirar(raiz, nome);   // also clears the line of an item that no longer exists
   return r;
 }
 
-// Fora de um trabalho de fundo o cancelamento nao vale (apagar_tudo o consulta).
+// Outside a background job cancellation doesn't apply (apagar_tudo checks it).
 static bool pode_apagar_direto(void)
 {
   if (s_ocupado.load()) { return false; }
@@ -1230,7 +1230,7 @@ int tab5_arq_lixeira_limpar_antigos(const char* raiz, int dias)
   if (!eh_raiz(raiz) || dias < 0 || agora <= EPOCH_VALIDA || !pode_apagar_direto()) { return 0; }
   if (!tab5_volume_montar(raiz)) { return 0; }
   int apagados = 0;
-  char* indice = indice_ler(raiz, nullptr);   // copia propria: excluir_item reescreve o arquivo
+  char* indice = indice_ler(raiz, nullptr);   // own copy: excluir_item rewrites the file
   for (const char* p = indice; p && *p;) {
     const char* f = strchr(p, '\n');
     const char* t1 = strchr(p, '\t');
@@ -1253,23 +1253,23 @@ int tab5_arq_lixeira_limpar_antigos(const char* raiz, int dias)
 }
 
 // ---------------------------------------------------------------------------
-// LIMITE E AVISO DA LIXEIRA
+// RECYCLE BIN LIMIT AND NOTICE
 // ---------------------------------------------------------------------------
 uint64_t tab5_arq_lixeira_limite(const char* raiz)
 {
   const uint64_t MB = 1024ULL * 1024;
   uint64_t total = 0, livre = 0;
   if (!tab5_volume_espaco(raiz, &total, &livre)) { total = 0; }
-  uint64_t limite = total / 100 * 8;                 // 8% do disco
-  if (limite < 256 * MB)        { limite = 256 * MB; }          // minimo
-  if (limite > 10 * 1024 * MB)  { limite = 10 * 1024 * MB; }    // maximo: 10 GB
+  uint64_t limite = total / 100 * 8;                 // 8% of the disk
+  if (limite < 256 * MB)        { limite = 256 * MB; }          // minimum
+  if (limite > 10 * 1024 * MB)  { limite = 10 * 1024 * MB; }    // maximum: 10 GB
   return limite;
 }
 
-// Um disco por vaga: o aviso e UM so (a fonte "Lixeira"), com o primeiro disco
-// que passou do limite; a quantidade e quantos passaram.
+// One disk per slot: the notice is just ONE (the "Lixeira" source), with the first disk
+// that went over the limit; the count is how many went over.
 static int      s_notif_lixo = -1;
-static uint64_t s_lixo_acima[TAB5_VOL_N];   // bytes do disco que passou do limite; 0 = abaixo
+static uint64_t s_lixo_acima[TAB5_VOL_N];   // bytes of the disk that went over the limit; 0 = below
 static char     s_lixo_raiz[TAB5_VOL_N][16];
 
 void tab5_arq_lixeira_manter(const char* raiz)
@@ -1279,7 +1279,7 @@ void tab5_arq_lixeira_manter(const char* raiz)
   if (dias > 0) { tab5_arq_lixeira_limpar_antigos(raiz, dias); }
 
   uint64_t total = 0;
-  tab5_arq_lixo_t um;   // so a soma interessa: a lista copia no maximo 1 item
+  tab5_arq_lixo_t um;   // only the sum matters: the list copies at most 1 item
   tab5_arq_lixeira_listar(raiz, &um, 1, &total);
   const bool acima = total > tab5_arq_lixeira_limite(raiz);
 
@@ -1298,7 +1298,7 @@ void tab5_arq_lixeira_manter(const char* raiz)
     if (s_lixo_acima[i]) { ++n; if (primeiro < 0) { primeiro = i; } }
   }
   if (n == 0) { notif_limpar(s_notif_lixo); return; }
-  // O resumo da notificacao cabe em NOTIF_RESUMO (32): texto curto; tocar abre o Arquivos.
+  // The notification summary fits in NOTIF_RESUMO (32): short text; tapping opens Arquivos (Files).
   char tam[16], r[NOTIF_RESUMO];
   tab5_bytes_txt(tam, sizeof(tam), s_lixo_acima[primeiro]);
   snprintf(r, sizeof(r), tr("Lixeira: %s, %s"), tr(tab5_volume_tipo(s_lixo_raiz[primeiro])), tam);
@@ -1319,7 +1319,7 @@ tab5_arq_erro_t tab5_arq_esvaziar_lixeira(const char* raiz)
 }
 
 // ---------------------------------------------------------------------------
-// AREA DE TRANSFERENCIA
+// CLIPBOARD
 // ---------------------------------------------------------------------------
 EXT_RAM_BSS_ATTR static char s_area[TAB5_ARQ_ITENS_MAX][TAB5_ARQ_CAMINHO_MAX];
 static int  s_area_n = 0;
@@ -1381,8 +1381,8 @@ static void area_limpar_se(uint32_t geracao)
 
 tab5_arq_erro_t tab5_arq_colar(const char* destino)
 {
-  // Copia a area antes: conferir e segurar os discos demora (montar o
-  // cartao), e a interface pergunta pela area enquanto isso.
+  // Copies the clipboard first: checking and holding the disks takes a while (mounting the
+  // SD card), and the UI asks for the clipboard meanwhile.
   char (*copia)[TAB5_ARQ_CAMINHO_MAX] =
       (char (*)[TAB5_ARQ_CAMINHO_MAX])heap_caps_malloc(sizeof(s_area), MALLOC_CAP_SPIRAM);
   if (!copia) { return TAB5_ARQ_ERRO_FALHOU; }

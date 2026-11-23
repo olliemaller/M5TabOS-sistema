@@ -16,23 +16,23 @@
 
 static const char *TAG = "registro";
 
-// Uma amostra por minuto: uma descarga completa (5 a 15 horas) rende de 300 a
-// 900 pontos, resolucao de sobra para tracar a curva e calibrar a bateria.
-// A cada 10 minutos vai para o cartao.
+// One sample per minute: a full discharge (5 to 15 hours) yields 300 to
+// 900 points, more than enough resolution to plot the curve and calibrate the battery.
+// Every 10 minutes it goes to the SD card.
 static const uint32_t AMOSTRA_MS = 60000;
-static const int      LOTE       = 5;       // amostras por descarga (era 10; o grafico HOJE do app Energia le daqui)
-static const int      CAPACIDADE = 32;      // folga: se o cartao falhar, segura mais
+static const int      LOTE       = 5;       // samples per flush (was 10; the Energia app's TODAY chart reads from here)
+static const int      CAPACIDADE = 32;      // slack: if the SD card fails, it holds more
 
 typedef struct {
-  uint32_t t;        // segundos desde o boot
-  uint32_t epoch;    // hora real UTC da amostra; 0 = relogio nao acertado
+  uint32_t t;        // seconds since boot
+  uint32_t epoch;    // real UTC time of the sample; 0 = clock not set
   float    volts;
   float    mA;
   float    mW;
   int16_t  pct;
   int16_t  mhz;
   uint8_t  repouso;
-  float    temp;     // silicio do P4, -273 quando nao medido
+  float    temp;     // P4 silicon, -273 when not measured
   char     app[12];
 } amostra_t;
 
@@ -44,7 +44,7 @@ static char      s_app[12] = "home";
 
 void registro_app_atual(const char* nome)
 {
-  // Copia por valor: o ponteiro do app pode morrer quando ele fecha.
+  // Copy by value: the app's pointer may die when it closes.
   snprintf(s_app, sizeof(s_app), "%s", nome ? nome : "home");
 }
 
@@ -56,32 +56,32 @@ void registro_estado(int* na_ram, uint32_t* gravadas, uint32_t* falhas)
 }
 
 // ---------------------------------------------------------------------------
-// SAUDE DAS TAREFAS E DO HEAP - ver a explicacao completa em registro.h.
+// TASK AND HEAP HEALTH - see the full explanation in registro.h.
 // ---------------------------------------------------------------------------
-// Ate 32 tarefas simultaneas - o mesmo teto que o app Tarefas ja usa
-// (tarefas/app_tarefas.cpp). Repetido aqui em vez de compartilhado de
-// proposito: e uma CONSTANTE, nao um estado, e as duas leituras sao
-// independentes uma da outra - o app pode nao estar nem aberto.
-// (O instantaneo de tarefas em tarefas.csv, a cada descarga, saiu em
-// o monitor do sistema (services/tab5_monitor) mede as tarefas a
-// cada segundo, com picos e eventos, e grava no cartao o que importa.)
+// Up to 32 simultaneous tasks - the same ceiling the Tarefas (Tasks) app already uses
+// (tarefas/app_tarefas.cpp). Repeated here rather than shared on
+// purpose: it is a CONSTANT, not state, and the two readings are
+// independent of each other - the app may not even be open.
+// (The task snapshot in tarefas.csv, on every flush, moved to
+// the system monitor (services/tab5_monitor), which measures the tasks every
+// second, with peaks and events, and writes what matters to the SD card.)
 
-// UM ARQUIVO POR DIA, COM A HORA REAL. Ate aqui era um
-// energia.csv unico, crescendo desde sempre, com o tempo em segundos desde o
-// BOOT - impossivel recortar "o dia" dele. Agora:
-//   Sistema/energia/energia-AAAA-MM-DD.csv   (data LOCAL - o dia de quem usa)
+// ONE FILE PER DAY, WITH THE REAL TIME. Until now it was a single
+// energia.csv, growing forever, with time in seconds since
+// BOOT - impossible to cut "the day" out of it. Now:
+//   Sistema/energia/energia-AAAA-MM-DD.csv   (LOCAL date - the user's day)
 //   ENE3,<epoch UTC>,<HH:MM local>,<V>,<mA>,<mW>,<pct>,<MHz>,<repouso>,<temp>,<app>
-// Sem relogio acertado (sem GPS/malha desde o boot) as amostras vao para
-// energia-sem-data.csv, com epoch 0. O energia.csv antigo fica no cartao,
-// intocado.
+// With no clock set (no GPS/mesh since boot) the samples go to
+// energia-sem-data.csv, with epoch 0. The old energia.csv stays on the SD card,
+// untouched.
 static void nome_do_dia(uint32_t epoch, char* out, size_t tam)
 {
   tab5_hora_nome_do_dia(epoch, "energia-", ".csv", out, tam);
 }
 
-// Pelo gravador do sistema (hal/tab5_sd.hpp): cada amostra vira uma linha
-// entregue na hora; montar, abrir e escrever e com a tarefa "cartao". O
-// cabecalho vai junto e so e escrito se o arquivo do dia estiver vazio.
+// Through the system writer (hal/tab5_sd.hpp): each sample becomes a line
+// handed over immediately; mounting, opening and writing are up to the "cartao" task. The
+// header goes along and is only written if the day's file is empty.
 static void descarregar(void)
 {
   if (s_n == 0) { return; }
@@ -104,8 +104,8 @@ static void descarregar(void)
   s_n = 0;
 }
 
-// Uma linha ENE3 do arquivo do dia vira o minuto dela em 'd'. Linha de outro
-// formato, anterior a 't0' ou depois das 24 h e ignorada.
+// An ENE3 line from the day's file becomes its minute in 'd'. A line in another
+// format, before 't0' or after the 24 h is ignored.
 static void ler_arquivo_dia(registro_dia_t* d, const char* nome)
 {
   FILE* f = tab5_sd_abrir(TAB5_SD_ENERGIA, nome, "r");
@@ -129,8 +129,8 @@ bool registro_ler_dia(registro_dia_t* d, uint32_t t0)
   memset(d, 0, sizeof(*d));
   d->t0 = t0;
   if (!t0 || !tab5_sd_montar()) { return false; }
-  // A janela de 24 h pode atravessar a meia-noite: o dia de t0 e o de hoje
-  // (o mesmo arquivo, se nao atravessou, e lido uma vez so).
+  // The 24 h window may cross midnight: t0's day and today's
+  // (the same file, if it didn't cross, is read only once).
   char nome_t0[40], nome_hoje[40];
   nome_do_dia(t0, nome_t0, sizeof(nome_t0));
   nome_do_dia((uint32_t)time(nullptr), nome_hoje, sizeof(nome_hoje));
@@ -140,25 +140,25 @@ bool registro_ler_dia(registro_dia_t* d, uint32_t t0)
   return true;
 }
 
-// SEM TAREFA PROPRIA: uma amostra por minuto nao paga 4 KB de pilha parada.
-// Pega carona na tarefa "cartao" (tab5_sd_carona), que ja acorda a cada 1 s e
-// e quem grava no cartao de qualquer jeito; aqui so se conta o minuto.
+// NO TASK OF ITS OWN: one sample a minute isn't worth 4 KB of idle stack.
+// It piggybacks on the "cartao" task (tab5_sd_carona), which already wakes every 1 s and
+// is what writes to the SD card anyway; here we just count the minute.
 static void registro_na_carona(void)
 {
   static int64_t proxima_us = esp_timer_get_time() + (int64_t)AMOSTRA_MS * 1000;
   const int64_t agora_us = esp_timer_get_time();
   if (agora_us < proxima_us) { return; }
   proxima_us += (int64_t)AMOSTRA_MS * 1000;
-  if (proxima_us <= agora_us) { proxima_us = agora_us + (int64_t)AMOSTRA_MS * 1000; }   // atrasou demais: recomeca
+  if (proxima_us <= agora_us) { proxima_us = agora_us + (int64_t)AMOSTRA_MS * 1000; }   // fell too far behind: restart
   {
-    // Le do CACHE, nunca do I2C: o barramento e da tarefa de interface, que
-    // atualiza este valor a cada segundo. Ir ao I2C daqui reproduziria a
-    // corrida que ja nos custou uma tarde (tensao alternando 4.37/8.37V).
+    // Reads from the CACHE, never from I2C: the bus belongs to the UI task, which
+    // updates this value every second. Going to I2C from here would reproduce the
+    // race that already cost us an afternoon (voltage alternating 4.37/8.37V).
     tab5_medida_t m = tab5_power_ultima();
 
     if (s_n >= CAPACIDADE) {
-      // Buffer cheio (cartao ausente ha muito tempo): descarta a mais antiga.
-      // Perder o passado distante e melhor que perder o presente.
+      // Buffer full (SD card absent for a long time): discard the oldest.
+      // Losing the distant past is better than losing the present.
       memmove(&s_buf[0], &s_buf[1], sizeof(amostra_t) * (CAPACIDADE - 1));
       s_n = CAPACIDADE - 1;
     }
@@ -175,24 +175,24 @@ static void registro_na_carona(void)
     { float c; a->temp = tab5_sensores_temp(&c) ? c : -273.0f; }
     snprintf(a->app, sizeof(a->app), "%s", s_app);
 
-    // Descarrega SO no lote. Nao ha gravacao antecipada de propriedade: durante
-    // o desenvolvimento a placa reinicia a cada upload, e uma gravacao logo no
-    // primeiro minuto encheria o arquivo de amostras soltas de sessoes que
-    // duraram segundos. Para saber se o registro esta vivo sem esperar dez
-    // minutos, olhe o app Energia - ele mostra quantas amostras estao na RAM.
+    // Flushes ONLY per batch. There is deliberately no early write: during
+    // development the board restarts on every upload, and a write in the very
+    // first minute would fill the file with stray samples from sessions that
+    // lasted seconds. To find out whether the logger is alive without waiting ten
+    // minutes, look at the Energia app - it shows how many samples are in RAM.
     //
-    // COM A BATERIA NO FIM, O LOTE VIRA UM - e nem toda amostra vale igual.
+    // WITH THE BATTERY NEARLY FLAT, THE BATCH BECOMES ONE - and not every sample is worth the same.
     //
-    // A dez minutos por descarga, um desligamento por bateria leva embora ate
-    // dez amostras. E logo AQUELAS dez: o fim da descarga e onde a tensao
-    // despenca, o joelho da curva, a unica parte que diz quanto tempo ainda
-    // resta quando a resposta importa. O resto do arquivo tem centenas de
-    // amostras de bateria cheia, que se parecem todas.
+    // At ten minutes per flush, a battery shutdown takes away up to
+    // ten samples. And precisely THOSE ten: the end of the discharge is where the voltage
+    // plummets, the knee of the curve, the only part that says how much time is
+    // left when the answer matters. The rest of the file has hundreds of
+    // full-battery samples, all of which look alike.
     //
-    // Abaixo de 15% o aparelho pode desligar a qualquer minuto, e ai o custo de
-    // gravar toda vez (uma montagem de cartao por minuto) fica barato perto de
-    // perder o unico trecho que nao da para reproduzir sem descarregar a
-    // bateria inteira de novo.
+    // Below 15% the device may shut down any minute, and then the cost of
+    // writing every time (one SD card mount per minute) is cheap next to
+    // losing the only stretch that can't be reproduced without discharging the
+    // whole battery again.
     const bool no_fim = (m.pct >= 0 && m.pct < 15);
     if (s_n >= (no_fim ? 1 : LOTE)) { descarregar(); }
   }
@@ -200,9 +200,9 @@ static void registro_na_carona(void)
 
 void registro_iniciar(void)
 {
-  // Uma vez por minuto le o cache de energia e, de lote em lote, entrega as
-  // linhas ao gravador - tudo dentro da tarefa "cartao".
+  // Once a minute reads the energy cache and, batch by batch, hands the
+  // lines to the writer - all inside the "cartao" task.
   tab5_sd_carona(registro_na_carona);
-  ESP_LOGI(TAG, "no ar: amostra a cada %lus, descarga a cada %d amostras",
+  ESP_LOGI(TAG, "running: sample every %lus, flush every %d samples",
            (unsigned long)(AMOSTRA_MS / 1000), LOTE);
 }

@@ -1,6 +1,6 @@
-// Modulos Berry 'cartao' (a pasta do app) e 'arquivos' (os discos, pelo motor
-// de arquivos do sistema). Ver berry_apps.cpp (o motor) e berry_interno.hpp.
-// O cartao so pelas portas de hal/tab5_sd.hpp.
+// Berry modules 'cartao' (the app's folder) and 'arquivos' (the disks, via the system's
+// file engine). See berry_apps.cpp (the engine) and berry_interno.hpp.
+// The SD card only through the doors in hal/tab5_sd.hpp.
 
 #include <stdio.h>
 #include "idioma.h"
@@ -14,15 +14,15 @@
 #include "tab5_volumes.hpp"
 #include "berry_interno.hpp"
 
-// MODULO 'cartao' - arquivos na pasta do app: /sdcard/apps/Berry/<nome do app>/
+// MODULE 'cartao' - files in the app's folder: /sdcard/apps/Berry/<app name>/
 // ---------------------------------------------------------------------------
-// OS DADOS MORAM AO LADO DOS SCRIPTS: tudo o que e de Berry fica dentro de
-// apps/Berry/ (o .be e a pasta com o mesmo nome) - nada espalhado em apps/
-// no meio das pastas dos apps do sistema, e um app Berry "Azimutal" nao
-// mistura arquivo com o Azimutal em C. A leitura da pasta (ler_pasta) so pega
-// .be, entao as pastas de dados nao viram icone.
-// A pasta e criada (mkdir no cartao) UMA vez por abertura, e o caminho fica
-// guardado: ler/gravar em todo quadro nao paga um stat + mkdir cada vez.
+// THE DATA LIVES NEXT TO THE SCRIPTS: everything Berry stays inside
+// apps/Berry/ (the .be and the folder of the same name) - nothing scattered in apps/
+// among the system apps' folders, and a Berry app "Azimutal" does not
+// mix its files with the C Azimutal. Reading the folder (ler_pasta) only picks up
+// .be, so the data folders do not become icons.
+// The folder is created (mkdir on the card) ONCE per opening, and the path is
+// kept: reading/writing on every frame does not pay a stat + mkdir each time.
 static bool pasta_do_app(void)
 {
   if (C->app->pasta[0]) { return true; }
@@ -34,7 +34,7 @@ static bool pasta_do_app(void)
   return C->app->pasta[0] != 0;
 }
 
-// So nomes simples (sem barra, sem ..): o script nao sai da pasta dele.
+// Simple names only (no slash, no ..): the script does not leave its folder.
 static bool caminho(bvm* vm, char* out, size_t tam)
 {
   const char* nome = arg_txt(vm, 1);
@@ -49,7 +49,7 @@ static bool caminho(bvm* vm, char* out, size_t tam)
 
 static const long LER_MAX = 64 * 1024;
 
-// ler(nome) - o arquivo inteiro como texto, ou nil se nao existe (ate 64 KB).
+// ler(nome) - the whole file as text, or nil if it does not exist (up to 64 KB).
 static int c_ler(bvm* vm)
 {
   char cam[160];
@@ -83,8 +83,8 @@ static int escrever(bvm* vm, const char* modo)
   be_pushbool(vm, ok);
   be_return(vm);
 }
-static int c_gravar(bvm* vm)  { return escrever(vm, "wb"); }   // gravar(nome, texto): substitui
-static int c_anexar(bvm* vm)  { return escrever(vm, "ab"); }   // anexar(nome, texto): no fim
+static int c_gravar(bvm* vm)  { return escrever(vm, "wb"); }   // gravar(nome, texto): replaces
+static int c_anexar(bvm* vm)  { return escrever(vm, "ab"); }   // anexar(nome, texto): at the end
 
 static int c_existe(bvm* vm)
 {
@@ -96,7 +96,7 @@ static int c_existe(bvm* vm)
   be_return(vm);
 }
 
-// lista() - os nomes dos arquivos da pasta do app.
+// lista() - the names of the files in the app's folder.
 static int c_lista(bvm* vm)
 {
   lista_nova(vm);
@@ -111,15 +111,15 @@ static int c_lista(bvm* vm)
 }
 
 // ---------------------------------------------------------------------------
-// MODULO 'arquivos' - os discos inteiros, pelo motor de arquivos do sistema
+// MODULE 'arquivos' - the whole disks, via the system's file engine
 // ---------------------------------------------------------------------------
-// A REGRA: o script ENXERGA o cartao inteiro e o pendrive (com as regras do
-// sistema: senha e nome com '.' nao aparecem), mas so ALTERA a propria pasta
-// (apps/Berry/<nome>/). De fora dela, a unica coisa que ele faz e COPIAR
-// para dentro dela - ler o conteudo, so depois de trazer. Nada fora da pasta
-// e gravado, apagado, movido ou renomeado por script: um app de terceiros
-// nao estraga o sistema nem os arquivos da pessoa.
-static char s_arq_dono[24] = "";   // o app que comecou a copia em curso ("" = nenhum ou o sistema)
+// THE RULE: the script SEES the whole card and the flash drive (with the
+// system's rules: passwords and names starting with '.' do not appear), but only CHANGES its own folder
+// (apps/Berry/<nome>/). From outside it, the only thing it does is COPY
+// into it - reading the content only after bringing it in. Nothing outside the folder
+// is written, deleted, moved or renamed by a script: a third-party app
+// does not damage the system or the person's files.
+static char s_arq_dono[24] = "";   // the app that started the copy in progress ("" = none, or the system)
 
 static const char* arq_tipo_txt(tab5_arq_tipo_t t)
 {
@@ -133,8 +133,8 @@ static const char* arq_tipo_txt(tab5_arq_tipo_t t)
   }
 }
 
-// Um caminho DENTRO da pasta do app: "" = a propria pasta; "sub/x.txt".
-// Sair dela (absoluto, "..", "\\") e erro no script.
+// A path INSIDE the app's folder: "" = the folder itself; "sub/x.txt".
+// Leaving it (absolute, "..", "\\") is an error in the script.
 static bool arq_meu(bvm* vm, const char* rel, char* out, size_t tam)
 {
   if (!C->app) { be_raise(vm, "arquivos_error", tr("arquivos so dentro de um app")); return false; }
@@ -150,7 +150,7 @@ static bool arq_meu(bvm* vm, const char* rel, char* out, size_t tam)
   return true;
 }
 
-// Absoluto ("/usb/Rock") como esta; relativo, dentro da pasta do app.
+// Absolute ("/usb/Rock") as is; relative, inside the app's folder.
 static bool arq_qualquer(bvm* vm, const char* c, char* out, size_t tam)
 {
   if (c[0] != '/') { return arq_meu(vm, c, out, tam); }
@@ -160,7 +160,7 @@ static bool arq_qualquer(bvm* vm, const char* c, char* out, size_t tam)
   return true;
 }
 
-// volumes() - [{raiz, tipo, nome, disponivel}]: o cartao e, plugado, o pendrive.
+// volumes() - [{raiz, tipo, nome, disponivel}]: the card and, when plugged in, the flash drive.
 static int a_volumes(bvm* vm)
 {
   tab5_vol_t v[TAB5_VOL_N];
@@ -180,7 +180,7 @@ static int a_volumes(bvm* vm)
   be_return(vm);
 }
 
-// pasta() - o caminho absoluto da pasta do app (onde ele pode tudo).
+// pasta() - the absolute path of the app's folder (where it can do anything).
 static int a_pasta(bvm* vm)
 {
   if (!C->app || !pasta_do_app()) { be_return_nil(vm); }
@@ -188,9 +188,9 @@ static int a_pasta(bvm* vm)
   be_return(vm);
 }
 
-// lista(pasta [, filtro]) - [{nome, tipo, pasta, bytes, data, caminho}] de
-// QUALQUER pasta visivel (absoluta; relativa = dentro da pasta do app), pastas
-// primeiro. 'filtro': ".mp3;.wav". nil = disco ausente ou pasta que nao abre.
+// lista(pasta [, filtro]) - [{nome, tipo, pasta, bytes, data, caminho}] of
+// ANY visible folder (absolute; relative = inside the app's folder), folders
+// first. 'filtro': ".mp3;.wav". nil = disk absent or a folder that will not open.
 #define ARQ_LISTA_MAX 256
 static int a_lista(bvm* vm)
 {
@@ -221,8 +221,8 @@ static int a_lista(bvm* vm)
   be_return(vm);
 }
 
-// ler(caminho) - o conteudo como texto (ate 64 KB), SO dentro da pasta do app
-// ("sub/x.txt"). O que esta fora: copiar() primeiro.
+// ler(caminho) - the content as text (up to 64 KB), ONLY inside the app's folder
+// ("sub/x.txt"). For what is outside: copiar() first.
 static int a_ler(bvm* vm)
 {
   char cam[TAB5_ARQ_CAMINHO_MAX];
@@ -244,16 +244,16 @@ static int a_ler(bvm* vm)
   be_return(vm);
 }
 
-// copiar(origem [, subpasta]) - traz um arquivo ou pasta (ou uma lista deles,
-// ate 64) de QUALQUER disco para a pasta do app (ou uma subpasta dela que ja
-// existe). Em segundo plano: acompanhe com estado() e '# avisos: arquivos'.
-// true = comecou; senao, o texto do motivo ("ja ha uma copia em andamento").
+// copiar(origem [, subpasta]) - brings a file or folder (or a list of them,
+// up to 64) from ANY disk into the app's folder (or an existing subfolder
+// of it). In the background: follow it with estado() and '# avisos: arquivos'.
+// true = started; otherwise, the text of the reason ("ja ha uma copia em andamento").
 static int a_copiar(bvm* vm)
 {
   char destino[TAB5_ARQ_CAMINHO_MAX];
   if (!arq_meu(vm, be_top(vm) >= 2 ? arg_txt(vm, 2) : "", destino, sizeof(destino))) { be_return_nil(vm); }
-  // As origens: um texto ou uma lista de textos.
-  // A tarefa do Berry e uma so: estatico basta, e na PSRAM (16 KB).
+  // The sources: a text or a list of texts.
+  // There is only one Berry task: a static is enough, and in PSRAM (16 KB).
   EXT_RAM_BSS_ATTR static char origens[TAB5_ARQ_ITENS_MAX][TAB5_ARQ_CAMINHO_MAX];
   const char* ptrs[TAB5_ARQ_ITENS_MAX];
   int n = 0;
@@ -285,7 +285,7 @@ static int a_copiar(bvm* vm)
 
 // estado() - {fase, pct, itens, feitos, atual, erro, meu}. fase: "parado",
 // "contando", "copiando", "apagando", "feito", "falhou", "cancelado".
-// 'meu' = foi este app que comecou.
+// 'meu' = it was this app that started it.
 static int a_estado(bvm* vm)
 {
   tab5_arq_trabalho_t t;
@@ -304,7 +304,7 @@ static int a_estado(bvm* vm)
   be_return(vm);
 }
 
-// cancelar() - so a copia que ESTE app comecou.
+// cancelar() - only the copy THIS app started.
 static int a_cancelar(bvm* vm)
 {
   if (C->app && !strcmp(s_arq_dono, C->app->nome)) { tab5_arq_cancelar(); }
@@ -312,7 +312,7 @@ static int a_cancelar(bvm* vm)
 }
 
 // apagar(caminho), renomear(caminho, novo_nome), criar_pasta(nome_ou_sub/nome):
-// SO dentro da pasta do app. Apagar vai para a lixeira do cartao.
+// ONLY inside the app's folder. Deleting goes to the card's recycle bin.
 static int a_apagar(bvm* vm)
 {
   char c[TAB5_ARQ_CAMINHO_MAX];

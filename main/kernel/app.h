@@ -1,14 +1,14 @@
-// Contrato de um aplicativo do sistema.
+// Contract for a system application.
 //
-// A ideia: adicionar um app novo e criar a pasta main/app_<nome>/ com um
-// arquivo que define 'extern const app_t APP_<NOME>' (ver apps.cpp). Mais nada. O
-// sistema cuida de abrir, fechar, desenhar, rotear o toque e - o principal -
-// aplicar o perfil de energia que o app declarou.
+// The idea: adding a new app means creating the folder main/app_<nome>/ with a
+// file that defines 'extern const app_t APP_<NOME>' (see apps.cpp). Nothing else. The
+// system takes care of opening, closing, drawing, routing touch and - most importantly -
+// applying the power profile the app declared.
 //
-// Sobre "C ou C++": o codigo e escrito em estilo C (structs, ponteiros de
-// funcao, sem classes), mas em arquivos .cpp porque o M5GFX e uma biblioteca
-// C++ e nao ha como desenhar sem passar por ela. O modelo mental e o de C:
-// tarefas, queues e funcoes.
+// On "C or C++": the code is written in C style (structs, function
+// pointers, no classes), but in .cpp files because M5GFX is a C++
+// library and there is no way to draw without going through it. The mental model is C's:
+// tasks, queues and functions.
 
 #pragma once
 
@@ -16,11 +16,11 @@
 #include <stdint.h>
 #include "tab5_power.hpp"
 #include "tab5_sd.hpp"
-#include "fundo.h"      // parte de fundo de um app (trabalho que sobrevive a janela)
-#include "recursos.h"   // o que cada um usa: o sistema decide a suspensao
+#include "fundo.h"      // an app's background part (work that outlives the window)
+#include "recursos.h"   // what each one uses: the system decides suspension
 
-// Retangulo onde o app pode desenhar. Fica entre a barra de status (topo) e a
-// barra de navegacao (base) - o app nunca precisa saber a altura delas.
+// Rectangle where the app may draw. It sits between the status bar (top) and the
+// navigation bar (bottom) - the app never needs to know their heights.
 typedef struct {
   int x;
   int y;
@@ -28,371 +28,371 @@ typedef struct {
   int altura;
 } area_t;
 
-// ORIENTACAO DA TELA de um app (campo .orientacao do app_t, abaixo).
+// SCREEN ORIENTATION of an app (the .orientacao field of app_t, below).
 //
-// SO DOIS ESTADOS EXISTEM: em pe (rotacao 0, a da home) e deitado (rotacao 3,
-// a que deixa o ExtPort1 - onde o teclado encaixa - na borda de baixo). As
-// rotacoes 1 e 2 nunca sao usadas: a 1 poe a tela de cabeca para baixo em
-// relacao ao teclado, e a 2 e o retrato invertido.
+// ONLY TWO STATES EXIST: portrait (rotation 0, the home screen's) and landscape (rotation 3,
+// the one that puts ExtPort1 - where the keyboard attaches - on the bottom edge). Rotations
+// 1 and 2 are never used: 1 puts the screen upside down relative
+// to the keyboard, and 2 is inverted portrait.
 typedef enum {
-  ORI_EM_PE = 0,    // o padrao: retrato, 720x1280
-  ORI_DEITADO,      // paisagem fixa, 1280x720
-  // Segue o aparelho (kernel/orientacao): em pe ou deitado conforme a
-  // gravidade, entre os mesmos dois estados. Com o teclado fisico encaixado,
-  // fica deitado - e a unica postura em que ele faz sentido.
+  ORI_EM_PE = 0,    // the default: portrait, 720x1280
+  ORI_DEITADO,      // fixed landscape, 1280x720
+  // Follows the device (kernel/orientacao): portrait or landscape according to
+  // gravity, between the same two states. With the physical keyboard attached,
+  // it stays landscape - the only posture in which that makes sense.
   ORI_SEGUE_IMU,
-  // Em pe SEMPRE, mesmo com o teclado fisico encaixado (que deita todos os
-  // outros, kernel/orientacao). Para quem nao funciona girado: a Camera (a
-  // superficie de DMA do preview so existe com a tela em rotacao 0).
+  // Portrait ALWAYS, even with the physical keyboard attached (which lays all the
+  // others down, kernel/orientacao). For whoever doesn't work rotated: the Camera (the
+  // preview's DMA surface only exists with the screen at rotation 0).
   ORI_FIXO_EM_PE,
 } orientacao_t;
 
-// COMANDO DE CONSOLE DE UM APP (campo .comandos do app_t, abaixo).
+// AN APP'S CONSOLE COMMAND (the .comandos field of app_t, below).
 //
-// O console serial e do sistema, mas um app pode oferecer os proprios
-// comandos. Eles aparecem no 'help' num grupo so deles (APPS) e sao chamados
-// sempre com o nome do app na frente, para nunca colidir com um comando do
-// sistema nem com o de outro app:
+// The serial console belongs to the system, but an app may offer its own
+// commands. They appear in 'help' in a group of their own (APPS) and are always
+// called with the app name in front, so they never collide with a
+// system command or another app's:
 //
-//     app <app> <comando> [argumentos]       ex.: app exemplo contar 5
+//     app <app> <comando> [argumentos]       e.g.: app exemplo contar 5
 //
-// <app> e o .nome do app sem diferenca de maiusculas; espacos e hifens podem
-// ser omitidos ('app espnow' acha "ESP-NOW").
+// <app> is the app's .nome, case-insensitive; spaces and hyphens may be
+// omitted ('app espnow' finds "ESP-NOW").
 //
-// ONDE RODA: na tarefa do CONSOLE, nao na de interface. Entao, como em
-// qualquer tarefa do app: nao desenhe (mude o dado e chame
-// sistema_pedir_redesenho()), nao fale I2C interno, e proteja com trava o que
-// a interface tambem le. printf vai para a serial.
+// WHERE IT RUNS: on the CONSOLE task, not the UI one. So, as in
+// any app task: don't draw (change the data and call
+// sistema_pedir_redesenho()), don't talk internal I2C, and lock whatever
+// the UI also reads. printf goes to the serial port.
 //
-// APP FECHADO: com so_aberto = true o sistema recusa o comando enquanto o app
-// nao estiver em primeiro plano - e a regra para todo comando que mexe em
-// estado criado no ao_abrir() (que nao existe com o app fechado). Comando que
-// so le dado estatico ou chama servico pode deixar false.
+// APP CLOSED: with so_aberto = true the system refuses the command while the app
+// is not in the foreground - that is the rule for every command that touches
+// state created in ao_abrir() (which doesn't exist with the app closed). A command that
+// only reads static data or calls a service may leave it false.
 //
-// A lista termina numa entrada com nome = nullptr.
+// The list ends with an entry with nome = nullptr.
 typedef struct {
-  const char* nome;       // a palavra depois do nome do app
-  const char* uso;        // "argumentos\to que faz", uma forma por linha (sem 'app <app> <comando>')
-  void (*fn)(int argc, char** argv);   // argv[0] = o nome do comando
+  const char* nome;       // the word after the app name
+  const char* uso;        // "argumentos\twhat it does", one form per line (without 'app <app> <comando>')
+  void (*fn)(int argc, char** argv);   // argv[0] = the command name
   bool so_aberto;
 } app_comando_t;
 
 typedef struct {
-  // ---- identidade ---------------------------------------------------------
-  const char* nome;     // aparece na barra de status e sob o icone
-  uint16_t    cor;      // cor do icone na tela inicial
+  // ---- identity -----------------------------------------------------------
+  const char* nome;     // shown on the status bar and under the icon
+  uint16_t    cor;      // icon colour on the home screen
 
-  // ---- energia ------------------------------------------------------------
-  // O QUE ESTE APP PRECISA LIGADO. Tudo que nao esta aqui fica desligado
-  // enquanto ele estiver em primeiro plano, e volta ao estado do sistema
-  // quando ele fechar. E o mecanismo que impede o aparelho de esquentar
-  // alimentando coisa que o app nem usa.
+  // ---- power --------------------------------------------------------------
+  // WHAT THIS APP NEEDS SWITCHED ON. Everything not listed here stays off
+  // while it is in the foreground, and goes back to the system state
+  // when it closes. It is the mechanism that stops the device heating up
+  // powering things the app doesn't even use.
   tab5_perfil_t perfil;
 
-  // Este app grava ou le arquivos. O sistema MONTA o cartao antes de chamar
-  // ao_abrir() e DESMONTA depois de ao_fechar() - com contagem de referencia,
-  // entao dois apps que usem SD ao mesmo tempo nao atrapalham um ao outro.
+  // This app writes or reads files. The system MOUNTS the card before calling
+  // ao_abrir() and UNMOUNTS it after ao_fechar() - with reference counting,
+  // so two apps using SD at the same time don't get in each other's way.
   //
-  // O app nao chama montar nem desmontar. Ele so pede um arquivo dentro da
-  // propria pasta:
+  // The app doesn't call mount or unmount. It just asks for a file inside its
+  // own folder:
   //     FILE* f = tab5_sd_abrir(APP_MEU.nome, "dados.csv", "a");
-  // e escreve com fprintf/fwrite normais. A pasta /sdcard/apps/<Nome>/ e criada
-  // sozinha na primeira vez.
+  // and writes with plain fprintf/fwrite. The folder /sdcard/apps/<Nome>/ is created
+  // automatically the first time.
   bool usa_sd;
 
-  // SEM O CARTAO ESTE APP NAO TEM FUNCAO (Arquivos: navega nele; Camera: a
-  // foto vai para ele). Com o cartao emprestado ao computador (modo
-  // pendrive), o SISTEMA nao abre o app - mostra no lugar uma tela dizendo
-  // por que, e abre sozinho quando o cartao voltar - e o pendrive nao comeca
-  // com ele aberto. Nao e o app que se protege: nenhum app precisa tratar
-  // "o cartao sumiu no meio".
+  // WITHOUT THE CARD THIS APP HAS NO PURPOSE (Arquivos: browses it; Camera: the
+  // photo goes to it). With the card lent to the computer (USB flash drive
+  // mode), the SYSTEM doesn't open the app - it shows a screen in its place saying
+  // why, and opens it by itself when the card comes back - and flash drive mode doesn't start
+  // with it open. It is not the app that protects itself: no app needs to handle
+  // "the card vanished midway".
   //
-  // Quem so GRAVA dados (historico, log) nao precisa disto: as portas de
-  // gravacao (hal/tab5_sd.hpp) guardam no diario e o app segue funcionando.
+  // Whoever only WRITES data (history, log) doesn't need this: the write
+  // ports (hal/tab5_sd.hpp) store it in the journal and the app keeps working.
   bool exige_sd;
 
-  // Em que orientacao este app quer a tela (ver orientacao_t acima).
+  // Which orientation this app wants the screen in (see orientacao_t above).
   //
-  // ORI_DEITADO nasceu para o Meshtastic: com o teclado do ExtPort1
-  // encaixado, paisagem e a postura natural, e uma lista de mensagens cabe
-  // muito mais. ORI_SEGUE_IMU deixa o proprio aparelho escolher.
+  // ORI_DEITADO was born for Meshtastic: with the ExtPort1 keyboard
+  // attached, landscape is the natural posture, and a message list fits
+  // much more. ORI_SEGUE_IMU lets the device itself choose.
   //
-  // Funciona porque a rotacao no M5GFX transforma COORDENADAS, nao o
-  // framebuffer: o double buffer (tab5_tela) monta os ponteiros de linha a partir
-  // das dimensoes fisicas do painel, que nao mudam. E o area_util() ja calcula
-  // tudo a partir de Display.width()/height(), entao barra e navegacao se
-  // reacomodam sozinhas.
+  // It works because rotation in M5GFX transforms COORDINATES, not the
+  // framebuffer: the double buffer (tab5_tela) builds the line pointers from
+  // the panel's physical dimensions, which don't change. And area_util() already computes
+  // everything from Display.width()/height(), so the status bar and navigation
+  // rearrange themselves.
   //
-  // QUEM SEGUE O IMU PRECISA DESENHAR A PARTIR DA AREA, sempre: a largura
-  // pode mudar com o app aberto. O sistema gira so entre dois quadros, sem
-  // dedo na tela, e manda uma passada completa logo depois (a area chega
-  // limpa, sistema_area_foi_limpa() = true). Geometria guardada de um quadro
-  // para outro - medida de texto, posicao de botao - tem que ser refeita.
+  // WHOEVER FOLLOWS THE IMU MUST DRAW FROM THE AREA, always: the width
+  // can change with the app open. The system only rotates between two frames, with no
+  // finger on the screen, and sends a full pass right after (the area arrives
+  // clear, sistema_area_foi_limpa() = true). Geometry kept from one frame
+  // to the next - text measurements, button positions - has to be recomputed.
   orientacao_t orientacao;
 
-  // (O teto do clock com a tela apagada nao e mais do app: e da politica dos
-  // RECURSOS em uso - kernel/recursos.h. O app que toca, filma ou atende a
-  // rede usa o servico, e o servico declara.)
+  // (The clock ceiling with the screen off no longer belongs to the app: it comes from the policy of the
+  // RESOURCES in use - kernel/recursos.h. The app that plays, records or serves the
+  // network uses the service, and the service declares it.)
 
-  // ---- ciclo de vida ------------------------------------------------------
-  // Chamado ao abrir. E AQUI que o app cria suas tarefas e queues.
-  // Devolver false aborta a abertura (o sistema volta para a tela inicial).
+  // ---- lifecycle ----------------------------------------------------------
+  // Called on opening. It is HERE that the app creates its tasks and queues.
+  // Returning false aborts the opening (the system goes back to the home screen).
   bool (*ao_abrir)(void);
 
-  // Chamado ao fechar. Precisa destruir TUDO que ao_abrir() criou - tarefas,
-  // queues, buffers. Nada de tarefa orfa: app fechado tem que custar zero.
+  // Called on closing. Must destroy EVERYTHING ao_abrir() created - tasks,
+  // queues, buffers. No orphan tasks: a closed app must cost zero.
   void (*ao_fechar)(void);
 
-  // ---- repouso --------------------------------------------------------
-  // Chamados em volta do repouso por inatividade (kernel/core.cpp) - NAO em
-  // volta de ao_abrir/ao_fechar. Existem para um app soltar hardware que
-  // ao_abrir() ligou e que NAO pode continuar ativo durante o repouso, sem
-  // precisar fechar o app inteiro para isso.
+  // ---- idle ---------------------------------------------------------------
+  // Called around inactivity idle (kernel/core.cpp) - NOT
+  // around ao_abrir/ao_fechar. They exist so an app can release hardware that
+  // ao_abrir() switched on and that must NOT stay active during idle, without
+  // having to close the whole app for it.
   //
-  // NASCEU, achado ao vivo: o app Camera trava e reinicia o
-  // aparelho ao voltar do repouso. Causa - a captura V4L2 da camera e o
-  // painel DSI usam o MESMO controlador de DMA generico do chip (DW_GDMA,
-  // confirmado no driver do ESP-IDF: esp_cam_ctlr_csi.c e
-  // esp_lcd_panel_dpi.c chamam as mesmas funcoes). O repouso DESTROI e
-  // RECRIA o canal de DMA do painel (ver desmontar_tela()/montar_tela() em
-  // hal/tab5_power.cpp) - se a camera continuar com o canal DELA vivo
-  // durante essa janela, o painel novo pode nascer pisando um canal ainda
-  // em uso, e o driver quebra dentro de dw_gdma_channel_use_link_list()
-  // com um "Store access fault".
+  // BORN from a live finding: the Camera app froze and restarted the
+  // device when coming back from idle. Cause - the camera's V4L2 capture and the
+  // DSI panel use the SAME generic DMA controller on the chip (DW_GDMA,
+  // confirmed in the ESP-IDF driver: esp_cam_ctlr_csi.c and
+  // esp_lcd_panel_dpi.c call the same functions). Idle DESTROYS and
+  // RECREATES the panel's DMA channel (see desmontar_tela()/montar_tela() in
+  // hal/tab5_power.cpp) - if the camera keeps ITS channel alive
+  // during that window, the new panel may be born stepping on a channel still
+  // in use, and the driver crashes inside dw_gdma_channel_use_link_list()
+  // with a "Store access fault".
   //
-  // O DEFEITO DO DMA FOI CONSERTADO NO SISTEMA (05/11/2026): era o
-  // esp_lcd_panel_del apagando o canal ainda rodando, e hoje hal/tab5_dma.cpp
-  // para o canal antes - vale para qualquer consumidor do DMA, inclusive os
-  // que nao sao app (a camera do navegador caiu justamente por nao ter este
-  // gancho). Nao use estes ganchos para contornar defeito de hardware nem para
-  // segurar a suspensao: isso e do sistema (docs/SUSPENSAO_2026-11-05.md).
-  // Eles ficam para o que e do app: gravar o que esta aberto (Notas).
-  // A CAMERA TAMBEM SAIU DAQUI (06/11/2026): o kernel pausa a camera do app
-  // aberto ao apagar a tela e a religa ao acordar (tab5_camera_pausar) - o
-  // app Camera e os apps Berry nao tem mais gancho nenhum.
+  // THE DMA DEFECT WAS FIXED IN THE SYSTEM (05/11/2026): it was
+  // esp_lcd_panel_del deleting the channel while still running, and now hal/tab5_dma.cpp
+  // stops the channel first - this applies to any DMA consumer, including those
+  // that aren't apps (the browser camera went down precisely for lacking this
+  // hook). Don't use these hooks to work around hardware defects or to
+  // hold off suspension: that is the system's job (docs/SUSPENSAO_2026-11-05.md).
+  // They remain for what belongs to the app: saving what is open (Notas).
+  // THE CAMERA LEFT HERE TOO (06/11/2026): the kernel pauses the open app's
+  // camera when the screen goes off and turns it back on at wake (tab5_camera_pausar) - the
+  // Camera app and the Berry apps no longer have any hook.
   //
-  // ao_repouso(): chamado ANTES do sistema desligar a tela (ainda com o
-  // painel de pe).
-  // ao_retomar(): chamado DEPOIS do painel ja estar remontado - religue
-  // aqui o que foi solto.
+  // ao_repouso(): called BEFORE the system switches the screen off (with the
+  // panel still up).
+  // ao_retomar(): called AFTER the panel has been rebuilt - switch back on
+  // here whatever was released.
   //
-  // Os dois sao OPCIONAIS (nullptr = nada a fazer, o caso comum). Rodam na
-  // tarefa de interface, a mesma de ao_abrir/ao_fechar - seguro chamar
-  // qualquer coisa que estes ja chamam, inclusive I2C interno.
+  // Both are OPTIONAL (nullptr = nothing to do, the common case). They run on the
+  // UI task, the same as ao_abrir/ao_fechar - safe to call
+  // anything those already call, including internal I2C.
   void (*ao_repouso)(void);
   void (*ao_retomar)(void);
 
   // ---- interface ----------------------------------------------------------
-  // Chamado pela tarefa de interface, nunca por outra. Nao chame funcoes de
-  // desenho de dentro das suas proprias tarefas: o LovyanGFX nao e seguro
-  // para acesso concorrente. Passe os dados por queue e desenhe aqui.
+  // Called by the UI task, never by another. Don't call drawing
+  // functions from inside your own tasks: LovyanGFX is not safe
+  // for concurrent access. Pass the data through a queue and draw here.
   void (*desenhar)(lgfx::LovyanGFX& tela, const area_t& area);
 
-  // Toque dentro da area do app, ja em coordenadas RELATIVAS a area.
-  // Dispara na SOLTURA do dedo (o clique do sistema: desceu e subiu sem
-  // arrastar mais de ~2 mm, com qualquer duracao - kernel/core.cpp,
-  // TOQUE_TOLERANCIA_PX), que e o certo para botao: da
-  // para desistir arrastando o dedo para fora antes de soltar.
+  // Touch inside the app's area, already in coordinates RELATIVE to the area.
+  // Fires on finger RELEASE (the system click: went down and up without
+  // dragging more than ~2 mm, of any duration - kernel/core.cpp,
+  // TOQUE_TOLERANCIA_PX), which is right for a button: you can
+  // back out by dragging your finger off before releasing.
   void (*ao_tocar)(int x, int y);
 
-  // Toque por NIVEL, entregue a CADA ciclo da interface (20 ms), com o dedo
-  // ainda na tela. 'pressionado' diz se ha dedo na area do app agora; x,y so
-  // valem quando ele e true (fora disso vem -1, -1).
+  // LEVEL touch, delivered on EVERY UI cycle (20 ms), with the finger
+  // still on the screen. 'pressionado' says whether there is a finger on the app area now; x,y only
+  // count when it is true (otherwise they come as -1, -1).
   //
-  // Existe porque ao_tocar() so avisa quando o dedo SAI, e ha duas coisas que
-  // um botao nunca precisa mas um jogo precisa: reagir na DESCIDA do dedo, e
-  // saber que ele CONTINUA ali. Quem quer detectar o instante do toque guarda
-  // o valor anterior e compara - a borda de subida e do app, nao do sistema.
+  // It exists because ao_tocar() only signals when the finger LEAVES, and there are two things
+  // a button never needs but a game does: reacting on finger DOWN, and
+  // knowing it is STILL there. Whoever wants to detect the moment of touch keeps
+  // the previous value and compares - the rising edge belongs to the app, not the system.
   //
-  // Os dois convivem: um app pode usar so ao_tocar (o caso normal), so este,
-  // ou os dois. Deixe nullptr se nao precisa.
+  // The two coexist: an app can use only ao_tocar (the normal case), only this one,
+  // or both. Leave nullptr if not needed.
   void (*ao_tocar_nivel)(int x, int y, bool pressionado);
 
-  // TECLA DO TECLADO FISICO (o do ExtPort1), ja decodificada.
+  // PHYSICAL KEYBOARD KEY (the ExtPort1 one), already decoded.
   //
-  // 'texto' vem com terminador nulo, em UTF-8 (uma letra acentuada composta
-  // pela tecla morta tem 2 bytes); para as teclas especiais ele vem VAZIO e o
-  // que vale e 'codigo' (hal/tab5_teclado.hpp):
+  // 'texto' comes NUL-terminated, in UTF-8 (an accented letter composed
+  // by the dead key is 2 bytes); for special keys it comes EMPTY and
+  // what counts is 'codigo' (hal/tab5_teclado.hpp):
   //
   //   TAB5_TECLA_ENTER, _APAGAR (Backspace), _DEL, _ESC, _TAB,
   //   _ESQUERDA, _DIREITA, _CIMA, _BAIXO
   //
-  // Codigo que o app nao conhece: ignore (vira tecla nova, nao texto). Com
-  // Ctrl/Alt segurados o texto vem assim mesmo - e atalho, nao digitacao.
+  // A code the app doesn't know: ignore it (it's a new key, not text). With
+  // Ctrl/Alt held the text comes anyway - it's a shortcut, not typing.
   //
-  // 'modificador' e a combinacao de TAB5_TECLA_CTRL/SHIFT/ALT no momento.
+  // 'modificador' is the combination of TAB5_TECLA_CTRL/SHIFT/ALT at the moment.
   //
-  // POR QUE ISTO EXISTE, e e uma correcao e nao um recurso: o sistema lia o
-  // teclado desde sempre e IMPRIMIA A TECLA NO LOG, sem entregar a ninguem. E
-  // o app Mesh, ao ver que havia teclado fisico encaixado, deixava de abrir o
-  // teclado virtual - para nao roubar tela. Resultado: com o teclado plugado
-  // nao havia como escrever de jeito nenhum, nem virtual nem fisico. Era este
-  // o motivo de "nunca consegui enviar".
+  // WHY THIS EXISTS, and it is a fix rather than a feature: the system had always read
+  // the keyboard and PRINTED THE KEY TO THE LOG, without delivering it to anyone. And
+  // the Mesh app, on seeing a physical keyboard attached, stopped opening the
+  // virtual keyboard - so as not to steal screen space. Result: with the keyboard plugged in
+  // there was no way to type at all, neither virtual nor physical. That was
+  // the reason for "I could never send".
   //
-  // Deixe nullptr se o app nao le teclado.
+  // Leave nullptr if the app doesn't read the keyboard.
   void (*ao_teclar)(const char* texto, uint8_t codigo, uint8_t modificador);
 
-  // De quanto em quanto tempo redesenhar sozinho, em ms.
-  // 0 = so redesenha quando alguem chamar sistema_pedir_redesenho().
-  // Prefira 0 ou valores grandes: cada redesenho custa CPU e energia.
+  // How often to redraw by itself, in ms.
+  // 0 = only redraws when someone calls sistema_pedir_redesenho().
+  // Prefer 0 or large values: every redraw costs CPU and power.
   uint32_t periodo_ms;
 
-  // PERIODO QUE MUDA COM A TELA (opcional). Quando existe, vence
-  // periodo_ms: devolve o periodo de AGORA. Para o app que so precisa de
-  // relogio numa pagina (o Mesh: idade dos nos) e em nenhuma outra - o resto
-  // do tempo ele devolve 0 e so acorda por aviso.
+  // PERIOD THAT CHANGES WITH THE SCREEN (optional). When present, it beats
+  // periodo_ms: returns the period for NOW. For the app that only needs a
+  // clock on one page (Mesh: node ages) and on no other - the rest
+  // of the time it returns 0 and only wakes on a notice.
   uint32_t (*periodo_agora)(void);
 
-  // AVISOS que interessam a este app (mascara de AVISO_*). Quando um servico
-  // publica um deles, o sistema redesenha o app NA HORA - sem esperar periodo
-  // nenhum. E a troca de "perguntar a cada segundo se mudou" por "ser avisado
-  // quando mudar". ao_aviso e opcional: sem ele, o aviso vira um
-  // sistema_pedir_redesenho(); com ele, o app decide o que fazer.
+  // NOTICES this app is interested in (mask of AVISO_*). When a service
+  // publishes one of them, the system redraws the app IMMEDIATELY - without waiting for any
+  // period. It trades "asking every second whether it changed" for "being notified
+  // when it changes". ao_aviso is optional: without it, the notice becomes a
+  // sistema_pedir_redesenho(); with it, the app decides what to do.
   uint32_t avisos;
   void (*ao_aviso)(uint32_t avisos);
 
   // ---------------------------------------------------------------------
-  // ROLAGEM POR TOQUE
+  // TOUCH SCROLLING
   // ---------------------------------------------------------------------
-  // Altura TOTAL do conteudo do app, em pixels. 0 (o padrao) = nao rola, e o
-  // app enxerga exatamente a area visivel, como sempre foi.
+  // TOTAL height of the app's content, in pixels. 0 (the default) = doesn't scroll, and the
+  // app sees exactly the visible area, as it always did.
   //
-  // Sendo maior que a area, o SISTEMA passa a cuidar de tudo: arrastar o dedo
-  // rola, o desenho e recortado na area, e as coordenadas do ao_tocar chegam
-  // ja no espaco do CONTEUDO. Ou seja: o app desenha e testa toque num
-  // sistema de coordenadas que comeca em 0 e vai ate altura_conteudo, sem
-  // saber que existe rolagem.
+  // When larger than the area, the SYSTEM takes care of everything: dragging a finger
+  // scrolls, drawing is clipped to the area, and ao_tocar coordinates arrive
+  // already in CONTENT space. In other words: the app draws and tests touch in a
+  // coordinate system that starts at 0 and goes up to altura_conteudo, without
+  // knowing that scrolling exists.
   //
-  // Isso e de proposito. A alternativa - cada app somar um deslocamento em
-  // todo y - e a receita para o app que esquece de somar em UM lugar e fica
-  // com um botao que responde no lugar errado depois de rolar.
+  // That is on purpose. The alternative - each app adding an offset to
+  // every y - is a recipe for the app that forgets to add it in ONE place and ends up
+  // with a button that responds in the wrong place after scrolling.
   //
-  // Um arraste NAO vira toque: o sistema mede a distancia percorrida e engole
-  // o clique se ela passar do limiar. Sem isso, todo fim de rolagem apertaria
-  // o que estivesse embaixo do dedo.
+  // A drag does NOT become a touch: the system measures the distance travelled and swallows
+  // the click if it exceeds the threshold. Without that, every end of scroll would press
+  // whatever was under the finger.
   int altura_conteudo;
-  // A mesma altura, decidida AGORA (opcional; ganha de altura_conteudo). Para
-  // o app cujo conteudo muda com a orientacao: deitado (teclado fisico
-  // encaixado, kernel/orientacao) a area tem ~584 px de altura em vez de
-  // ~1144, e o que cabia em pe passa a precisar rolar. Recebe a area visivel
-  // (largura e altura de agora); 0 = nao rola.
+  // The same height, decided NOW (optional; beats altura_conteudo). For
+  // the app whose content changes with orientation: landscape (physical keyboard
+  // attached, kernel/orientacao) the area is ~584 px tall instead of
+  // ~1144, and what fitted in portrait now needs to scroll. Receives the visible area
+  // (current width and height); 0 = doesn't scroll.
   int (*altura_agora)(const area_t& a);
 
-  // Desenho do icone na tela inicial, dentro do quadrado (x, y, lado).
+  // Draws the icon on the home screen, inside the square (x, y, lado).
   //
-  // nullptr - o padrao - desenha o quadrado na cor do app com a inicial do
-  // nome, que e o que sempre houve e continua bom para a maioria. Um app que
-  // fala um protocolo de terceiros ganha em mostrar a marca DELE: quem procura
-  // o Meshtastic procura o simbolo do Meshtastic, nao a letra M de "Mesh".
+  // nullptr - the default - draws the square in the app's colour with the initial of the
+  // name, which is what there always was and is still fine for most. An app that
+  // speaks a third-party protocol gains from showing THEIR brand: whoever looks for
+  // Meshtastic looks for the Meshtastic symbol, not the letter M of "Mesh".
   //
-  // O nome continua sendo desenhado embaixo pelo sistema, nos dois casos.
+  // The name is still drawn underneath by the system, in both cases.
   void (*icone)(lgfx::LovyanGFX& d, int x, int y, int lado);
 
-  // A TELA GIROU com o app aberto (ORI_SEGUE_IMU, ou o teclado fisico
-  // encaixado/retirado em qualquer app que nao seja ORI_FIXO_EM_PE). Chamado
-  // na tarefa de interface, DEPOIS de a rotacao nova valer (sistema_area()
-  // ja devolve as dimensoes novas) e ANTES da passada completa que a
-  // redesenha. Serve para o app trocar de layout - nao precisa pedir
-  // redesenho, o sistema ja pediu. Opcional: nullptr = nada a fazer alem de
-  // desenhar pela area nova.
+  // THE SCREEN ROTATED with the app open (ORI_SEGUE_IMU, or the physical keyboard
+  // attached/removed in any app that isn't ORI_FIXO_EM_PE). Called
+  // on the UI task, AFTER the new rotation takes effect (sistema_area()
+  // already returns the new dimensions) and BEFORE the full pass that
+  // redraws it. It lets the app switch layout - no need to request a
+  // redraw, the system already has. Optional: nullptr = nothing to do beyond
+  // drawing for the new area.
   void (*ao_girar)(void);
 
-  // Comandos de console deste app (ver app_comando_t acima). nullptr = nenhum.
+  // This app's console commands (see app_comando_t above). nullptr = none.
   const app_comando_t* comandos;
 
-  // FORA DA TELA INICIAL: o app existe e abre (sistema_abrir_app), mas nao
-  // tem icone na home - mora dentro de outro (a Energia, aberta pelo Ajustes).
+  // OFF THE HOME SCREEN: the app exists and opens (sistema_abrir_app), but has
+  // no icon on the home screen - it lives inside another (Energia, opened from Ajustes).
   bool fora_da_home;
 
-  // NO NAVEGADOR DO PC: abre a parte deste app no servidor web do sistema
-  // (services/tab5_web - a funcao de ligar do servico dele, ex.:
-  // berry_web_ligar). O portal (http://<ip>/) lista os apps que tem isto e
-  // abre por aqui; o painel "No PC" do app tambem. nullptr = so no aparelho.
-  // De qualquer tarefa (o portal chama de dentro de um pedido).
+  // IN THE PC BROWSER: opens this app's part on the system web server
+  // (services/tab5_web - its service's start function, e.g.
+  // berry_web_ligar). The portal (http://<ip>/) lists the apps that have this and
+  // opens them through here; the app's "No PC" panel does too. nullptr = device only.
+  // From any task (the portal calls it from inside a request).
   bool (*no_pc)(void);
 
-  // NO TEMA NOVO (repaginacao 2026-11): true = o sistema limpa a area deste
-  // app com TEMA_FUNDO em vez de preto, e os componentes comuns (tab5_celula,
-  // tab5_escrever) desenham o texto sobre essa cor. Cada app liga isto quando
-  // for migrado para o tema - enquanto false, continua tudo no preto de antes.
+  // ON THE NEW THEME (2026-11 redesign): true = the system clears this
+  // app's area with TEMA_FUNDO instead of black, and the common components (tab5_celula,
+  // tab5_escrever) draw text on that colour. Each app turns this on when
+  // migrated to the theme - while false, everything stays on the old black.
   bool fundo_tema;
 } app_t;
 
 // ---------------------------------------------------------------------------
-// API do sistema, disponivel para os apps
+// System API, available to apps
 // ---------------------------------------------------------------------------
 
-// Marca a tela como suja: o app sera redesenhado no proximo ciclo.
-// Use quando um dado mudou, em vez de pedir redesenho periodico rapido.
+// Marks the screen dirty: the app will be redrawn on the next cycle.
+// Use when some data has changed, instead of requesting fast periodic redraws.
 void sistema_pedir_redesenho(void);
 
-// BIP DO SISTEMA - o unico caminho para tocar um tom curto. Chamar SEMPRE da
-// tarefa de interface (fala I2C com o codec).
+// SYSTEM BEEP - the only way to play a short tone. ALWAYS call from the
+// UI task (it talks I2C to the codec).
 //
-// Existe porque o alto-falante e desligado depois de alguns segundos ocioso
-// (ver SPEAKER_OCIOSO_MS em core_som.cpp) e o ES8388 leva um tempo para subir: um
-// tone() direto, com o codec frio, termina ANTES de o DAC ficar audivel - o
-// primeiro bip depois de uma pausa saia mudo. Aqui, com o codec frio, o tom
-// vai precedido de silencio ate o codec aquecer.
+// It exists because the speaker is switched off after a few idle seconds
+// (see SPEAKER_OCIOSO_MS in core_som.cpp) and the ES8388 takes a while to come up: a
+// direct tone(), with the codec cold, ends BEFORE the DAC becomes audible - the
+// first beep after a pause came out silent. Here, with the codec cold, the tone
+// is preceded by silence until the codec warms up.
 void sistema_beep(float hz, uint32_t ms);
 
-// RECADO: uma frase curta na barra de status, no lugar do nome do app, por
-// ~2 s - a confirmacao de algo que nao muda a tela ("Copiado", "Colado").
-// Da tarefa de interface.
+// NOTE: a short phrase on the status bar, in place of the app name, for
+// ~2 s - confirmation of something that doesn't change the screen ("Copiado", "Colado").
+// From the UI task.
 void sistema_recado(const char* texto);
 
-// OS PINOS DO ALTO-FALANTE PARA O USB - so o pendrive usa (services/
-// tab5_pendrive). O I2S do alto-falante (GPIO 26/27) e o PHY USB que o ESP-IDF
-// acha que e do OTG: configurar esses pinos desliga o USB-C durante o
-// pendrive (ver o aviso em core.cpp). Ceder: o alto-falante e desligado pela
-// interface e fica mudo; true quando ja esta parado (espera ate espera_ms).
-// Devolver: o som volta no proximo bip. De qualquer tarefa, menos a interface.
+// THE SPEAKER PINS FOR USB - only flash drive mode uses this (services/
+// tab5_pendrive). The speaker's I2S (GPIO 26/27) is the USB PHY that ESP-IDF
+// thinks belongs to OTG: configuring those pins switches USB-C off during
+// flash drive mode (see the warning in core.cpp). Yield: the speaker is switched off by the
+// UI and stays silent; true when it has already stopped (waits up to espera_ms).
+// Give back: sound returns on the next beep. From any task except the UI.
 bool sistema_som_ceder_pinos(uint32_t espera_ms);
 void sistema_som_devolver_pinos(void);
 
-// SOM EM FLUXO - musica, tocada em blocos pela parte de fundo de um app
-// (app_musica). O codec so liga pela interface (I2C), entao abrir PEDE e
-// espera; dali em diante a parte de fundo alimenta sozinha, um bloco por vez,
-// sem passar pela interface. De qualquer tarefa, menos a interface.
-//   abrir:  liga o alto-falante (e espera o codec aquecer); false = sem som
-//           (pinos cedidos ao pendrive, ou a interface nao respondeu).
-//   livre:  cabe mais um bloco agora (o alto-falante guarda dois: o que toca e
-//           o proximo). O dono dos blocos usa TRES buffers em rodizio.
-//   tocar:  enfileira 'quadros' (estereo: pares L/R). false = o fluxo foi
-//           fechado por baixo (pendrive) - pare de tocar.
-//   calar:  descarta o que esta na fila (pausa, troca de musica).
-//   fechar: solta o alto-falante (ele desliga sozinho depois de ocioso).
+// STREAMED SOUND - music, played in blocks by an app's background part
+// (app_musica). The codec only switches on via the UI (I2C), so opening REQUESTS and
+// waits; from then on the background part feeds it alone, one block at a time,
+// without going through the UI. From any task except the UI.
+//   abrir:  switches the speaker on (and waits for the codec to warm up); false = no sound
+//           (pins yielded to flash drive mode, or the UI didn't respond).
+//   livre:  one more block fits now (the speaker holds two: the one playing and
+//           the next). The block owner uses THREE buffers in rotation.
+//   tocar:  queues 'quadros' (stereo: L/R pairs). false = the stream was
+//           closed from underneath (flash drive) - stop playing.
+//   calar:  discards what is in the queue (pause, track change).
+//   fechar: releases the speaker (it switches itself off after being idle).
 bool sistema_som_fluxo_abrir(uint32_t espera_ms);
 bool sistema_som_fluxo_livre(void);
-int  sistema_som_fluxo_na_fila(void);   // blocos no alto-falante agora (0 = a fila secou: falhou o som)
+int  sistema_som_fluxo_na_fila(void);   // blocks in the speaker now (0 = the queue ran dry: sound failed)
 bool sistema_som_fluxo_tocar(const int16_t* pcm, size_t quadros, uint32_t hz, bool estereo);
 void sistema_som_fluxo_calar(void);
 void sistema_som_fluxo_fechar(void);
 
-// ACORDA A INTERFACE AGORA - Etapa 2 do docs/ARQUITETURA.md. Em
-// repouso, a interface pode estar dormindo ate ~1s esperando o proximo prazo
-// periodico (ver kernel/core.cpp); isto pula a espera na hora que algo
-// realmente novo aconteceu, em vez de deixar o aviso esperar. Pensado para
-// SERVICOS chamarem (notificacao.cpp e a ponte da camera ja chamam), mas
-// nada impede um app de usar se um dia precisar do mesmo efeito - so poe um
-// evento na queue, nunca bloqueia, seguro de qualquer tarefa.
+// WAKES THE UI NOW - Stage 2 of docs/ARQUITETURA.md. When
+// idle, the UI may be sleeping up to ~1s waiting for the next periodic
+// deadline (see kernel/core.cpp); this skips the wait the moment something
+// genuinely new has happened, instead of letting the notice wait. Intended for
+// SERVICES to call (notificacao.cpp and the camera bridge already do), but
+// nothing stops an app from using it if it ever needs the same effect - it just puts an
+// event on the queue, never blocks, safe from any task.
 void sistema_acordar_interface(void);
 
 // ---------------------------------------------------------------------------
-// CONTRATO DE ECONOMIA - o software acompanha o hardware no repouso
+// POWER-SAVING CONTRACT - software follows the hardware when idle
 // ---------------------------------------------------------------------------
-// Com a tela apagada o P4 entra em SONO LEVE entre um evento e outro (tickless
-// + light sleep, ver tab5_power_sono_leve). Cada acordada custa: quem tem um
-// laco periodico ESCOLHE o prazo pelo nivel, em vez de girar sempre no ritmo
-// de tela acesa:
+// With the screen off the P4 enters LIGHT SLEEP between one event and the next (tickless
+// + light sleep, see tab5_power_sono_leve). Every wake-up has a cost: whoever has a
+// periodic loop CHOOSES the timeout by level, instead of always spinning at the
+// screen-on pace:
 //     xQueueReceive(fila, &c, pdMS_TO_TICKS(sistema_ritmo_ms(1000, 10000)));
-// Nao perde rendimento: evento de verdade (fila, interrupcao, aviso) acorda na
-// hora - so o "olhar de novo por via das duvidas" fica mais espacado.
+// No loss of responsiveness: a real event (queue, interrupt, notice) wakes it
+// immediately - only the "look again just in case" gets spaced out more.
 //
-// Quem PRECISA de resposta rapida com a tela apagada (o ESP-NOW conversando:
-// o SDIO do C6 nao acorda o P4) SEGURA o sono com o proprio bit, e solta quando
-// nao precisar mais - o mesmo desenho de tab5_wifi_manter_acordado. Seguro de
-// qualquer tarefa.
+// Whoever NEEDS a fast response with the screen off (ESP-NOW in conversation:
+// the C6's SDIO doesn't wake the P4) HOLDS off sleep with its own bit, and releases it when
+// no longer needed - the same design as tab5_wifi_manter_acordado. Safe from
+// any task.
 typedef enum { ECONOMIA_ACORDADO = 0, ECONOMIA_REPOUSO = 1 } economia_t;
 economia_t sistema_economia(void);
 static inline uint32_t sistema_ritmo_ms(uint32_t acordado_ms, uint32_t repouso_ms)
@@ -400,326 +400,326 @@ static inline uint32_t sistema_ritmo_ms(uint32_t acordado_ms, uint32_t repouso_m
   return sistema_economia() == ECONOMIA_REPOUSO ? repouso_ms : acordado_ms;
 }
 //
-// SERVICO NAO USA ISTO DIRETO: declara o RECURSO que usa (kernel/recursos.h)
-// e a politica dele decide o sono leve. Sobram os bits do proprio sistema:
-#define ECONOMIA_SEGURA_WIFI     (1u << 0)   // Wi-Fi com receptor pedido - services/tab5_wifi_cochilo
+// SERVICES DON'T USE THIS DIRECTLY: they declare the RESOURCE they use (kernel/recursos.h)
+// and its policy decides light sleep. What remains are the system's own bits:
+#define ECONOMIA_SEGURA_WIFI     (1u << 0)   // Wi-Fi with receiver requested - services/tab5_wifi_cochilo
 #define ECONOMIA_SEGURA_TESTE    (1u << 1)   // console: 'energia sono segurar'
-#define ECONOMIA_SEGURA_RECURSOS (1u << 2)   // algum recurso em uso proibe o sono leve (kernel/recursos)
+#define ECONOMIA_SEGURA_RECURSOS (1u << 2)   // some resource in use forbids light sleep (kernel/recursos)
 void     sistema_economia_segurar(uint32_t quem, bool sim);
-uint32_t sistema_economia_seguros(void);   // os bits de quem segura agora (0 = ninguem)
+uint32_t sistema_economia_seguros(void);   // the bits of whoever is holding now (0 = nobody)
 
 // ---------------------------------------------------------------------------
-// AVISOS - o servico diz o que mudou, o app interessado e redesenhado na hora
+// NOTICES - the service says what changed, the interested app is redrawn immediately
 // ---------------------------------------------------------------------------
-// Seguro de QUALQUER tarefa (e barato: um OR atomico e um evento na queue, sem
-// bloquear). Varios avisos iguais antes de a interface acordar viram um so.
-#define AVISO_MESH_MSG    (1u << 0)   // mensagem nova (recebida ou enviada)
-#define AVISO_MESH_ENVIO  (1u << 1)   // estado de envio mudou (ACK, erro)
-#define AVISO_MESH_NOS    (1u << 2)   // tabela de nos mudou
-#define AVISO_GPS         (1u << 3)   // posicao nova
-#define AVISO_TRILHA      (1u << 4)   // amostra nova da trilha
-#define AVISO_TRABALHO    (1u << 5)   // um sistema_trabalho() deste app terminou (kernel/trabalho.hpp)
-#define AVISO_ESPNOW      (1u << 6)   // ESP-NOW: mensagem, estado de envio ou canal mudou (services/tab5_espnow)
-#define AVISO_VOLUMES     (1u << 7)   // um disco entrou ou saiu (pendrive no USB-A) - services/tab5_volumes
-#define AVISO_ARQUIVOS    (1u << 8)   // copiar/mover/esvaziar andou ou terminou - services/tab5_arquivos
-#define AVISO_WEB         (1u << 9)   // o servidor web ligou, desligou ou atendeu um pedido - services/tab5_web
-#define AVISO_SSH         (1u << 10)  // a sessao SSH compartilhada mudou (estado ou tela) - services/tab5_ssh
-#define AVISO_VIDEO       (1u << 11)  // quadro novo, pausa, fim ou erro do video - services/tab5_video
+// Safe from ANY task (and cheap: an atomic OR and an event on the queue, without
+// blocking). Several identical notices before the UI wakes become one.
+#define AVISO_MESH_MSG    (1u << 0)   // new message (received or sent)
+#define AVISO_MESH_ENVIO  (1u << 1)   // send state changed (ACK, error)
+#define AVISO_MESH_NOS    (1u << 2)   // node table changed
+#define AVISO_GPS         (1u << 3)   // new position
+#define AVISO_TRILHA      (1u << 4)   // new track sample
+#define AVISO_TRABALHO    (1u << 5)   // a sistema_trabalho() of this app finished (kernel/trabalho.hpp)
+#define AVISO_ESPNOW      (1u << 6)   // ESP-NOW: message, send state or channel changed (services/tab5_espnow)
+#define AVISO_VOLUMES     (1u << 7)   // a disk came or went (flash drive on USB-A) - services/tab5_volumes
+#define AVISO_ARQUIVOS    (1u << 8)   // copy/move/empty progressed or finished - services/tab5_arquivos
+#define AVISO_WEB         (1u << 9)   // the web server started, stopped or served a request - services/tab5_web
+#define AVISO_SSH         (1u << 10)  // the shared SSH session changed (state or screen) - services/tab5_ssh
+#define AVISO_VIDEO       (1u << 11)  // new frame, pause, end or error of the video - services/tab5_video
 void sistema_avisar(uint32_t avisos);
 
-// Para quando a tela inteira muda de conteudo (virar pagina, trocar de nivel):
-// limpa a area e repinta pelo double buffer, sem piscar. Ver kernel/core.cpp.
+// For when the whole screen changes content (turning a page, changing level):
+// clears the area and repaints through the double buffer, without flicker. See kernel/core.cpp.
 void sistema_pedir_redesenho_completo(void);
 
-// Verdadeiro quando o sistema acabou de LIMPAR a area antes de chamar o
-// desenhar() do app - na abertura, ao voltar do repouso, ao trocar de pagina.
-// Um app que pinta por diferenca TEM que consultar isto e repintar tudo; se nao
-// consultar, volta do repouso com a tela em branco.
+// True when the system has just CLEARED the area before calling the app's
+// desenhar() - on opening, on returning from idle, on changing page.
+// An app that paints by difference MUST check this and repaint everything; if it doesn't
+// check, it comes back from idle with a blank screen.
 bool sistema_area_foi_limpa(void);
 
-// QUANTO TEMPO ESTE QUADRO REPRESENTA, em segundos - para quem anima por
-// tempo. E a distancia entre as varreduras do painel em que este quadro e o
-// anterior vao ao ar (kernel/ritmo.hpp), e nao entre os instantes em que
-// foram desenhados: o que aparece andou exatamente o que ficou na tela.
-// Chamar de dentro de desenhar(). Sempre > 0; limite como lhe convier (depois
-// de uma pausa longa ele e grande).
+// HOW MUCH TIME THIS FRAME REPRESENTS, in seconds - for whoever animates by
+// time. It is the distance between the panel scans in which this frame and the
+// previous one go on air (kernel/ritmo.hpp), and not between the instants they
+// were drawn: what appears has moved exactly as much as stayed on screen.
+// Call from inside desenhar(). Always > 0; clamp it as suits you (after
+// a long pause it is large).
 float sistema_quadro_dt(void);
 
-// A area de desenho do app - a MESMA que chega no desenhar().
+// The app's drawing area - the SAME one passed to desenhar().
 //
-// Existe porque o ao_tocar() so recebe x e y (ja relativos a area) e nao a area
-// em si. Quem precisava dela - teclado na tela, barra ancorada no rodape -
-// reconstruia copiando as alturas da barra de status e da navegacao de dentro
-// do que hoje e kernel/internal.hpp (ALTURA_BARRA/ALTURA_NAV):
+// It exists because ao_tocar() only receives x and y (already relative to the area) and not the area
+// itself. Whoever needed it - on-screen keyboard, bar anchored to the bottom -
+// rebuilt it by copying the heights of the status bar and navigation from inside
+// what is now kernel/internal.hpp (ALTURA_BARRA/ALTURA_NAV):
 //
-//     M5.Display.height() - 64 - 96      <-- era assim no app Mesh
+//     M5.Display.height() - 64 - 96      <-- that's how the Mesh app did it
 //
-// O perigo nao e o numero magico: e que o DESENHO usa a area de verdade e o
-// TOQUE usava a copia. Mudar a altura de uma barra deixaria a tela certa e o
-// dedo errado - falha silenciosa, que so aparece como "nao esta clicando".
+// The danger isn't the magic number: it is that DRAWING uses the real area and
+// TOUCH used the copy. Changing a bar's height would leave the screen right and the
+// finger wrong - a silent failure, which only shows up as "it isn't clicking".
 //
-// Use isto em qualquer lugar que precise da geometria fora do desenhar().
+// Use this anywhere that needs the geometry outside desenhar().
 area_t sistema_area(void);
 
-// SUPERFICIE PARA DMA. Um app que produz imagem por hardware
-// (camera, e um dia video/JPEG) nao desenha pixel a pixel: o PPA escreve
-// numa imagem do tamanho da tela, do proprio app, alocada no primeiro pedido
-// e devolvida quando o app fecha. sistema_superficie() da o buffer (RGB565,
-// o formato do painel, alinhado para DMA) e onde fica o retangulo 'r'
-// (coordenadas de TELA, como as de area_t) dentro dele. So em retrato
-// (rotacao 0) - false em paisagem. O retangulo precisa ter a LARGURA INTEIRA
-// da tela e y/altura multiplos de 8: o PPA invalida o cache por linhas
-// inteiras (ver tela_virtual.cpp). Quem escreveu avisa com
-// sistema_superficie_mudou(r), NA TAREFA DE INTERFACE (no desenhar): e ai
-// que a area vai, por DMA, para a pagina de tras do painel.
+// SURFACE FOR DMA. An app that produces images in hardware
+// (camera, and one day video/JPEG) doesn't draw pixel by pixel: the PPA writes
+// into a screen-sized image, the app's own, allocated on the first request
+// and returned when the app closes. sistema_superficie() gives the buffer (RGB565,
+// the panel format, DMA-aligned) and where rectangle 'r'
+// (SCREEN coordinates, like area_t's) sits inside it. Portrait only
+// (rotation 0) - false in landscape. The rectangle must have the FULL WIDTH
+// of the screen and y/height multiples of 8: the PPA invalidates the cache in whole
+// lines (see tela_virtual.cpp). Whoever wrote signals with
+// sistema_superficie_mudou(r), ON THE UI TASK (in desenhar): that is when
+// the area goes, via DMA, to the panel's back page.
 typedef struct {
   void*  buf;
   size_t bytes;
-  int    pic_l, pic_a;   // a imagem inteira (a tela)
-  int    x, y;           // o canto de 'r' dentro dela
+  int    pic_l, pic_a;   // the whole image (the screen)
+  int    x, y;           // the corner of 'r' within it
 } superficie_t;
 bool sistema_superficie(const area_t& r, superficie_t* s);
 void sistema_superficie_mudou(const area_t& r);
 
-// Impoe no perfil tudo que o usuario escolheu e o sistema garante: brilho,
-// radio, 5V do Grove. Chamada pelo boot, pela home e ao abrir cada app - se um
-// caminho novo aplicar perfil, TEM que passar por aqui, senao a preferencia
-// gravada nao vale naquele caminho (ver o comentario em kernel/core.cpp).
+// Imposes on the profile everything the user chose and the system guarantees: brightness,
+// radio, Grove 5V. Called by boot, by the home screen and when opening each app - if a
+// new path applies a profile, it MUST go through here, otherwise the saved
+// preference doesn't apply on that path (see the comment in kernel/core.cpp).
 void sistema_impor_preferencias(tab5_perfil_t& p);
 
-// Reaplica o perfil do app ATUAL (ou da home, se nenhum estiver aberto) com as
-// preferencias de AGORA. E o caminho para um ajuste valer na hora, sem esperar
-// a proxima troca de app.
+// Reapplies the profile of the CURRENT app (or of the home screen, if none is open) with the
+// CURRENT preferences. It is the way for a setting to take effect immediately, without waiting for
+// the next app switch.
 //
-// Nasceu de um bug: desligar o 5V do Grove em Ajustes nao apagava
-// nada - o trilho so caia ao voltar para a home, quando o sistema remontava o
-// perfil. O app Ajustes ligava na mao com tab5_power_grove(true) e o sentido
-// contrario nao tinha par, entao "OFF" na tela e 5V no fio conviviam.
+// Born from a bug: switching off the Grove 5V in Settings turned off
+// nothing - the rail only dropped on returning to the home screen, when the system rebuilt the
+// profile. The Ajustes app switched it on by hand with tab5_power_grove(true) and the opposite
+// direction had no counterpart, so "OFF" on screen and 5V on the wire coexisted.
 //
-// Mexer no hardware na mao a partir de um app e a armadilha: quem sabe montar
-// o estado final e o sistema, porque so ele conhece a regra de que o app SOMA e
-// nunca subtrai. Se um dia o app Ajustes chamasse tab5_power_grove(false) com um app
-// que precisa do Grove aberto, ele cortaria energia de baixo de quem estava
-// usando. Passando por aqui isso e impossivel.
+// Touching hardware by hand from an app is the trap: the one who knows how to build
+// the final state is the system, because only it knows the rule that the app ADDS and
+// never subtracts. If one day the Ajustes app called tab5_power_grove(false) with an app
+// that needs the Grove open, it would cut power out from under whoever was
+// using it. Going through here that is impossible.
 //
-// So da tarefa de interface: mexe no expansor I2C.
-// PALETA DO SISTEMA. Aqui e nao em kernel/core.cpp nem kernel/shell.cpp porque
-// os apps precisam dela:
-// uma tela que inventa o proprio cinza deixa de parecer parte do mesmo
-// aparelho, e foi assim que a barra antiga acabou clara demais.
+// UI task only: it touches the I2C expander.
+// SYSTEM PALETTE. Here and not in kernel/core.cpp or kernel/shell.cpp because
+// apps need it:
+// a screen that invents its own grey stops looking like part of the same
+// device, and that is how the old status bar ended up too light.
 //
-// TFT_DARKGREY do LovyanGFX NAO serve de moldura apesar do nome - ele e cinza
-// MEDIO, rgb(123,123,123), e compete com o conteudo em vez de recuar.
-// PREFIXADAS. Sem o "SIS_" o COR_BORDA daqui colidia com uma constante de
-// mesmo nome dentro do app Cobra - macro em header compartilhado nao respeita
-// escopo, e o erro sai no arquivo de quem nem sabia da existencia dela.
+// LovyanGFX's TFT_DARKGREY is NOT suitable as a frame despite its name - it is
+// MEDIUM grey, rgb(123,123,123), and competes with the content instead of receding.
+// PREFIXED. Without "SIS_" the COR_BORDA here collided with a constant of the
+// same name inside the Cobra app - a macro in a shared header doesn't respect
+// scope, and the error shows up in the file of someone who didn't even know it existed.
 //
-// REPAGINACAO (2026-11): os tres nomes continuam, mas agora sao APELIDOS do
-// tema central (tab5_tema.hpp). Codigo novo deve usar os TEMA_* direto.
+// REDESIGN (2026-11): the three names remain, but now they are ALIASES of the
+// central theme (tab5_tema.hpp). New code should use TEMA_* directly.
 #include "tab5_tema.hpp"
-#define SIS_FUNDO   TEMA_SUPERFICIE    /* fundo de barra, coluna e cartao   */
-#define SIS_LINHA   TEMA_LINHA         /* separador discreto                */
-#define SIS_BORDA   TEMA_TEXTO_3       /* moldura de coluna                 */
+#define SIS_FUNDO   TEMA_SUPERFICIE    /* bar, column and card background   */
+#define SIS_LINHA   TEMA_LINHA         /* subtle separator                  */
+#define SIS_BORDA   TEMA_TEXTO_3       /* column frame                      */
 
-// A COR DE FUNDO DA AREA AGORA: TEMA_FUNDO na home sem papel de parede e nos
-// apps com fundo_tema; preto no resto. E com ela que o sistema limpa a area,
-// e e o fundo padrao do texto dos componentes comuns (tab5_ui).
+// THE AREA'S CURRENT BACKGROUND COLOUR: TEMA_FUNDO on the home screen without wallpaper and in
+// apps with fundo_tema; black elsewhere. It is what the system clears the area with,
+// and the default text background for the common components (tab5_ui).
 uint16_t sistema_cor_fundo(void);
 
 void sistema_reaplicar_perfil(void);
 
-// O PERFIL DE ENERGIA MUDOU POR FORA DE UM APP (um servico passou a precisar
-// de um trilho, ou deixou de precisar): a interface o reaplica no proximo
-// ciclo - com a tela acesa; em repouso, quando ela acordar. Seguro de
-// QUALQUER tarefa (so marca). E o caminho para quem nao pode falar I2C.
+// THE POWER PROFILE CHANGED FROM OUTSIDE AN APP (a service started needing
+// a rail, or stopped needing it): the UI reapplies it on the next
+// cycle - with the screen on; when idle, when it wakes. Safe from
+// ANY task (it only flags). It is the path for those who can't talk I2C.
 void sistema_perfil_mudou(void);
 
-// Pede uma nova sondagem do Grove - para quando alguem TROCA o modulo do cabo
-// com o aparelho ligado. Nao bloqueia: marca o pedido e o loop de interface o
-// atende no ciclo seguinte, para a tela nao congelar sem explicacao.
-// false = recusado porque um app esta usando a porta agora.
+// Requests a new Grove probe - for when someone SWAPS the module on the cable
+// with the device on. Doesn't block: flags the request and the UI loop
+// serves it on the next cycle, so the screen doesn't freeze without explanation.
+// false = refused because an app is using the port right now.
 bool sistema_grove_redetectar(void);
 
-// true enquanto a sondagem pedida ainda nao foi atendida. Serve para a tela
-// dizer o que esta acontecendo durante os ~4s que ela leva.
+// true while the requested probe has not been served yet. Lets the screen
+// say what is happening during the ~4s it takes.
 bool sistema_grove_sondando(void);
 
 
-// TODOS OS DEDOS DA AMOSTRA ATUAL, para quem precisa de mais de um - o
-// teclado virtual. O ao_tocar_nivel() so conta o primeiro dedo: digitando
-// rapido, o dedo seguinte desce antes de o anterior subir, vira "o primeiro"
-// quando ele sai, e a tecla anterior nunca via a soltura - a letra sumia.
-// 'id' e o do controlador de toque: o mesmo dedo mantem o mesmo id enquanto
-// estiver na tela. x/y no MESMO idioma do ao_tocar_nivel (area do app, com a
-// rolagem somada); so os dedos dentro da area e pressionados NESTA amostra
-// (o dedo que subiu some na primeira amostra sem ele). Valido durante o
-// ao_tocar_nivel (a tarefa de interface amostra e entrega na mesma volta).
+// ALL THE FINGERS OF THE CURRENT SAMPLE, for whoever needs more than one - the
+// virtual keyboard. ao_tocar_nivel() only counts the first finger: typing
+// fast, the next finger goes down before the previous one lifts, becomes "the first"
+// when it leaves, and the previous key never saw the release - the letter vanished.
+// 'id' is the touch controller's: the same finger keeps the same id while
+// it is on the screen. x/y in the SAME terms as ao_tocar_nivel (app area, with
+// scrolling added); only fingers inside the area and pressed IN THIS sample
+// (a finger that lifted disappears in the first sample without it). Valid during
+// ao_tocar_nivel (the UI task samples and delivers in the same round).
 #define SISTEMA_TOQUES_MAX 5
 typedef struct { uint8_t id; int16_t x, y; } sistema_toque_t;
 int sistema_toques(sistema_toque_t* out, int max);
 
-// O TOQUE EM CURSO JA FOI TRATADO POR NIVEL: a soltura dele nao vira clique.
-// Chamar no ao_tocar_nivel, na mesma volta em que se trata o dedo. Sem isto
-// o clique do sistema (que chega na MESMA volta da soltura, logo depois do
-// nivel) caia no que estivesse embaixo do dedo DEPOIS do que o nivel fez -
-// a tecla X do teclado fechava o teclado e o clique caia no botao de enviar
-// da barra que desceu para o lugar dele. Vale ate o fim do toque.
+// THE TOUCH IN PROGRESS HAS ALREADY BEEN HANDLED BY LEVEL: its release doesn't become a click.
+// Call in ao_tocar_nivel, in the same round in which the finger is handled. Without this
+// the system click (which arrives in the SAME round as the release, right after the
+// level) landed on whatever was under the finger AFTER what the level did -
+// the keyboard's X key closed the keyboard and the click landed on the send button
+// of the bar that dropped into its place. Valid until the end of the touch.
 void sistema_consumir_toque(void);
 
-// BLUETOOTH LIGADO/DESLIGADO PELO USUARIO: grava a escolha (vale no proximo
-// boot), liga ou desliga a stack e leva junto o Mesh quando ele esta
-// configurado para o Bluetooth. Da tarefa de interface (ligar toca o I2C do
-// trilho do C6).
+// BLUETOOTH ON/OFF BY THE USER: saves the choice (applies on the next
+// boot), starts or stops the stack and takes Mesh along when it is
+// configured for Bluetooth. From the UI task (switching on touches the
+// C6 rail's I2C).
 void sistema_bluetooth(bool ligar);
 
-// OS OUTROS SERVICOS, NO MESMO CONTRATO: grava a escolha (vale no proximo
-// boot) e aplica agora - o app nao repete os passos nem as dependencias. Da
-// tarefa de interface (mexem em trilho/I2C).
-void sistema_wifi(bool ligar);         // so age se mudou
-void sistema_grove(bool ligar);        // 5V do Grove sempre ligado + nova sondagem do cabo
-// A via do Mesh (AJUSTES_MESH_*). Bluetooth liga o Bluetooth junto; sempre
-// reinicia o servico pela via nova.
+// THE OTHER SERVICES, UNDER THE SAME CONTRACT: saves the choice (applies on the next
+// boot) and applies it now - the app doesn't repeat the steps or the dependencies. From
+// the UI task (they touch rails/I2C).
+void sistema_wifi(bool ligar);         // only acts if it changed
+void sistema_grove(bool ligar);        // Grove 5V always on + new cable probe
+// The Mesh path (AJUSTES_MESH_*). Bluetooth switches Bluetooth on along with it; always
+// restarts the service via the new path.
 void sistema_mesh_via(uint8_t via);
-// O servico Mesh de novo, pela via gravada (servidor MQTT, endereco do no ou
-// via mudaram). Nao bloqueia: roda no worker.
+// The Mesh service again, via the saved path (MQTT server, node address or
+// path changed). Doesn't block: runs on the worker.
 void sistema_mesh_reiniciar(void);
 
-// Liga o diagnostico de toque: cada clique imprime no log onde caiu, cru e
-// convertido. Existe para medir o desvio do dedo em vez de adivinha-lo.
+// Switches on touch diagnostics: each click prints to the log where it landed, raw and
+// converted. It exists to measure finger offset instead of guessing it.
 void sistema_diag_toque(bool ligar);
-// Pede o reinicio do GT911 pelo pino de reset (o mesmo do vigia, quando o
-// chip fica "mudo"). Feito pela interface na volta seguinte: o I2C e dela.
+// Requests a GT911 restart via the reset pin (the same as the watchdog does, when the
+// chip goes "mute"). Done by the UI on the next round: I2C belongs to it.
 void sistema_pedir_reinicio_toque(void);
-// Pede o "raio-x" do GT911 no log (identificacao, firmware, configuracao e a
-// soma dela). So le. Feito pela interface na volta seguinte.
+// Requests the GT911 "X-ray" in the log (identification, firmware, configuration and its
+// checksum). Read-only. Done by the UI on the next round.
 void sistema_pedir_regs_toque(void);
-// BANCADA (console): um clique em x,y de TELA (como o dedo, barra e navegacao
-// inclusive), e abrir um app (nullptr = voltar para a home). A interface
-// executa na volta seguinte; acorda a tela se estiver em repouso.
+// TEST BENCH (console): a click at SCREEN x,y (like a finger, status bar and navigation
+// included), and opening an app (nullptr = back to the home screen). The UI
+// executes it on the next round; wakes the screen if idle.
 void sistema_simular_toque(int x, int y);
-// Arraste simulado (bancada): de (x0,y0) ate (x1,y1), como o dedo - desbloqueia,
-// fecha ou rola a central, troca a pagina da home.
+// Simulated drag (test bench): from (x0,y0) to (x1,y1), like a finger - unlocks,
+// closes or scrolls the notification centre, changes the home page.
 void sistema_simular_gesto(int x0, int y0, int x1, int y1);
 void sistema_simular_abrir(const app_t* app);
 
-// ABRIR OUTRO APP PELO NOME ("Música") - o "abrir com" do Arquivos. A troca
-// acontece na volta seguinte da interface (seguro de dentro de um ao_tocar).
-// false = nao ha app com esse nome nesta variante.
+// OPEN ANOTHER APP BY NAME ("Música") - Arquivos' "open with". The switch
+// happens on the UI's next round (safe from inside an ao_tocar).
+// false = there is no app with that name in this variant.
 bool sistema_abrir_app(const char* nome);
 
-// ORDEM DOS ICONES NA TELA INICIAL. SISTEMA_APPS (apps.cpp) e a ordem de
-// fabrica; por cima dela vale a do usuario, gravada na NVS (ajustes.h) e
-// mudada segurando um icone na home e arrastando, ou por 'ordem' no console.
-// Posicoes de 0 a SISTEMA_NUM_APPS-1. Mover/padrao gravam e repintam a home.
+// ICON ORDER ON THE HOME SCREEN. SISTEMA_APPS (apps.cpp) is the factory
+// order; on top of it the user's applies, saved in NVS (ajustes.h) and
+// changed by holding an icon on the home screen and dragging, or with 'ordem' on the console.
+// Positions from 0 to SISTEMA_NUM_APPS-1. Move/default save and repaint the home screen.
 const app_t* sistema_home_app(int pos);
-int          sistema_home_posicao(const app_t* app);   // -1 = nao registrado
+int          sistema_home_posicao(const app_t* app);   // -1 = not registered
 bool         sistema_home_mover(const app_t* app, int pos);
 void         sistema_home_ordem_padrao(void);
 
-// ONDE A INTERFACE ESTA - para diagnosticar "travou sem log".
-// O monitor vigia (loop parado > 3 s vira evento) e o console mostra ('ui').
+// WHERE THE UI IS - for diagnosing "froze without a log".
+// The monitor watches (loop stalled > 3 s becomes an event) and the console shows it ('ui').
 typedef struct {
-  const char* etapa;           // o passo do loop em que ela esta (ou parou)
-  uint32_t    voltas;          // voltas completas desde o boot
-  uint32_t    ms_desde_volta;  // ha quanto tempo a ultima terminou
-  uint32_t    ms_desde_dedo;   // ha quanto tempo o toque leu um dedo (UINT32_MAX = nunca)
-  // Vigia do toque (core.cpp): pulsos do GT911 desde o boot, falhas de I2C,
-  // relatorios presos, segundos "surdos" (pulsos sem dedo lido), e o ultimo
-  // registrador de estado lido (0x814E). toque_reinicios: quantas vezes o
-  // GT911 "mudo" foi reiniciado pelo pino de reset (tab5_toque_reiniciar).
+  const char* etapa;           // the loop step it is at (or stopped at)
+  uint32_t    voltas;          // complete rounds since boot
+  uint32_t    ms_desde_volta;  // how long since the last one finished
+  uint32_t    ms_desde_dedo;   // how long since touch read a finger (UINT32_MAX = never)
+  // Touch watchdog (core.cpp): GT911 pulses since boot, I2C failures,
+  // stuck reports, "deaf" seconds (pulses with no finger read), and the last
+  // status register read (0x814E). toque_reinicios: how many times the
+  // "mute" GT911 was restarted via the reset pin (tab5_toque_reiniciar).
   uint32_t    toque_pulsos, toque_falhas, toque_presos, toque_surdos;
   uint32_t    toque_reinicios;
   uint8_t     toque_status;
   bool        repouso;
-  const char* app;             // nullptr = home
+  const char* app;             // nullptr = home screen
 } sistema_diag_t;
 void sistema_diag_interface(sistema_diag_t* d);
 
-// Trava/destrava o botao INICIO da barra de navegacao.
+// Locks/unlocks the HOME button on the navigation bar.
 //
-// Quem chama e o teclado virtual (tecvirt_abrir/tecvirt_fechar) - app nao
-// precisa. O INICIO fica centralizado logo abaixo da tecla de espaco, e um
-// toque que passa do alvo fecharia o app no meio da digitacao. Travada, a
-// faixa de navegacao vira do app: o toque nela (clique e nivel) chega na
-// ULTIMA linha da area, e o teclado pode encostar na barra. Travada, a
-// barra de status tambem nao abre a central de avisos, e pedidos de fora
-// para trocar de app (sistema_simular_abrir) sao recusados. O sistema destrava
-// sozinho ao fechar qualquer app.
+// The caller is the virtual keyboard (tecvirt_abrir/tecvirt_fechar) - apps don't
+// need to. HOME sits centred just below the space bar, and a
+// touch that overshoots the target would close the app mid-typing. When locked, the
+// navigation strip belongs to the app: a touch there (click and level) arrives at the
+// LAST line of the area, and the keyboard can sit against the bar. When locked, the
+// status bar also doesn't open the notification centre, and outside requests
+// to switch app (sistema_simular_abrir) are refused. The system unlocks
+// by itself when any app closes.
 void sistema_travar_navegacao(bool travar);
 
-// MANTER A TELA ACESA enquanto houver pedido - o repouso por inatividade nao
-// acontece. Para trabalho que nao pode parar e que a pessoa acompanha na
-// tela sem tocar nela. Um bit por motivo, de QUALQUER tarefa: o pedido de um
-// nao solta o do outro. Um pedido que chega com a tela apagada a ACENDE (o
-// repouso em curso tambem segura o clock no piso). O do app (SISTEMA_ACORDADO_APP) o sistema solta
-// sozinho ao fechar qualquer app.
+// KEEP THE SCREEN ON while there is a request - inactivity idle doesn't
+// happen. For work that can't stop and that the person follows on
+// screen without touching it. One bit per reason, from ANY task: one requester's
+// request doesn't release another's. A request arriving with the screen off TURNS IT ON (the
+// idle in progress also holds the clock at the floor). The app's one (SISTEMA_ACORDADO_APP) the system releases
+// by itself when any app closes.
 #define SISTEMA_ACORDADO_APP       (1u << 0)
-#define SISTEMA_ACORDADO_RECURSOS  (1u << 1)   // RECURSO_TELA_ACESA em uso (kernel/recursos) - servico declara o recurso
+#define SISTEMA_ACORDADO_RECURSOS  (1u << 1)   // RECURSO_TELA_ACESA in use (kernel/recursos) - the service declares the resource
 void sistema_manter_acordado(uint32_t motivo, bool sim);
 
-// O app em primeiro plano EXIGE o cartao (app_t.exige_sd). Seguro de
-// qualquer tarefa: e o que o pendrive consulta antes de emprestar o cartao.
+// The foreground app REQUIRES the card (app_t.exige_sd). Safe from
+// any task: it is what flash drive mode checks before lending the card.
 bool sistema_app_exige_sd(void);
 
-// O app em primeiro plano esta com o cartao montado para ele (app_t.usa_sd),
-// ou abrindo e montando. Seguro de qualquer tarefa (so leitura): o pendrive
-// recusa na hora em vez de esperar o cartao ficar livre.
+// The foreground app has the card mounted for it (app_t.usa_sd),
+// or is opening and mounting. Safe from any task (read only): flash drive mode
+// refuses at once instead of waiting for the card to become free.
 bool sistema_app_segura_sd(void);
 
-// A tela de bloqueio esta na frente (home ou app por baixo). Seguro de
-// qualquer tarefa (leitura de uma bandeira).
+// The lock screen is in front (home screen or app underneath). Safe from
+// any task (reads a flag).
 bool sistema_bloqueado(void);
 
-// Nome do app em primeiro plano, ou NULL se estiver na tela inicial.
+// Name of the foreground app, or NULL if on the home screen.
 const char* sistema_app_atual(void);
 
 // ---------------------------------------------------------------------------
-// Inicializacao
+// Initialisation
 // ---------------------------------------------------------------------------
 
-// Perfil a usar no M5.begin(). E a UNIAO do que todos os apps registrados
-// precisam que EXISTA - porque flags como internal_imu e internal_mic so podem
-// ser decididas ANTES do begin, e nao da para inicializar o IMU depois.
-// O que e chaveavel em runtime (trilhos de 5V, camera, radio, brilho) NAO entra
-// aqui: isso e aplicado por app, na hora de abrir.
+// Profile to use in M5.begin(). It is the UNION of what all registered apps
+// need to EXIST - because flags like internal_imu and internal_mic can only
+// be decided BEFORE begin, and the IMU can't be initialised afterwards.
+// What is switchable at runtime (5V rails, camera, radio, brightness) does NOT go
+// here: that is applied per app, at opening time.
 tab5_perfil_t sistema_perfil_de_boot(void);
 
-// Cria a tarefa de interface. Chamar depois do M5.begin().
+// Creates the UI task. Call after M5.begin().
 void sistema_iniciar(void);
 
-// Tabela de aplicativos. Definida em apps.cpp: primeiro os fixos (das pastas
-// main/app_*, gerada no build), depois os registrados no boot (apps Berry do
-// cartao). So leitura fora do boot.
+// Application table. Defined in apps.cpp: first the fixed ones (from the folders
+// main/app_*, generated at build time), then those registered at boot (Berry apps from the
+// card). Read-only outside boot.
 #define SISTEMA_APPS_MAX 48
 extern const app_t* SISTEMA_APPS[];
 extern int          SISTEMA_NUM_APPS;
 
-// Acrescenta um app a tabela. No boot, antes de a interface subir, ou na
-// interface depois de sistema_apps_truncar. 'app' tem que viver para sempre.
-// false = tabela cheia.
+// Adds an app to the table. At boot, before the UI comes up, or on the
+// UI after sistema_apps_truncar. 'app' must live forever.
+// false = table full.
 bool sistema_apps_registrar(const app_t* app);
 
-// Tira da tabela os registrados de 'n' em diante (os fixos ficam). SO NA
-// INTERFACE, com a tela inicial no ar, e seguido de novos registros e da
-// ordem dos icones remontada - e assim que os apps Berry sao relidos.
+// Removes from the table those registered from 'n' onwards (the fixed ones stay). ONLY ON THE
+// UI, with the home screen up, and followed by new registrations and the
+// icon order rebuilt - that is how the Berry apps are reread.
 void sistema_apps_truncar(int n);
 
-// APPS DE FORA - os que nao sao compilados junto (scripts do cartao). O nucleo
-// so conhece estas tres funcoes; quem as implementa e services/apps_de_fora.cpp,
-// que na variante berry liga os apps Berry e na completa nao faz nada (ver
-// docs/VARIANTES.md). Nenhum outro arquivo do nucleo sabe que o Berry existe.
-//   iniciar: no boot, depois do cartao e antes da home montar a ordem;
-//   atender: na interface, com a tela inicial no ar - aplica uma releitura;
-//            true = a lista mudou (a home remonta a ordem e redesenha);
-//   reler:   de qualquer tarefa MENOS a interface (le o cartao) - o cartao
-//            mudou (voltou do pendrive, console).
+// EXTERNAL APPS - those not compiled in (scripts on the card). The core
+// only knows these three functions; they are implemented by services/apps_de_fora.cpp,
+// which in the berry variant hooks up the Berry apps and in the full one does nothing (see
+// docs/VARIANTES.md). No other core file knows that Berry exists.
+//   iniciar: at boot, after the card and before the home screen builds the order;
+//   atender: on the UI, with the home screen up - applies a reread;
+//            true = the list changed (the home screen rebuilds the order and redraws);
+//   reler:   from any task EXCEPT the UI (reads the card) - the card
+//            changed (back from flash drive mode, console).
 void sistema_apps_de_fora_iniciar(void);
 bool sistema_apps_de_fora_atender(void);
 void sistema_apps_de_fora_reler(void);
-// REMOVER (a tela inicial: arrastar o icone para "Remover").
-//   removivel: o app e de fora (um script do cartao)? Os do sistema nao saem.
-//   remover:   tira o app - em segundo plano (para a parte de fundo dele,
-//              manda o script e os dados para a lixeira do cartao e rele);
-//              o icone some quando a releitura for atendida. Da interface.
+// REMOVE (home screen: drag the icon to "Remover").
+//   removivel: is the app external (a script on the card)? The system ones can't be removed.
+//   remover:   removes the app - in the background (stops its background part,
+//              sends the script and the data to the card's bin and rereads);
+//              the icon disappears when the reread is served. From the UI.
 bool sistema_apps_de_fora_removivel(const app_t* app);
 void sistema_apps_de_fora_remover(const app_t* app);

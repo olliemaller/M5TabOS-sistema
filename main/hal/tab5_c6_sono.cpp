@@ -2,11 +2,11 @@
 #include "idioma.h"
 #include "tab5_wifi.hpp"
 #include "tab5_ble.hpp"
-#include "tab5_farejo.hpp"   // tab5_farejo_info_c6 - o INFO diz se o C6 sabe dormir
+#include "tab5_farejo.hpp"   // tab5_farejo_info_c6 - INFO says whether the C6 can sleep
 #include "tab5_hora.hpp"
 #include "tab5_c6.h"
 #include "tab5_power.hpp"   // tab5_power_em_repouso
-#include "tab5_sd.hpp"      // tab5_sd_controlador_travar: o SDMMC e dividido com o cartao
+#include "tab5_sd.hpp"      // tab5_sd_controlador_travar: the SDMMC is shared with the SD card
 #include "ajustes.h"
 
 #include "freertos/FreeRTOS.h"
@@ -17,11 +17,11 @@
 #include "esp_hosted.h"
 #include "eh_host_mcu_transport.h"   // eh_host_mcu_transport_inform_slave_ps_enter
 #include "eh_host_port_power.h"      // eh_host_port_wakeup_reason_t
-#include "eh_host_port_sync.h"       // EH_HOST_PORT_WAIT_FOREVER (a espera da sdio_read)
-#include "eh_host_peer_data.h"       // C6_AJ_IP: o C6 responde o ARP do P4 enquanto ele dorme
+#include "eh_host_port_sync.h"       // EH_HOST_PORT_WAIT_FOREVER (sdio_read's wait)
+#include "eh_host_peer_data.h"       // C6_AJ_IP: the C6 answers ARP for the P4 while it sleeps
 #include "esp_netif.h"
 #include "esp_event.h"
-#include "esp_wifi.h"              // WIFI_EVENT, WIFI_EVENT_STA_START (o desvio do esp_event_post)
+#include "esp_wifi.h"              // WIFI_EVENT, WIFI_EVENT_STA_START (the esp_event_post wrap)
 
 #include <atomic>
 #include <stdio.h>
@@ -29,29 +29,29 @@
 
 static const char* TAG = "c6sono";
 
-// Os fios (Tab5): C6 IO2 -> P4 G14 (o C6 chama), e a linha CMD do slot do C6
-// no SDIO (P4 G13 = C6 GPIO18), que o P4 baixa para chamar o C6.
+// The wires (Tab5): C6 IO2 -> P4 G14 (the C6 calls), and the CMD line of the
+// C6's SDIO slot (P4 G13 = C6 GPIO18), which the P4 pulls low to call the C6.
 #define PINO_C6_CHAMA   GPIO_NUM_14
 #define PINO_CMD        GPIO_NUM_13
 #define CMD_PULSO_MS    2
-#define ESPERA_C6_MS    1200      // por tentativa, ate o pulso do C6 chegar
+#define ESPERA_C6_MS    1200      // per attempt, until the C6's pulse arrives
 #define TENTATIVAS      3
 
-static SemaphoreHandle_t s_trava = nullptr;   // dormir x acordar
-static TaskHandle_t      s_tarefa = nullptr;  // "c6sono": atende o G14
+static SemaphoreHandle_t s_trava = nullptr;   // sleep vs wake
+static TaskHandle_t      s_tarefa = nullptr;  // "c6sono": services G14
 static std::atomic<int>  s_estado{TAB5_C6_SONO_ACORDADO};
 static std::atomic<bool> s_religando{false};
 static tab5_c6_sono_estado_t s_est = { };
 static uint32_t          s_dormiu_em = 0;
 static bool              s_isr = false;
-static bool              s_estava_associado = false;   // na hora de desmontar
-static std::atomic<bool> s_p4_quer{false};             // alguem quis transmitir com o enlace desmontado
-static std::atomic<bool> s_desmontando{false};         // do aviso ao C6 ate o fim do esp_hosted_deinit
+static bool              s_estava_associado = false;   // at tear-down time
+static std::atomic<bool> s_p4_quer{false};             // someone wanted to transmit with the link down
+static std::atomic<bool> s_desmontando{false};         // from signalling the C6 until esp_hosted_deinit ends
 
-// O MODO AUTOMATICO (ajustes_c6_sono): na tarefa "c6sono", uma volta por
-// segundo. Com a tela apagada e o enlace quieto por QUIETO_MS, desmonta; com
-// a tela acesa, remonta. O ESP-NOW so ouve com a tela acesa: a janela padrao
-// dele (sempre ouvindo) e o que impedia o modem sleep do C6.
+// THE AUTOMATIC MODE (ajustes_c6_sono): in the "c6sono" task, one pass per
+// second. With the screen off and the link quiet for QUIETO_MS, tear down;
+// with the screen on, re-mount. ESP-NOW only listens with the screen on: its
+// default window (always listening) is what prevented the C6's modem sleep.
 #define QUIETO_MS        3000
 #define DEPOIS_ACORDAR_MS 5000
 #define JANELA_INTERVALO 1000
@@ -61,19 +61,19 @@ static uint32_t s_pacotes_ant = 0, s_quieto_desde = 0;
 #if CONFIG_ESP_HOSTED_HOST_PKT_STATS
 struct pkt_stats_espelho_t { uint32_t tx_in, tx_trans, tx_out, tx_drop, rx_in, rx_out, stalls; };
 extern "C" pkt_stats_espelho_t pkt_stats;
-// So o que o P4 MANDA conta como uso: com o enlace de pe o roteador manda ~2
-// broadcasts por segundo (ARP), e com eles o enlace nunca ficava "quieto".
+// Only what the P4 SENDS counts as use: with the link up the router sends ~2
+// broadcasts per second (ARP), and with those the link was never "quiet".
 static uint32_t pacotes(void) { return pkt_stats.tx_in; }
 #else
 static uint32_t pacotes(void) { return 0; }
 #endif
 
 // ---------------------------------------------------------------------------
-// O DESVIO DO LINK (main/CMakeLists.txt, --wrap). Na subida do SDIO o
-// esp_hosted reseta o C6 - menos quando acha que o host voltou de um deep
-// sleep, e ai so refaz o cartao e avisa o C6 (POWER_SAVE_OFF). Durante a
-// remontagem daqui ele ouve "voltei por GPIO"; no resto do tempo, a resposta
-// de sempre.
+// THE LINK-TIME WRAP (main/CMakeLists.txt, --wrap). On SDIO bring-up
+// esp_hosted resets the C6 - except when it thinks the host came back from
+// deep sleep, in which case it only redoes the card and signals the C6
+// (POWER_SAVE_OFF). During our re-mount it hears "woke by GPIO"; the rest of
+// the time, the usual answer.
 // ---------------------------------------------------------------------------
 extern "C" eh_host_port_wakeup_reason_t __real_eh_host_port_wakeup_reason_get(void);
 extern "C" eh_host_port_wakeup_reason_t __wrap_eh_host_port_wakeup_reason_get(void)
@@ -82,101 +82,104 @@ extern "C" eh_host_port_wakeup_reason_t __wrap_eh_host_port_wakeup_reason_get(vo
   return __real_eh_host_port_wakeup_reason_get();
 }
 
-// A FALHA ESPERADA DA DESMONTAGEM (desvio do link, main/CMakeLists.txt). O C6
-// desmonta o escravo dele logo depois do aviso; ate o esp_hosted_deinit parar
-// a tarefa de leitura (o s_running do eh_host_bus_sdio.c so zera no fim do
-// deinit), uma interrupcao que caia nessa janela le PKT_LEN = 0xFFFFFFFF, e o
-// esp_hosted trata como transporte morto: eh_host_port_restart_host() =
-// abort(). Na bateria, com o trafego do boot, isso virou um loop de 37
-// reinicios (2026-11-13). Dentro da janela, a falha e o proprio C6 saindo:
-// so registra e volta. Fora dela, o reinicio de seguranca continua valendo
-// (CONFIG_ESP_HOSTED_HOST_TRANSPORT_RESTART_ON_FAILURE=y fica como esta).
+// THE EXPECTED TEAR-DOWN FAILURE (link-time wrap, main/CMakeLists.txt). The
+// C6 tears down its slave right after the signal; until esp_hosted_deinit
+// stops the read task (eh_host_bus_sdio.c's s_running is only cleared at the
+// end of deinit), an interrupt landing in that window reads PKT_LEN =
+// 0xFFFFFFFF, and esp_hosted treats it as a dead transport:
+// eh_host_port_restart_host() = abort(). On battery, with boot traffic, that
+// became a loop of 37 reboots (2026-11-13). Inside the window, the failure is
+// the C6 itself leaving: just log and return. Outside it, the safety reboot
+// still applies (CONFIG_ESP_HOSTED_HOST_TRANSPORT_RESTART_ON_FAILURE=y stays).
 extern "C" eh_host_port_err_t __real_eh_host_port_restart_host(void);
 extern "C" eh_host_port_err_t __wrap_eh_host_port_restart_host(void)
 {
   if (s_desmontando.load()) {
-    ESP_EARLY_LOGW(TAG, "falha do SDIO esperada: o C6 ja desmontou (sem reiniciar)");
+    ESP_EARLY_LOGW(TAG, "expected SDIO failure: the C6 has already torn down (not rebooting)");
     return EH_HOST_PORT_OK;
   }
   return __real_eh_host_port_restart_host();
 }
 
-// A TAREFA DE LEITURA PARA NUM PONTO SEGURO (desvio do link, main/CMakeLists.txt).
-// O esp_hosted_deinit nao espera a tarefa sdio_read terminar: apaga-a a forca
-// (eh_host_port_task_cancel), onde quer que ela esteja. Se nesse instante a
-// interrupcao do C6 que esta saindo acabou de acorda-la (ou ela esta no meio de
-// uma leitura), o FreeRTOS apaga uma tarefa em transito entre listas ->
-// uxListRemove com ponteiro nulo -> panic na tarefa c6sono (7 reinicios no
-// ensaio de 2026-11-13, ~1 a cada 100 desmontagens).
-// O conserto: a espera dela passa por aqui. Durante a desmontagem, em vez de
-// voltar a esperar o C6, ela estaciona (dorme para sempre, parada, sem lock
-// nenhum) e avisa; a desmontagem acorda a espera dela (xTaskAbortDelay) e so
-// chama o deinit depois do aviso. Fora da desmontagem, a espera de sempre.
+// THE READ TASK STOPS AT A SAFE POINT (link-time wrap, main/CMakeLists.txt).
+// esp_hosted_deinit does not wait for the sdio_read task to finish: it deletes
+// it forcibly (eh_host_port_task_cancel), wherever it is. If at that instant
+// the interrupt from the departing C6 has just woken it (or it is mid-read),
+// FreeRTOS deletes a task in transit between lists -> uxListRemove with a
+// null pointer -> panic in the c6sono task (7 reboots in the 2026-11-13 test,
+// ~1 in every 100 tear-downs).
+// The fix: its wait goes through here. During tear-down, instead of going
+// back to waiting for the C6, it parks (sleeps for ever, stopped, holding no
+// lock) and says so; the tear-down wakes its wait (xTaskAbortDelay) and only
+// calls deinit after that signal. Outside tear-down, the usual wait.
 extern "C" int __real_eh_host_port_sdio_wait_slave_intr(void* ctx, uint32_t espera);
-static std::atomic<TaskHandle_t> s_leitora{nullptr};      // a sdio_read, enquanto espera o C6
-static std::atomic<bool>         s_leitora_parada{false};  // ela ja estacionou
+static std::atomic<TaskHandle_t> s_leitora{nullptr};      // sdio_read, while it waits for the C6
+static std::atomic<bool>         s_leitora_parada{false};  // it has parked
 
 extern "C" int __wrap_eh_host_port_sdio_wait_slave_intr(void* ctx, uint32_t espera)
 {
   for (;;) {
-    // Primeiro se anuncia, depois olha a desmontagem: assim, ou ela ve o
-    // aviso, ou a desmontagem ve a tarefa e a acorda (ver estacionar_leitora).
+    // First announce itself, then check for tear-down: that way, either it
+    // sees the signal, or the tear-down sees the task and wakes it (see
+    // estacionar_leitora).
     s_leitora = xTaskGetCurrentTaskHandle();
     if (s_desmontando.load()) {
       s_leitora = nullptr;
       s_leitora_parada = true;
-      for (;;) { vTaskDelay(portMAX_DELAY); }   // o deinit a apaga aqui, parada
+      for (;;) { vTaskDelay(portMAX_DELAY); }   // deinit deletes it here, parked
     }
     const int r = __real_eh_host_port_sdio_wait_slave_intr(ctx, espera);
     s_leitora = nullptr;
-    // Espera "para sempre" que voltou sem interrupcao: foi a desmontagem que a
-    // acordou. Volta ao topo para estacionar.
+    // A "for ever" wait that returned without an interrupt: the tear-down woke
+    // it. Back to the top to park.
     if (r == ESP_ERR_TIMEOUT && espera == EH_HOST_PORT_WAIT_FOREVER) { continue; }
     return r;
   }
 }
 
-// Chamada com s_desmontando ligado: acorda a espera da sdio_read e aguarda ela
-// estacionar. Se ela estiver no meio de uma leitura, termina a leitura antes
-// (as falhas de um C6 que ja saiu caem no __wrap_eh_host_port_restart_host).
+// Called with s_desmontando set: wakes sdio_read's wait and waits for it to
+// park. If it is mid-read, it finishes the read first (failures from a C6
+// that has already left land in __wrap_eh_host_port_restart_host).
 static bool estacionar_leitora(uint32_t prazo_ms)
 {
   const uint32_t t0 = tab5_agora_ms();
   while (!s_leitora_parada.load()) {
     if (tab5_agora_ms() - t0 > prazo_ms) { return false; }
-    // Repete o despertar: ela pode ter se anunciado e ainda nao ter bloqueado.
+    // Repeat the wake-up: it may have announced itself and not yet blocked.
     if (TaskHandle_t h = s_leitora.load()) { xTaskAbortDelay(h); }
     vTaskDelay(pdMS_TO_TICKS(10));
   }
   return true;
 }
 
-// A PORTA DOS QUADROS DO WI-FI (feature wifi do esp_hosted, eh_host_wifi.c).
-// O deinit fecha a "admissao" de RX e zera a trava de STA_START; quem reabre e
-// o evento StaConnected. O C6 o reenvia no aviso de "host acordou" - mas esse
-// aviso sai na subida do SDIO, ANTES de a feature registrar os tratadores, e o
-// evento se perde: todo quadro passava a ser descartado em silencio (medido:
-// o ping saia pelo ar e a resposta nunca chegava a pilha). Com a associacao
-// intacta do lado do C6, a remontagem devolve os dois estados a mao.
+// THE WI-FI FRAME GATE (esp_hosted's wifi feature, eh_host_wifi.c).
+// deinit closes RX "admission" and clears the STA_START latch; what reopens
+// them is the StaConnected event. The C6 resends it with the "host woke"
+// notice - but that notice goes out during SDIO bring-up, BEFORE the feature
+// registers its handlers, and the event is lost: every frame was then
+// silently dropped (measured: the ping went out over the air and the reply
+// never reached the stack). With the association intact on the C6 side, the
+// re-mount restores both states by hand.
 extern "C" void eh_host_wifi_admit_rx(bool is_ap, bool admit);
 
-// O APP CONTINUA COM O WI-FI INICIADO (esp_hosted 3.0.10, eh_host_wifi.c).
-// O deinit tambem zera as travas "o app iniciou" e "o netif ja foi adicionado"
-// - mas, do lado do P4, o netif do app continua no lwIP (nenhum STA_STOP chega
-// a ele). Depois da remontagem, com a trava "iniciou" zerada, o esp_hosted
-// para de entregar ao app os eventos de STA (queda, STA_STOP); e o proximo
-// esp_wifi_start posta STA_START de novo -> netif_add do mesmo netif ->
-// LWIP_ASSERT("netif already added") na tarefa tiT (panic medido em
-// 2026-11-13, no ensaio de energia, ao religar o Wi-Fi).
-// O conserto: na remontagem, rearmar o esp_hosted com o seu proprio
-// eh_host_wifi_start (volta "o app iniciou" e "netif adicionado"), engolindo o
-// STA_START repetido que ele posta - o app ja recebeu o dele antes do sono.
+// THE APP KEEPS WI-FI STARTED (esp_hosted 3.0.10, eh_host_wifi.c).
+// deinit also clears the "app started" and "netif already added" latches -
+// but, on the P4 side, the app's netif stays in lwIP (no STA_STOP reaches
+// it). After the re-mount, with the "started" latch cleared, esp_hosted stops
+// delivering STA events to the app (disconnect, STA_STOP); and the next
+// esp_wifi_start posts STA_START again -> netif_add of the same netif ->
+// LWIP_ASSERT("netif already added") in the tiT task (panic measured on
+// 2026-11-13, in the power test, when turning Wi-Fi back on).
+// The fix: on re-mount, re-arm esp_hosted with its own eh_host_wifi_start
+// (restoring "app started" and "netif added"), swallowing the repeated
+// STA_START it posts - the app already got its own before the sleep.
 extern "C" esp_err_t eh_host_wifi_start(void);
-static bool                       s_app_iniciado = false;     // o app tinha o Wi-Fi iniciado ao desmontar
-static std::atomic<TaskHandle_t>  s_engolir_de{nullptr};      // quem esta rearmando (so ele e filtrado)
+static bool                       s_app_iniciado = false;     // the app had Wi-Fi started at tear-down
+static std::atomic<TaskHandle_t>  s_engolir_de{nullptr};      // who is re-arming (only it is filtered)
 
-// O DESVIO DOS EVENTOS (main/CMakeLists.txt, --wrap=esp_event_post): passa tudo
-// direto, menos o STA_START postado durante o rearme, pela tarefa que rearma.
+// THE EVENT WRAP (main/CMakeLists.txt, --wrap=esp_event_post): passes
+// everything straight through, except the STA_START posted during re-arming
+// by the re-arming task.
 extern "C" esp_err_t __real_esp_event_post(esp_event_base_t base, int32_t id, const void* dados,
                                            size_t tam, TickType_t espera);
 extern "C" esp_err_t __wrap_esp_event_post(esp_event_base_t base, int32_t id, const void* dados,
@@ -184,27 +187,27 @@ extern "C" esp_err_t __wrap_esp_event_post(esp_event_base_t base, int32_t id, co
 {
   const TaskHandle_t quem = s_engolir_de.load();
   if (quem && base == WIFI_EVENT && id == WIFI_EVENT_STA_START && quem == xTaskGetCurrentTaskHandle()) {
-    ESP_LOGI(TAG, "STA_START repetido da remontagem engolido (o netif do app ja esta adicionado)");
+    ESP_LOGI(TAG, "repeated STA_START from re-mount swallowed (the app's netif is already added)");
     return ESP_OK;
   }
   return __real_esp_event_post(base, id, dados, tam, espera);
 }
 
-// Rearma o esp_hosted depois da remontagem. Chamar com s_religando ligado: o
-// eh_host_wifi_start e um RPC, e o desvio do RPC nao pode tentar acordar o
-// enlace de novo (estamos dentro do proprio acordar).
+// Re-arms esp_hosted after the re-mount. Call with s_religando set:
+// eh_host_wifi_start is an RPC, and the RPC wrap must not try to wake the
+// link again (we are inside the wake-up itself).
 static void rearmar_app(void)
 {
   s_engolir_de = xTaskGetCurrentTaskHandle();
-  const esp_err_t r = eh_host_wifi_start();   // o C6 ja esta com o Wi-Fi iniciado: so as travas do P4 mudam
+  const esp_err_t r = eh_host_wifi_start();   // the C6 already has Wi-Fi started: only the P4's latches change
   s_engolir_de = nullptr;
-  if (r != ESP_OK) { ESP_LOGW(TAG, "rearmar o Wi-Fi do app falhou: %s", esp_err_to_name(r)); }
+  if (r != ESP_OK) { ESP_LOGW(TAG, "re-arming the app's Wi-Fi failed: %s", esp_err_to_name(r)); }
 }
 
-// QUEM TRANSMITE COM O ENLACE DESMONTADO o traz de volta: toda saida da
-// pilha IP para o Wi-Fi passa por aqui (desvio do link, main/CMakeLists.txt).
-// O quadro em si e perdido (a tarefa do lwIP nao pode esperar centenas de ms)
-// - o TCP reenvia, e o keepalive do MQTT chega no reenvio.
+// WHOEVER TRANSMITS WITH THE LINK TORN DOWN brings it back: every output from
+// the IP stack to Wi-Fi goes through here (link-time wrap, main/CMakeLists.txt).
+// The frame itself is lost (the lwIP task cannot wait hundreds of ms) - TCP
+// retransmits, and the MQTT keepalive arrives in the retransmission.
 static void pedir_acordar(void)
 {
   if (s_estado.load() != TAB5_C6_SONO_DORMINDO || s_p4_quer.exchange(true)) { return; }
@@ -213,13 +216,13 @@ static void pedir_acordar(void)
 extern "C" int __real_esp_wifi_internal_tx(int ifx, void* buffer, uint16_t len);
 extern "C" int __wrap_esp_wifi_internal_tx(int ifx, void* buffer, uint16_t len)
 {
-  if (s_desmontando.load()) { return -1; }   // o escravo do C6 esta sumindo: nada de escrita (o TCP reenvia)
+  if (s_desmontando.load()) { return -1; }   // the C6's slave is going away: no writes (TCP retransmits)
   if (s_estado.load() == TAB5_C6_SONO_DORMINDO) { pedir_acordar(); return -1; }
   return __real_esp_wifi_internal_tx(ifx, buffer, len);
 }
-// FICA DE PROPOSITO: o linker descarta este desvio hoje, porque o esp_hosted
-// (3.0.9) nao chama este caminho. No dia em que uma versao nova chamar, sem o
-// desvio ele nao acordaria o enlace (06/11/2026, docs/ANALISE_2026-11-06.md).
+// KEPT ON PURPOSE: the linker discards this wrap today, because esp_hosted
+// (3.0.9) does not call this path. On the day a new version does, without the
+// wrap it would not wake the link (06/11/2026, docs/ANALISE_2026-11-06.md).
 extern "C" esp_err_t __real_esp_wifi_internal_tx_by_ref(int ifx, void* buffer, size_t len, void* netstack_buf);
 extern "C" esp_err_t __wrap_esp_wifi_internal_tx_by_ref(int ifx, void* buffer, size_t len, void* netstack_buf)
 {
@@ -227,20 +230,20 @@ extern "C" esp_err_t __wrap_esp_wifi_internal_tx_by_ref(int ifx, void* buffer, s
   return __real_esp_wifi_internal_tx_by_ref(ifx, buffer, len, netstack_buf);
 }
 
-// QUEM CONVERSA COM O C6 (RPC: esp_wifi_* remoto, Bluetooth, peer_data) com o
-// enlace desmontado esperava 5 s pelo enlace e falhava - medido: o comando
-// 'c6', quatro RPCs, levou 20 s. Agora a entrada do RPC (desvio do link) traz
-// o enlace de volta antes, e quem chamou espera so a remontagem (~0,6 s).
-// Nao de dentro da propria remontagem (a subida das features fala RPC).
+// WHOEVER TALKS TO THE C6 (RPC: remote esp_wifi_*, Bluetooth, peer_data) with
+// the link torn down used to wait 5 s for the link and fail - measured: the
+// 'c6' command, four RPCs, took 20 s. Now the RPC entry point (link-time wrap)
+// brings the link back first, and the caller only waits for the re-mount
+// (~0.6 s). Not from inside the re-mount itself (feature bring-up speaks RPC).
 static void antes_do_rpc(void)
 {
   if (s_estado.load() != TAB5_C6_SONO_DORMINDO || s_religando.load()) { return; }
   if (xTaskGetCurrentTaskHandle() == s_tarefa) { return; }
   tab5_c6_sono_acordar();
 }
-// FICA DE PROPOSITO: o linker descarta este desvio hoje, porque o esp_hosted
-// (3.0.9) nao chama este caminho. No dia em que uma versao nova chamar, sem o
-// desvio ele nao acordaria o enlace (06/11/2026, docs/ANALISE_2026-11-06.md).
+// KEPT ON PURPOSE: the linker discards this wrap today, because esp_hosted
+// (3.0.9) does not call this path. On the day a new version does, without the
+// wrap it would not wake the link (06/11/2026, docs/ANALISE_2026-11-06.md).
 extern "C" int __real_eh_host_feat_rpc_request(int32_t msg_id, void* app_req, uint32_t timeout_ms, void** out);
 extern "C" int __wrap_eh_host_feat_rpc_request(int32_t msg_id, void* app_req, uint32_t timeout_ms, void** out)
 {
@@ -259,9 +262,9 @@ extern "C" int __wrap_eh_host_feat_rpc_request_sync_best_effort(int32_t msg_id, 
   antes_do_rpc();
   return __real_eh_host_feat_rpc_request_sync_best_effort(msg_id, req, out);
 }
-// FICA DE PROPOSITO: o linker descarta este desvio hoje, porque o esp_hosted
-// (3.0.9) nao chama este caminho. No dia em que uma versao nova chamar, sem o
-// desvio ele nao acordaria o enlace (06/11/2026, docs/ANALISE_2026-11-06.md).
+// KEPT ON PURPOSE: the linker discards this wrap today, because esp_hosted
+// (3.0.9) does not call this path. On the day a new version does, without the
+// wrap it would not wake the link (06/11/2026, docs/ANALISE_2026-11-06.md).
 extern "C" int __real_eh_host_feat_rpc_send(int32_t msg_id, void* app_req);
 extern "C" int __wrap_eh_host_feat_rpc_send(int32_t msg_id, void* app_req)
 {
@@ -269,8 +272,8 @@ extern "C" int __wrap_eh_host_feat_rpc_send(int32_t msg_id, void* app_req)
   return __real_eh_host_feat_rpc_send(msg_id, app_req);
 }
 
-// DEPURACAO DA PROVA: o que chega da rede ao P4, por tipo (o desvio do link
-// em main/CMakeLists.txt). Sai junto com a prova.
+// TEST DEBUGGING: what arrives from the network at the P4, by type (the
+// link-time wrap in main/CMakeLists.txt). Goes away together with the test.
 static std::atomic<uint32_t> s_rx_arp = 0, s_rx_icmp = 0, s_rx_outro = 0, s_rx_falha = 0;
 extern "C" esp_err_t __real_esp_wifi_remote_channel_rx(void* h, void* buffer, void* buff_to_free, size_t len);
 extern "C" esp_err_t __wrap_esp_wifi_remote_channel_rx(void* h, void* buffer, void* buff_to_free, size_t len)
@@ -289,9 +292,9 @@ void tab5_c6_sono_rx(uint32_t* arp, uint32_t* icmp, uint32_t* outro, uint32_t* f
 }
 
 // ---------------------------------------------------------------------------
-// O G14: o C6 pulsa (10 ms em alto, a cada 100 ms) ate o enlace voltar.
+// G14: the C6 pulses (10 ms high, every 100 ms) until the link is back.
 // ---------------------------------------------------------------------------
-static volatile bool s_c6_chamou = false;   // a ISR viu o pulso (ele dura 10 ms)
+static volatile bool s_c6_chamou = false;   // the ISR saw the pulse (it lasts 10 ms)
 
 static void IRAM_ATTR isr_c6_chama(void*)
 {
@@ -312,14 +315,14 @@ static void g14_preparar(void)
   };
   gpio_config(&io);
   if (!s_isr) {
-    gpio_install_isr_service(0);   // ja instalado pelo kernel: ESP_ERR_INVALID_STATE
+    gpio_install_isr_service(0);   // already installed by the kernel: ESP_ERR_INVALID_STATE
     s_isr = gpio_isr_handler_add(PINO_C6_CHAMA, isr_c6_chama, nullptr) == ESP_OK;
   }
   gpio_intr_disable(PINO_C6_CHAMA);
 }
 
-// Espera o pulso do C6 (nivel alto no G14), olhando o nivel: a borda pode ter
-// vindo antes de a espera comecar.
+// Waits for the C6's pulse (high level on G14), polling the level: the edge
+// may have come before the wait started.
 static bool esperar_c6(uint32_t ms)
 {
   for (uint32_t t = 0; t < ms; t += 5) {
@@ -329,8 +332,8 @@ static bool esperar_c6(uint32_t ms)
   return gpio_get_level(PINO_C6_CHAMA) != 0;
 }
 
-// A linha CMD parada em alto (pull-up dos dois lados); baixar por 2 ms tira o
-// C6 do sono. Com o slot desmontado o pino e um GPIO comum aqui.
+// The CMD line idles high (pull-ups on both sides); pulling it low for 2 ms
+// wakes the C6. With the slot torn down the pin is a plain GPIO here.
 static void cmd_pulsar(void)
 {
   gpio_set_direction(PINO_CMD, GPIO_MODE_OUTPUT_OD);
@@ -342,48 +345,48 @@ static void cmd_pulsar(void)
 }
 
 // ---------------------------------------------------------------------------
-// REMONTAR
+// RE-MOUNT
 // ---------------------------------------------------------------------------
 static bool religar(bool pelo_p4)
 {
   const uint32_t t0 = tab5_agora_ms();
   gpio_intr_disable(PINO_C6_CHAMA);
   bool chamou = gpio_get_level(PINO_C6_CHAMA) != 0;
-  // Foi o C6 quem chamou: o pulso seguinte dele vem em ate 100 ms. Baixar o
-  // CMD com o escravo dele ja remontando seria um comando de lixo no SDIO.
+  // The C6 called: its next pulse comes within 100 ms. Pulling CMD low with
+  // its slave already re-mounting would be a garbage command on SDIO.
   if (!chamou && !pelo_p4) { chamou = esperar_c6(300); }
   for (int i = 0; i < TENTATIVAS && !chamou; ++i) {
     cmd_pulsar();
     chamou = esperar_c6(ESPERA_C6_MS);
   }
   if (!chamou) {
-    ESP_LOGE(TAG, "o C6 nao respondeu ao CMD - o enlace fica desmontado; modo automatico desligado");
+    ESP_LOGE(TAG, "the C6 did not respond to CMD - the link stays down; automatic mode off");
     ajustes_definir_c6_sono(false);
     ++s_est.falhas;
     s_estado = TAB5_C6_SONO_FALHOU;
     return false;
   }
-  // O C6 ja remontou o escravo dele: agora o nosso lado, sem reset.
+  // The C6 has re-mounted its slave: now our side, without a reset.
   gpio_reset_pin(PINO_CMD);
   s_religando = true;
-  tab5_sd_controlador_travar();   // o slot 1 volta ao controlador do cartao (ver tab5_sd.hpp)
+  tab5_sd_controlador_travar();   // slot 1 goes back to the card's controller (see tab5_sd.hpp)
   int rc = esp_hosted_init();
   if (rc == 0) { rc = esp_hosted_connect_to_slave(); }
   tab5_sd_controlador_soltar();
   s_religando = false;
   s_est.dormindo_ms += tab5_agora_ms() - s_dormiu_em;
   if (rc != 0) {
-    ESP_LOGE(TAG, "remontar o SDIO falhou (%d) - o Wi-Fi precisa ser religado; modo automatico desligado", rc);
+    ESP_LOGE(TAG, "SDIO re-mount failed (%d) - Wi-Fi must be turned back on; automatic mode off", rc);
     ajustes_definir_c6_sono(false);
     ++s_est.falhas;
     s_estado = TAB5_C6_SONO_FALHOU;
     return false;
   }
   if (s_estava_associado) {
-    eh_host_wifi_admit_rx(false, true);          // STA: os quadros voltam a chegar a pilha
+    eh_host_wifi_admit_rx(false, true);          // STA: frames reach the stack again
   }
-  // Depois do admit_rx: com a recepcao ja admitida, o rearme nao reposta o
-  // STA_CONNECTED (o netif do app segue de pe, sem refazer o DHCP).
+  // After admit_rx: with reception already admitted, re-arming does not
+  // repost STA_CONNECTED (the app's netif stays up, no DHCP redo).
   if (s_app_iniciado) {
     s_religando = true;
     rearmar_app();
@@ -393,12 +396,12 @@ static bool religar(bool pelo_p4)
   s_est.ultimo_religar_ms = tab5_agora_ms() - t0;
   s_acordou_ms = tab5_agora_ms();
   s_estado = TAB5_C6_SONO_ACORDADO;
-  ESP_LOGI(TAG, "enlace de volta (%s) em %lu ms", pelo_p4 ? "pedido do P4" : "o C6 chamou",
+  ESP_LOGI(TAG, "link back (%s) in %lu ms", pelo_p4 ? "P4 request" : "the C6 called",
            (unsigned long)s_est.ultimo_religar_ms);
   return true;
 }
 
-// A janela do ESP-NOW no C6 (C6_AJ_ESPNOW_JANELA). So com o enlace de pe.
+// The ESP-NOW window on the C6 (C6_AJ_ESPNOW_JANELA). Only with the link up.
 static void janela(bool fechar)
 {
   if (fechar == s_janela_fechada) { return; }
@@ -421,11 +424,11 @@ static void automatico(void)
   }
   if (e != TAB5_C6_SONO_ACORDADO || !ajustes_c6_sono()) { return; }
   if (agora - s_quieto_desde < QUIETO_MS || agora - s_acordou_ms < DEPOIS_ACORDAR_MS) { return; }
-  // Dorme em dois casos: conectado (o C6 dorme associado e o roteador guarda o
-  // que chegar) ou com o radio PARADO (Wi-Fi desligado em Ajustes, cochilo,
-  // sem rede guardada) - o C6 acordado a toa custava mais que o Wi-Fi ligado:
-  // 20,6 mA contra 21,2 no ensaio de 2026-11-13. Nao dorme com o radio
-  // trabalhando sem IP (subindo, procurando, so ESP-NOW): ali ele e preciso.
+  // Sleeps in two cases: connected (the C6 sleeps associated and the router
+  // buffers whatever arrives) or with the radio IDLE (Wi-Fi off in Settings,
+  // doze, no saved network) - a needlessly awake C6 cost more than Wi-Fi on:
+  // 20.6 mA versus 21.2 in the 2026-11-13 test. Does not sleep with the radio
+  // working without an IP (starting, searching, ESP-NOW only): it is needed then.
   const tab5_wifi_estado_t w = tab5_wifi_estado();
   const bool conectado    = w == TAB5_WIFI_CONECTADO;
   const bool radio_parado = !tab5_wifi_radio_ativo() && w != TAB5_WIFI_SUBINDO;
@@ -433,8 +436,8 @@ static void automatico(void)
   janela(true);
   char m[96];
   if (!tab5_c6_sono_dormir(m, sizeof(m))) {
-    ESP_LOGW(TAG, "automatico: nao desmontei (%s) - tento de novo depois", m);
-    s_acordou_ms = agora;   // espera antes da proxima tentativa
+    ESP_LOGW(TAG, "automatic: did not tear down (%s) - will retry later", m);
+    s_acordou_ms = agora;   // wait before the next attempt
   }
 }
 
@@ -446,8 +449,8 @@ static void vTarefa(void*)
     s_c6_chamou = false;
     if (s_estado.load() == TAB5_C6_SONO_DORMINDO && (s_p4_quer.load() || chamou || gpio_get_level(PINO_C6_CHAMA))) {
       xSemaphoreTake(s_trava, portMAX_DELAY);
-      // O C6 chamou (G14 alto) ou o P4 quis transmitir: o mesmo religar - ele
-      // so baixa o CMD se o C6 ainda nao estiver chamando.
+      // The C6 called (G14 high) or the P4 wanted to transmit: the same
+      // religar - it only pulls CMD low if the C6 is not already calling.
       const bool p4 = s_p4_quer.exchange(false);
       if (s_estado.load() == TAB5_C6_SONO_DORMINDO) { religar(p4 && !chamou && !gpio_get_level(PINO_C6_CHAMA)); }
       xSemaphoreGive(s_trava);
@@ -484,13 +487,13 @@ bool tab5_c6_sono_dormir(char* motivo, size_t tam)
 
   xSemaphoreTake(s_trava, portMAX_DELAY);
   if (s_estado.load() != TAB5_C6_SONO_ACORDADO) { xSemaphoreGive(s_trava); return nao(tr("o enlace ja esta desmontado")); }
-  // Primeiro o aviso (pela interrupcao do SDIO): o C6 desmonta o escravo dele
-  // na tarefa do esp_hosted. Depois o nosso lado. O C6 so arma o despertar
-  // pelo CMD 500 ms depois - os comandos que o desmontar daqui ainda passa
-  // pela linha nao o acordam.
+  // First the signal (via the SDIO interrupt): the C6 tears down its slave in
+  // the esp_hosted task. Then our side. The C6 only arms the CMD wake-up
+  // 500 ms later - the commands our tear-down still sends down the line do
+  // not wake it.
   s_estava_associado = tab5_wifi_estado() == TAB5_WIFI_CONECTADO;
-  s_app_iniciado = tab5_wifi_radio_ativo();   // esp_wifi_start feito: a remontagem rearma (rearmar_app)
-  // O IP vai antes: com o P4 dormindo e o C6 quem responde o ARP dele.
+  s_app_iniciado = tab5_wifi_radio_ativo();   // esp_wifi_start done: the re-mount re-arms (rearmar_app)
+  // The IP goes first: with the P4 asleep, the C6 answers ARP for it.
   if (esp_netif_t* n = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF")) {
     esp_netif_ip_info_t ip = { };
     if (esp_netif_get_ip_info(n, &ip) == ESP_OK && ip.ip.addr) {
@@ -500,9 +503,10 @@ bool tab5_c6_sono_dormir(char* motivo, size_t tam)
     }
   }
   s_p4_quer = false;
-  // Do aviso ao fim do deinit: a janela em que o C6 ja pode ter sumido (ver
-  // __wrap_eh_host_port_restart_host) e o slot 1 sai do controlador que o
-  // cartao divide (ver tab5_sd.hpp). Ordem das travas: s_trava, depois esta.
+  // From the signal to the end of deinit: the window in which the C6 may
+  // already be gone (see __wrap_eh_host_port_restart_host) and slot 1 leaves
+  // the controller shared with the card (see tab5_sd.hpp). Lock order:
+  // s_trava, then this one.
   tab5_sd_controlador_travar();
   s_leitora_parada = false;
   s_desmontando = true;
@@ -514,11 +518,11 @@ bool tab5_c6_sono_dormir(char* motivo, size_t tam)
     return nao(tr("o aviso ao C6 nao saiu"));
   }
   vTaskDelay(pdMS_TO_TICKS(30));
-  // A sdio_read estaciona antes do deinit (ver __wrap_eh_host_port_sdio_wait_slave_intr).
+  // sdio_read parks before deinit (see __wrap_eh_host_port_sdio_wait_slave_intr).
   if (!estacionar_leitora(1500)) {
-    ESP_LOGW(TAG, "a tarefa de leitura nao estacionou em 1,5 s - desmonto assim mesmo");
+    ESP_LOGW(TAG, "the read task did not park within 1.5 s - tearing down anyway");
   }
-  esp_hosted_deinit();   // ao voltar, a tarefa de leitura ja parou
+  esp_hosted_deinit();   // on return, the read task has stopped
   s_desmontando = false;
   tab5_sd_controlador_soltar();
   gpio_reset_pin(PINO_CMD);
@@ -526,10 +530,10 @@ bool tab5_c6_sono_dormir(char* motivo, size_t tam)
   s_dormiu_em = tab5_agora_ms();
   ++s_est.entradas;
   s_estado = TAB5_C6_SONO_DORMINDO;
-  ulTaskNotifyTake(pdTRUE, 0);   // sobra de antes
+  ulTaskNotifyTake(pdTRUE, 0);   // leftover from before
   gpio_intr_enable(PINO_C6_CHAMA);
   xSemaphoreGive(s_trava);
-  ESP_LOGI(TAG, "enlace desmontado: o C6 pode dormir");
+  ESP_LOGI(TAG, "link torn down: the C6 may sleep");
   return true;
 }
 

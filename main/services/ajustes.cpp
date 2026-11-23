@@ -4,7 +4,7 @@
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "esp_log.h"
-#include "tab5_wifi.hpp"   // tab5_wifi_cifrar_texto (senhas dos servidores MQTT)
+#include "tab5_wifi.hpp"   // tab5_wifi_cifrar_texto (MQTT server passwords)
 #include "esp_attr.h"       // EXT_RAM_BSS_ATTR
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
@@ -18,32 +18,32 @@ static const char *TAG = "ajustes";
 static const char *NAMESPACE = "sistema";
 
 static uint8_t s_brilho = 80;
-static uint8_t s_volume = 128;   // meio da escala - nem mudo nem no talo na primeira vez
+static uint8_t s_volume = 128;   // middle of the scale - neither mute nor flat out the first time
 static bool    s_wifi   = false;
 static bool    s_grove   = false;
-static bool    s_usb_a   = true;    // o pendrive no USB-A funciona sem configurar nada
-static uint8_t s_tela_s  = 30;   // padrao antigo do sistema, em segundos
-static uint8_t s_relogio_painel = 80;  // padrao do M5GFX p/ o ILI9881C; 60 real deu underrun
+static bool    s_usb_a   = true;    // the flash drive on USB-A works without configuring anything
+static uint8_t s_tela_s  = 30;   // the system's old default, in seconds
+static uint8_t s_relogio_painel = 80;  // M5GFX default for the ILI9881C; a real 60 caused underrun
 static bool    s_pronto = false;
 
-// Graus x 1.000.000 (microgaus), inteiro: cabe num i32 da NVS sem depender
-// de blob, e da ~11cm de precisao no equador - de sobra para marcar um
-// endereco. 0,0 (Golfo da Guine) e o valor de fabrica e ninguem mora la -
-// serve de sentinela de "nao configurado" sem precisar de uma flag a parte.
+// Degrees x 1,000,000 (microdegrees), integer: fits in an NVS i32 without relying
+// on a blob, and gives ~11cm of precision at the equator - plenty for marking an
+// address. 0,0 (Gulf of Guinea) is the factory value and nobody lives there -
+// it serves as a "not configured" sentinel without needing a separate flag.
 static int32_t s_casa_lat_ue6 = 0;
 static int32_t s_casa_lon_ue6 = 0;
 
-static bool s_beep_trilha = true;   // default TOCAR - ver o aviso grande em ajustes.h
-static uint8_t s_tema_espectro = 0;   // 0 = arco-iris
-static uint16_t s_cor_tocador = 0;    // 0 = a do sistema
-static uint8_t s_modo_tocador = 0;    // bit 0 aleatorio, bits 1-2 repetir (services/tab5_musica)
-static bool s_beep_mesh   = true;   // idem, par do Mesh
+static bool s_beep_trilha = true;   // default PLAY - see the big note in ajustes.h
+static uint8_t s_tema_espectro = 0;   // 0 = rainbow
+static uint16_t s_cor_tocador = 0;    // 0 = the system's
+static uint8_t s_modo_tocador = 0;    // bit 0 shuffle, bits 1-2 repeat (services/tab5_musica)
+static bool s_beep_mesh   = true;   // likewise, Mesh's counterpart
 static uint8_t  s_espnow_canal = 0;
 static uint8_t  s_espnow_letra = 0;
 static uint8_t  s_bateria_soc = AJUSTES_SOC_NENHUM;
-static bool     s_c6_sono  = false;       // o C6 dorme associado no repouso (hal/tab5_c6_sono)
-static bool     s_capa_net = true;        // capa da musica buscada na internet (titulo/artista vao ao iTunes)
-static bool     s_wifi_cochilo = false;   // de fabrica conectado: o cochilo e a economia MAXIMA, opcional
+static bool     s_c6_sono  = false;       // the C6 sleeps while associated during idle (hal/tab5_c6_sono)
+static bool     s_capa_net = true;        // music cover art fetched from the internet (title/artist go to iTunes)
+static bool     s_wifi_cochilo = false;   // connected from the factory: the nap is the MAXIMUM saving, optional
 static bool     s_sono_leve = true;
 static uint8_t  s_mesh_via = AJUSTES_MESH_SERIAL;
 static uint32_t s_mesh_pin = 123456;
@@ -53,14 +53,14 @@ static uint8_t  s_mesh_pos_min = 0;
 static bool     s_mesh_internet = true;
 static bool     s_bluetooth = false;
 static uint8_t  s_parede    = AJUSTES_PAREDE_SORTEIO;
-static bool     s_bloqueio  = false;   // tela de bloqueio ao acordar (desligada de fabrica)
+static bool     s_bloqueio  = false;   // lock screen on waking (off from the factory)
 static char     s_idioma[8] = "en";    // interface language code (services/idioma.h); English out of the box
-static bool     s_pendrive  = false;   // abrir o Pendrive ao ligar num computador (desligado de fabrica)
-static uint8_t  s_lixeira_dias = 0;    // limpar a lixeira sozinho: 0 = nunca (padrao), N = itens com mais de N dias
-// Escala do giroscopio em partes por milhao (1000000 = 1,0), por eixo: i32 da
-// NVS, como a casa, sem blob.
+static bool     s_pendrive  = false;   // open Pendrive when plugged into a computer (off from the factory)
+static uint8_t  s_lixeira_dias = 0;    // empty the bin automatically: 0 = never (default), N = items older than N days
+// Gyroscope scale in parts per million (1000000 = 1.0), per axis: an NVS
+// i32, like the home position, no blob.
 static int32_t  s_giro_esc_ppm[3] = { 1000000, 1000000, 1000000 };
-static bool     s_config_ini = false;   // ver ajustes_config_inicial (lido no boot)
+static bool     s_config_ini = false;   // see ajustes_config_inicial (read at boot)
 static int16_t  s_fuso_min   = -180;    // UTC-3
 static bool     s_relogio_12h = false;  // 12-hour clock (9:05pm) instead of 24-hour
 static uint8_t  s_fuso_zona  = 0;       // time-zone region with daylight saving (services/tab5_fuso); 0 = manual
@@ -68,23 +68,23 @@ static uint8_t  s_mqtt_srv   = AJUSTES_MQTT_AUTOMATICO;
 #define GIRO_ESC_MIN_PPM  900000
 #define GIRO_ESC_MAX_PPM 1100000
 
-// GRAVAR NA FLASH DESLIGA O CACHE, E SEM CACHE A PSRAM SOME. Uma tarefa com a
-// PILHA na PSRAM (a do Berry, por exemplo) que grave a NVS derruba o aparelho
-// (assert em spi_flash_disable_interrupts_caches_and_other_cpu). So os blobs
-// (lista MQTT, ensaio) ainda gravam direto e conferem isto; os ajustes da
-// tabela abaixo nunca gravam de quem chamou.
+// WRITING TO FLASH DISABLES THE CACHE, AND WITHOUT CACHE THE PSRAM DISAPPEARS. A task with its
+// STACK in PSRAM (Berry's, for example) that writes NVS brings the device down
+// (assert in spi_flash_disable_interrupts_caches_and_other_cpu). Only the blobs
+// (MQTT list, power test) still write directly and check this; the settings in the
+// table below never write from the caller.
 static bool pilha_na_psram(void)
 {
   int aqui = 0;
   return esp_ptr_external_ram(&aqui);
 }
 
-static void mq_carregar(void);   // a lista dos servidores MQTT, la embaixo
+static void mq_carregar(void);   // the MQTT server list, further down
 
 // ---------------------------------------------------------------------------
-// A TABELA DOS AJUSTES: chave na NVS, variavel, tipo e faixa valida. Ler no
-// boot e gravar sao um laco so sobre ela. Valor lido fora da faixa (versao
-// antiga, lixo) e ignorado: fica o padrao da variavel.
+// THE SETTINGS TABLE: NVS key, variable, type and valid range. Reading at
+// boot and saving are a single loop over it. A value read outside the range (old
+// version, garbage) is ignored: the variable's default stays.
 // ---------------------------------------------------------------------------
 typedef enum { AJ_BOOL, AJ_U8, AJ_U16, AJ_U32, AJ_I16, AJ_I32, AJ_TXT } aj_tipo_t;
 typedef struct { const char* chave; void* var; aj_tipo_t tipo; int64_t min, max; } ajuste_t;
@@ -98,7 +98,7 @@ static const ajuste_t AJUSTES[] = {
   BOOL_("wifi", s_wifi),
   BOOL_("grove", s_grove),
   BOOL_("usb_a", s_usb_a),
-  U8_("tela_s", s_tela_s, AJUSTES_TELA_MIN_S, AJUSTES_TELA_MAX_S),   // nunca uma tela que nao apaga
+  U8_("tela_s", s_tela_s, AJUSTES_TELA_MIN_S, AJUSTES_TELA_MAX_S),   // never a screen that does not turn off
   U8_("relogio_p", s_relogio_painel, AJUSTES_RELOGIO_MIN, AJUSTES_RELOGIO_MAX),
   { "casa_lat", &s_casa_lat_ue6, AJ_I32, INT32_MIN, INT32_MAX },
   { "casa_lon", &s_casa_lon_ue6, AJ_I32, INT32_MIN, INT32_MAX },
@@ -174,7 +174,7 @@ static void ler_ajuste(nvs_handle_t h, const ajuste_t& a)
   if (a.tipo == AJ_BOOL || a.tipo == AJ_U8) { uint8_t x;  e = nvs_get_u8(h, a.chave, &x);  v = x; }
   else if (a.tipo == AJ_U16)                { uint16_t x; e = nvs_get_u16(h, a.chave, &x); v = x; }
   else if (a.tipo == AJ_U32)                { uint32_t x; e = nvs_get_u32(h, a.chave, &x); v = x; }
-  else                                      { int32_t x;  e = nvs_get_i32(h, a.chave, &x); v = x; }   // I16 mora num i32
+  else                                      { int32_t x;  e = nvs_get_i32(h, a.chave, &x); v = x; }   // I16 lives in an i32
   if (e == ESP_OK && v >= a.min && v <= a.max) { por_valor(a, v); }
 }
 
@@ -191,14 +191,14 @@ static void gravar_ajuste(nvs_handle_t h, const ajuste_t& a)
 }
 
 // ---------------------------------------------------------------------------
-// GRAVACAO: SEMPRE ADIADA, POR UM CAMINHO SO. Quem muda um ajuste so marca a
-// variavel como suja; 1 s depois da ULTIMA marca, a tarefa do esp_timer (pilha
-// interna) grava os sujos de uma vez, com um commit. Isso resolve junto:
-//   - o arraste (brilho, volume): a NVS recebe so o valor final, e a tarefa da
-//     interface nunca para com o cache desligado;
-//   - quem tem pilha na PSRAM (Berry): nunca grava, so marca.
-// O que nao foi marcado nao e escrito - um ajuste nunca mexido continua
-// seguindo o padrao do firmware.
+// SAVING: ALWAYS DEFERRED, ALONG A SINGLE PATH. Whoever changes a setting only marks the
+// variable as dirty; 1 s after the LAST mark, the esp_timer task (internal
+// stack) writes the dirty ones in one go, with one commit. This solves at once:
+//   - dragging (brightness, volume): NVS receives only the final value, and the UI
+//     task never stalls with the cache off;
+//   - whoever has a stack in PSRAM (Berry): never writes, only marks.
+// What was not marked is not written - a setting never touched keeps
+// following the firmware default.
 // ---------------------------------------------------------------------------
 #define ADIAR_GRAVACAO_US 1000000
 static esp_timer_handle_t     s_adiar = nullptr;
@@ -213,7 +213,7 @@ static void gravar_sujos(void*)
   for (int i = 0; i < N_AJUSTES; ++i) {
     if (sujos & (1ull << i)) { gravar_ajuste(h, AJUSTES[i]); }
   }
-  nvs_commit(h);      // sem o commit, o valor some no proximo boot
+  nvs_commit(h);      // without the commit, the value vanishes at the next boot
   nvs_close(h);
 }
 
@@ -225,11 +225,11 @@ static void adiar_gravacao(uint64_t prazo_us)
                                         .skip_unhandled_events = true };
     if (esp_timer_create(&a, &s_adiar) != ESP_OK) { s_adiar = nullptr; return; }
   }
-  esp_timer_stop(s_adiar);   // cada valor novo empurra o prazo
+  esp_timer_stop(s_adiar);   // each new value pushes the deadline back
   esp_timer_start_once(s_adiar, prazo_us);
 }
 
-// A variavel mudou: marca e agenda. 'var' e o endereco que esta na tabela.
+// The variable changed: mark and schedule. 'var' is the address in the table.
 static void marcar(const void* var)
 {
   if (!s_pronto) { return; }
@@ -247,14 +247,14 @@ void ajustes_iniciar(void)
 {
   esp_err_t err = nvs_flash_init();
   if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-    // Particao NVS gasta ou de versao antiga. Apagar aqui e seguro: so ha
-    // ajustes nossos, nada que o usuario perca de verdade.
-    ESP_LOGW(TAG, "NVS precisou ser reinicializada");
+    // NVS partition worn out or from an old version. Erasing here is safe: there are only
+    // our settings, nothing the user really loses.
+    ESP_LOGW(TAG, "NVS had to be reinitialised");
     nvs_flash_erase();
     err = nvs_flash_init();
   }
   if (err != ESP_OK) {
-    ESP_LOGE(TAG, "NVS indisponivel (%s) - ajustes so valem nesta sessao",
+    ESP_LOGE(TAG, "NVS unavailable (%s) - settings only apply to this session",
              esp_err_to_name(err));
     return;
   }
@@ -266,24 +266,24 @@ void ajustes_iniciar(void)
     const bool tem_marca = nvs_get_u8(h, "config_ini", &v) == ESP_OK;
     for (int i = 0; i < N_AJUSTES; ++i) { ler_ajuste(h, AJUSTES[i]); }
     nvs_close(h);
-    // PRIMEIRO USO: sem a marca, mas com QUALQUER outro ajuste ja gravado, o
-    // aparelho ja rodava o sistema antes desta versao - nao e primeiro uso.
+    // FIRST USE: without the mark, but with ANY other setting already saved, the
+    // device was already running the system before this version - it is not first use.
     if (!tem_marca) {
       nvs_iterator_t it = nullptr;
       s_config_ini = nvs_entry_find(NVS_DEFAULT_PART_NAME, NAMESPACE, NVS_TYPE_ANY, &it) == ESP_OK;
       nvs_release_iterator(it);
-      // Aparelho novo: grava a marca ja como "falta fazer". Assim, desligado no
-      // meio do assistente (com brilho ou Wi-Fi ja gravados), o assistente
-      // volta no proximo boot em vez de passar a contar como configurado.
+      // New device: saves the mark as "still to do". That way, if it is switched off
+      // midway through the wizard (with brightness or Wi-Fi already saved), the wizard
+      // comes back at the next boot instead of counting as configured.
       if (!s_config_ini) { marcar(&s_config_ini); }
     }
   }
-  // A chave das senhas (hal/tab5_wifi) antes de qualquer cifra: no primeiro
-  // boot ela e sorteada e gravada - aqui, com a pilha do boot na RAM interna.
+  // The password key (hal/tab5_wifi) before any encryption: on the first
+  // boot it is randomly generated and saved - here, with the boot stack in internal RAM.
   tab5_wifi_chave_preparar();
-  mq_carregar();   // a lista dos servidores MQTT (e a passagem do formato antigo)
+  mq_carregar();   // the MQTT server list (and migration from the old format)
 
-  ESP_LOGI(TAG, "ajustes lidos: brilho %d, WiFi %s", (int)s_brilho, s_wifi ? "ligado" : "desligado");
+  ESP_LOGI(TAG, "settings read: brightness %d, WiFi %s", (int)s_brilho, s_wifi ? "on" : "off");
 }
 
 uint8_t ajustes_brilho(void) { return s_brilho; }
@@ -293,17 +293,17 @@ void ajustes_definir_brilho(uint8_t brilho)
   if (brilho < AJUSTES_BRILHO_MIN) { brilho = AJUSTES_BRILHO_MIN; }
   s_brilho = brilho;
 
-  // Aplica na hora: mexer numa barra e nao ver a tela reagir seria confuso.
-  // Pela API normal (e nao pelo painel direto), porque este e o brilho
-  // OFICIAL - e o valor que o tab5_power vai restaurar ao acordar do repouso.
+  // Applies at once: moving a slider and not seeing the screen react would be confusing.
+  // Through the normal API (and not the panel directly), because this is the
+  // OFFICIAL brightness - the value tab5_power will restore on waking from idle.
   M5.Display.setBrightness(s_brilho);
 
-  marcar(&s_brilho);   // gravada 1 s depois do ultimo valor
+  marcar(&s_brilho);   // saved 1 s after the last value
 }
 
-// O PWM e linear na luz, mas o olho nao: 4% de duty ja parece "um quarto do
-// brilho". Por isso a posicao passa pela curva gama 2,2 - a metade de baixo da
-// escala cobre de 0,9% a ~22% do duty, em degraus finos.
+// The PWM is linear in light, but the eye is not: 4% duty already looks like "a quarter
+// of the brightness". That is why the position goes through the gamma 2.2 curve - the bottom half of the
+// scale covers 0.9% to ~22% of the duty, in fine steps.
 int ajustes_brilho_para_pos(int brilho)
 {
   const float f = (float)(brilho - AJUSTES_BRILHO_MIN) / (float)(AJUSTES_BRILHO_MAX - AJUSTES_BRILHO_MIN);
@@ -334,14 +334,14 @@ void ajustes_definir_volume(uint8_t volume)
   if (volume > AJUSTES_VOLUME_MAX) { volume = AJUSTES_VOLUME_MAX; }
   s_volume = volume;
 
-  // Sem custo de I2C aqui - setVolume() so grava o numero no objeto Speaker,
-  // nao liga o ES8388 (ver o aviso grande em ajustes.h). Por isso e seguro
-  // chamar de QUALQUER tarefa, ao contrario de tab5_camera_iniciar() e
-  // companhia - a regra "so a tarefa de interface fala I2C" nao se aplica
-  // aqui.
+  // No I2C cost here - setVolume() only stores the number in the Speaker object,
+  // it does not turn on the ES8388 (see the big note in ajustes.h). That is why it is safe
+  // to call from ANY task, unlike tab5_camera_iniciar() and
+  // friends - the rule "only the UI task talks I2C" does not apply
+  // here.
   M5.Speaker.setVolume(s_volume);
 
-  marcar(&s_volume);   // gravada 1 s depois do ultimo valor
+  marcar(&s_volume);   // saved 1 s after the last value
 }
 
 bool ajustes_wifi(void) { return s_wifi; }
@@ -367,7 +367,7 @@ void ajustes_definir_grove(bool ligado)
 {
   s_grove = ligado;
   marcar(&s_grove);
-  ESP_LOGI(TAG, "5V do Grove sempre ligado: %s", ligado ? "sim" : "nao");
+  ESP_LOGI(TAG, "Grove 5V always on: %s", ligado ? "yes" : "no");
 }
 
 bool ajustes_usb_a(void) { return s_usb_a; }
@@ -376,7 +376,7 @@ void ajustes_definir_usb_a(bool ligado)
 {
   s_usb_a = ligado;
   marcar(&s_usb_a);
-  ESP_LOGI(TAG, "USB-A (pendrive): %s", ligado ? "ligado" : "desligado");
+  ESP_LOGI(TAG, "USB-A (flash drive): %s", ligado ? "on" : "off");
 }
 
 uint8_t ajustes_relogio_painel(void) { return s_relogio_painel; }
@@ -386,7 +386,7 @@ void ajustes_definir_relogio_painel(uint8_t mhz)
   s_relogio_painel = (mhz < AJUSTES_RELOGIO_MIN) ? AJUSTES_RELOGIO_MIN
                    : (mhz > AJUSTES_RELOGIO_MAX) ? AJUSTES_RELOGIO_MAX : mhz;
   marcar(&s_relogio_painel);
-  ESP_LOGI(TAG, "relogio do painel = %d MHz", (int)s_relogio_painel);
+  ESP_LOGI(TAG, "panel clock = %d MHz", (int)s_relogio_painel);
 }
 
 bool ajustes_casa(float* lat, float* lon)
@@ -401,7 +401,7 @@ void ajustes_definir_casa(float lat, float lon)
 {
   s_casa_lat_ue6 = (int32_t)(lat * 1000000.0f);
   s_casa_lon_ue6 = (int32_t)(lon * 1000000.0f);
-  ESP_LOGI(TAG, "casa gravada");   // sem as coordenadas: o log mora no cartao
+  ESP_LOGI(TAG, "home position saved");   // without the coordinates: the log lives on the card
   marcar(&s_casa_lat_ue6);
   marcar(&s_casa_lon_ue6);
 }
@@ -412,28 +412,28 @@ void ajustes_definir_beep_trilha(bool tocar)
 {
   s_beep_trilha = tocar;
   marcar(&s_beep_trilha);
-  ESP_LOGI(TAG, "beep da Trilha: %s", tocar ? "ligado" : "desligado");
+  ESP_LOGI(TAG, "Trilha beep: %s", tocar ? "on" : "off");
 }
 
 uint16_t ajustes_cor_tocador(void) { return s_cor_tocador; }
 
-// Um app Berry chama isto (musica.cor), da tarefa do Berry - pilha na PSRAM:
-// por isso so marca (a gravacao e sempre adiada, ver marcar).
+// A Berry app calls this (musica.cor), from the Berry task - stack in PSRAM:
+// that is why it only marks (saving is always deferred, see marcar).
 void ajustes_definir_cor_tocador(uint16_t cor565)
 {
-  if (cor565 == s_cor_tocador) { return; }   // sem gravar a flash a toa
+  if (cor565 == s_cor_tocador) { return; }   // without writing the flash for nothing
   s_cor_tocador = cor565;
-  marcar(&s_cor_tocador);   // gravada 1 s depois do ultimo valor
+  marcar(&s_cor_tocador);   // saved 1 s after the last value
 }
 
 uint8_t ajustes_modo_tocador(void) { return s_modo_tocador; }
 
-// O modulo Berry tambem troca o modo.
+// The Berry module also changes the mode.
 void ajustes_definir_modo_tocador(uint8_t modo)
 {
   if (modo == s_modo_tocador) { return; }
   s_modo_tocador = modo;
-  marcar(&s_modo_tocador);   // gravada 1 s depois do ultimo valor
+  marcar(&s_modo_tocador);   // saved 1 s after the last value
 }
 
 uint8_t ajustes_tema_espectro(void) { return s_tema_espectro; }
@@ -441,7 +441,7 @@ uint8_t ajustes_tema_espectro(void) { return s_tema_espectro; }
 void ajustes_definir_tema_espectro(uint8_t tema)
 {
   s_tema_espectro = tema;
-  marcar(&s_tema_espectro);   // gravada 1 s depois do ultimo valor
+  marcar(&s_tema_espectro);   // saved 1 s after the last value
 }
 
 bool ajustes_beep_mesh(void) { return s_beep_mesh; }
@@ -450,7 +450,7 @@ void ajustes_definir_beep_mesh(bool tocar)
 {
   s_beep_mesh = tocar;
   marcar(&s_beep_mesh);
-  ESP_LOGI(TAG, "beep do Mesh: %s", tocar ? "ligado" : "desligado");
+  ESP_LOGI(TAG, "Mesh beep: %s", tocar ? "on" : "off");
 }
 
 uint8_t ajustes_espnow_canal(void) { return s_espnow_canal; }
@@ -458,7 +458,7 @@ uint8_t ajustes_espnow_canal(void) { return s_espnow_canal; }
 void ajustes_definir_espnow_canal(uint8_t canal)
 {
   if (canal > 13) { canal = 0; }
-  if (canal == s_espnow_canal) { return; }   // o servico reaplica no boot: sem regravar a flash a toa
+  if (canal == s_espnow_canal) { return; }   // the service reapplies it at boot: no rewriting the flash for nothing
   s_espnow_canal = canal;
   marcar(&s_espnow_canal);
 }
@@ -493,9 +493,9 @@ void ajustes_definir_sono_leve(bool ligado)
   marcar(&s_sono_leve);
 }
 
-// O ensaio de energia (services/tab5_ensaio) desliga servicos de verdade; os
-// originais ficam aqui ate ele devolver, para um reinicio no meio nao deixar
-// Wi-Fi/Bluetooth/Grove desligados para sempre. Da interface (pilha interna).
+// The power test (services/tab5_ensaio) really turns services off; the
+// originals stay here until it gives them back, so a restart midway does not leave
+// Wi-Fi/Bluetooth/Grove off forever. From the UI (internal stack).
 bool ajustes_ensaio_originais(uint8_t out[AJUSTES_ENSAIO_N])
 {
   if (!s_pronto) { return false; }
@@ -547,11 +547,11 @@ uint8_t ajustes_mesh_via(void) { return s_mesh_via; }
 void ajustes_definir_mesh_via(uint8_t via)
 {
   if (via > AJUSTES_MESH_INTERNET) { via = AJUSTES_MESH_SERIAL; }
-  if (via == s_mesh_via) { return; }   // a NVS tem ciclos de escrita finitos
+  if (via == s_mesh_via) { return; }   // NVS has finite write cycles
   s_mesh_via = via;
   marcar(&s_mesh_via);
-  ESP_LOGI(TAG, "Mesh vai pelo %s", via == AJUSTES_MESH_BLUETOOTH ? "Bluetooth"
-                                  : via == AJUSTES_MESH_INTERNET  ? "internet" : "cabo Grove");
+  ESP_LOGI(TAG, "Mesh goes via %s", via == AJUSTES_MESH_BLUETOOTH ? "Bluetooth"
+                                  : via == AJUSTES_MESH_INTERNET  ? "internet" : "Grove cable");
 }
 
 uint32_t ajustes_mesh_pin(void) { return s_mesh_pin; }
@@ -576,7 +576,7 @@ void ajustes_definir_mesh_pin_na_tela(bool sim)
 
 void ajustes_definir_mesh_ble_endereco(const char* end)
 {
-  // Outro no: o que se sabia sobre o PIN do anterior nao vale para ele.
+  // Another node: what was known about the previous one's PIN does not apply to it.
   if (strcmp(end ? end : "", s_mesh_end) != 0) { ajustes_definir_mesh_pin_na_tela(false); }
   snprintf(s_mesh_end, sizeof(s_mesh_end), "%s", end ? end : "");
   marcar(s_mesh_end);
@@ -662,12 +662,12 @@ void ajustes_definir_giro_escala(int eixo, float escala)
   int32_t ppm = (int32_t)lroundf(escala * 1000000.0f);
   if (ppm < GIRO_ESC_MIN_PPM || ppm > GIRO_ESC_MAX_PPM) { return; }
   s_giro_esc_ppm[eixo] = ppm;
-  ESP_LOGI(TAG, "escala do giro, eixo %c: %.4f", "xyz"[eixo], (double)escala);
+  ESP_LOGI(TAG, "gyro scale, axis %c: %.4f", "xyz"[eixo], (double)escala);
   marcar(&s_giro_esc_ppm[eixo]);
 }
 
-// ORDEM DOS ICONES - ver ajustes.h. Lida da NVS na hora (so no boot e no
-// console), sem copia em RAM: quem guarda a ordem em uso e o shell.
+// ICON ORDER - see ajustes.h. Read from NVS on demand (only at boot and from the
+// console), with no copy in RAM: the shell keeps the order in use.
 void ajustes_ordem_apps(char* out, size_t n)
 {
   if (!out || n == 0) { return; }
@@ -689,10 +689,10 @@ void ajustes_definir_ordem_apps(const char* nomes)
   else                   { nvs_erase_key(h, "apps_ordem"); }
   nvs_commit(h);
   nvs_close(h);
-  ESP_LOGI(TAG, "ordem dos apps: %s", (nomes && nomes[0]) ? nomes : "(padrao)");
+  ESP_LOGI(TAG, "app order: %s", (nomes && nomes[0]) ? nomes : "(default)");
 }
 
-// ---- primeiro uso, fuso e servidor MQTT (ver ajustes.h) ----------------------
+// ---- first use, time zone and MQTT server (see ajustes.h) --------------------
 bool ajustes_config_inicial(void) { return s_config_ini; }
 
 void ajustes_definir_config_inicial(bool feita)
@@ -710,7 +710,7 @@ void ajustes_definir_fuso_min(int16_t minutos)
   if (minutos == s_fuso_min) { return; }
   s_fuso_min = minutos;
   marcar(&s_fuso_min);
-  ESP_LOGI(TAG, "fuso: UTC%+d:%02d", minutos / 60, abs(minutos) % 60);
+  ESP_LOGI(TAG, "time zone: UTC%+d:%02d", minutos / 60, abs(minutos) % 60);
 }
 
 bool ajustes_relogio_12h(void) { return s_relogio_12h; }
@@ -740,15 +740,15 @@ void ajustes_definir_mqtt_servidor(uint8_t escolha)
   marcar(&s_mqtt_srv);
 }
 
-// ---- a lista dos servidores MQTT (ver ajustes.h) ---------------------------
-// UM BLOB SO na NVS ("mqtt_lista"): a versao, quantos, e os servidores com a
-// senha ja cifrada. Copia DECIFRADA em RAM (PSRAM - e so leitura fora daqui):
-// o modo internet consulta a cada conexao, e decifrar toda vez seria
-// desperdicio. Lida no boot (ajustes_iniciar), que tambem passa o formato
-// antigo para este.
+// ---- the MQTT server list (see ajustes.h) ---------------------------------
+// A SINGLE BLOB in NVS ("mqtt_lista"): the version, how many, and the servers with the
+// password already encrypted. A DECRYPTED copy in RAM (PSRAM - read-only outside here):
+// internet mode consults it on every connection, and decrypting every time would be
+// wasteful. Read at boot (ajustes_iniciar), which also migrates the old
+// format to this one.
 //
-// Quem grava e a interface (Ajustes, Mesh, boas-vindas), na tarefa dela -
-// pilha interna. Nao ha API Berry para isto (ver pilha_na_psram).
+// The UI writes it (Settings, Mesh, welcome), on its own task -
+// internal stack. There is no Berry API for this (see pilha_na_psram).
 typedef struct { char nome[24], srv[64], usr[32], raiz[48]; char pwd_hex[112]; } mq_guardado_t;
 typedef struct { uint8_t versao, n; uint8_t vago[2]; mq_guardado_t s[AJUSTES_MQTT_MAX]; } mq_blob_t;
 #define MQ_VERSAO 1
@@ -758,10 +758,10 @@ static int s_mq_n = 0;
 static void mq_guardar(void)
 {
   if (!s_pronto) { return; }
-  if (pilha_na_psram()) { ESP_LOGE(TAG, "lista MQTT nao gravada: pilha na PSRAM"); return; }
-  // O blob vai da RAM interna: gravar a flash desliga o cache, e com ele a PSRAM.
+  if (pilha_na_psram()) { ESP_LOGE(TAG, "MQTT list not saved: stack in PSRAM"); return; }
+  // The blob goes from internal RAM: writing the flash disables the cache, and with it the PSRAM.
   mq_blob_t* b = (mq_blob_t*)heap_caps_calloc(1, sizeof(mq_blob_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-  if (!b) { ESP_LOGE(TAG, "lista MQTT nao gravada: sem memoria"); return; }
+  if (!b) { ESP_LOGE(TAG, "MQTT list not saved: out of memory"); return; }
   b->versao = MQ_VERSAO;
   b->n = (uint8_t)s_mq_n;
   for (int i = 0; i < s_mq_n; ++i) {
@@ -775,7 +775,7 @@ static void mq_guardar(void)
     if (s.pwd[0] && !tab5_wifi_cifrar_texto(s.pwd, hex, sizeof(hex))) { hex[0] = 0; }
     snprintf(g.pwd_hex, sizeof(g.pwd_hex), "%s", hex);
   }
-  // So os usados: o blob encolhe com a lista.
+  // Only the used ones: the blob shrinks with the list.
   const size_t tam = offsetof(mq_blob_t, s) + sizeof(mq_guardado_t) * (size_t)s_mq_n;
   nvs_handle_t h;
   if (nvs_open(NAMESPACE, NVS_READWRITE, &h) == ESP_OK) {
@@ -798,10 +798,10 @@ static void mq_por(const char* nome, const char* srv, const char* usr, const cha
   snprintf(s.raiz, sizeof(s.raiz), "%s", raiz);
 }
 
-// O FORMATO ANTIGO: uma lista fixa (1 Mesh Brasil, 2 EUA, 3 Europa, 4 ANZ, 5
-// Brasil global) e um servidor "proprio" (255) em quatro chaves soltas. Vira
-// a lista de fabrica, mais o que a pessoa usava, com a escolha apontando para
-// o mesmo servidor de antes.
+// THE OLD FORMAT: a fixed list (1 Mesh Brasil, 2 USA, 3 Europe, 4 ANZ, 5
+// Brazil global) and an "own" server (255) in four loose keys. It becomes
+// the factory list, plus whatever the person was using, with the choice pointing at
+// the same server as before.
 static void mq_migrar(void)
 {
   s_mq_n = 0;
@@ -841,7 +841,7 @@ static void mq_migrar(void)
   }
   mq_guardar();
   if (nova != s_mqtt_srv) { s_mqtt_srv = nova; marcar(&s_mqtt_srv); }
-  ESP_LOGI(TAG, "servidores MQTT: lista criada (%d), escolha %u", s_mq_n, (unsigned)s_mqtt_srv);
+  ESP_LOGI(TAG, "MQTT servers: list created (%d), choice %u", s_mq_n, (unsigned)s_mqtt_srv);
 }
 
 static void mq_carregar(void)
@@ -858,7 +858,7 @@ static void mq_carregar(void)
         && b->n <= AJUSTES_MQTT_MAX && tam >= offsetof(mq_blob_t, s) + sizeof(mq_guardado_t) * b->n;
     nvs_close(h);
   }
-  bool legado = false;   // alguma senha na cifra antiga (chave do MAC): regrava
+  bool legado = false;   // some password in the old cipher (MAC key): rewrite
   if (lido) {
     for (int i = 0; i < b->n; ++i) {
       const mq_guardado_t& g = b->s[i];
@@ -873,8 +873,8 @@ static void mq_carregar(void)
   memset(b, 0, sizeof(*b));
   heap_caps_free(b);
   if (!lido) { mq_migrar(); }
-  else if (legado) { mq_guardar(); ESP_LOGW(TAG, "servidores MQTT: senhas regravadas com a chave nova"); }
-  if (s_mqtt_srv > s_mq_n) { s_mqtt_srv = AJUSTES_MQTT_AUTOMATICO; }   // apontava para alem da lista
+  else if (legado) { mq_guardar(); ESP_LOGW(TAG, "MQTT servers: passwords rewritten with the new key"); }
+  if (s_mqtt_srv > s_mq_n) { s_mqtt_srv = AJUSTES_MQTT_AUTOMATICO; }   // pointed beyond the list
 }
 
 int ajustes_mqtt_n(void) { return s_mq_n; }
@@ -895,7 +895,7 @@ int ajustes_mqtt_gravar(int i, const ajustes_mqtt_srv_t* s)
   }
   s_mq[i] = *s;
   mq_guardar();
-  ESP_LOGI(TAG, "servidor MQTT %d: %s (%s, raiz %s)", i + 1, s->nome, s->srv, s->raiz);
+  ESP_LOGI(TAG, "MQTT server %d: %s (%s, root %s)", i + 1, s->nome, s->srv, s->raiz);
   return i;
 }
 
@@ -906,8 +906,8 @@ void ajustes_mqtt_apagar(int i)
   --s_mq_n;
   memset(&s_mq[s_mq_n], 0, sizeof(s_mq[s_mq_n]));
   mq_guardar();
-  // A escolha segue o mesmo servidor: o apagado volta ao automatico, os de
-  // depois dele andaram uma casa.
+  // The choice follows the same server: the deleted one goes back to automatic, those
+  // after it moved up one place.
   const int e = (int)s_mqtt_srv - 1;
   if (e == i)     { ajustes_definir_mqtt_servidor(AJUSTES_MQTT_AUTOMATICO); }
   else if (e > i) { ajustes_definir_mqtt_servidor((uint8_t)e); }

@@ -1,7 +1,7 @@
 #include "tab5_donos.hpp"
 
-// Tabela pequena e fixa: sao poucas dezenas de tarefas no sistema inteiro, e
-// so as registradas entram (as do IDF ficam de fora - sao SISTEMA por padrao).
+// Small fixed table: there are only a few dozen tasks in the whole system,
+// and only registered ones go in (IDF's stay out - they are SISTEMA by default).
 #define DONOS_MAX 32
 
 typedef struct {

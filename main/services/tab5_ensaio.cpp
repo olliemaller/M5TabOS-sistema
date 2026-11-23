@@ -22,28 +22,28 @@ static const int ACOMODAR_S = 120;
 
 typedef enum { E_PARADO, E_ESPERANDO, E_FASE, E_FIM } etapa_t;
 
-static std::atomic<int>  s_pedido_min{0};      // console -> interface: comecar
+static std::atomic<int>  s_pedido_min{0};      // console -> UI: start
 static std::atomic<bool> s_pedido_parar{false};
 static volatile etapa_t  s_etapa = E_PARADO;
 static std::atomic<int>      s_fase = 0;
 static int               s_min = 6;
 static int               s_fases = N_FASES;
 static std::atomic<int>  s_pedido_fases{N_FASES};
-static int               s_seg_fase = 0;       // segundos validos (repouso + bateria) nesta fase
+static int               s_seg_fase = 0;       // valid seconds (idle + battery) in this stage
 static double            s_soma_ma[N_FASES];
 static int               s_n[N_FASES];
-static bool              s_anotada[N_FASES];   // a fase ja foi para o CSV (anotar_fase)
+static bool              s_anotada[N_FASES];   // the stage has already gone to the CSV (anotar_fase)
 
-// OS ORIGINAIS SO SAEM DA NVS DEPOIS DE OS AJUSTES DEVOLVIDOS ESTAREM GRAVADOS.
-// Os ajustes vao para a NVS pelo caminho adiado (ate 1 s depois da ultima
-// mudanca); apagar os originais logo apos pedir a volta deixava uma janela em
-// que um travamento perdia os dois (2026-11-13: panic ao religar o Wi-Fi, e o
-// boot seguinte ficou com Wi-Fi, Grove e Mesh internet desligados). Espera
-// ORIGINAIS_APAGAR_S e so entao apaga.
+// THE ORIGINALS ONLY LEAVE NVS AFTER THE RESTORED SETTINGS HAVE BEEN WRITTEN.
+// Settings go to NVS via the deferred path (up to 1 s after the last
+// change); deleting the originals right after asking for the restore left a window in
+// which a crash lost both (2026-11-13: panic when switching Wi-Fi back on, and the
+// following boot came up with Wi-Fi, Grove and Mesh internet off). Wait
+// ORIGINAIS_APAGAR_S and only then delete.
 static const int ORIGINAIS_APAGAR_S = 5;
-static int64_t   s_apagar_originais_us = 0;    // 0 = nada pendente
+static int64_t   s_apagar_originais_us = 0;    // 0 = nothing pending
 
-// Os originais, para devolver.
+// The originals, for restoring.
 static bool    o_wifi, o_ble, o_grove, o_mesh_net;
 static uint8_t o_mesh_via;
 
@@ -51,7 +51,7 @@ static uint8_t o_mesh_via;
 
 static void mesh_descer(void*) { if (tab5_mesh_servico_ativo()) { tab5_mesh_parar(); } }
 
-// Desliga o servico da fase 'f' (as anteriores ja estao desligadas).
+// Switches off the service for stage 'f' (the earlier ones are already off).
 static void aplicar_fase(int f)
 {
   switch (f) {
@@ -65,7 +65,7 @@ static void aplicar_fase(int f)
     case 4: sistema_wifi(false); break;
     default: break;
   }
-  ESP_LOGW(TAG, "fase %d: %s", f, FASE_NOME[f]);
+  ESP_LOGW(TAG, "stage %d: %s", f, FASE_NOME[f]);
 }
 
 static void devolver(void)
@@ -79,13 +79,13 @@ static void devolver(void)
     tab5_power_grove(true);
     sistema_grove_redetectar();
   }
-  ajustes_gravar_agora();   // antecipa a gravacao adiada dos ajustes devolvidos
+  ajustes_gravar_agora();   // brings forward the deferred write of the restored settings
   s_apagar_originais_us = esp_timer_get_time() + (int64_t)ORIGINAIS_APAGAR_S * 1000000;
-  ESP_LOGW(TAG, "ajustes devolvidos");
+  ESP_LOGW(TAG, "settings restored");
 }
 
-// Uma fase vai para o CSV assim que termina: um travamento no meio do ensaio
-// nao leva junto as fases ja medidas (antes so o fim gravava a tabela).
+// A stage goes to the CSV as soon as it finishes: a crash in the middle of the test
+// doesn't take with it the stages already measured (previously only the end wrote the table).
 static void anotar_fase(int f)
 {
   if (s_n[f] == 0 || s_anotada[f]) { return; }
@@ -94,10 +94,10 @@ static void anotar_fase(int f)
   const double m = s_soma_ma[f] / s_n[f];
   snprintf(linha, sizeof(linha), "%d,%s,%.1f,%d\n", f, FASE_NOME[f], m, s_n[f]);
   tab5_sd_anexar("Sistema", "ensaio_energia.csv", linha, "fase,nome,mA_medio,segundos\n");
-  ESP_LOGW(TAG, "resultado fase %d (%s): %.1f mA em %d s", f, FASE_NOME[f], m, s_n[f]);
+  ESP_LOGW(TAG, "result stage %d (%s): %.1f mA over %d s", f, FASE_NOME[f], m, s_n[f]);
 }
 
-// No fim (ou no 'parar'): as fases que ainda nao foram anotadas.
+// At the end (or on 'parar'): the stages not yet noted down.
 static void gravar_tabela(void)
 {
   for (int f = 0; f < N_FASES; ++f) { anotar_fase(f); }
@@ -117,9 +117,9 @@ void tab5_ensaio_parar(void) { s_pedido_parar = true; }
 
 void tab5_ensaio_vigiar(void)
 {
-  // UM ENSAIO INTERROMPIDO (reinicio, bateria no fim): os originais ficaram
-  // guardados - devolve na primeira volta da interface depois do boot.
-  // Os originais pendentes de apagar (ver ORIGINAIS_APAGAR_S).
+  // AN INTERRUPTED TEST (restart, battery running out): the originals were left
+  // stored - restore them on the first UI round after boot.
+  // The originals pending deletion (see ORIGINAIS_APAGAR_S).
   if (s_apagar_originais_us && esp_timer_get_time() >= s_apagar_originais_us) {
     s_apagar_originais_us = 0;
     ajustes_definir_ensaio_originais(nullptr);
@@ -130,7 +130,7 @@ void tab5_ensaio_vigiar(void)
     uint8_t o[AJUSTES_ENSAIO_N];
     if (ajustes_ensaio_originais(o)) {
       o_wifi = o[0]; o_ble = o[1]; o_grove = o[2]; o_mesh_net = o[3]; o_mesh_via = o[4];
-      ESP_LOGW(TAG, "ensaio interrompido antes do fim: devolvendo os ajustes");
+      ESP_LOGW(TAG, "test interrupted before the end: restoring the settings");
       devolver();
     }
   }
@@ -142,9 +142,9 @@ void tab5_ensaio_vigiar(void)
     o_mesh_net = ajustes_mesh_internet(); o_mesh_via = ajustes_mesh_via();
     const uint8_t o[AJUSTES_ENSAIO_N] = { o_wifi, o_ble, o_grove, o_mesh_net, o_mesh_via };
     ajustes_definir_ensaio_originais(o);
-    ESP_LOGW(TAG, "originais: wifi=%d ble=%d grove=%d mesh_internet=%d mesh_via=%d",
+    ESP_LOGW(TAG, "originals: wifi=%d ble=%d grove=%d mesh_internet=%d mesh_via=%d",
              o_wifi, o_ble, o_grove, o_mesh_net, o_mesh_via);
-    s_apagar_originais_us = 0;   // os originais novos acabaram de ser gravados
+    s_apagar_originais_us = 0;   // the new originals have just been written
     for (int f = 0; f < N_FASES; ++f) { s_soma_ma[f] = 0; s_n[f] = 0; s_anotada[f] = false; }
     s_fase = 0; s_seg_fase = 0;
     s_etapa = E_ESPERANDO;
@@ -162,14 +162,14 @@ void tab5_ensaio_vigiar(void)
   const bool vale = m.volts > 1.0f && m.mA < -5.0f && tab5_power_em_repouso();
 
   if (s_etapa == E_ESPERANDO) {
-    // Comeca a fase 0 so com o cabo fora e a tela apagada.
-    if (vale) { s_etapa = E_FASE; s_seg_fase = 0; ESP_LOGW(TAG, "na bateria e em repouso: fase 0"); }
+    // Starts stage 0 only with the cable out and the screen off.
+    if (vale) { s_etapa = E_FASE; s_seg_fase = 0; ESP_LOGW(TAG, "on battery and idle: stage 0"); }
     return;
   }
 
-  if (!vale) { return; }   // acordou ou ligou o cabo: pausa
+  if (!vale) { return; }   // woke up or the cable was plugged in: pause
   s_seg_fase += dt;
-  if (s_seg_fase > ACOMODAR_S) {     // media ponderada pelo tempo: em repouso a amostra vem a cada 5 s
+  if (s_seg_fase > ACOMODAR_S) {     // time-weighted average: when idle a sample comes every 5 s
     s_soma_ma[s_fase] += -m.mA * dt;
     s_n[s_fase] += dt;
   }

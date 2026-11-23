@@ -1,41 +1,41 @@
-# Alvo do projeto: sem isto um clone novo compila para o ESP32 padrao.
+# Project target: without this a fresh clone builds for the default ESP32.
 CONFIG_IDF_TARGET="esp32c6"
 
-# --- papel: COPROCESSADOR ---------------------------------------------------
+# --- role: COPROCESSOR -----------------------------------------------------
 CONFIG_ESP_HOSTED=y
 CONFIG_ESP_HOSTED_CP=y
 CONFIG_ESP_HOSTED_CP_FOR_MCU=y
 CONFIG_ESP_HOSTED_CP_RPC_V2=y
 
-# WiFi: PRECISA ficar ligado. Este firmware substitui o que hoje faz o WiFi do
-# Tab5 funcionar - desligar aqui deixaria o aparelho sem rede.
+# WiFi: MUST stay on. This firmware replaces what currently makes the Tab5's WiFi
+# work - turning it off here would leave the device without a network.
 CONFIG_ESP_HOSTED_CP_FEAT_WIFI=y
 CONFIG_ESP_WIFI_NVS_ENABLED=y
 CONFIG_ESP_WIFI_ENTERPRISE_SUPPORT=n
 
-# O canal de bytes opaco P4 <-> C6. E por ele que o ESP-NOW vai falar.
+# The opaque P4 <-> C6 byte channel. ESP-NOW will talk through it.
 CONFIG_ESP_HOSTED_CP_FEAT_PEER_DATA=y
 
-# BLUETOOTH LIGADO - e a decisao mudou depois de MEDIR.
+# BLUETOOTH ON - and the decision changed after MEASURING.
 #
-# A primeira versao disto deixava o BT fora, com dois argumentos que nao
-# sobreviveram:
+# The first version of this left BT out, with two arguments that did not
+# survive:
 #
-#   "cabe mais folga no slot" - o BT custa 259KB. Com ele a imagem fica em
-#   1,40MB dos 1,75MB do slot padrao, 24% livres. Folga de sobra.
+#   "more headroom in the slot" - BT costs 259KB. With it the image is at
+#   1.40MB of the default slot's 1.75MB, 24% free. Plenty of headroom.
 #
-#   "menos coisa nova de uma vez" - ao contrario. O C6 e o UNICO radio do Tab5,
-#   e o firmware da M5Stack entrega BLE por ele. Tirar o BT nao e "menos
-#   mudanca", e uma REGRESSAO: some uma capacidade do aparelho. Manter deixa a
-#   imagem nova mais parecida com a que ja esta la, nao menos.
+#   "fewer new things at once" - the opposite. The C6 is the Tab5's ONLY radio,
+#   and M5Stack's firmware provides BLE through it. Removing BT is not "less
+#   change", it is a REGRESSION: a device capability disappears. Keeping it makes the
+#   new image more like the one already there, not less.
 #
-# E o risco que restava - "e se o slot real da M5Stack for menor que 1,75MB?" -
-# nao e risco: se a imagem nao couber, o esp_ota_write falha no meio, e falhar
-# no write e seguro (sem o `end`, a particao de boot nao muda). O pior caso e
-# uma tentativa perdida, e ai recompilamos sem BT.
+# And the remaining risk - "what if M5Stack's real slot is smaller than 1.75MB?" -
+# is not a risk: if the image does not fit, esp_ota_write fails midway, and failing
+# in write is safe (without `end`, the boot partition does not change). The worst case is
+# one wasted attempt, and then we rebuild without BT.
 #
-# CONTROLLER_ONLY: o C6 roda so o controlador; a stack (NimBLE/Bluedroid) mora
-# do lado do P4, que e como o esp_hosted foi desenhado.
+# CONTROLLER_ONLY: the C6 runs only the controller; the stack (NimBLE/Bluedroid) lives
+# on the P4 side, which is how esp_hosted was designed.
 CONFIG_ESP_HOSTED_CP_FEAT_BT=y
 CONFIG_ESP_HOSTED_CP_BT_ENABLED=y
 CONFIG_ESP_HOSTED_CP_FEAT_BT_HCI_VHCI=y
@@ -44,69 +44,69 @@ CONFIG_BT_CONTROLLER_ONLY=y
 CONFIG_BT_LE_SLEEP_ENABLE=y
 CONFIG_BT_LE_HCI_INTERFACE_USE_RAM=y
 
-# --- flash e particoes ------------------------------------------------------
+# --- flash and partitions -------------------------------------------------
 CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 
-# --- REDE DE SEGURANCA ------------------------------------------------------
-# A imagem nova sobe em estado PENDENTE. Se ela nao se declarar valida, o
-# bootloader volta para a anterior no proximo boot.
+# --- SAFETY NET -------------------------------------------------------------
+# The new image comes up in PENDING state. If it does not declare itself valid, the
+# bootloader goes back to the previous one on the next boot.
 #
-# Quem faz essa checagem e o BOOTLOADER. A gravacao pelo cabo leva o nosso
-# (com esta opcao); uma OTA nao troca o bootloader. Por isso o app_main.c tem
-# uma SEGUNDA rede, no nivel do aplicativo, armada so para imagem vinda por OTA.
+# The one doing that check is the BOOTLOADER. Flashing over the cable brings ours
+# (with this option); an OTA does not replace the bootloader. That is why app_main.c has
+# a SECOND net, at application level, armed only for an image that came via OTA.
 CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
 
 CONFIG_FREERTOS_HZ=1000
 CONFIG_COMPILER_OPTIMIZATION_PERF=y
 
-# --- EXTRAS DO RADIO (contrato v3): CSI, FTM, 802.15.4 -----------------------
-# Cada um dorme ate o P4 pedir. Ligados aqui porque regravar o C6 e fisico
-# (Downloader): a gravacao leva tudo que depende do radio de uma vez, e dai em
-# diante a evolucao e so do lado do P4. Um bit de CAPS so acende se a flag ficou.
+# --- RADIO EXTRAS (contract v3): CSI, FTM, 802.15.4 -------------------------
+# Each one sleeps until the P4 asks. Enabled here because reflashing the C6 is physical
+# (Downloader): the flash brings everything that depends on the radio at once, and from then
+# on evolution happens only on the P4 side. A CAPS bit only lights up if the flag stayed.
 CONFIG_ESP_WIFI_CSI_ENABLED=y
 CONFIG_ESP_WIFI_FTM_ENABLE=y
 CONFIG_ESP_WIFI_FTM_INITIATOR_SUPPORT=y
-# O outro radio do C6 (802.15.4). No 1o teste ele derrubou o WiFi (associado,
-# mas o roteador parou de responder ao ping): faltava a COEXISTENCIA - o
-# app_main.c nao chamava esp_coex_wifi_i154_enable(), e sem ela o arbitro de
-# RF nao leva o 802.15.4 em conta. Corrigido la; o modulo dorme ate o P4 pedir.
-# Se um dia precisar tirar: =n aqui, o modulo some e o bit C6_CAP_154 apaga.
+# The C6's other radio (802.15.4). In the 1st test it brought WiFi down (associated,
+# but the router stopped answering pings): COEXISTENCE was missing - the
+# app_main.c did not call esp_coex_wifi_i154_enable(), and without it the RF
+# arbiter does not take 802.15.4 into account. Fixed there; the module sleeps until the P4 asks.
+# If it ever needs removing: =n here, the module disappears and the C6_CAP_154 bit goes off.
 CONFIG_IEEE802154_ENABLED=y
 
-# A tarefa de eventos (sys_evt) roda o tratador do relatorio FTM, que monta a
-# mensagem para o P4 na pilha (~300 B). Os 2304 padrao ficavam no limite.
+# The event task (sys_evt) runs the FTM report handler, which builds the
+# message for the P4 on the stack (~300 B). The default 2304 was at the limit.
 CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE=3584
 
-# Retrato do travamento na particao 'coredump' (partitions.csv): sobrevive ao
-# reinicio, e o INFO avisa o P4 que ha um guardado.
+# Crash snapshot in the 'coredump' partition (partitions.csv): survives a
+# restart, and INFO tells the P4 there is one stored.
 CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y
 
-# --- ENERGIA -----------------------------------------------------------------
-# Clock variavel (DFS) para o Wi-Fi soltar a CPU entre beacons - ver o bloco
-# "CLOCK VARIAVEL" no app_main.c. Light sleep continua fora (SDIO escravo).
+# --- POWER -------------------------------------------------------------------
+# Variable clock (DFS) so Wi-Fi releases the CPU between beacons - see the
+# "CLOCK VARIAVEL" block in app_main.c. Light sleep stays off (SDIO slave).
 CONFIG_PM_ENABLE=y
 
-# --- O HOST DORME, O C6 TAMBEM (firmware c6-5) ---------------------------------
-# O "host power save" do esp_hosted: o P4 avisa pela interrupcao do SDIO, o
-# escravo e desmontado e este chip pode entrar em light sleep associado; o
-# trafego para o host o acorda pelo IO2 (fio ate o G14 do P4). "DEEP_SLEEP" e
-# o nome que o esp_hosted da a opcao do pino de despertar - o P4 NAO entra em
-# deep sleep, ele fica em light sleep e remonta o enlace (main/hal/tab5_c6_sono).
-# Pulso no boot desligado: o P4 so escuta o G14 quando pediu para dormir.
+# --- THE HOST SLEEPS, SO DOES THE C6 (firmware c6-5) ---------------------------
+# esp_hosted's "host power save": the P4 signals via the SDIO interrupt, the
+# slave is torn down and this chip can enter associated light sleep;
+# traffic for the host wakes it via IO2 (wire to the P4's G14). "DEEP_SLEEP" is
+# the name esp_hosted gives the wake-pin option - the P4 does NOT enter
+# deep sleep, it stays in light sleep and re-mounts the link (main/hal/tab5_c6_sono).
+# Boot pulse off: the P4 only listens to G14 when it has asked to sleep.
 CONFIG_ESP_HOSTED_CP_FEAT_HOST_PS=y
 CONFIG_ESP_HOSTED_CP_FEAT_HOST_PS_DEEP_SLEEP=y
 CONFIG_ESP_HOSTED_CP_FEAT_HOST_PS_WAKE_HOST_ON_CP_BOOT=n
 CONFIG_ESP_HOSTED_CP_FEAT_HOST_PS_HOST_WAKEUP_GPIO=2
 CONFIG_ESP_HOSTED_CP_FEAT_HOST_PS_HOST_WAKEUP_GPIO_LEVEL_HIGH=y
-# Sem tickless o light sleep do PM nunca acontece; os callbacks contam o sono
-# para o INFO (o P4 nao ve a serial daqui).
+# Without tickless, PM light sleep never happens; the callbacks count the sleep
+# for INFO (the P4 cannot see the serial output here).
 CONFIG_FREERTOS_USE_TICKLESS_IDLE=y
 CONFIG_PM_LIGHT_SLEEP_CALLBACKS=y
-# O BLE do C6 so dorme junto com o tickless se o MAC/baseband apagar no sono
-# (bt.c exige). Custa ~5 KB de RAM (retencao de Wi-Fi + BT) e economiza mais.
+# The C6's BLE only sleeps together with tickless if the MAC/baseband powers down in sleep
+# (bt.c requires it). Costs ~5 KB of RAM (Wi-Fi + BT retention) and saves more.
 CONFIG_ESP_PHY_MAC_BB_PD=y
-# Tempo em cada modo do PM (inclusive SLEEP) na tabela de travas que o P4 pede
-# ('c6 travas'): e assim que se ve, do P4, se o light sleep acontece.
+# Time in each PM mode (including SLEEP) in the locks table the P4 asks for
+# ('c6 travas'): that is how you see, from the P4, whether light sleep happens.
 CONFIG_PM_PROFILING=y

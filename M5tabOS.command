@@ -1,5 +1,5 @@
 #!/bin/bash
-# Dois cliques aqui no Finder abrem o menu do M5tabOS no Terminal
-# (gravar, compilar, M5Burner, lancar versao, publicar). Ver ferramentas/menu.sh.
+# Double-clicking this in the Finder opens the M5tabOS menu in Terminal
+# (flash, build, M5Burner, release a version, publish). See ferramentas/menu.sh.
 cd "$(dirname "$0")" || exit 1
 exec ferramentas/menu.sh

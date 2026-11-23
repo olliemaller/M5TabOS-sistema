@@ -1,5 +1,5 @@
-// TOCADOR DE MUSICA - espectro: FFT dos blocos que entram na fila do
-// alto-falante e o anel de quadros que a tela le. Ver tab5_musica_interno.hpp.
+// MUSIC PLAYER - spectrum: FFT of the blocks entering the speaker queue
+// and the ring of frames the screen reads. See tab5_musica_interno.hpp.
 #include "tab5_musica_interno.hpp"
 
 #include "esp_heap_caps.h"
@@ -9,25 +9,25 @@
 #include <math.h>
 
 // ---------------------------------------------------------------------------
-// ESPECTRO (ver tab5_musica.hpp)
+// SPECTRUM (see tab5_musica.hpp)
 // ---------------------------------------------------------------------------
-// FFT de 1024 pontos (Hann), sem sobreposicao: um quadro a cada ~23 ms de som.
-// A energia de cada faixa (log, de 40 Hz ate 16 kHz) vira dB e o dB vira
-// 0..255. Custo medido: ver o CHANGELOG / app musica estado.
+// 1024-point FFT (Hann), no overlap: one frame every ~23 ms of sound.
+// The energy of each band (log, from 40 Hz to 16 kHz) becomes dB and the dB
+// becomes 0..255. Measured cost: see the CHANGELOG / app musica estado.
 #define FFT_N        1024
-#define ESP_ANEL     128            // ~3 s de quadros: cobre a fila (~0,8 s) com folga
-#define DB_PISO      (-72.0f)       // abaixo disto, barra vazia
+#define ESP_ANEL     128            // ~3 s of frames: covers the queue (~0.8 s) with room to spare
+#define DB_PISO      (-72.0f)       // below this, empty bar
 
 typedef struct { int64_t t_us; uint8_t v[TAB5_MUSICA_FAIXAS]; } quadro_esp_t;
 static quadro_esp_t      s_anel[ESP_ANEL];
-static uint32_t          s_anel_n = 0;          // quadros ja escritos (o indice e n % ESP_ANEL)
-static std::atomic<int64_t> s_visual_ate{0};    // calcula ate esta hora (renovada a cada leitura)
-static float*            s_fft = nullptr;      // re/im intercalados, 2*FFT_N (PSRAM)
-static float*            s_trig = nullptr;     // cos (N/2) e sin (N/2)
+static uint32_t          s_anel_n = 0;          // frames written so far (the index is n % ESP_ANEL)
+static std::atomic<int64_t> s_visual_ate{0};    // compute until this time (renewed on each read)
+static float*            s_fft = nullptr;      // interleaved re/im, 2*FFT_N (PSRAM)
+static float*            s_trig = nullptr;     // cos (N/2) and sin (N/2)
 static float*            s_hann = nullptr;
-static uint16_t          s_borda[TAB5_MUSICA_FAIXAS + 1];   // bin inicial de cada faixa
-static uint32_t          s_borda_hz = 0;       // a taxa para a qual as bordas foram feitas
-int64_t                  g_musica_fim_prev_us = 0;    // quando acaba o som ja enfileirado (0 = fila vazia)
+static uint16_t          s_borda[TAB5_MUSICA_FAIXAS + 1];   // starting bin of each band
+static uint32_t          s_borda_hz = 0;       // the rate the edges were computed for
+int64_t                  g_musica_fim_prev_us = 0;    // when the already-queued sound ends (0 = empty queue)
 
 bool musica_espectro_alocar(void)
 {
@@ -51,8 +51,8 @@ void musica_espectro_soltar(void)
   heap_caps_free(s_hann); s_hann = nullptr;
 }
 
-// A fila do alto-falante foi descartada (pausa, busca, troca de faixa): os
-// quadros que esperavam sair nao saem mais.
+// The speaker queue was discarded (pause, seek, track change): the frames
+// that were waiting to go out never will.
 void musica_espectro_esquecer(void)
 {
   g_musica_trava.travar();
@@ -61,7 +61,7 @@ void musica_espectro_esquecer(void)
   g_musica_fim_prev_us = 0;
 }
 
-// Faixas em escala log, de 40 Hz ate 16 kHz (ou Nyquist): bordas em bins.
+// Bands on a log scale, from 40 Hz to 16 kHz (or Nyquist): edges in bins.
 static void espectro_bordas(uint32_t hz)
 {
   const float f0 = 40.0f, f1 = fminf(16000.0f, hz * 0.5f);
@@ -69,7 +69,7 @@ static void espectro_bordas(uint32_t hz)
   for (int b = 0; b <= TAB5_MUSICA_FAIXAS; ++b) {
     const float f = f0 * powf(f1 / f0, (float)b / TAB5_MUSICA_FAIXAS);
     int bin = (int)(f * FFT_N / hz + 0.5f);
-    if (bin <= ant && b > 0) { bin = ant + 1; }   // toda faixa com pelo menos um bin
+    if (bin <= ant && b > 0) { bin = ant + 1; }   // every band with at least one bin
     if (bin > FFT_N / 2) { bin = FFT_N / 2; }
     s_borda[b] = (uint16_t)bin;
     ant = bin;
@@ -79,7 +79,7 @@ static void espectro_bordas(uint32_t hz)
 
 static void fft_complexa(float* x)
 {
-  for (int i = 1, j = 0; i < FFT_N; ++i) {   // ordem de bits invertida
+  for (int i = 1, j = 0; i < FFT_N; ++i) {   // bit-reversed order
     int bit = FFT_N >> 1;
     for (; j & bit; bit >>= 1) { j ^= bit; }
     j ^= bit;
@@ -103,13 +103,13 @@ static void fft_complexa(float* x)
   }
 }
 
-// Os quadros de um bloco que acabou de entrar na fila e comeca a sair em
+// The frames of a block that has just entered the queue and starts playing at
 // 'ini_us'.
 void musica_espectro_bloco(const int16_t* pcm, size_t q, uint32_t hz, bool estereo, int64_t ini_us)
 {
   if (esp_timer_get_time() > s_visual_ate.load() || !s_fft || !hz) { return; }
   if (hz != s_borda_hz) { espectro_bordas(hz); }
-  // Referencia de 0 dB: um seno de escala cheia, janela de Hann (pico ~A*N/4).
+  // 0 dB reference: a full-scale sine, Hann window (peak ~A*N/4).
   const float ref = 32767.0f * FFT_N / 4.0f;
   for (size_t j = 0; j + FFT_N <= q; j += FFT_N) {
     for (int i = 0; i < FFT_N; ++i) {
@@ -141,16 +141,16 @@ void musica_espectro_bloco(const int16_t* pcm, size_t q, uint32_t hz, bool ester
 bool tab5_musica_espectro(uint8_t* faixas)
 {
   const int64_t agora = esp_timer_get_time();
-  s_visual_ate = agora + 1000000;   // alguem esta olhando: calcula por mais 1 s
+  s_visual_ate = agora + 1000000;   // someone is watching: keep computing for 1 more s
   bool achou = false;
   g_musica_trava.travar();
-  // O quadro mais novo que ja comecou a sair (o anel esta em ordem de tempo).
+  // The newest frame that has already started playing (the ring is in time order).
   const uint32_t n = s_anel_n, de = n > ESP_ANEL ? n - ESP_ANEL : 0;
   for (uint32_t i = n; i-- > de;) {
     const quadro_esp_t& qd = s_anel[i % ESP_ANEL];
     if (qd.t_us <= agora) {
       if (agora - qd.t_us < 100000) { memcpy(faixas, qd.v, TAB5_MUSICA_FAIXAS); achou = true; }
-      break;   // mais velho que 100 ms: o som parou (pausa, fim da fila)
+      break;   // older than 100 ms: the sound stopped (pause, end of queue)
     }
   }
   g_musica_trava.destravar();

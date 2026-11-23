@@ -22,46 +22,48 @@
 #include "esp_heap_caps.h"
 #include "esp_cache.h"
 #include "esp_async_memcpy.h"
-// Privado do esp_lcd: o DMA2D puro que o proprio driver DPI usa. O header nao
-// tem extern "C" (so e incluido por C dentro do IDF).
+// Private to esp_lcd: the pure DMA2D the DPI driver itself uses. The header
+// has no extern "C" (it is only included from C inside IDF).
 extern "C" {
 #include "esp_async_fbcpy.h"
 }
 
 static const char *TAG = "quadro";
 
-// Dimensoes fisicas do painel do Tab5 (Panel_ST7123: retrato, RGB565).
+// Physical dimensions of the Tab5 panel (Panel_ST7123: portrait, RGB565).
 static const uint32_t FB_L = 720;
 static const uint32_t FB_A = 1280;
 static const uint32_t FB_BYTES = FB_L * FB_A * 2;
 
 static esp_lcd_panel_handle_t s_painel = nullptr;
-static SemaphoreHandle_t      s_troca  = nullptr;   // dado a cada fim de frame
-// A COPIA ENTRE PAGINAS e do DMA2D PURO (esp_async_fbcpy), nao do PPA. Medido
-// no aparelho com 'tela banco', painel varrendo, 720x1024 RGB565:
+static SemaphoreHandle_t      s_troca  = nullptr;   // given at every end of frame
+// THE COPY BETWEEN PAGES is done by PURE DMA2D (esp_async_fbcpy), not the PPA.
+// Measured on the device with 'tela banco', panel scanning, 720x1024 RGB565:
 //   PPA (motor SRM)  32,1 ms   92 MB/s
 //   GDMA AXI         14,3 ms  206 MB/s
 //   DMA2D puro       10,2 ms  288 MB/s
 //   CPU (memcpy)     25,0 ms  118 MB/s
-// O SRM existe para escalar e girar: anda em macroblocos e le a PSRAM em
-// rajadas curtas. O DMA2D le linha corrida. E o mesmo motor que o driver DPI
-// usa quando pedem 'use_dma2d'. O PPA fica so de reserva, se o DMA2D nao subir.
+// The SRM exists to scale and rotate: it walks in macroblocks and reads PSRAM
+// in short bursts. The DMA2D reads whole lines. It is the same engine the DPI
+// driver uses when 'use_dma2d' is requested. The PPA is only a fallback, if
+// the DMA2D does not come up.
 static esp_async_fbcpy_handle_t s_dma2d = nullptr;
 static SemaphoreHandle_t        s_dma2d_fim = nullptr;
 static ppa_client_handle_t      s_ppa   = nullptr;
 static std::atomic<uint32_t>      s_quadros = 0;
 
 // ---------------------------------------------------------------------------
-// CONTADOR DE UNDERRUN
+// UNDERRUN COUNTER
 // ---------------------------------------------------------------------------
-// O driver nao expoe o evento: a ISR dele limpa o bit e so imprime, com
-// esp_rom_printf, direto da interrupcao. Esse printf da ROM escreve nos DOIS
-// canais de saida dela - o 1 (o console) e o 2, que o boot deixa vazio
-// (cpu_start.c: esp_rom_install_channel_putc(2, NULL)). Pendurando um
-// "leitor" no canal 2 vemos cada caractere impresso pela ROM sem encadear nem
-// substituir o console. Ele procura a palavra "underrun" e conta.
+// The driver does not expose the event: its ISR clears the bit and just
+// prints, with esp_rom_printf, straight from the interrupt. That ROM printf
+// writes to BOTH its output channels - 1 (the console) and 2, which boot
+// leaves empty (cpu_start.c: esp_rom_install_channel_putc(2, NULL)). Hanging
+// a "reader" on channel 2 we see every character the ROM prints without
+// chaining or replacing the console. It looks for the word "underrun" and
+// counts.
 //
-// Roda dentro de ISR: IRAM, sem chamada nenhuma, so comparacao de caractere.
+// Runs inside an ISR: IRAM, no calls at all, just character comparison.
 static const char     PALAVRA[] = "underrun";
 static std::atomic<uint8_t>  s_casou = 0;
 static std::atomic<uint32_t> s_underruns = 0;
@@ -77,68 +79,68 @@ static void IRAM_ATTR vigia_canal2(char c)
 }
 
 // ---------------------------------------------------------------------------
-// FIM DE FRAME
+// END OF FRAME
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
-// DETECTORES QUE NAO DEPENDEM DO LOG DO DRIVER
+// DETECTORS THAT DO NOT DEPEND ON THE DRIVER'S LOG
 // ---------------------------------------------------------------------------
-// Piscadas azuis foram vistas a olho nu SEM nenhum "underrun" no log, mesmo com
-// a mascara da ponte zerada. Sobram tres lugares onde a imagem pode falhar sem
-// que a interrupcao de underrun da ponte dispare:
+// Blue flashes were seen with the naked eye WITHOUT any "underrun" in the log,
+// even with the bridge mask cleared. That leaves three places where the image
+// can fail without the bridge's underrun interrupt firing:
 //
-// 1) RELOGIO DO FRAME. O DMA do painel NAO e circular: esta ISR (fim do
-//    frame) e que o religa para o frame seguinte (mipi_dsi_dma_trans_done_cb).
-//    Se ela atrasar - interrupcoes desligadas tempo demais nesse core - o
-//    frame seguinte comeca sem dados. Medimos o intervalo entre fins de
-//    frame: o menor visto e o periodo real; um intervalo 50% maior e um
-//    frame que atrasou. Em ciclos da CPU (o painel aceso segura
-//    CPU_FREQ_MAX, entao o relogio nao muda com ele no ar).
+// 1) FRAME CLOCK. The panel DMA is NOT circular: this ISR (end of frame) is
+//    what restarts it for the next frame (mipi_dsi_dma_trans_done_cb). If it
+//    is late - interrupts disabled too long on that core - the next frame
+//    starts with no data. We measure the interval between frame ends: the
+//    smallest seen is the real period; an interval 50% longer is a frame
+//    that was late. In CPU cycles (the lit panel holds CPU_FREQ_MAX, so the
+//    clock does not change while it is up).
 //
-// 2) ERROS DO DSI HOST (o controlador Synopsys depois da ponte). INT_ST0 traz
-//    erros da camada fisica e ACK com erro do painel; INT_ST1 traz os do
-//    proprio host - inclusive dpi_buff_pld_under (bit 19), a falta de dados
-//    no buffer DO HOST, que a ponte nao ve. Os dois registradores se limpam
-//    na leitura e ninguem mais os le (o driver do IDF nao usa as
-//    interrupcoes do host). Lidos AQUI, na ISR: so existe ISR com o DSI
-//    ligado, entao nunca se le um periferico desligado, e nao ha corrida com
-//    o repouso desmontando o painel.
+// 2) DSI HOST ERRORS (the Synopsys controller after the bridge). INT_ST0
+//    carries physical-layer errors and error ACKs from the panel; INT_ST1
+//    carries the host's own - including dpi_buff_pld_under (bit 19), the lack
+//    of data in the HOST's buffer, which the bridge does not see. Both
+//    registers clear on read and nobody else reads them (the IDF driver does
+//    not use the host interrupts). Read HERE, in the ISR: the ISR only exists
+//    with DSI on, so a powered-off peripheral is never read, and there is no
+//    race with idle tearing the panel down.
 //
-// 3) A COR DO UNDERRUN - ver tab5_quadro_iniciar.
-static volatile int64_t  s_ult_us      = 0;   // em us (esp_timer), NAO ciclos - ver a ISR
+// 3) THE UNDERRUN COLOUR - see tab5_quadro_iniciar.
+static volatile int64_t  s_ult_us      = 0;   // in us (esp_timer), NOT cycles - see the ISR
 static volatile uint32_t s_periodo_min = UINT32_MAX;   // us
-static std::atomic<uint32_t> s_atrasos     = 0;            // desde o boot
-static volatile uint32_t s_pior_atraso = 0;            // us, desde a ultima leitura
-static volatile uint32_t s_dsi_st0     = 0;            // OU acumulado desde a ultima leitura
+static std::atomic<uint32_t> s_atrasos     = 0;            // since boot
+static volatile uint32_t s_pior_atraso = 0;            // us, since the last read
+static volatile uint32_t s_dsi_st0     = 0;            // OR accumulated since the last read
 static volatile uint32_t s_dsi_st1     = 0;
 static std::atomic<uint32_t> s_dsi_erros   = 0;
 static volatile bool     s_primeiro_quadro = true;
-// QUEM ESTAVA RODANDO quando o frame atrasado finalmente foi atendido. A ISR
-// interrompe justamente quem segurou o core (interrupcoes desligadas, secao
-// critica longa) - o nome dele e a melhor pista. Os dois cores, porque uma
-// espera cruzada (trava do kernel, operacao de flash) prende o outro tambem.
+// WHO WAS RUNNING when the late frame was finally serviced. The ISR
+// interrupts precisely whoever held the core (interrupts disabled, a long
+// critical section) - its name is the best clue. Both cores, because a cross
+// wait (kernel lock, flash operation) holds the other one too.
 static char              s_atr_t[2][16];
-static volatile int      s_atr_nucleo = -1;   // core em que a ISR roda (-1 = nenhum atraso ainda)
-static std::atomic<uint32_t> s_atr_seq = 0;       // sobe a cada registro novo
-static volatile int64_t  s_atr_us  = 0;       // uptime (us) em que o frame atrasado foi atendido
-// ONDE o core estava quando a ISR atrasada finalmente entrou (o mepc: o
-// endereco de retorno da interrupcao). Dentro do IDLE = outra ISR segurou o
-// core antes; dentro de vPortExitCritical/esp_cache/esp_pm = secao critica,
-// e o endereco diz qual (addr2line no build/M5tabOS.elf).
-static volatile uint32_t s_atr_pc  = 0;            // frames com algum bit, desde o boot
+static volatile int      s_atr_nucleo = -1;   // core the ISR runs on (-1 = no delay yet)
+static std::atomic<uint32_t> s_atr_seq = 0;       // incremented on every new record
+static volatile int64_t  s_atr_us  = 0;       // uptime (us) at which the late frame was serviced
+// WHERE the core was when the late ISR finally got in (mepc: the interrupt's
+// return address). Inside IDLE = another ISR held the core before; inside
+// vPortExitCritical/esp_cache/esp_pm = a critical section, and the address
+// says which (addr2line on build/M5tabOS.elf).
+static volatile uint32_t s_atr_pc  = 0;            // frames with some bit set, since boot
 
 static bool IRAM_ATTR ao_fim_do_quadro(esp_lcd_panel_handle_t, esp_lcd_dpi_panel_event_data_t*, void*)
 {
-  ++s_quadros;   // escritor unico: esta ISR
+  ++s_quadros;   // single writer: this ISR
 
-  // EM MICROSSEGUNDOS, E NAO EM CICLOS. Ciclos contam no ritmo do
-  // clock da CPU, e o clock muda (360 -> 40 no repouso): o monitor dividia
-  // pelo clock ATUAL e um atraso de 30 ms saiu "273,9 ms (normal 138,8)" -
-  // exatos 9x. O esp_timer nao depende do clock da CPU.
+  // IN MICROSECONDS, NOT CYCLES. Cycles count at the CPU clock rate, and the
+  // clock changes (360 -> 40 on idle): the monitor divided by the CURRENT
+  // clock and a 30 ms delay came out as "273.9 ms (normal 138.8)" - exactly
+  // 9x. esp_timer does not depend on the CPU clock.
   const int64_t agora = esp_timer_get_time();
   if (s_ult_us != 0) {
     const uint32_t intervalo = (uint32_t)(agora - s_ult_us);
-    // Abaixo de 3 ms nao e frame de verdade (nenhum painel aqui passa de
-    // ~70 Hz): ignorar, para nao envenenar o periodo minimo.
+    // Below 3 ms it is not a real frame (no panel here goes beyond ~70 Hz):
+    // ignore it, so as not to poison the minimum period.
     if (intervalo < 3000u) {
     } else if (intervalo < s_periodo_min) {
       s_periodo_min = intervalo;
@@ -161,10 +163,10 @@ static bool IRAM_ATTR ao_fim_do_quadro(esp_lcd_panel_handle_t, esp_lcd_dpi_panel
 
   const uint32_t st0 = MIPI_DSI_HOST.int_st0.val;
   const uint32_t st1 = MIPI_DSI_HOST.int_st1.val;
-  // O PRIMEIRO FRAME de cada painel so limpa: os registradores guardam o que
-  // aconteceu na sequencia de init (comandos em LP). No aparelho, todo painel
-  // novo trazia st0=0x40 (bit 6 do ACK = "false control error" observado pelo
-  // painel durante o init) - sempre um, sempre ali, nunca depois.
+  // Each panel's FIRST FRAME only clears: the registers hold what happened
+  // during the init sequence (LP commands). On the device, every new panel
+  // brought st0=0x40 (ACK bit 6 = "false control error" observed by the panel
+  // during init) - always one, always there, never afterwards.
   if (s_primeiro_quadro) { s_primeiro_quadro = false; }
   else if (st0 | st1) { s_dsi_st0 |= st0; s_dsi_st1 |= st1; ++s_dsi_erros; }
 
@@ -179,30 +181,30 @@ bool tab5_quadro_iniciar(esp_lcd_panel_handle_t painel)
   if (painel == s_painel) { return true; }
 
   if (s_troca == nullptr) {
-    // Binario e nao contador: so interessa "houve um fim de frame desde
-    // que armei", nunca quantos.
+    // Binary and not counting: all that matters is "has there been an end
+    // of frame since I armed", never how many.
     s_troca = xSemaphoreCreateBinary();
     esp_rom_install_channel_putc(2, vigia_canal2);
-    // Autoteste: a mesma funcao que a ISR do driver usa. Se o vigia nao
-    // contar isto, o zero de underrun nao quer dizer nada.
-    esp_rom_printf("quadro: teste do detector de underrun (linha esperada, nao e erro)\n");
-    if (s_underruns == 1) { s_underruns = 0; ESP_LOGI(TAG, "detector de piscada (underrun) testado e funcionando"); }
-    else { ESP_LOGE(TAG, "detector de piscada (underrun) NAO funciona - o contador de underrun nao vale"); }
+    // Self-test: the same function the driver's ISR uses. If the watcher
+    // does not count this, a zero underrun count means nothing.
+    esp_rom_printf("frame: underrun detector test (expected line, not an error)\n");
+    if (s_underruns == 1) { s_underruns = 0; ESP_LOGI(TAG, "flash (underrun) detector tested and working"); }
+    else { ESP_LOGE(TAG, "flash (underrun) detector does NOT work - the underrun counter is meaningless"); }
   }
   if (s_dma2d == nullptr && s_ppa == nullptr) {
     esp_async_fbcpy_config_t fc = { };
     s_dma2d_fim = xSemaphoreCreateBinary();
     if (s_dma2d_fim == nullptr || esp_async_fbcpy_install(&fc, &s_dma2d) != ESP_OK) {
-      ESP_LOGW(TAG, "DMA2D indisponivel - copia entre paginas pelo PPA (~3x mais lenta)");
+      ESP_LOGW(TAG, "DMA2D unavailable - copying between pages via the PPA (~3x slower)");
       s_dma2d = nullptr;
     }
   }
   if (s_dma2d == nullptr && s_ppa == nullptr) {
     ppa_client_config_t cfg = { };
     cfg.oper_type = PPA_OPERATION_SRM;
-    cfg.max_pending_trans_num = 1;   // toda copia e bloqueante
+    cfg.max_pending_trans_num = 1;   // every copy is blocking
     if (ppa_register_client(&cfg, &s_ppa) != ESP_OK) {
-      ESP_LOGE(TAG, "PPA indisponivel - copia entre paginas desligada");
+      ESP_LOGE(TAG, "PPA unavailable - copying between pages disabled");
       s_ppa = nullptr;
     }
   }
@@ -210,53 +212,56 @@ bool tab5_quadro_iniciar(esp_lcd_panel_handle_t painel)
   esp_lcd_dpi_panel_event_callbacks_t cbs = { };
   cbs.on_frame_buf_complete = ao_fim_do_quadro;
   if (esp_lcd_dpi_panel_register_event_callbacks(painel, &cbs, nullptr) != ESP_OK) {
-    ESP_LOGE(TAG, "nao consegui registrar o aviso de fim de quadro");
+    ESP_LOGE(TAG, "could not register the end-of-frame callback");
     return false;
   }
-  // UNDERRUN SEM MASCARA. O driver do IDF programa a ponte DSI
-  // para NAO interromper em underrun enquanto a contagem de linhas estiver
-  // abaixo de h_size (esp_lcd_panel_dpi.c:343 - no Tab5, 720 de 1280 linhas).
-  // Resultado: falta de dados na parte de CIMA da tela deixava a imagem azul
-  // em SILENCIO - sem o log do driver e sem o nosso vigia. Foi assim que uma
-  // piscada azul vista a olho nu no app Energia nao deixou rastro nenhum.
-  // Zerando, todo underrun vira interrupcao, log e evento do monitor.
+  // UNDERRUN UNMASKED. The IDF driver programs the DSI bridge NOT to
+  // interrupt on underrun while the line count is below h_size
+  // (esp_lcd_panel_dpi.c:343 - on the Tab5, 720 of 1280 lines). Result: lack
+  // of data in the TOP part of the screen turned the image blue SILENTLY -
+  // without the driver's log and without our watcher. That is how a blue
+  // flash seen with the naked eye in the Energia app left no trace at all.
+  // Clearing it, every underrun becomes an interrupt, a log and a monitor event.
   mipi_dsi_brg_ll_set_underrun_discard_count(&MIPI_DSI_BRIDGE, 0);
 
-  // A COR DO UNDERRUN. O AZUL da piscada tem dono: e o registrador
-  // DPI_RSV_DPI_DATA da ponte, "o pixel enviado ao host quando o FIFO da ponte
-  // esvazia", cujo padrao 0x3FFF (30 bits, B nos 10 de baixo) e azul puro.
-  // Trocamos para MAGENTA, que nenhuma tela do sistema usa em area grande:
-  //   - piscou MAGENTA  -> e a ponte sem dados, mesmo sem a interrupcao dizer;
-  //   - piscou AZUL     -> NAO e a ponte: o azul vem de outro lugar (host,
-  //                        painel), e a investigacao muda de camada.
-  // E diagnostico: quando a causa for achada, esta cor volta a ser decidida.
+  // THE UNDERRUN COLOUR. The BLUE of the flash has an owner: the bridge's
+  // DPI_RSV_DPI_DATA register, "the pixel sent to the host when the bridge
+  // FIFO runs dry", whose default 0x3FFF (30 bits, B in the low 10) is pure
+  // blue. We change it to MAGENTA, which no system screen uses over a large area:
+  //   - flashed MAGENTA -> it is the bridge without data, even if the
+  //                        interrupt does not say so;
+  //   - flashed BLUE    -> it is NOT the bridge: the blue comes from
+  //                        elsewhere (host, panel), and the investigation
+  //                        moves to another layer.
+  // It is diagnostic: once the cause is found, this colour gets decided again.
   MIPI_DSI_BRIDGE.dpi_rsv_dpi_data.dpi_rsv_data = (0x3FFu << 20) | 0x3FFu;
   mipi_dsi_brg_ll_update_dpi_config(&MIPI_DSI_BRIDGE);
 
-  // Relogio do frame recomeca: painel novo pode ter outro periodo.
+  // The frame clock restarts: a new panel may have a different period.
   s_ult_us      = 0;
   s_periodo_min = UINT32_MAX;
   s_primeiro_quadro = true;
 
   s_painel = painel;
-  ESP_LOGI(TAG, "contador de quadros do painel no ar");
+  ESP_LOGI(TAG, "panel frame counter up");
   return true;
 }
 
-// O repouso destroi o painel e cria outro - e o novo pode nascer no MESMO
-// endereco do antigo. Sem esquecer aqui, o iniciar() acharia que ja registrou
-// e o aviso de fim de frame nunca mais chegaria (achado:
-// "painel 0 Hz" depois do primeiro repouso).
+// Idle destroys the panel and creates another - and the new one may be born
+// at the SAME address as the old. Without forgetting here, iniciar() would
+// think it had already registered and the end-of-frame callback would never
+// arrive again (found as: "painel 0 Hz" after the first idle).
 void tab5_quadro_encerrar(void) { s_painel = nullptr; }
 
-// POR QUE ARMAR DEPOIS DE PEDIR A TROCA, E NAO ANTES.
+// WHY ARM AFTER REQUESTING THE SWAP, AND NOT BEFORE.
 //
-// O pedido de troca so muda um indice; quem o le e a ISR do DMA, no fim do
-// frame. Se eu limpasse o semaphore ANTES do pedido, um fim de frame que
-// caisse entre a limpeza e o pedido daria o semaphore com a pagina VELHA ainda
-// na varredura - e eu escreveria nela achando que estava livre. Limpando
-// DEPOIS, qualquer aviso que eu venha a pegar e de um reinicio que ja leu o
-// indice novo. O pior caso custa um frame a mais de espera; nunca um rasgo.
+// The swap request only changes an index; what reads it is the DMA ISR, at
+// the end of the frame. If I cleared the semaphore BEFORE the request, an end
+// of frame landing between the clear and the request would give the
+// semaphore with the OLD page still being scanned - and I would write to it
+// thinking it was free. Clearing AFTERWARDS, any signal I pick up is from a
+// restart that has already read the new index. The worst case costs one extra
+// frame of waiting; never a tear.
 void tab5_quadro_armar_espera(void)
 {
   if (s_troca) { xSemaphoreTake(s_troca, 0); }
@@ -268,9 +273,9 @@ bool tab5_quadro_esperar_troca(uint32_t prazo_ms)
   return xSemaphoreTake(s_troca, pdMS_TO_TICKS(prazo_ms)) == pdTRUE;
 }
 
-// Framebuffer para framebuffer (ou tela virtual para framebuffer - os tres
-// tem 720x1280 RGB565): o retangulo vai para o MESMO lugar no destino.
-// Bloqueante: o compositor so pede a troca de pagina com tudo copiado.
+// Framebuffer to framebuffer (or virtual screen to framebuffer - all three are
+// 720x1280 RGB565): the rectangle goes to the SAME place in the destination.
+// Blocking: the compositor only requests the page swap with everything copied.
 static bool IRAM_ATTR dma2d_terminou(esp_async_fbcpy_handle_t, esp_async_fbcpy_event_data_t*, void* arg)
 {
   BaseType_t acordou = pdFALSE;
@@ -278,13 +283,14 @@ static bool IRAM_ATTR dma2d_terminou(esp_async_fbcpy_handle_t, esp_async_fbcpy_e
   return acordou == pdTRUE;
 }
 
-// O CACHE, que o DMA nao enxerga. Linhas inteiras do retangulo:
-//  - ORIGEM: devolver a memoria o que a CPU escreveu e ainda esta so no cache;
-//  - DESTINO: devolver E invalidar, para a CPU nao ler depois uma copia velha
-//    que tenha ficado no cache. "So invalidar" (M2C) exige bordas na linha de
-//    cache de 128 B, e um retangulo qualquer nao cai nelas - o IDF recusa
-//    (foi o erro do primeiro 'tela banco'). Devolver antes de invalidar e
-//    seguro com qualquer borda: nada sujo e perdido.
+// THE CACHE, which the DMA cannot see. Whole lines of the rectangle:
+//  - SOURCE: write back to memory what the CPU wrote that is still only in
+//    the cache;
+//  - DESTINATION: write back AND invalidate, so the CPU does not later read a
+//    stale copy left in the cache. "Invalidate only" (M2C) requires edges on
+//    the 128 B cache line, and an arbitrary rectangle does not fall on them -
+//    IDF refuses (that was the error in the first 'tela banco'). Writing back
+//    before invalidating is safe with any edge: nothing dirty is lost.
 static void cache_das_linhas(const void* base, const tab5_ret_t& r, int flags)
 {
   uint8_t* p = (uint8_t*)base + (size_t)r.y * FB_L * 2;
@@ -306,14 +312,14 @@ static bool copiar_dma2d(void* destino, const tab5_ret_t& r, const void* origem,
   const tab5_ret_t ro = { (int16_t)ox, (int16_t)oy, r.l, r.a };
   cache_das_linhas(origem,  ro, ESP_CACHE_MSYNC_FLAG_DIR_C2M);
   cache_das_linhas(destino, r, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_INVALIDATE);
-  xSemaphoreTake(s_dma2d_fim, 0);   // nenhum aviso velho conta como este
+  xSemaphoreTake(s_dma2d_fim, 0);   // no stale signal counts as this one
   if (esp_async_fbcpy(s_dma2d, &t, dma2d_terminou, s_dma2d_fim) != ESP_OK) {
-    ESP_LOGE(TAG, "copia %dx%d em (%d,%d) recusada pelo DMA2D", r.l, r.a, r.x, r.y);
+    ESP_LOGE(TAG, "copy %dx%d at (%d,%d) refused by the DMA2D", r.l, r.a, r.x, r.y);
     return false;
   }
-  // Tela inteira leva ~13 ms; 100 ms e so a rede contra um DMA travado.
+  // A full screen takes ~13 ms; 100 ms is just the net against a hung DMA.
   if (xSemaphoreTake(s_dma2d_fim, pdMS_TO_TICKS(100)) != pdTRUE) {
-    ESP_LOGE(TAG, "copia %dx%d em (%d,%d) nao terminou em 100 ms", r.l, r.a, r.x, r.y);
+    ESP_LOGE(TAG, "copy %dx%d at (%d,%d) did not finish within 100 ms", r.l, r.a, r.x, r.y);
     return false;
   }
   return true;
@@ -325,7 +331,7 @@ bool tab5_quadro_copiar_de(void* destino, const tab5_ret_t& r, const void* orige
   if (r.l <= 0 || r.a <= 0) { return true; }
   if (ox < 0 || oy < 0 || ox + r.l > (int)FB_L || oy + r.a > (int)FB_A) { return false; }
   if (s_dma2d) { return copiar_dma2d(destino, r, origem, ox, oy); }
-  // O PPA de reserva so faz o caso sem deslocamento.
+  // The fallback PPA only handles the no-offset case.
   if (ox != r.x || oy != r.y) { return false; }
   return tab5_quadro_copiar(destino, origem, r);
 }
@@ -362,7 +368,7 @@ bool tab5_quadro_copiar(void* destino, const void* origem, const tab5_ret_t& r)
 
   const esp_err_t e = ppa_do_scale_rotate_mirror(s_ppa, &op);
   if (e != ESP_OK) {
-    ESP_LOGE(TAG, "copia %dx%d em (%d,%d) falhou: %s", r.l, r.a, r.x, r.y, esp_err_to_name(e));
+    ESP_LOGE(TAG, "copy %dx%d at (%d,%d) failed: %s", r.l, r.a, r.x, r.y, esp_err_to_name(e));
     return false;
   }
   return true;
@@ -382,12 +388,12 @@ uint32_t tab5_quadro_atraso_pc(void) { return s_atr_pc; }
 
 void tab5_quadro_listar_irqs(void) { esp_intr_dump(stdout); }
 
-// PROVA DO ATRASO: segura o core 'nucleo' por 'ms', ou com as interrupcoes
-// desligadas (portDISABLE_INTERRUPTS: nada entra, como uma ISR longa de
-// nivel alto) ou numa secao critica (portENTER_CRITICAL: mascara os niveis
-// 1-3 - os das ISRs comuns, a do painel inclusive). 'vezes' repeticoes com
-// 1 s entre elas, para dar tempo de ver a tela. Se a tela piscar, o atraso da
-// ISR do painel e a causa da piscada; se nao piscar, a causa e outra.
+// DELAY PROOF: holds core 'nucleo' for 'ms', either with interrupts disabled
+// (portDISABLE_INTERRUPTS: nothing gets in, like a long high-level ISR) or in
+// a critical section (portENTER_CRITICAL: masks levels 1-3 - those of the
+// ordinary ISRs, the panel's included). 'vezes' repetitions with 1 s between
+// them, to give time to watch the screen. If the screen flashes, the panel
+// ISR delay is the cause of the flash; if not, the cause is something else.
 struct prova_t { int ms, vezes; bool critica; SemaphoreHandle_t fim; };
 static void tarefa_prova(void* arg)
 {
@@ -411,11 +417,11 @@ static void tarefa_prova(void* arg)
 
 bool tab5_quadro_prova_atraso(int ms, bool critica, int nucleo, int vezes)
 {
-  // Teto de 100 ms: o watchdog de interrupcao (800 ms) fica longe.
+  // 100 ms ceiling: the interrupt watchdog (800 ms) stays well away.
   if (ms < 1 || ms > 100 || nucleo < 0 || nucleo > 1 || vezes < 1 || vezes > 20) { return false; }
   prova_t p = { ms, vezes, critica, xSemaphoreCreateBinary() };
   if (!p.fim) { return false; }
-  // Pilha na RAM interna (a tarefa desliga interrupcoes: nada de PSRAM).
+  // Stack in internal RAM (the task disables interrupts: no PSRAM).
   if (xTaskCreatePinnedToCore(tarefa_prova, "prova", 2048, &p, 5, nullptr, nucleo) != pdPASS) {
     vSemaphoreDelete(p.fim);
     return false;
@@ -443,8 +449,8 @@ uint32_t tab5_quadro_erros_dsi(uint32_t* st0, uint32_t* st1)
 }
 uint32_t tab5_quadro_quadros(void)   { return s_quadros; }
 
-// Espia o contador da ISR a cada tique (1 ms): percebe o fim de frame no
-// maximo 1 ms depois - sobra folga de sobra ate a proxima (~15 ms).
+// Peeks at the ISR counter every tick (1 ms): notices the end of frame at
+// most 1 ms later - plenty of slack before the next one (~15 ms).
 bool tab5_quadro_esperar_fim(uint32_t prazo_ms)
 {
   const uint32_t q0 = s_quadros;
@@ -457,17 +463,18 @@ bool tab5_quadro_esperar_fim(uint32_t prazo_ms)
 }
 
 // ---------------------------------------------------------------------------
-// PREENCHIMENTO POR HARDWARE
+// HARDWARE FILL
 // ---------------------------------------------------------------------------
-// A medida por fase da passada completa mostrou "limpar" custando 20-25 ms em
-// TODO app: a CPU escrevendo 1,6 MB de preto. O PPA tem um motor de
-// preenchimento so de escrita - nao le nada, so manda a cor pela DMA2D.
+// The per-phase measurement of the full pass showed "clear" costing 20-25 ms
+// in EVERY app: the CPU writing 1.6 MB of black. The PPA has a write-only fill
+// engine - it reads nothing, just sends the colour via the DMA2D.
 //
-// O cache e do driver: antes de escrever, ele devolve E invalida as linhas do
-// destino (ppa_fill.c, C2M|INVALIDATE) - o que a CPU desenhou do lado, nas
-// mesmas linhas, vai para a memoria antes e nada se perde.
+// The cache is the driver's job: before writing, it writes back AND
+// invalidates the destination lines (ppa_fill.c, C2M|INVALIDATE) - whatever
+// the CPU drew alongside, on the same lines, goes to memory first and
+// nothing is lost.
 static ppa_client_handle_t s_ppa_fill = nullptr;
-static int8_t              s_fill_ok  = -1;   // -1 nao conferido, 0 desligado, 1 conferido
+static int8_t              s_fill_ok  = -1;   // -1 not checked, 0 disabled, 1 checked
 
 bool tab5_quadro_preencher(void* destino, const tab5_ret_t& r, uint16_t cor)
 {
@@ -477,7 +484,7 @@ bool tab5_quadro_preencher(void* destino, const tab5_ret_t& r, uint16_t cor)
     cfg.oper_type = PPA_OPERATION_FILL;
     cfg.max_pending_trans_num = 1;
     if (ppa_register_client(&cfg, &s_ppa_fill) != ESP_OK) {
-      ESP_LOGW(TAG, "PPA de preenchimento indisponivel - limpeza pela CPU");
+      ESP_LOGW(TAG, "fill PPA unavailable - clearing by CPU");
       s_ppa_fill = nullptr;
       s_fill_ok = 0;
       return false;
@@ -494,8 +501,8 @@ bool tab5_quadro_preencher(void* destino, const tab5_ret_t& r, uint16_t cor)
   op.out.fill_cm        = PPA_FILL_COLOR_MODE_RGB565;
   op.fill_block_w       = r.l;
   op.fill_block_h       = r.a;
-  // RGB565 -> ARGB8888 repetindo os bits altos nos baixos: o PPA corta de
-  // volta para 565 e chega exatamente a mesma cor.
+  // RGB565 -> ARGB8888 repeating the high bits in the low ones: the PPA cuts
+  // back to 565 and arrives at exactly the same colour.
   const uint8_t r5 = (cor >> 11) & 0x1F, g6 = (cor >> 5) & 0x3F, b5 = cor & 0x1F;
   op.fill_argb_color.a = 0xFF;
   op.fill_argb_color.r = (uint8_t)((r5 << 3) | (r5 >> 2));
@@ -505,33 +512,33 @@ bool tab5_quadro_preencher(void* destino, const tab5_ret_t& r, uint16_t cor)
 
   if (ppa_do_fill(s_ppa_fill, &op) != ESP_OK) { return false; }
 
-  // So uma cor com os dois bytes DIFERENTES denuncia ordem de bytes trocada -
-  // o preto (0x0000), que e quase toda limpeza, passaria em qualquer caso.
+  // Only a colour with its two bytes DIFFERENT reveals swapped byte order -
+  // black (0x0000), which is almost every clear, would pass either way.
   if (s_fill_ok < 0 && (cor >> 8) != (cor & 0xFF)) {
-    // CONFERENCIA UNICA. O driver invalidou o cache dessas linhas antes do
-    // DMA e a CPU nao tocou nelas desde entao: esta leitura vem da memoria.
+    // ONE-OFF CHECK. The driver invalidated those lines' cache before the
+    // DMA and the CPU has not touched them since: this read comes from memory.
     const uint16_t lido = ((const uint16_t*)destino)[(size_t)r.y * FB_L + r.x];
     if (lido != cor) {
-      ESP_LOGE(TAG, "preenchimento por PPA escreveu %04x em vez de %04x - desligado, limpeza pela CPU",
+      ESP_LOGE(TAG, "PPA fill wrote %04x instead of %04x - disabled, clearing by CPU",
                (unsigned)lido, (unsigned)cor);
       s_fill_ok = 0;
-      return false;   // quem chamou pinta pela CPU por cima
+      return false;   // the caller paints over it by CPU
     }
     s_fill_ok = 1;
-    ESP_LOGI(TAG, "limpeza de tela por hardware (PPA) testada e funcionando");
+    ESP_LOGI(TAG, "hardware screen clearing (PPA) tested and working");
   }
   return true;
 }
 
 // ---------------------------------------------------------------------------
-// BANCO DE PROVA DA COPIA
+// COPY TEST BENCH
 // ---------------------------------------------------------------------------
-// A medida do compositor mostrou o PPA levando ~88 ms por quadro (~32 MB/s
-// somando leitura e escrita). O motor SRM do PPA e feito para ESCALAR e GIRAR:
-// trabalha em macroblocos de 16/32 pixels, e numa PSRAM isso vira rajadas
-// curtas de 32-64 bytes saltando de linha em linha. Este banco poe o PPA lado
-// a lado com motores que copiam linha corrida, no mesmo retangulo, com o
-// painel varrendo - nada de numero de folha de dados.
+// The compositor measurement showed the PPA taking ~88 ms per frame
+// (~32 MB/s counting read and write). The PPA's SRM engine is made to SCALE
+// and ROTATE: it works in 16/32-pixel macroblocks, and on PSRAM that becomes
+// short 32-64 byte bursts jumping from line to line. This bench puts the PPA
+// side by side with engines that copy whole lines, on the same rectangle,
+// with the panel scanning - no datasheet numbers.
 namespace {
 
 struct banco_t {
@@ -556,7 +563,7 @@ bool IRAM_ATTR gdma_fim(async_memcpy_handle_t, async_memcpy_event_t*, void* arg)
   return acordou == pdTRUE;
 }
 
-// Linha de cache L2 = 128 B: o DMA precisa das bordas do destino nela.
+// L2 cache line = 128 B: the DMA needs the destination edges on it.
 void sincronizar_linhas(void* base, const tab5_ret_t& r, int dir)
 {
   uint8_t* p = (uint8_t*)base + (size_t)r.y * FB_L * 2;
@@ -597,7 +604,7 @@ int64_t por_dma2d(banco_t& b, esp_async_fbcpy_handle_t h, const tab5_ret_t& r)
 
 int64_t por_gdma(banco_t& b, async_memcpy_handle_t h, const tab5_ret_t& r)
 {
-  // So retangulo de largura inteira: ai ele e um trecho CONTIGUO da memoria.
+  // Full-width rectangles only: then it is a CONTIGUOUS stretch of memory.
   uint8_t* s = (uint8_t*)b.src + (size_t)r.y * FB_L * 2;
   uint8_t* d = (uint8_t*)b.dst + (size_t)r.y * FB_L * 2;
   const size_t n = (size_t)r.a * FB_L * 2;
@@ -614,15 +621,15 @@ int64_t por_cpu(banco_t& b, const tab5_ret_t& r)
   for (int y = r.y; y < r.y + r.a; ++y) {
     memcpy(b.dst + (size_t)y * FB_L + r.x, b.src + (size_t)y * FB_L + r.x, lb);
   }
-  // O painel (DMA) le da memoria, nao do cache: escrita da CPU so vale
-  // depois de devolvida. Entra na conta.
+  // The panel (DMA) reads from memory, not the cache: a CPU write only
+  // counts once written back. It goes into the total.
   sincronizar_linhas(b.dst, r, ESP_CACHE_MSYNC_FLAG_DIR_C2M);
   return esp_timer_get_time() - t0;
 }
 
 void mostrar(const char* motor, const char* qual, uint32_t px, int64_t us)
 {
-  if (us < 0) { printf("  %-8s %-14s : falhou (%lld)\n", motor, qual, (long long)us); return; }
+  if (us < 0) { printf("  %-8s %-14s : failed (%lld)\n", motor, qual, (long long)us); return; }
   printf("  %-8s %-14s : %7.2f ms  %6.1f MB/s\n", motor, qual, (double)us / 1000.0, mbps(px, us));
 }
 
@@ -635,12 +642,12 @@ void tab5_quadro_banco(void)
   b.dst = (uint16_t*)heap_caps_aligned_calloc(128, 1, FB_BYTES, MALLOC_CAP_SPIRAM);
   b.fim = xSemaphoreCreateBinary();
   if (!b.src || !b.dst || !b.fim) {
-    printf("banco: sem memoria\n");
+    printf("bench: out of memory\n");
   } else {
     for (uint32_t i = 0; i < FB_L * FB_A; ++i) { b.src[i] = (uint16_t)(i * 2654435761u >> 16); }
     esp_cache_msync(b.src, FB_BYTES, ESP_CACHE_MSYNC_FLAG_DIR_C2M);
 
-    // Cliente PROPRIO: o do compositor continua livre para a interface.
+    // OUR OWN client: the compositor's stays free for the UI.
     ppa_client_handle_t cli = nullptr;
     ppa_client_config_t pc = { };
     pc.oper_type = PPA_OPERATION_SRM;
@@ -657,15 +664,15 @@ void tab5_quadro_banco(void)
     gc.dma_burst_size = 64;
     if (esp_async_memcpy_install_gdma_axi(&gc, &gd) != ESP_OK) { gd = nullptr; }
 
-    // Largura inteira (o caso da rolagem e da tela cheia) e meia largura (o
-    // caso de uma area suja comum, com salto de linha).
+    // Full width (the scrolling and full-screen case) and half width (the
+    // common dirty-area case, with a line stride).
     const tab5_ret_t cheio = { 0, 128, (int16_t)FB_L, 1024 };
     const tab5_ret_t meio  = { 0, 128, (int16_t)(FB_L / 2), 1024 };
     const uint32_t px_cheio = (uint32_t)cheio.l * cheio.a;
     const uint32_t px_meio  = (uint32_t)meio.l * meio.a;
     const int REP = 3;
 
-    printf("--- banco da copia (PSRAM -> PSRAM, painel varrendo) ---\n");
+    printf("--- copy bench (PSRAM -> PSRAM, panel scanning) ---\n");
     auto rodar = [&](const char* motor, const char* qual, uint32_t px, auto f) {
       int64_t soma = 0;
       for (int i = 0; i < REP; ++i) {
@@ -686,8 +693,8 @@ void tab5_quadro_banco(void)
     if (gd) {
       rodar("GDMA", "720x1024", px_cheio, [&] { return por_gdma(b, gd, cheio); });
     }
-    // PREENCHIMENTO: so escrita (2 B por pixel - o MB/s abaixo conta x4 como
-    // as copias, entao compare os ms).
+    // FILL: write only (2 B per pixel - the MB/s below counts x4 like the
+    // copies, so compare the ms).
     rodar("PPA-fill", "720x1024", px_cheio, [&] {
       const int64_t t0 = esp_timer_get_time();
       if (!tab5_quadro_preencher(b.dst, cheio, 0x0000)) { return (int64_t)-1; }
@@ -702,8 +709,8 @@ void tab5_quadro_banco(void)
     rodar("CPU", "720x1024", px_cheio, [&] { return por_cpu(b, cheio); });
     rodar("CPU", "360x1024", px_meio,  [&] { return por_cpu(b, meio); });
 
-    // A copia saiu certa? Uma conferencia barata: o ultimo motor foi a CPU,
-    // e a CPU nao erra - confere o DMA2D separadamente.
+    // Did the copy come out right? A cheap check: the last engine was the
+    // CPU, and the CPU does not err - check the DMA2D separately.
     if (fb) {
       memset(b.dst, 0, FB_BYTES);
       esp_cache_msync(b.dst, FB_BYTES, ESP_CACHE_MSYNC_FLAG_DIR_C2M);

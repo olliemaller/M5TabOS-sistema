@@ -1,12 +1,12 @@
-// Animacao do bloqueio: Vaga-lumes que brilham e apagam, vagando.
-// (parte do bloqueio_anim; o que e comum a todas esta no bloqueio_anim_interno.hpp).
+// Lock screen animation: Fireflies glowing and fading as they wander.
+// (part of bloqueio_anim; what is common to all of them is in bloqueio_anim_interno.hpp).
 
 #include "bloqueio_anim_interno.hpp"
 
 namespace bq_anim {
 
 // ---------------------------------------------------------------------------
-// 7. VAGA-LUMES - brilham e apagam, vagando
+// 7. FIREFLIES - glow and fade, wandering
 // ---------------------------------------------------------------------------
 namespace {
 struct Lume  { float x, y, ang, vel, fase, fv, ox, oy; uint8_t h; };
@@ -23,7 +23,7 @@ void lumes_iniciar(void)
     l.vel = frand(30, 75);
     l.fase = frand(0, 6.2832f);
     l.fv = frand(1.2f, 2.8f);
-    l.h = (uint8_t)(38 + irand(40));   // amarelo a verde-limao
+    l.h = (uint8_t)(38 + irand(40));   // yellow to lime green
     l.ox = l.x; l.oy = l.y;
   }
 }

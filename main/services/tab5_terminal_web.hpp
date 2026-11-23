@@ -1,28 +1,28 @@
-// O TERMINAL NO NAVEGADOR DO PC - o MESMO Terminal do aparelho, na parte
-// /terminal/ do servidor web (tab5_web), no mesmo esquema do Editor e do Mesh.
+// THE TERMINAL IN THE PC'S BROWSER - the SAME Terminal as on the device, in the
+// /terminal/ part of the web server (tab5_web), on the same pattern as Editor and Mesh.
 //
-// Como no app Terminal, sao duas coisas que se revezam na mesma tela:
-//   - OS COMANDOS do sistema (services/tab5_terminal: a mesma sessao da tela
-//     do Tab5 - o que se digita num aparece no outro). HTTP simples:
-//       GET  api/console?v=<versao>&desde=<linha>  o que mudou (JSON)
-//       POST api/enviar   (corpo = a linha)         roda / responde a pergunta
+// As in the Terminal app, two things take turns on the same screen:
+//   - The system COMMANDS (services/tab5_terminal: the same session as the
+//     Tab5 screen - what is typed in one appears in the other). Plain HTTP:
+//       GET  api/console?v=<versao>&desde=<linha>  what changed (JSON)
+//       POST api/enviar   (body = the line)         runs / answers the prompt
 //       POST api/parar                              Ctrl+C
 //       POST api/limpar                             Ctrl+L
-//   - A SESSAO SSH compartilhada (tab5_ssh), que o comando 'ssh usuario@host'
-//     abre. O xterm.js vem da FLASH (services/xterm/*.gz): funciona com o PC
-//     sem internet. Uma conexao WebSocket (ws) leva tudo:
-//       Tab5 -> navegador  binario = o que o servidor SSH mandou (cru, para o
-//                          xterm.js); texto = {"t":"estado",...} quando o
-//                          estado ou o tamanho mudam. Ao entrar, o retrato da
-//                          tela atual.
-//       navegador -> Tab5  binario = teclas; texto = {"t":"ola"|"tamanho","c","l"},
+//   - The shared SSH SESSION (tab5_ssh), which the 'ssh usuario@host' command
+//     opens. xterm.js comes from FLASH (services/xterm/*.gz): works with the PC
+//     offline. One WebSocket connection (ws) carries everything:
+//       Tab5 -> browser    binary = what the SSH server sent (raw, for
+//                          xterm.js); text = {"t":"estado",...} when the
+//                          state or size changes. On joining, a snapshot of
+//                          the current screen.
+//       browser -> Tab5    binary = keys; text = {"t":"ola"|"tamanho","c","l"},
 //                          {"t":"senha","s"}, {"t":"confirmar","sim"}, {"t":"fechar"}.
-// A pagina mostra o SSH enquanto a sessao esta de pe e volta aos comandos
-// quando ela termina - a mesma regra da tela do Tab5. Fechar a aba nao
-// encerra nada: o comando e a sessao sao dos servicos.
+// The page shows SSH while the session is up and goes back to commands when
+// it ends - the same rule as the Tab5 screen. Closing the tab does not end
+// anything: the command and the session belong to the services.
 #pragma once
 
-// Abre a parte do Terminal no servidor (/terminal/) e prepara a sessao de
-// comandos. De qualquer tarefa (o portal chama de dentro de um pedido).
-// false = ver tab5_web_abrir.
+// Opens the Terminal part of the server (/terminal/) and prepares the command
+// session. From any task (the portal calls it from within a request).
+// false = see tab5_web_abrir.
 bool tab5_terminal_web_ligar(void);

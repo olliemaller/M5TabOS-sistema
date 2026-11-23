@@ -1,39 +1,41 @@
-// APP: Ajustes - as preferencias do sistema.
+// APP: Ajustes (Settings) - the system preferences.
 //
-// NOVA FORMA, a de qualquer celular:
+// NEW LAYOUT, the one every phone uses:
 //
-//   - a tela inicial e UMA lista rolavel em GRUPOS (CONEXOES, TELA E SOM, SISTEMA), cada
-//     grupo num cartao arredondado, como na maquete aprovada (a tabela LINHAS);
-//   - as linhas de pagina mostram icone, nome e uma linha de estado
-//     ("Conectado a ...", "Desligado") para saber sem entrar;
-//   - BRILHO e VOLUME sao linhas da mesma lista, com o controle deslizante dentro
-//     (tocar no trilho ou arrastar; o dedo que desce nele nao rola a lista);
-//   - cada pagina tem VOLTAR e as opcoes dela. A lista rola (kernel/lista):
-//     opcao nova e UMA linha na tabela PAGINAS, nao um remendo de posicao.
+//   - the start screen is ONE scrollable list in GROUPS (CONNECTIONS, SCREEN AND
+//     SOUND, SYSTEM), each group in a rounded card, as in the approved mock-up
+//     (the LINHAS table);
+//   - page rows show an icon, a name and a status line
+//     ("Connected to ...", "Off") so you know without going in;
+//   - BRIGHTNESS and VOLUME are rows of the same list, with the slider inside
+//     (tap the track or drag; a finger that lands on it does not scroll the list);
+//   - each page has VOLTAR (back) and its options. The list scrolls (kernel/lista):
+//     a new option is ONE row in the PAGINAS table, not a positional patch.
 //
-// A versao anterior empilhava todas as secoes numa coluna de 1800 px que o
-// sistema rolava; cada secao nova empurrava as outras, e as alturas eram
-// numeros somados a mao (e erraram mais de uma vez).
+// The previous version stacked every section in an 1800 px column that the
+// system scrolled; each new section pushed the others down, and the heights
+// were numbers added up by hand (and got it wrong more than once).
 //
-// DEITADO (teclado fisico encaixado, kernel/orientacao) e o mesmo esquema com
-// mais uma coluna, mestre-detalhe como nos tablets: a lista a esquerda (LADO_L)
-// e, a direita, a pagina escolhida, que rola
-// sozinha (s_rol_pag) - rolar a pagina nao leva a lista embora. As paginas sao
-// as mesmas de em pe: desenham na area que recebem e tocam relativo a ela.
+// LANDSCAPE (physical keyboard docked, kernel/orientacao) is the same scheme
+// with one more column, master-detail as on tablets: the list on the left
+// (LADO_L) and, on the right, the chosen page, which scrolls
+// on its own (s_rol_pag) - scrolling the page does not carry the list away. The
+// pages are the same as in portrait: they draw in the area they are given and
+// handle touch relative to it.
 //
-// O que mora aqui e do USUARIO, nao do aplicativo: cada app continua
-// declarando o hardware que precisa no perfil dele; este app controla o que
-// atravessa todos (ajustes.h).
+// What lives here belongs to the USER, not the app: each app still declares
+// the hardware it needs in its own profile; this app controls what cuts
+// across all of them (ajustes.h).
 
 //
-// PARTIDO POR ASSUNTO (so mudou de arquivo, nada de logica). Este arquivo ficou
-// com as medidas, as paginas (a tabela PAGINAS), o estado da tela, os textos e
-// botoes, a linha de estado de cada pagina, o inicio (brilho, volume e a
-// lista), o despacho e o registro do app. O resto foi para app_config_*.cpp; o
-// que as partes compartilham esta em app_config_interno.hpp:
-//   app_config_icones.cpp   icones da lista e o icone do app na tela inicial
-//   app_config_rede.cpp     paginas Wi-Fi, Bluetooth, ESP-NOW, Meshtastic e MQTT
-//   app_config_paginas.cpp  paginas Data e hora, Acesso pelo PC, Idioma, Tela, Teclado, Grove, Sobre e USB
+// SPLIT BY TOPIC (it only moved between files, no logic changed). This file
+// kept the measurements, the pages (the PAGINAS table), the screen state, the
+// texts and buttons, each page's status line, the start screen (brightness,
+// volume and the list), the dispatch and the app registration. The rest went
+// to app_config_*.cpp; what the parts share is in app_config_interno.hpp:
+//   app_config_icones.cpp   list icons and the app's icon on the home screen
+//   app_config_rede.cpp     Wi-Fi, Bluetooth, ESP-NOW, Meshtastic and MQTT pages
+//   app_config_paginas.cpp  Date and time, PC access, Language, Screen, Keyboard, Grove, About and USB pages
 
 #include "tab5_hora.hpp"
 #include "tab5_fuso.hpp"
@@ -64,27 +66,27 @@
 #include "app_config_interno.hpp"
 
 // ---------------------------------------------------------------------------
-// MEDIDAS
+// MEASUREMENTS
 // ---------------------------------------------------------------------------
-static const int PM_L     = 88;       // largura dos botoes - e +
-static const int TRILHO_A  = 12;       // espessura do trilho
-static const int BOTAO_R   = 16;       // raio da bolinha do deslizante (32 px)
-static const int TOQUE_EXTRA = 16;     // folga de toque alem das pontas do trilho (na altura vale a linha toda)
-// Alturas das linhas da tela inicial (o toque e a lista usam as mesmas).
-static const int GRUPO_A   = 56;       // rotulo do grupo (CONEXOES...), alinhado embaixo
-static const int ITEM_A    = 92;       // linha de pagina
-static const int DESL_A    = 100;      // linha com deslizante: nome e % em cima, trilho embaixo
+static const int PM_L     = 88;       // width of the - and + buttons
+static const int TRILHO_A  = 12;       // track thickness
+static const int BOTAO_R   = 16;       // radius of the slider knob (32 px)
+static const int TOQUE_EXTRA = 16;     // touch slack beyond the ends of the track (vertically the whole row counts)
+// Heights of the start screen rows (touch and the list use the same ones).
+static const int GRUPO_A   = 56;       // group label (CONEXOES...), bottom-aligned
+static const int ITEM_A    = 92;       // page row
+static const int DESL_A    = 100;      // slider row: name and % on top, track below
 static const int ICONE_L   = 64;
 
-// Deitado (mestre-detalhe, ver o topo do arquivo)
-static const int LADO_L      = 400;   // a lista, a esquerda
-static const int PAG_X       = LADO_L + 1;   // onde a pagina comeca (deitado)
+// Landscape (master-detail, see the top of the file)
+static const int LADO_L      = 400;   // the list, on the left
+static const int PAG_X       = LADO_L + 1;   // where the page starts (landscape)
 
-// Paginas
+// Pages
 static const int VOLTAR_L = 200, VOLTAR_A = 64;
 
 // ---------------------------------------------------------------------------
-// AS PAGINAS - a lista de baixo sai daqui
+// THE PAGES - the list below comes from here
 // ---------------------------------------------------------------------------
 typedef enum {
   PAG_INICIO = -1,
@@ -104,21 +106,22 @@ static void est_hora(char*, size_t);
 static void est_idioma(char*, size_t);
 static void est_pc(char*, size_t);
 
-// O desenho e o toque de cada pagina (definidos mais abaixo).
+// Each page's drawing and touch handling (defined further down).
 typedef void (*desenhar_fn)(lgfx::LovyanGFX& d, const area_t& a, bool tudo);
 typedef void (*tocar_fn)(int tx, int ty);
 
-// UMA LINHA POR PAGINA, com tudo dela: o item da lista (nome, icone, estado)
-// e a pagina aberta (desenho e toque). Eram tres tabelas paralelas, e quando
-// a Energia entrou so nesta, o desenho e o toque das seguintes andaram uma
-// casa: tocar em Data e hora abria o Idioma (04/11/2026). Sem desenho = a
-// linha abre outra coisa (abrir_pagina).
+// ONE ROW PER PAGE, with everything about it: the list item (name, icon,
+// status) and the open page (drawing and touch). There used to be three
+// parallel tables, and when Energia was added to only this one, the drawing
+// and touch of the following ones shifted by one slot: tapping Date and time
+// opened Language (04/11/2026). No drawing = the row opens something else
+// (abrir_pagina).
 typedef struct {
   const char* nome;
   icone_fn    icone;
   estado_fn   estado;
   desenhar_fn desenhar;
-  tocar_fn    tocar;      // nullptr = pagina so de leitura
+  tocar_fn    tocar;      // nullptr = read-only page
 } pagina_def_t;
 static const pagina_def_t PAGINAS[] = {
   { N_("Wi-Fi"),          ic_wifi,    est_wifi,    pag_wifi,    toque_wifi   },
@@ -127,7 +130,7 @@ static const pagina_def_t PAGINAS[] = {
   { N_("Meshtastic"),     ic_mesh,    est_mesh,    pag_mesh,    toque_mesh   },
   { N_("Malha pela internet"), ic_nuvem, est_mqtt, pag_mqtt,    toque_mqtt   },
   { N_("Tela"),           ic_tela,    est_tela,    pag_tela,    toque_tela   },
-  { N_("Energia"),        ic_energia, est_energia, nullptr,     nullptr      },   // abre o app Energia (fora da home)
+  { N_("Energia"),        ic_energia, est_energia, nullptr,     nullptr      },   // opens the Energia app (not on the home screen)
   { N_("Data e hora"),    ic_hora,    est_hora,    pag_hora,    toque_hora   },
   { N_("Idioma"),         ic_idioma,  est_idioma,  pag_idioma,  toque_idioma },
   { N_("Teclado"),        ic_teclado, est_teclado, pag_teclado, nullptr      },
@@ -139,13 +142,13 @@ static const pagina_def_t PAGINAS[] = {
 static_assert(sizeof(PAGINAS) / sizeof(PAGINAS[0]) == PAG_N, "uma linha em PAGINAS para cada pagina_t, na mesma ordem");
 
 // ---------------------------------------------------------------------------
-// A TELA INICIAL - a ordem e os grupos saem daqui
+// THE START SCREEN - the order and the groups come from here
 // ---------------------------------------------------------------------------
-// Tres tipos de linha: o rotulo de um GRUPO; uma PAGINA (valor = o pagina_t,
-// nome/icone/estado vem de PAGINAS); um DESLIZANTE (valor 0 = brilho, 1 = volume;
-// o nome e o rotulo). Cada sequencia de linhas entre dois grupos e UM cartao.
-// PAGINAS segue na ordem do enum (o resto do app depende dela); a ordem na
-// tela e so esta tabela.
+// Three kinds of row: a GROUP label; a PAGE (value = the pagina_t,
+// name/icon/status come from PAGINAS); a SLIDER (value 0 = brightness,
+// 1 = volume; the name is the label). Each run of rows between two groups is
+// ONE card. PAGINAS follows the enum order (the rest of the app depends on
+// it); the on-screen order is this table alone.
 typedef enum { L_GRUPO, L_PAGINA, L_DESLIZANTE } linha_tipo_t;
 typedef struct { linha_tipo_t tipo; int valor; const char* rotulo; } linha_t;
 static constexpr linha_t LINHAS[] = {
@@ -171,7 +174,7 @@ static constexpr linha_t LINHAS[] = {
 };
 static constexpr int LINHAS_N = sizeof(LINHAS) / sizeof(LINHAS[0]);
 
-// Toda pagina aparece uma vez (esquecer uma na tabela de cima nao compila).
+// Every page appears once (forgetting one in the table above does not compile).
 static constexpr int linhas_de_pagina(void)
 {
   int n = 0;
@@ -180,58 +183,59 @@ static constexpr int linhas_de_pagina(void)
 }
 static_assert(linhas_de_pagina() == PAG_N, "toda pagina_t tem uma linha de pagina em LINHAS");
 
-// A linha da tela inicial que mostra a pagina p (-1 = nenhuma).
+// The start screen row that shows page p (-1 = none).
 static int linha_da_pagina(int p)
 {
   for (int i = 0; i < LINHAS_N; ++i) { if (LINHAS[i].tipo == L_PAGINA && LINHAS[i].valor == p) { return i; } }
   return -1;
 }
-// A linha do deslizante k (0 = brilho, 1 = volume).
+// The row of slider k (0 = brightness, 1 = volume).
 static int linha_do_deslizante(int k)
 {
   for (int i = 0; i < LINHAS_N; ++i) { if (LINHAS[i].tipo == L_DESLIZANTE && LINHAS[i].valor == k) { return i; } }
   return -1;
 }
-// A linha e a primeira / a ultima do cartao dela? (o cartao vai de um grupo ao proximo)
+// Is the row the first / last of its card? (the card runs from one group to the next)
 static bool abre_cartao(int i)  { return i == 0 || LINHAS[i - 1].tipo == L_GRUPO; }
 static bool fecha_cartao(int i) { return i + 1 == LINHAS_N || LINHAS[i + 1].tipo == L_GRUPO; }
 
 // ---------------------------------------------------------------------------
-// ESTADO DA TELA
+// SCREEN STATE
 // ---------------------------------------------------------------------------
 pintura_t s_cfg_p;
 static int       s_pag = PAG_INICIO;
 static lista_t   s_lista;
-static char      s_sub[PAG_N][48];     // a linha de estado de cada PAGINA, como desenhada
-static int       s_ub = -1, s_uv = -1; // brilho/volume desenhados (para perceber mudanca vinda de fora)
-char      s_assin[512];         // "assinatura" da pagina aberta: mudou, redesenha
-char      s_aviso[96];          // recado curto numa pagina ("escolhido para o Mesh")
+static char      s_sub[PAG_N][48];     // each PAGE's status line, as drawn
+static int       s_ub = -1, s_uv = -1; // brightness/volume as drawn (to notice changes coming from elsewhere)
+char      s_assin[512];         // "signature" of the open page: if it changed, redraw
+char      s_aviso[96];          // short message on a page ("escolhido para o Mesh")
 
-// Bluetooth: a lista de aparelhos vistos
+// Bluetooth: the list of devices seen
 lista_t   s_l_bt;
 uint32_t  s_bt_ver = 0;
 
-// Meshtastic: o editor de PIN
+// Meshtastic: the PIN editor
 bool  s_pin_editando = false;
-// O teclado virtual do sistema - um so, para a senha do Wi-Fi e o PIN (nunca
-// abertos ao mesmo tempo: trocar de pagina fecha).
+// The system's virtual keyboard - only one, for the Wi-Fi password and the
+// PIN (never open at the same time: changing page closes it).
 tecvirt_t s_cfg_kb;
 
 static void abrir_pagina(int p);
 
-// DEITADO: onde a pagina comeca (relativo a area do app; 0 em pe), a rolagem
-// dela e a altura do que ela desenha - medida pelos helpers (s_fim, o fundo
-// em coordenada de tela do ultimo elemento) na passada completa.
+// LANDSCAPE: where the page starts (relative to the app area; 0 in portrait),
+// its scroll and the height of what it draws - measured by the helpers
+// (s_fim, the bottom in screen coordinates of the last element) on the full pass.
 int       s_dx_pag = 0;
-int       s_dy_pag = 0;         // deitado: onde a pagina comeca na vertical (hoje o topo da area, 0)
+int       s_dy_pag = 0;         // landscape: where the page starts vertically (currently the top of the area, 0)
 rolagem_t s_rol_pag;
 static int       s_pag_h = 0;
 int       s_fim = 0;
 
-// A LISTA DENTRO DE UMA PAGINA (redes, aparelhos), comecando em 'y0'. Em pe a
-// pagina e fixa e a lista rola por dentro; deitado a PAGINA rola inteira (a
-// coluna e baixa demais para botoes e lista juntos), entao a lista entra com
-// a altura de todos os itens e conta no fim da pagina.
+// THE LIST INSIDE A PAGE (networks, devices), starting at 'y0'. In portrait
+// the page is fixed and the list scrolls inside it; in landscape the WHOLE
+// PAGE scrolls (the column is too short for buttons and list together), so
+// the list goes in with the height of all its items and counts towards the
+// end of the page.
 area_t janela_da_lista(const area_t& a, int y0, int n, int item_a)
 {
   if (!deitado(sistema_area())) { return { a.x, a.y + y0, a.largura, a.altura - y0 }; }
@@ -240,7 +244,7 @@ area_t janela_da_lista(const area_t& a, int y0, int n, int item_a)
   return { a.x, a.y + y0, a.largura, h };
 }
 
-// A area da pagina, em tela: a do app em pe; deitado, a coluna da direita.
+// The page area, on screen: the app's in portrait; in landscape, the right-hand column.
 area_t area_pagina(void)
 {
   area_t a = sistema_area();
@@ -249,10 +253,10 @@ area_t area_pagina(void)
 }
 
 // ---------------------------------------------------------------------------
-// TEXTO E BOTOES
+// TEXT AND BUTTONS
 // ---------------------------------------------------------------------------
 
-// Paragrafo quebrado na largura - o mesmo quebrador dos baloes de conversa.
+// Paragraph wrapped to the width - the same wrapper as the chat bubbles.
 int paragrafo(lgfx::LovyanGFX& d, int x, int y, int largura, const char* s)
 {
   d.setFont(tab5_fonte_suave(false, 24));
@@ -268,7 +272,7 @@ int paragrafo(lgfx::LovyanGFX& d, int x, int y, int largura, const char* s)
 }
 
 
-// Chevron ">" desenhado (a fonte teria outro peso a cada tamanho).
+// Drawn ">" chevron (the font would have a different weight at each size).
 void chevron(lgfx::LovyanGFX& d, int cx, int cy, uint16_t cor)
 {
   for (int k = 0; k < 3; ++k) {
@@ -277,10 +281,10 @@ void chevron(lgfx::LovyanGFX& d, int cx, int cy, uint16_t cor)
   }
 }
 
-// Cabecalho de pagina: VOLTAR e o titulo.
+// Page header: VOLTAR (back) and the title.
 static void cabecalho(lgfx::LovyanGFX& d, const area_t& a, const char* titulo)
 {
-  // Deitado a lista esta sempre a esquerda: sem VOLTAR, so o titulo.
+  // In landscape the list is always on the left: no VOLTAR, just the title.
   const bool voltar = !deitado(sistema_area());
   if (voltar) { tab5_botao(d, a.x + 16, a.y + 16, VOLTAR_L, VOLTAR_A, tr("< VOLTAR"), TEMA_DESTAQUE); }
   tab5_titulo(d, TEMA_LETRA_TITULO);
@@ -292,7 +296,7 @@ static void cabecalho(lgfx::LovyanGFX& d, const area_t& a, const char* titulo)
   d.drawFastHLine(a.x, a.y + CONTEUDO_Y - 16, a.largura, cor_linha(d));
 }
 
-// Linha de informacao: rotulo pequeno em cima, valor embaixo. 76 px.
+// Info row: small label on top, value below. 76 px.
 int info(lgfx::LovyanGFX& d, const area_t& a, int y, const char* rotulo,
          const char* valor, uint16_t cor)
 {
@@ -302,7 +306,7 @@ int info(lgfx::LovyanGFX& d, const area_t& a, int y, const char* rotulo,
   return y + 84;
 }
 
-// Botao da largura da pagina.
+// Page-width button.
 int botao_largo(lgfx::LovyanGFX& d, const area_t& a, int y, const char* txt, uint16_t cor)
 {
   tab5_botao(d, a.x + MARGEM, a.y + y, a.largura - 2 * MARGEM, BTN_A, txt, cor);
@@ -310,7 +314,7 @@ int botao_largo(lgfx::LovyanGFX& d, const area_t& a, int y, const char* txt, uin
   return y + BTN_A + 20;
 }
 
-// Par - / valor / + (tempo de tela, relogio, canal).
+// - / value / + pair (screen timeout, clock, channel).
 static const int PM_VALOR_L = 260;
 void menos_mais(lgfx::LovyanGFX& d, const area_t& a, int y, const char* valor)
 {
@@ -371,8 +375,8 @@ void est_bt(char* o, size_t t)
   const tab5_ble_estado_t e = tab5_ble_estado();
   if (e == TAB5_BLE_PRONTO)       { snprintf(o, t, tr("Ligado")); }
   else if (e == TAB5_BLE_SUBINDO) { snprintf(o, t, tr("Ligando...")); }
-  // C6 com o firmware de fabrica (Wi-Fi funciona, Bluetooth nao): nao e
-  // defeito, e uma atualizacao opcional - o texto tem que dizer isso.
+  // C6 with the factory firmware (Wi-Fi works, Bluetooth does not): it is not
+  // a fault, it is an optional update - the text has to say so.
   else if (e == TAB5_BLE_FALHOU && tab5_wifi_c6_enlace() && !tab5_wifi_c6_nosso())
                                   { snprintf(o, t, tr("Rádio C6 de fábrica: atualização opcional")); }
   else if (e == TAB5_BLE_FALHOU)  { snprintf(o, t, tr("Falhou - o C6 não deu o Bluetooth")); }
@@ -383,7 +387,7 @@ void est_bt(char* o, size_t t)
 void est_espnow(char* o, size_t t)
 {
   if (!tab5_espnow_c6_compativel()) {
-    // Sem enlace ainda nao da para saber qual firmware o C6 tem.
+    // Without a link yet there is no way to know which firmware the C6 has.
     snprintf(o, t, tab5_wifi_c6_enlace() ? tr("Rádio C6 de fábrica: atualização opcional")
                                          : tr("Ligue o Wi-Fi"));
     return;
@@ -442,8 +446,9 @@ void est_grove(char* o, size_t t)
   else                                          { snprintf(o, t, tr("Desligado")); }
 }
 
-// ENERGIA MORA AQUI: a linha mostra a bateria agora e abre o app Energia
-// (os graficos pedem a tela inteira), que nao tem mais icone na home.
+// ENERGIA LIVES HERE: the row shows the battery right now and opens the
+// Energia app (the charts need the whole screen), which no longer has an
+// icon on the home screen.
 const app_t* app_energia(void)
 {
   for (int i = 0; i < SISTEMA_NUM_APPS; ++i) { if (!strcmp(SISTEMA_APPS[i]->nome, "Energia")) { return SISTEMA_APPS[i]; } }
@@ -463,31 +468,32 @@ static void est_sobre(char* o, size_t t)
 }
 
 // ---------------------------------------------------------------------------
-// INICIO: a lista de grupos (com BRILHO e VOLUME)
+// START SCREEN: the list of groups (with BRIGHTNESS and VOLUME)
 // ---------------------------------------------------------------------------
-// BRILHO NA ESCALA DO OLHO. O valor do PWM e linear na luz, mas o olho nao:
-// 4% de duty ja parece "um quarto do brilho". Com a barra linear quase todo o
-// curso ficava no claro e o primeiro degrau (10 -> 25) pulava de 4% para 10%.
-// A barra anda numa posicao 0..1000 e o PWM sai dela pela curva gama 2,2 - a
-// metade de baixo da barra cobre de 0,9% a ~22%, em degraus finos.
-#define BRILHO_POS_MAX AJUSTES_BRILHO_POS_MAX   // a curva mora em services/ajustes.cpp
+// BRIGHTNESS ON THE EYE'S SCALE. The PWM value is linear in light, but the eye
+// is not: 4% duty already looks like "a quarter of the brightness". With a
+// linear bar almost all of the travel was in the bright range and the first
+// step (10 -> 25) jumped from 4% to 10%. The bar moves over a 0..1000 position
+// and the PWM comes from it through a 2.2 gamma curve - the bottom half of
+// the bar covers 0.9% to ~22%, in fine steps.
+#define BRILHO_POS_MAX AJUSTES_BRILHO_POS_MAX   // the curve lives in services/ajustes.cpp
 static int brilho_para_pos(int b) { return ajustes_brilho_para_pos(b); }
 static int pos_para_brilho(int pos) { return ajustes_pos_para_brilho(pos); }
 
-// A altura de cada linha depende do tipo (o toque usa a mesma conta, via a lista).
+// Each row's height depends on its kind (touch uses the same maths, via the list).
 static int item_altura(int i, void*)
 {
   if (i < 0 || i >= LINHAS_N) { return ITEM_A; }
   return LINHAS[i].tipo == L_GRUPO ? GRUPO_A : LINHAS[i].tipo == L_DESLIZANTE ? DESL_A : ITEM_A;
 }
 
-// A largura que a lista deu ao ultimo item desenhado (ela desconta a barra de
-// rolagem): o toque no trilho usa a mesma, para cair exatamente onde foi pintado.
+// The width the list gave the last item drawn (it subtracts the scroll
+// bar): touch on the track uses the same, to land exactly where it was painted.
 static int s_larg_item = 0;
 
-// O CARTAO da maquete: cada sequencia de linhas entre dois grupos e UM cartao
-// TEMA_SUPERFICIE recuado das bordas, com os cantos redondos so no topo da
-// primeira linha e na base da ultima. Fora do cartao e o fundo.
+// The mock-up's CARD: each run of rows between two groups is ONE
+// TEMA_SUPERFICIE card inset from the edges, with rounded corners only at the
+// top of the first row and the bottom of the last. Outside the card is the background.
 static void cartao_fundo(lgfx::LovyanGFX& d, int i, int x0, int y, int largura, int h, uint16_t cor)
 {
   d.fillRect(x0, y, largura, h, TEMA_FUNDO);
@@ -495,21 +501,21 @@ static void cartao_fundo(lgfx::LovyanGFX& d, int i, int x0, int y, int largura, 
   const bool topo = abre_cartao(i), base = fecha_cartao(i);
   if (!topo && !base) { d.fillRect(cx0, y, cl, h, cor); return; }
   d.fillRoundRect(cx0, y, cl, h, TEMA_RAIO_G, cor);
-  // O que nao deve ser redondo e reto: a metade de baixo se so o topo arredonda,
-  // a de cima se so a base arredonda.
+  // What should not be rounded is square: the bottom half if only the top is
+  // rounded, the top half if only the bottom is.
   if (topo && !base) { d.fillRect(cx0, y + h / 2, cl, h - h / 2, cor); }
   if (!topo && base) { d.fillRect(cx0, y, cl, h / 2, cor); }
 }
 
-// O trilho do deslizante (x e largura) dentro de uma linha de largura 'largura'
-// que comeca em x0: a bolinha nas pontas ainda cabe dentro do cartao.
+// The slider track (x and width) inside a row of width 'largura' starting at
+// x0: the knob at the ends still fits inside the card.
 static void trilho_geo(int x0, int largura, int* tx, int* tl)
 {
   *tx = x0 + MARGEM + BOTAO_R;
   *tl = largura - 2 * (MARGEM + BOTAO_R);
 }
 
-// Posicao, minimo e maximo do deslizante k (0 = brilho, na escala perceptual; 1 = volume).
+// Position, minimum and maximum of slider k (0 = brightness, on the perceptual scale; 1 = volume).
 static void deslizante_valores(int k, int* valor, int* minimo, int* maximo)
 {
   if (k == 0) { *valor = brilho_para_pos(ajustes_brilho()); *minimo = 0;                  *maximo = BRILHO_POS_MAX; }
@@ -519,7 +525,7 @@ static void deslizante_valores(int k, int* valor, int* minimo, int* maximo)
 static void linha_grupo(lgfx::LovyanGFX& d, int i, int x0, int y, int largura)
 {
   d.fillRect(x0, y, largura, GRUPO_A, TEMA_FUNDO);
-  // Recuo do cartao + 8, colado embaixo (perto do cartao a que pertence).
+  // Card inset + 8, sitting at the bottom (close to the card it belongs to).
   tab5_escrever(d, tr(LINHAS[i].rotulo), x0 + TEMA_ESPACO_3 + TEMA_ESPACO_2, y + GRUPO_A - TEMA_ESPACO_2,
                 TEMA_LETRA_LEGENDA, true, TEMA_TEXTO_2, TEMA_FUNDO, bottom_left);
 }
@@ -535,7 +541,7 @@ static void linha_pagina(lgfx::LovyanGFX& d, int i, int x0, int y, int largura)
   PAGINAS[p].icone(d, ix, iy, ICONE_L);
   const int tx = ix + ICONE_L + 24;
   tab5_escrever(d, tr(PAGINAS[p].nome), tx, y + 14, TEMA_LETRA_SUBTITULO, true, TEMA_TEXTO, cor_cartao);
-  // Estado cortado MEDINDO, para nao passar por baixo do chevron.
+  // Status truncated BY MEASURING, so it does not run under the chevron.
   char sub[48];
   snprintf(sub, sizeof(sub), "%s", s_sub[p]);
   d.setFont(tab5_fonte_suave(false, TEMA_LETRA_CORPO));
@@ -544,18 +550,18 @@ static void linha_pagina(lgfx::LovyanGFX& d, int i, int x0, int y, int largura)
   tab5_fonte_corpo(d);
   tab5_escrever(d, sub, tx, y + 54, TEMA_LETRA_CORPO, false, TEMA_TEXTO_2, cor_cartao);
   if (deitado(sistema_area())) {
-    // Deitado nao ha para onde ir (a pagina ja esta ao lado): no lugar do
-    // chevron, a marca do item aberto.
+    // In landscape there is nowhere to go (the page is already beside it):
+    // instead of the chevron, the open item's marker.
     d.fillRect(cx0, y + 12, 6, ITEM_A - 24, p == s_pag ? TEMA_DESTAQUE : cor_cartao);
   } else {
     chevron(d, x0 + largura - MARGEM - 12, y + ITEM_A / 2, TEMA_TEXTO_3);
   }
-  // Divisoria entre linhas do MESMO cartao (nao depois da ultima).
+  // Divider between rows of the SAME card (not after the last).
   if (!fecha_cartao(i)) { d.drawFastHLine(tx, y + ITEM_A - 1, cx0 + cl - tx, TEMA_LINHA); }
 }
 
-// Deslizante dentro do cartao: em cima o nome (esquerda) e o "NN%" (direita);
-// embaixo o trilho com a bolinha.
+// Slider inside the card: on top the name (left) and "NN%" (right);
+// below, the track with the knob.
 static void linha_deslizante(lgfx::LovyanGFX& d, int i, int x0, int y, int largura)
 {
   const int k = LINHAS[i].valor;
@@ -588,14 +594,14 @@ static void item_desenhar(lgfx::LovyanGFX& d, int i, int x0, int y, int largura,
   }
 }
 
-// Aplica o valor novo do brilho (na posicao perceptual) ou do volume.
+// Applies the new brightness value (at the perceptual position) or the volume.
 static void aplicar_rapido(bool brilho, int novo, int atual, bool beep)
 {
   if (novo == atual) { return; }
   if (brilho) {
     int b = pos_para_brilho(novo);
-    // No pe da curva dois toques de "-"/"+" podem cair no mesmo valor de PWM:
-    // o botao sempre anda pelo menos um.
+    // At the foot of the curve two "-"/"+" taps can land on the same PWM value:
+    // the button always moves at least one.
     const int b_atual = ajustes_brilho();
     if (b == b_atual) { b += (novo > atual) ? 1 : -1; }
     if (b < AJUSTES_BRILHO_MIN) { b = AJUSTES_BRILHO_MIN; }
@@ -605,17 +611,17 @@ static void aplicar_rapido(bool brilho, int novo, int atual, bool beep)
   }
   else {
     ajustes_definir_volume((uint8_t)novo);
-    if (beep) { sistema_beep(880.0f, 80); }   // ouvir o volume novo
+    if (beep) { sistema_beep(880.0f, 80); }   // to hear the new volume
   }
   sistema_pedir_redesenho();
 }
 
-// ---- OS DESLIZANTES (0 = brilho, 1 = volume), linhas da lista ----
-// O TOQUE CHEGA RELATIVO A AREA do app (0,0 = canto dela): o trilho e medido
-// com x0 = 0 e a mesma largura com que a lista desenhou a linha.
+// ---- THE SLIDERS (0 = brightness, 1 = volume), list rows ----
+// TOUCH ARRIVES RELATIVE TO THE app AREA (0,0 = its corner): the track is
+// measured with x0 = 0 and the same width the list drew the row with.
 
-// O dedo DESCEU numa linha de deslizante, na faixa do trilho (com folga nas
-// pontas; na vertical vale a linha toda)? Qual (0/1), ou -1.
+// Did the finger LAND on a slider row, within the track strip (with slack at
+// the ends; vertically the whole row counts)? Which one (0/1), or -1.
 static int deslizante_sob(int tx, int ty)
 {
   int dy = 0;
@@ -627,7 +633,7 @@ static int deslizante_sob(int tx, int ty)
   return -1;
 }
 
-// Toque ou arraste: o valor sai da posicao do dedo ao longo do trilho.
+// Tap or drag: the value comes from the finger's position along the track.
 static void mexer_deslizante(int k, int tx)
 {
   int t0, tl;
@@ -641,13 +647,13 @@ static void mexer_deslizante(int k, int tx)
   aplicar_rapido(k == 0, minimo + (rel * (maximo - minimo)) / tl, atual, false);
 }
 
-// Qual deslizante o dedo agarrou (-1 = nenhum) e se o dedo ja estava embaixo
-// na amostra anterior: so a DESCIDA sobre o trilho agarra o controle, e dai ate
-// soltar a lista nao rola.
+// Which slider the finger grabbed (-1 = none) and whether the finger was
+// already down on the previous sample: only LANDING on the track grabs the
+// control, and from then until release the list does not scroll.
 static int  s_desl_preso = -1;
 static bool s_dedo_antes = false;
 
-// Estado de cada linha: so a que mudou de texto ou de valor e redesenhada.
+// State of each row: only the one whose text or value changed is redrawn.
 static void atualizar_estados(void)
 {
   for (int i = 0; i < PAG_N; ++i) {
@@ -658,12 +664,12 @@ static void atualizar_estados(void)
       lista_item_mudou(&s_lista, linha_da_pagina(i));
     }
   }
-  // Brilho e volume tambem mudam por fora (barra de cima, teclas): so a linha deles repinta.
+  // Brightness and volume also change from elsewhere (top bar, keys): only their row repaints.
   if (pintura_mudou_i(&s_cfg_p, &s_ub, ajustes_brilho())) { lista_item_mudou(&s_lista, linha_do_deslizante(0)); }
   if (pintura_mudou_i(&s_cfg_p, &s_uv, ajustes_volume())) { lista_item_mudou(&s_lista, linha_do_deslizante(1)); }
 }
 
-// Em pe: a lista ocupa a area toda.
+// Portrait: the list fills the whole area.
 static void desenhar_inicio(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
 {
   atualizar_estados();
@@ -671,21 +677,21 @@ static void desenhar_inicio(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
 }
 
 // ---------------------------------------------------------------------------
-// PAGINAS
+// PAGES
 // ---------------------------------------------------------------------------
-// Cada pagina: desenhar(tudo) e tocar(x,y). A pagina redesenha o conteudo
-// inteiro quando a ASSINATURA (os valores que ela mostra) muda - e so entao.
+// Each page: draw(everything) and touch(x,y). The page redraws its whole
+// content when the SIGNATURE (the values it shows) changes - and only then.
 void conteudo_limpo(lgfx::LovyanGFX& d, const area_t& a)
 {
   tab5_tela_limpar(a.x, a.y + CONTEUDO_Y, a.largura, a.altura - CONTEUDO_Y, TEMA_FUNDO);
 }
 
 // ---------------------------------------------------------------------------
-// DESPACHO
+// DISPATCH
 // ---------------------------------------------------------------------------
 static void abrir_pagina(int p)
 {
-  if (p == PAG_ENERGIA) { sistema_abrir_app("Energia"); return; }   // um app, nao uma pagina
+  if (p == PAG_ENERGIA) { sistema_abrir_app("Energia"); return; }   // an app, not a page
   if (s_pin_editando) { s_pin_editando = false; tecvirt_fechar(&s_cfg_kb); }
   s_pag = p;
   s_assin[0] = 0;
@@ -697,20 +703,20 @@ static void abrir_pagina(int p)
   if (p == PAG_WIFI) {
     lista_definir(&s_l_wifi, ROLAGEM_INICIO, 0, wf_item_altura, wf_item_desenhar, nullptr);
     s_wf_ver = 0;
-    tab5_wifi_procurar();   // entrar na pagina ja procura
+    tab5_wifi_procurar();   // entering the page starts a scan
   } else {
     lista_esconder(&s_l_wifi);
   }
   if (p == PAG_BLUETOOTH) {
     lista_definir(&s_l_bt, ROLAGEM_INICIO, 0, bt_item_altura, bt_item_desenhar, nullptr);
     s_bt_ver = 0;
-    // Entrar na pagina ja procura: e o que se quer ver ao abrir.
+    // Entering the page starts a scan: that is what you want to see on opening.
     if (tab5_ble_pronto()) { tab5_ble_varrer(6000); }
   } else {
     lista_esconder(&s_l_bt);
   }
   if (p == PAG_INICIO) { s_ub = s_uv = -1; }
-  else if (!deitado(sistema_area())) { lista_esconder(&s_lista); }   // deitado a lista fica ao lado
+  else if (!deitado(sistema_area())) { lista_esconder(&s_lista); }   // in landscape the list stays alongside
   rolagem_zerar(&s_rol_pag);
   s_pag_h = 0;
   pintura_pedir(&s_cfg_p);
@@ -725,7 +731,7 @@ static bool ao_abrir(void)
   for (int i = 0; i < PAG_N; ++i) { PAGINAS[i].estado(s_sub[i], sizeof(s_sub[i])); }
   lista_definir(&s_lista, ROLAGEM_INICIO, LINHAS_N, item_altura, item_desenhar, nullptr);
   pintura_pedir(&s_cfg_p);
-  // O aviso do pendrive (barra de status) abre Ajustes: cai direto na pagina.
+  // The flash drive notice (status bar) opens Ajustes: lands straight on the page.
   if (tab5_pendrive_pede_atencao()) { abrir_pagina(PAG_USB); }
   return true;
 }
@@ -733,12 +739,12 @@ static bool ao_abrir(void)
 static void ao_fechar(void)
 {
   if (s_mq_campo >= 0) { s_mq_campo = -1; memset(s_mq_txt, 0, sizeof(s_mq_txt)); tecvirt_fechar(&s_cfg_kb); }
-  memset(&s_mq_p, 0, sizeof(s_mq_p));   // a senha digitada nao fica na RAM
+  memset(&s_mq_p, 0, sizeof(s_mq_p));   // the typed password does not stay in RAM
   if (s_pin_editando) { s_pin_editando = false; tecvirt_fechar(&s_cfg_kb); }
   if (s_wf_senha) { s_wf_senha = false; memset(s_wf_txt, 0, sizeof(s_wf_txt)); tecvirt_fechar(&s_cfg_kb); }
 }
 
-// DEITADO: a lista a esquerda e a pagina ao lado, rolando.
+// LANDSCAPE: the list on the left and the page alongside, scrolling.
 static void desenhar_deitado(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
 {
   const area_t dir = { a.x + PAG_X, a.y, a.largura - PAG_X, a.altura };
@@ -752,7 +758,7 @@ static void desenhar_deitado(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
   const area_t janela = { a.x, dir.y, LADO_L, dir.altura };
   lista_desenhar(&s_lista, d, janela, TEMA_FUNDO, tudo);
 
-  // ---- a pagina ----
+  // ---- the page ----
   if (s_pag == PAG_INICIO) {
     if (tudo) {
       tab5_escrever(d, tr("Escolha uma opção"), dir.x + dir.largura / 2, dir.y + dir.altura / 2, 28, false,
@@ -760,8 +766,9 @@ static void desenhar_deitado(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
     }
     return;
   }
-  // Rolou desde a ultima passada: desloca os pixels que ja estao certos e
-  // pinta so a faixa exposta (o mesmo do kernel); sem como deslocar, tudo.
+  // Scrolled since the last pass: shifts the pixels that are already right and
+  // paints only the exposed strip (the same as the kernel); if it cannot shift,
+  // everything.
   const area_t* recorte = &dir;
   rolagem_passada_t rp = {};
   bool completa = tudo;
@@ -774,8 +781,8 @@ static void desenhar_deitado(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
   area_t pa = dir;
   pa.y -= s_rol_pag.atual;
   if (s_pag_h > pa.altura) { pa.altura = s_pag_h; }
-  // Devolve o recorte que achou (o do kernel: a area do app), em vez de
-  // apaga-lo - o resto deste desenho continua sem poder pintar as barras.
+  // Restores the clip it found (the kernel's: the app area), instead of
+  // erasing it - the rest of this drawing still must not paint over the bars.
   int32_t cx, cy, cl, ca;
   d.getClipRect(&cx, &cy, &cl, &ca);
   d.setClipRect(recorte->x, recorte->y, recorte->largura, recorte->altura);
@@ -783,8 +790,8 @@ static void desenhar_deitado(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
   if (completa) { cabecalho(d, pa, tr(PAGINAS[s_pag].nome)); }
   if (PAGINAS[s_pag].desenhar) { PAGINAS[s_pag].desenhar(d, pa, completa); }
   d.setClipRect(cx, cy, cl, ca);
-  // A altura sai do que a pagina desenhou numa passada inteira (as de lista
-  // contam a lista inteira - ver janela_da_lista).
+  // The height comes from what the page drew on a full pass (list pages
+  // count the whole list - see janela_da_lista).
   if (tudo && s_fim > 0) {
     const int h = s_fim - pa.y + 32;
     if (h != s_pag_h) {
@@ -792,15 +799,15 @@ static void desenhar_deitado(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
       if (rolagem_limite(&s_rol_pag, h, dir.altura)) { sistema_pedir_redesenho_completo(); }
     }
   }
-  // A BARRINHA, como a das listas (o deslocamento a arrastou junto: refaz).
+  // THE SCROLL BAR, like the lists' one (the shift dragged it along: redo it).
   if (completa) { rolagem_barra(d, &s_rol_pag, dir, TEMA_FUNDO); }
   rolagem_sincronizar(&s_rol_pag);
 }
 
 static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
 {
-  // O NO PEDIU O PIN: em qualquer pagina de Ajustes, vai para a do
-  // Meshtastic, que abre o teclado (o pareamento espera ~30 s).
+  // THE NODE ASKED FOR THE PIN: from any Ajustes page, go to the Meshtastic
+  // one, which opens the keyboard (pairing waits ~30 s).
   if (mesh_ble_esperando_pin() && s_pag != PAG_MESH) { abrir_pagina(PAG_MESH); }
   pintura_iniciar(&s_cfg_p);
   const bool tudo = pintura_completa(&s_cfg_p);
@@ -815,14 +822,14 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
 static void ao_tocar(int tx, int ty)
 {
   if (deitado(sistema_area())) {
-    if (tx < PAG_X) {                                     // a lista
+    if (tx < PAG_X) {                                     // the list
       int dy = 0;
       const int i = lista_item_tocado(&s_lista, tx, ty, &dy);
-      // Grupo e deslizante nao abrem nada (o deslizante foi tratado no nivel).
+      // Groups and sliders open nothing (the slider was handled at the level above).
       if (i >= 0 && i < LINHAS_N && LINHAS[i].tipo == L_PAGINA && LINHAS[i].valor != s_pag) { abrir_pagina(LINHAS[i].valor); }
       return;
     }
-    if (rolagem_foi_arraste(&s_rol_pag)) { return; }   // fim de arraste nao e clique
+    if (rolagem_foi_arraste(&s_rol_pag)) { return; }   // end of a drag is not a click
     const int px = tx - s_dx_pag, py = ty + s_rol_pag.atual - s_dy_pag;
     if (s_pag == PAG_INICIO) { return; }
     if (PAGINAS[s_pag].tocar) { PAGINAS[s_pag].tocar(px, py); }
@@ -840,7 +847,7 @@ static void ao_tocar(int tx, int ty)
 
 static void ao_tocar_nivel(int x, int y, bool pressionado)
 {
-  // Teclado aberto (senha do Wi-Fi ou PIN): os dedos sao dele.
+  // Keyboard open (Wi-Fi password or PIN): the fingers belong to it.
   if (tecvirt_aberto(&s_cfg_kb)) {
     int acoes[8];
     const int n = tecvirt_nivel(&s_cfg_kb, acoes, 8);
@@ -851,10 +858,10 @@ static void ao_tocar_nivel(int x, int y, bool pressionado)
     }
     return;
   }
-  // ARBITRAGEM DEDO x ROLAGEM: so a DESCIDA do dedo sobre o trilho de um
-  // deslizante agarra o controle - dai ate soltar o dedo e dele (o valor segue o
-  // x) e a lista nao rola. Dedo que desceu fora do trilho rola a lista, passe
-  // por onde passar; toque curto abre a pagina (ao_tocar).
+  // FINGER x SCROLL ARBITRATION: only the finger LANDING on a slider's track
+  // grabs the control - from then until the finger lifts it owns it (the value
+  // follows x) and the list does not scroll. A finger that landed off the track
+  // scrolls the list, wherever it goes; a short tap opens the page (ao_tocar).
   const bool lista_visivel = deitado(sistema_area()) || s_pag == PAG_INICIO;
   if (!pressionado) { s_desl_preso = -1; s_dedo_antes = false; }
   else if (!s_dedo_antes) {
@@ -863,13 +870,13 @@ static void ao_tocar_nivel(int x, int y, bool pressionado)
   }
   if (s_desl_preso >= 0) {
     mexer_deslizante(s_desl_preso, x);
-    return;   // a lista nem ve este dedo: sem ancora de rolagem, sem arraste a ser lido como clique
+    return;   // the list does not even see this finger: no scroll anchor, no drag to be read as a click
   }
   if (deitado(sistema_area())) {
-    // CADA ZONA SABE, A CADA AMOSTRA, SE O DEDO ESTA NELA - e solta a ancora
-    // quando nao esta (soltou, ou passou para outra coluna). Antes a soltura
-    // ia so para a coluna onde a coordenada caia: a pagina guardava o ultimo
-    // ponto do arraste, o toque seguinte media dali e ela pulava para cima.
+    // EACH ZONE KNOWS, ON EVERY SAMPLE, WHETHER THE FINGER IS IN IT - and releases
+    // the anchor when it is not (lifted, or moved to the other column). Before,
+    // the release only went to the column the coordinate fell in: the page kept
+    // the last drag point, the next touch measured from there and it jumped up.
     const bool na_lista  = pressionado && x < PAG_X;
     const bool na_pagina = pressionado && x >= PAG_X && s_pag != PAG_INICIO;
     if (lista_arrastar(&s_lista, x, y, na_lista)) { sistema_pedir_redesenho(); }
@@ -893,14 +900,14 @@ static void ao_teclar(const char* txt, uint8_t codigo, uint8_t)
 }
 
 
-// 'extern' e OBRIGATORIO: em C++ um const no escopo de arquivo tem ligacao
-// interna, e o apps.cpp nao enxergaria este simbolo.
-// O RITMO DE CADA PAGINA. Era 500 ms em todas: a interface acordava 2x/s com
-// Ajustes aberto, mesmo parada na pagina da Tela (que so muda pelo toque, e o
-// toque ja pede redesenho). Agora: 0 onde nada muda sozinho, 500 ms so onde
-// algo anda depressa (procura de redes, varredura BLE, pendrive em uso,
-// sondagem do Grove), 1 s no resto (estados de Wi-Fi/BLE/Mesh, relogio do
-// Sobre). Cada pagina continua comparando a assinatura antes de pintar.
+// 'extern' is MANDATORY: in C++ a const at file scope has internal
+// linkage, and apps.cpp would not see this symbol.
+// EACH PAGE'S PACE. It was 500 ms on all of them: the UI woke 2x/s with
+// Ajustes open, even sitting on the Screen page (which only changes by touch,
+// and touch already requests a redraw). Now: 0 where nothing changes by
+// itself, 500 ms only where something moves fast (network scan, BLE scan,
+// flash drive in use, Grove probing), 1 s for the rest (Wi-Fi/BLE/Mesh
+// states, the About clock). Each page still compares the signature before painting.
 static uint32_t periodo_agora(void)
 {
   if (sistema_grove_sondando()) { return 500; }
@@ -929,9 +936,9 @@ extern const app_t APP_CONFIG = {
   .ao_tocar  = ao_tocar,
   .ao_tocar_nivel = ao_tocar_nivel,
   .ao_teclar = ao_teclar,
-  .periodo_ms = 1000,                // o padrao; periodo_agora decide por pagina
+  .periodo_ms = 1000,                // the default; periodo_agora decides per page
   .periodo_agora = periodo_agora,
-  .altura_conteudo = 0,   // nao rola inteiro: a lista e as paginas rolam por dentro
+  .altura_conteudo = 0,   // does not scroll as a whole: the list and the pages scroll internally
   .icone = icone_config,
-  .fundo_tema = true,   // ja migrado para o tema central
+  .fundo_tema = true,   // already migrated to the central theme
 };

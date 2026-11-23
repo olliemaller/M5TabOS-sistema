@@ -1,12 +1,12 @@
-// O que os arquivos do bloqueio_anim compartilham: area util, aleatorio, cores,
-// lista de caixas mexidas e as funcoes de entrada de cada animacao. So para
-// eles: nenhum outro codigo inclui este header (a API publica e o
+// What the bloqueio_anim files share: usable area, randomness, colours,
+// list of touched boxes and each animation's entry functions. For them
+// only: no other code includes this header (the public API is
 // bloqueio_anim.hpp).
 //
-// O bloqueio_anim foi partido por assunto (so mudou de arquivo, nada de logica):
-//   bloqueio_anim.cpp            escolha da animacao, tempo, fundos, caixas, o quadro e a parede
-//   bloqueio_anim_<nome>.cpp     uma animacao cada: bolas, fogos, chuva, estrelas, bolhas,
-//                                cobra, vagalumes, pendulos, neve, cometas, solar, logo
+// bloqueio_anim was split by topic (only files changed, no logic):
+//   bloqueio_anim.cpp            animation choice, timing, backgrounds, boxes, the frame and the wallpaper
+//   bloqueio_anim_<nome>.cpp     one animation each: balls, fireworks, rain, stars, bubbles,
+//                                snake, fireflies, pendulums, snow, comets, solar, logo
 #pragma once
 
 #include "bloqueio_anim.hpp"
@@ -21,9 +21,9 @@
 namespace bq_anim {
 
 // ---------------------------------------------------------------------------
-// Area, aleatorio, cores (definidos no bloqueio_anim.cpp)
+// Area, randomness, colours (defined in bloqueio_anim.cpp)
 // ---------------------------------------------------------------------------
-extern int s_ax, s_ay, s_W, s_H;   // area util (onde a animacao pode tocar)
+extern int s_ax, s_ay, s_W, s_H;   // usable area (where the animation may touch)
 extern uint32_t s_rng;
 
 static inline uint32_t rnd(void)
@@ -41,24 +41,24 @@ static inline uint16_t c565(int r, int g, int b)
   return (uint16_t)(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
 }
 
-// Matiz 0..255 (vermelho, amarelo, verde, ciano, azul, magenta) com brilho v.
+// Hue 0..255 (red, yellow, green, cyan, blue, magenta) with brightness v.
 uint16_t matiz(uint8_t h, int v);
 
 // ---------------------------------------------------------------------------
-// Caixas mexidas neste quadro e fundo
+// Boxes touched this frame, and background
 // ---------------------------------------------------------------------------
-extern bool s_tudo;   // desenhar tudo (nao so o que mudou)
+extern bool s_tudo;   // draw everything (not just what changed)
 
-void rec(int x, int y, int w, int h);                                  // registra uma caixa a apagar
-void rec2(float x0, float y0, float x1, float y1, int r);              // caixa que cobre dois pontos
-void fundo_ceu(lgfx::LGFX_Sprite& s, int W, int H);                    // estrelas fixas (fundo do solar)
+void rec(int x, int y, int w, int h);                                  // records a box to erase
+void rec2(float x0, float y0, float x1, float y1, int r);              // box covering two points
+void fundo_ceu(lgfx::LGFX_Sprite& s, int W, int H);                    // fixed stars (solar background)
 
 // ---------------------------------------------------------------------------
-// Estado da animacao sorteada
+// State of the chosen animation
 // ---------------------------------------------------------------------------
-// O estado de TODAS as animacoes divide estes bytes: so a sorteada vive. Cada
-// animacao enxerga o trecho como o seu proprio tipo (bq_estado_como) e o
-// static_assert garante que ele cabe.
+// The state of ALL animations shares these bytes: only the chosen one lives. Each
+// animation sees the chunk as its own type (bq_estado_como) and the
+// static_assert guarantees it fits.
 static const size_t BQ_ESTADO_MAX = 4096;
 alignas(16) extern uint8_t bq_estado[BQ_ESTADO_MAX];
 
@@ -70,7 +70,7 @@ static inline T& bq_estado_como(void)
 }
 
 // ---------------------------------------------------------------------------
-// Funcoes de entrada de cada animacao (uma por arquivo bloqueio_anim_<nome>.cpp)
+// Entry functions of each animation (one per bloqueio_anim_<nome>.cpp file)
 // ---------------------------------------------------------------------------
 void bolas_iniciar(void);
 void bolas_passo(float dt);
@@ -115,11 +115,11 @@ void cometas_desenhar(lgfx::LovyanGFX& d);
 void solar_iniciar(void);
 void solar_passo(float dt);
 void solar_desenhar(lgfx::LovyanGFX& d);
-void solar_fundo(lgfx::LGFX_Sprite& sp, int W, int H);   // fundo proprio: o ceu estrelado
+void solar_fundo(lgfx::LGFX_Sprite& sp, int W, int H);   // its own background: the starry sky
 
 void logo_iniciar(void);
 void logo_passo(float dt);
 void logo_desenhar(lgfx::LovyanGFX& d);
-void logo_soltar(void);   // libera o texto pintado
+void logo_soltar(void);   // frees the painted text
 
 }  // namespace bq_anim

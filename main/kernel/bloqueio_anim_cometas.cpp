@@ -1,12 +1,12 @@
-// Animacao do bloqueio: Cometas com cauda, cada um numa curva de Lissajous.
-// (parte do bloqueio_anim; o que e comum a todas esta no bloqueio_anim_interno.hpp).
+// Lock screen animation: Comets with tails, each on a Lissajous curve.
+// (part of bloqueio_anim; what is common to all of them is in bloqueio_anim_interno.hpp).
 
 #include "bloqueio_anim_interno.hpp"
 
 namespace bq_anim {
 
 // ---------------------------------------------------------------------------
-// 10. COMETAS - tres cometas com cauda, cada um numa curva de Lissajous
+// 10. COMETS - three comets with tails, each on a Lissajous curve
 // ---------------------------------------------------------------------------
 namespace {
 static const int N_COMETA = 3;
@@ -15,7 +15,7 @@ struct Cometa  { float a, b, fase, vel, t, rx, ry; float ox[N_CAUDA], oy[N_CAUDA
 struct Cometas { Cometa c[N_COMETA]; };
 }
 
-static const float CAUDA_PASSO = 0.035f;   // "tempo" entre dois pontos da cauda
+static const float CAUDA_PASSO = 0.035f;   // "time" between two points of the tail
 
 static void cometa_pos(const Cometa& c, float t, float* x, float* y)
 {
@@ -48,7 +48,7 @@ void cometas_passo(float dt)
   for (int i = 0; i < N_COMETA; ++i) {
     Cometa& c = bq_estado_como<Cometas>().c[i];
     c.t    += c.vel * dt;
-    c.fase += 0.02f * dt;   // a curva vai mudando devagar
+    c.fase += 0.02f * dt;   // the curve changes slowly
     for (int k = 0; k < N_CAUDA; ++k) {
       float x, y;
       cometa_pos(c, c.t - k * CAUDA_PASSO, &x, &y);
@@ -62,7 +62,7 @@ void cometas_desenhar(lgfx::LovyanGFX& d)
 {
   for (int i = 0; i < N_COMETA; ++i) {
     const Cometa& c = bq_estado_como<Cometas>().c[i];
-    for (int k = N_CAUDA - 1; k >= 0; --k) {   // a cabeca por ultimo, por cima
+    for (int k = N_CAUDA - 1; k >= 0; --k) {   // the head last, on top
       const int x = (int)c.ox[k], y = (int)c.oy[k], r = cauda_raio(k);
       const uint16_t cor = k == 0 ? c565(255, 250, 235)
                                   : matiz((uint8_t)(c.h + k * 3), 250 - k * 17);

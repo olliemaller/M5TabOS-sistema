@@ -2,25 +2,25 @@
 # cor: 0x5D1F
 # avisos: arquivos, volumes
 #
-# O modulo 'arquivos': navegar pelo cartao e pelo pendrive e TRAZER um
-# arquivo para a pasta do app. A regra do sistema: o script ve os discos
-# inteiros, mas so altera a propria pasta (apps/Berry/Importar/) - o que
-# esta fora, ele copia para dentro e ai le.
+# The 'arquivos' module: browse the SD card and the USB flash drive and BRING
+# a file into the app's folder. The system's rule: the script sees the whole
+# disks, but only changes its own folder (apps/Berry/Importar/) - anything
+# outside it, the script copies in and then reads.
 #
-# Abas: DISCOS (navegar e tocar num arquivo para trazer) e MEUS (o que ja foi
-# trazido; tocar num texto mostra o comeco dele).
+# Tabs: DISKS (browse and tap a file to bring it in) and MINE (what has
+# already been brought in; tapping a text file shows its beginning).
 
 import string
 
-var aba = 0            # 0 = discos, 1 = meus
-var pasta = ""         # "" = a lista de discos; senao, o caminho aberto
-var itens = []         # o que a tela mostra
+var aba = 0            # 0 = disks, 1 = mine
+var pasta = ""         # "" = the list of disks; otherwise, the open path
+var itens = []         # what the screen shows
 var pagina = 0
-var texto = nil        # o texto aberto na aba MEUS (nil = a lista)
+var texto = nil        # the text open in the MINE tab (nil = the list)
 var msg = ""
 
-var LIN = 70           # altura de uma linha da lista
-var TOPO = 200         # onde a lista comeca
+var LIN = 70           # height of one list row
+var TOPO = 200         # where the list starts
 
 def por_pagina() return (tela.altura() - TOPO - 110) / LIN end
 
@@ -39,7 +39,7 @@ def carregar()
     end
   else
     itens = arquivos.lista(pasta)
-    if itens == nil itens = [] msg = "a pasta não abriu" end
+    if itens == nil itens = [] msg = idioma.escolher("a pasta não abriu", "the folder did not open") end
   end
 end
 
@@ -58,18 +58,18 @@ end
 
 def desenhar(tudo)
   var L = tela.largura()
-  tela.botao(20, 16, 220, 70, "DISCOS", aba == 0 ? tela.AZUL : tela.CINZA)
-  tela.botao(260, 16, 220, 70, "MEUS", aba == 1 ? tela.AZUL : tela.CINZA)
-  if (aba == 0 && pasta != "") || texto != nil tela.botao(L - 200, 16, 180, 70, "< Voltar") end
+  tela.botao(20, 16, 220, 70, idioma.escolher("DISCOS", "DISKS"), aba == 0 ? tela.AZUL : tela.CINZA)
+  tela.botao(260, 16, 220, 70, idioma.escolher("MEUS", "MINE"), aba == 1 ? tela.AZUL : tela.CINZA)
+  if (aba == 0 && pasta != "") || texto != nil tela.botao(L - 200, 16, 180, 70, idioma.escolher("< Voltar", "< Back")) end
 
-  # O andamento da copia (o sistema copia em segundo plano).
+  # The copy's progress (the system copies in the background).
   var e = arquivos.estado()
   var linha = msg
-  if e["meu"] && e["fase"] == "copiando" linha = "trazendo " + e["atual"] + "  " + str(e["pct"]) + "%"
-  elif e["meu"] && e["fase"] == "feito"  linha = "pronto: está em MEUS"
-  elif e["meu"] && e["fase"] == "falhou" linha = "falhou: " + e["erro"]
+  if e["meu"] && e["fase"] == "copiando" linha = idioma.escolher("trazendo ", "bringing in ") + e["atual"] + "  " + str(e["pct"]) + "%"
+  elif e["meu"] && e["fase"] == "feito"  linha = idioma.escolher("pronto: está em MEUS", "done: it is in MINE")
+  elif e["meu"] && e["fase"] == "falhou" linha = idioma.escolher("falhou: ", "failed: ") + e["erro"]
   end
-  var titulo = aba == 1 ? "apps/Berry/Importar" : (pasta == "" ? "Discos" : pasta)
+  var titulo = aba == 1 ? "apps/Berry/Importar" : (pasta == "" ? idioma.escolher("Discos", "Disks") : pasta)
   tela.texto(tela.cortar(titulo, L - 40, 3), 20, 110, 3)
   tela.texto(tela.cortar(linha, L - 40, 2.5), 20, 152, 2.5, tela.CINZA_CLARO)
 
@@ -93,11 +93,11 @@ def desenhar(tudo)
     if !it["pasta"] tela.texto(tamanho(it["bytes"]), L - 20, y, 2.5, tela.CINZA_CLARO, tela.DIREITA) end
     y += LIN
   end
-  if size(itens) == 0 tela.texto("(vazio)", 20, TOPO, 3, tela.CINZA) end
+  if size(itens) == 0 tela.texto(idioma.escolher("(vazio)", "(empty)"), 20, TOPO, 3, tela.CINZA) end
   if size(itens) > n
     var by = tela.altura() - 100
-    tela.botao(20, by, 220, 80, "ANTES", pagina > 0 ? tela.AZUL : tela.CINZA)
-    tela.botao(260, by, 220, 80, "DEPOIS", (pagina + 1) * n < size(itens) ? tela.AZUL : tela.CINZA)
+    tela.botao(20, by, 220, 80, idioma.escolher("ANTES", "PREV"), pagina > 0 ? tela.AZUL : tela.CINZA)
+    tela.botao(260, by, 220, 80, idioma.escolher("DEPOIS", "NEXT"), (pagina + 1) * n < size(itens) ? tela.AZUL : tela.CINZA)
   end
 end
 
@@ -122,19 +122,19 @@ def tocar(x, y)
   if aba == 1
     if it["tipo"] == "texto"
       texto = arquivos.ler(it["nome"])
-      if texto == nil texto = "(não consegui ler)" end
+      if texto == nil texto = idioma.escolher("(não consegui ler)", "(could not read it)") end
     end
   elif it["pasta"]
     pasta = it["caminho"]
     carregar()
   else
     var r = arquivos.copiar(it["caminho"])
-    msg = r == true ? "trazendo " + it["nome"] + "..." : "não deu: " + r
+    msg = r == true ? idioma.escolher("trazendo ", "bringing in ") + it["nome"] + "..." : idioma.escolher("não deu: ", "could not: ") + r
   end
 end
 
-# A copia andou ou terminou, ou um disco entrou/saiu: o sistema ja
-# redesenha; aqui so atualiza a lista.
+# The copy progressed or finished, or a disk was plugged in/removed: the
+# system already redraws; here we only refresh the list.
 def aviso(nome)
   if nome == "volumes" && aba == 0 pasta = "" carregar() end
   if nome == "arquivos" && aba == 1 && texto == nil carregar() end

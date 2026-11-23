@@ -1,61 +1,67 @@
-# Apps em Berry
+# Apps in Berry
 
-Um app em [Berry](https://berry.readthedocs.io) é **um arquivo `.be` no cartão**.
-Não precisa compilar nada nem instalar ferramenta: escreva num editor de texto,
-copie para o cartão (pelo modo pendrive, o ícone aparece assim que ejetar).
+An app in [Berry](https://berry.readthedocs.io) is **a `.be` file on the card**.
+There is nothing to compile and no tools to install: write it in a text editor
+and copy it to the card (through USB flash drive mode, the icon appears as soon
+as you eject).
 
-**Todas as funções numa página só, mais links para aprender a linguagem:
+**All the functions on a single page, plus links for learning the language:
 [BERRY_API.md](BERRY_API.md).**
 
-Os exemplos estão em [`berry_exemplos/`](../berry_exemplos): o [`Ola.be`](../berry_exemplos/Ola.be)
-é o primeiro passo, e o [`Mostruario.be`](../berry_exemplos/Mostruario.be) usa **toda** a API,
-uma aba por parte do sistema. É o molde para um app novo. O
-[`Registro.be`](../berry_exemplos/Registro.be) é o molde de um app que **continua
-rodando com a janela fechada** (ver [Parte de fundo](#parte-de-fundo)), e o
-[`Azimutal.be`](../berry_exemplos/Azimutal.be) é o Azimutal do sistema refeito em
-script (céu, satélites e gravação em segundo plano).
+The examples are in [`berry_exemplos/`](../berry_exemplos): [`Ola.be`](../berry_exemplos/Ola.be)
+is the first step, and [`Mostruario.be`](../berry_exemplos/Mostruario.be) (showcase) uses
+**the whole** API, one tab per part of the system. It is the template for a new
+app. [`Registro.be`](../berry_exemplos/Registro.be) (logger) is the template for
+an app that **keeps running with the window closed** (see
+[Background part](#background-part)), and
+[`Azimutal.be`](../berry_exemplos/Azimutal.be) is the system's Azimutal app
+redone as a script (sky, satellites and background recording).
 
-## Instalar
+## Installing
 
-O firmware traz um app de exemplo, o **Ola Berry** (`berry_exemplos/Ola.be`):
-no primeiro boot com um cartão que ainda não tem `apps/Berry/`, o sistema o
-grava lá. Ele mostra, em abas, o que um script faz - hora e rede, botões e
-bip, aviso na barra, dado salvo no cartão, o acelerômetro, desenho com o dedo
-e os discos. Apagado, não volta.
+The firmware ships with an example app, **Ola Berry** (`berry_exemplos/Ola.be`):
+on the first boot with a card that does not yet have `apps/Berry/`, the system
+writes it there. It shows, in tabs, what a script can do - time and network,
+buttons and beep, a notice in the status bar, data saved to the card, the
+accelerometer, finger drawing and the disks. Once deleted, it does not come
+back.
 
-1. Copie o `.be` para a pasta **`apps/Berry/`** do cartão. A pasta é criada
-   sozinha no primeiro boot com cartão.
-2. Os apps são lidos no boot (até 16) e **de novo quando o cartão volta do
-   modo pendrive**: copiou pelo computador e ejetou, o ícone aparece na tela
-   inicial sem reiniciar. Copiou de outro jeito (cartão no leitor), reinicie
-   ou use `berry reler` no console.
-3. O app aparece na tela inicial com o nome do arquivo, ou o do cabeçalho.
+1. Copy the `.be` file into the card's **`apps/Berry/`** folder. The folder is
+   created automatically on the first boot with a card.
+2. Apps are read at boot (up to 16) and **again when the card comes back from
+   USB flash drive mode**: copy from the computer and eject, and the icon
+   appears on the home screen without a restart. If you copied some other way
+   (card in a reader), restart or use `berry reload` (`berry reler`) in the
+   console.
+3. The app appears on the home screen with the file name, or the one in the
+   header.
 
-Outro jeito de instalar: no app **Arquivos**, tocar num `.be` (do pendrive,
-por exemplo) copia para `apps/Berry/` e o ícone aparece na hora.
+Another way to install: in the **Files** app, tapping a `.be` file (from the
+flash drive, for example) copies it to `apps/Berry/` and the icon appears
+straight away.
 
-## Remover
+## Removing
 
-**Segure o ícone** do app na tela inicial (como para mudar de lugar) e
-**arraste até a faixa "Remover"** que aparece no topo; solte e confirme. O
-`.be` e a pasta de dados do app (`apps/Berry/<nome>/`) vão para a **lixeira
-do cartão** - o Arquivos recupera até esvaziar. Os apps do sistema não
-mostram a faixa. Apagar ou mover o `.be` pelo Arquivos também tira o ícone
-na hora.
+**Hold the app's icon** on the home screen (as if to move it) and **drag it to
+the "Remove" strip** that appears at the top; let go and confirm. The
+`.be` file and the app's data folder (`apps/Berry/<nome>/`) go to the **card's
+Trash** - Files can restore them until it is emptied. System apps do not show
+the strip. Deleting or moving the `.be` file in Files also removes the icon
+straight away.
 
-## O arquivo
+## The file
 
 ```berry
-# nome: Meu App          (opcional) o nome sob o ícone
-# cor: 0x07E0            (opcional) a cor do ícone, RGB565
-# periodo: 1000          (opcional) redesenhar sozinho a cada N ms
-# avisos: espnow         (opcional) redesenhar NA HORA quando chega algo: espnow, mesh, gps, volumes, arquivos
-# orientacao: em_pe      (opcional) em_pe (padrao), deitado ou girar (segue o aparelho)
+# nome: Meu App          (optional) the name under the icon
+# cor: 0x07E0            (optional) the icon colour, RGB565
+# periodo: 1000          (optional) redraw by itself every N ms
+# avisos: espnow         (optional) redraw STRAIGHT AWAY when something arrives: espnow, mesh, gps, volumes, arquivos
+# orientacao: em_pe      (optional) em_pe (portrait, the default), deitado (landscape) or girar (follows the device)
 
-var contador = 0         # o que fica fora das funções roda uma vez, ao abrir
+var contador = 0         # whatever is outside the functions runs once, on opening
 
 def desenhar(tudo)
-  tela.texto("Contador: " + str(contador), 40, 40, 4)
+  tela.texto("Counter: " + str(contador), 40, 40, 4)
   tela.botao(40, 120, 300, 90, "+1")
 end
 
@@ -64,101 +70,104 @@ def tocar(x, y)
 end
 ```
 
-Uma função só pode ser chamada por código que vem **depois** dela no arquivo
-(o Berry recusa um nome que ainda não viu): escreva os ajudantes em cima.
+A function can only be called by code that comes **after** it in the file
+(Berry rejects a name it has not seen yet): write the helpers at the top.
 
-### As funções que o sistema chama (todas opcionais)
+### The functions the system calls (all optional)
 
-| função | quando |
+| function | when |
 |---|---|
-| `abrir()` | o app abriu (depois do código de fora das funções) |
-| `desenhar(tudo)` | hora de pintar. A área chega **limpa** e o quadro vai ao ar de uma vez, sem piscar: desenhe a tela inteira, sempre (`tudo` é `true`). Com `sistema.acumular(true)` ela deixa de chegar limpa - ver [Camadas e acumular](#camadas-e-acumular) |
-| `tocar(x, y)` | um clique, em coordenadas da área do app (as mesmas do desenho). Depois dele o sistema redesenha |
-| `dedo(x, y, pressionado)` | o dedo **enquanto** está na tela (arrastar, desenhar, jogo), a cada 20 ms; uma última vez com `pressionado = false` quando ele sai. Depois de cada uma o sistema redesenha |
-| `tecla(texto, codigo)` | uma tecla, do teclado **físico ou do virtual**: `texto` é o que foi digitado (UTF-8), ou `""` e `codigo` diz qual tecla especial (`teclado.ENTER`, `APAGAR`...) |
-| `aviso(nome)` | um serviço pedido em `# avisos:` publicou algo (`"espnow"`, `"mesh"`, `"gps"`, `"volumes"` - um pendrive entrou ou saiu, `"arquivos"` - a cópia andou ou terminou). O sistema já redesenha sozinho depois; a função é para o que mais o app quiser fazer (marcar como lido, tocar um bip) |
-| `fechar()` | a janela vai fechar |
-| `fundo()` | a **parte de fundo**: com `sistema.fundo(true)` o sistema a chama de tempos em tempos, com a janela aberta **ou fechada** - ver [Parte de fundo](#parte-de-fundo) |
+| `abrir()` | the app opened (after the code outside the functions) |
+| `desenhar(tudo)` | time to paint. The area arrives **cleared** and the frame goes on screen in one go, without flicker: always draw the whole screen (`tudo` is `true`). With `sistema.acumular(true)` it stops arriving cleared - see [Layers and accumulate](#layers-and-accumulate) |
+| `tocar(x, y)` | a tap, in the app area's coordinates (the same as for drawing). The system redraws after it |
+| `dedo(x, y, pressionado)` | the finger **while** it is on the screen (dragging, drawing, games), every 20 ms; one last time with `pressionado = false` when it lifts. The system redraws after each one |
+| `tecla(texto, codigo)` | a key, from the **physical or virtual** keyboard: `texto` is what was typed (UTF-8), or `""` and `codigo` says which special key (`teclado.ENTER`, `APAGAR`...) |
+| `aviso(nome)` | a service asked for in `# avisos:` published something (`"espnow"`, `"mesh"`, `"gps"`, `"volumes"` - a flash drive was plugged in or removed, `"arquivos"` - the copy progressed or finished). The system already redraws by itself afterwards; the function is for whatever else the app wants to do (mark as read, play a beep) |
+| `fechar()` | the window is about to close |
+| `fundo()` | the **background part**: with `sistema.fundo(true)` the system calls it from time to time, with the window open **or closed** - see [Background part](#background-part) |
 
-## Módulo `tela`
+## Module `tela` (screen)
 
-Coordenadas relativas à área do app (0,0 é o canto de cima, abaixo da barra).
-As funções que desenham só valem **dentro de `desenhar()`**.
+Coordinates relative to the app area (0,0 is the top corner, below the status
+bar). The drawing functions only work **inside `desenhar()`**.
 
-| função | o que faz |
+| function | what it does |
 |---|---|
-| `tela.largura()`, `tela.altura()` | o tamanho da área. Com o teclado virtual aberto, `altura()` já desconta ele |
-| `tela.texto(txt, x, y [, tam [, cor [, alinhamento]]])` | texto; `tam` N = N×8 px de altura (padrão 3, aceita 2.5). `alinhamento`: `tela.ESQUERDA` (padrão), `CENTRO` ou `DIREITA` - `x` é o começo, o meio ou o fim do texto |
-| `tela.medir(txt [, tam])` | a largura em px que esse texto ocuparia |
-| `tela.cortar(txt, largura [, tam])` | o texto cortado para caber em `largura` px, com `...` no fim quando cortou (acento nunca quebra). Para nome de música, de contato, de arquivo |
-| `tela.retangulo(x, y, l, a, cor [, cheio])` | retângulo (cheio por padrão) |
-| `tela.arredondado(x, y, l, a, raio, cor [, cheio])` | retângulo de cantos redondos |
-| `tela.circulo(x, y, r, cor [, cheio])` | círculo |
-| `tela.triangulo(x0, y0, x1, y1, x2, y2, cor [, cheio])` | triângulo |
-| `tela.linha(x0, y0, x1, y1, cor)` | linha |
-| `tela.pixel(x, y, cor)` | um ponto |
-| `tela.botao(x, y, l, a, txt [, cor])` | o botão do sistema |
-| `tela.limpar([cor])` | pinta a área inteira |
-| `tela.dentro(x, y, rx, ry, rl, ra)` | o ponto está no retângulo? (para o `tocar`; vale fora do `desenhar`) |
-| `tela.cor(r, g, b)` | uma cor a partir de 0–255 |
-| `tela.camada(l, a)` | cria uma imagem guardada (ver abaixo) |
-| `tela.alvo(c)` / `tela.alvo()` | desvia todo desenho de `tela` para a camada `c` / volta para a tela |
-| `tela.colar(c, x, y [, rx, ry, rl, ra])` | copia a camada (ou o pedaço `rx, ry, rl, ra` dela) para a tela |
-| `tela.liberar(c)` | apaga a camada e devolve a memória |
-| `tela.PRETO`, `BRANCO`, `VERMELHO`, `VERDE`, `AZUL`, `AMARELO`, `CIANO`, `LARANJA`, `CINZA`, `CINZA_CLARO`, `ROXO`, `ROSA` | cores prontas |
+| `tela.largura()`, `tela.altura()` | the size of the area (width, height). With the virtual keyboard open, `altura()` already excludes it |
+| `tela.texto(txt, x, y [, tam [, cor [, alinhamento]]])` | text; `tam` N = N×8 px high (default 3, accepts 2.5). `alinhamento` (alignment): `tela.ESQUERDA` (left, the default), `CENTRO` (centre) or `DIREITA` (right) - `x` is the start, middle or end of the text |
+| `tela.medir(txt [, tam])` | the width in px that this text would take up |
+| `tela.cortar(txt, largura [, tam])` | the text trimmed to fit in `largura` px, with `...` at the end when it was trimmed (never splits an accented character). For song, contact or file names |
+| `tela.retangulo(x, y, l, a, cor [, cheio])` | rectangle (filled by default) |
+| `tela.arredondado(x, y, l, a, raio, cor [, cheio])` | rounded-corner rectangle |
+| `tela.circulo(x, y, r, cor [, cheio])` | circle |
+| `tela.triangulo(x0, y0, x1, y1, x2, y2, cor [, cheio])` | triangle |
+| `tela.linha(x0, y0, x1, y1, cor)` | line |
+| `tela.pixel(x, y, cor)` | a single point |
+| `tela.botao(x, y, l, a, txt [, cor])` | the system button |
+| `tela.limpar([cor])` | paints the whole area |
+| `tela.dentro(x, y, rx, ry, rl, ra)` | is the point inside the rectangle? (for `tocar`; works outside `desenhar`) |
+| `tela.cor(r, g, b)` | a colour from 0–255 values |
+| `tela.camada(l, a)` | creates a stored image, a layer (see below) |
+| `tela.alvo(c)` / `tela.alvo()` | redirects all `tela` drawing into layer `c` / back to the screen |
+| `tela.colar(c, x, y [, rx, ry, rl, ra])` | copies the layer (or the `rx, ry, rl, ra` piece of it) to the screen |
+| `tela.liberar(c)` | deletes the layer and returns the memory |
+| `tela.PRETO`, `BRANCO`, `VERMELHO`, `VERDE`, `AZUL`, `AMARELO`, `CIANO`, `LARANJA`, `CINZA`, `CINZA_CLARO`, `ROXO`, `ROSA` | ready-made colours (black, white, red, green, blue, yellow, cyan, orange, grey, light grey, purple, pink) |
 
-## Módulo `sistema`
+## Module `sistema` (system)
 
-| função | o que faz |
+| function | what it does |
 |---|---|
-| `sistema.redesenhar()` | pede para chamar `desenhar` de novo |
-| `sistema.periodo([ms])` | troca o `# periodo:` com o app aberto (0 = só quando pedir); sem argumento, devolve o de agora. Ex.: 16 numa aba animada, 1000 numa de relógio |
-| `sistema.acumular([sim])` | `true`: o quadro não chega limpo, só desenhe o que mudou (ver abaixo) |
-| `sistema.dt()` | segundos entre este quadro e o anterior **na tela**. Para animar por tempo: `x += velocidade * sistema.dt()` |
-| `sistema.ms()` | milissegundos desde o boot (para medir tempo) |
-| `sistema.us()` | microssegundos, para medir trechos curtos (só a diferença entre duas leituras vale) |
-| `sistema.hora()` | `"14:05:09"` no fuso local, ou `""` sem relógio acertado |
-| `sistema.hora_de(epoch)` | `"14:05"` no fuso local, para a hora de uma mensagem (`""` se 0) |
-| `sistema.data()` | `"14/10/2026"`, ou `""` |
-| `sistema.agora()` | segundos desde 1970 (UTC), ou 0 |
-| `sistema.bateria()` | carga em % |
-| `sistema.energia()` | `{"pct", "volts", "ma"}`; `ma` > 0 = carregando |
-| `sistema.imu()` | `[ax, ay, az]` em g, ou `nil`. O app que usa ganha leitura nova a cada quadro |
-| `sistema.giro()` | `[gx, gy, gz]` em graus/s, ou `nil`. O giroscópio só fica ligado enquanto algum script chama (5 s sem chamar, desliga e volta na chamada seguinte) |
-| `sistema.repouso()` | `true` com a tela apagada. Para a parte de fundo espaçar o próprio ritmo: cada `fundo()` acorda o aparelho do sono leve |
-| `sistema.gps()` | `nil` sem GPS no Grove; senão `{"fix", "lat", "lon", "alt", "sats"}` |
-| `sistema.wifi()` | o estado do Wi-Fi em texto |
-| `sistema.rede()` | `{"ssid", "ip", "rssi", "texto"}`; `ip` vazio = sem conexão |
-| `sistema.bip(hz, ms)` | um bip |
-| `sistema.avisar(txt [, nivel])` / `sistema.avisar()` | põe / tira um aviso na barra de status. `nivel`: `"info"`, `"atencao"` (padrão) ou `"urgente"` |
-| `sistema.acordado(sim)` | `true`: a tela não apaga enquanto o app estiver aberto |
-| `sistema.log(txt)` | escreve no log serial |
-| `sistema.fundo(sim [, ms])` / `sistema.fundo()` | liga / desliga a [parte de fundo](#parte-de-fundo) (chama `fundo()` a cada `ms`, padrão 1000, mínimo 100); sem argumento, diz se está rodando |
-| `sistema.fundo_estado(txt [, n])` | o texto da pastilha na barra de status enquanto o fundo roda (`"42 amostras"`) |
-| `sistema.memoria()` | `{"app", "berry", "orcamento"}` em bytes: o que **esta** máquina usa, o que todas as máquinas Berry somam, e o teto delas |
+| `sistema.redesenhar()` | asks for `desenhar` to be called again |
+| `sistema.periodo([ms])` | changes the `# periodo:` while the app is open (0 = only on request); with no argument, returns the current one. E.g. 16 on an animated tab, 1000 on a clock tab |
+| `sistema.acumular([sim])` | `true`: the frame does not arrive cleared, draw only what changed (see below) |
+| `sistema.dt()` | seconds between this frame and the previous one **on screen**. For time-based animation: `x += velocidade * sistema.dt()` |
+| `sistema.ms()` | milliseconds since boot (for measuring time) |
+| `sistema.us()` | microseconds, for measuring short stretches (only the difference between two readings means anything) |
+| `sistema.hora()` | `"14:05:09"` in the local time zone, or `""` if the clock has not been set |
+| `sistema.hora_de(epoch)` | `"14:05"` in the local time zone, for the time of a message (`""` if 0) |
+| `sistema.data()` | `"14/10/2026"`, or `""` |
+| `sistema.agora()` | seconds since 1970 (UTC), or 0 |
+| `sistema.bateria()` | charge in % |
+| `sistema.energia()` | `{"pct", "volts", "ma"}`; `ma` > 0 = charging |
+| `sistema.imu()` | `[ax, ay, az]` in g, or `nil`. An app that uses it gets a fresh reading every frame |
+| `sistema.giro()` | `[gx, gy, gz]` in degrees/s, or `nil`. The gyroscope only stays on while some script is calling it (5 s without a call, it switches off and comes back on the next call) |
+| `sistema.repouso()` | `true` with the screen off. Lets the background part space out its own rhythm: each `fundo()` wakes the device from light sleep |
+| `sistema.gps()` | `nil` without a GPS on the Grove port; otherwise `{"fix", "lat", "lon", "alt", "sats"}` |
+| `sistema.wifi()` | the Wi-Fi status as text |
+| `sistema.rede()` | `{"ssid", "ip", "rssi", "texto"}`; empty `ip` = not connected |
+| `sistema.bip(hz, ms)` | a beep |
+| `sistema.avisar(txt [, nivel])` / `sistema.avisar()` | puts / removes a notice in the status bar. `nivel`: `"info"`, `"atencao"` (attention, the default) or `"urgente"` (urgent) |
+| `sistema.acordado(sim)` | `true`: the screen does not go off while the app is open |
+| `sistema.log(txt)` | writes to the serial log |
+| `sistema.fundo(sim [, ms])` / `sistema.fundo()` | switches the [background part](#background-part) on / off (calls `fundo()` every `ms`, default 1000, minimum 100); with no argument, says whether it is running |
+| `sistema.fundo_estado(txt [, n])` | the text of the pill in the status bar while the background part runs (`"42 samples"`) |
+| `sistema.memoria()` | `{"app", "berry", "orcamento"}` in bytes: what **this** machine (Berry VM) uses, what all the Berry machines add up to, and their ceiling (budget) |
 
-## Camadas e acumular
+<a id="camadas-e-acumular"></a>
 
-Por padrão o app redesenha **a tela inteira** a cada quadro: é o jeito simples,
-e numa tela de texto e botões custa poucos ms. Mas desenho custa por pixel, e
-há duas situações em que redesenhar tudo é desperdício: **uma coisa pequena se
-mexendo numa tela cheia**, e **um desenho que só cresce** (pintar com o dedo,
-um gráfico que anda). Para elas:
+## Layers and accumulate
 
-**`sistema.acumular(true)`** - o quadro deixa de chegar limpo: o que você
-desenhou continua na tela. O `desenhar(tudo)` passa a dizer o que fazer:
+By default the app redraws **the whole screen** every frame: it is the simple
+way, and on a screen of text and buttons it costs a few ms. But drawing costs
+per pixel, and there are two situations where redrawing everything is waste:
+**a small thing moving on a full screen**, and **a drawing that only grows**
+(finger painting, a scrolling graph). For those:
 
-- `tudo = true`: a área **foi** limpa (o app abriu, a tela girou, o teclado
-  abriu, voltou do bloqueio, ou você acabou de ligar o acumular) - desenhe tudo;
-- `tudo = false`: desenhe **só o que mudou** desde o último quadro, e apague
-  você mesmo o que saiu do lugar (um retângulo preto por cima).
+**`sistema.acumular(true)`** - the frame stops arriving cleared: what you drew
+stays on the screen. `desenhar(tudo)` now tells you what to do:
 
-**Camadas** - imagens guardadas na memória, do tamanho que quiser (até 8 por
-app, somando 4 telas). Depois de `tela.alvo(c)`, toda função de `tela`
-desenha nela - **em qualquer evento**, não só no `desenhar()`. `tela.alvo()`
-volta para a tela, e `tela.colar(c, x, y)` põe a camada na tela. Use para o
-que é caro de desenhar e muda pouco (o fundo de um jogo, um gráfico) e para
-guardar o que não pode ser refeito (uma pintura).
+- `tudo = true`: the area **was** cleared (the app opened, the screen rotated,
+  the keyboard opened, it came back from the lock screen, or you have just
+  switched accumulate on) - draw everything;
+- `tudo = false`: draw **only what changed** since the last frame, and erase
+  whatever moved yourself (a black rectangle over it).
+
+**Layers** - images stored in memory, of whatever size you like (up to 8 per
+app, totalling 4 screens). After `tela.alvo(c)`, every `tela` function draws
+into it - **in any event**, not just in `desenhar()`. `tela.alvo()` goes back
+to the screen, and `tela.colar(c, x, y)` puts the layer on the screen. Use them
+for what is expensive to draw and changes little (a game's background, a
+graph) and to keep what cannot be redone (a painting).
 
 ```berry
 var pintura = tela.camada(tela.largura(), 800)
@@ -167,359 +176,388 @@ sistema.acumular(true)
 
 def dedo(x, y, pressionado)
   if !pressionado return end
-  tela.alvo(pintura)                      # pinta na camada: fica guardado
+  tela.alvo(pintura)                      # paint into the layer: it is kept
   tela.circulo(x, y, 6, tela.AMARELO)
   tela.alvo()
-  novos.push([x, y])                      # e anota para o próximo quadro
+  novos.push([x, y])                      # and note it down for the next frame
 end
 
 def desenhar(tudo)
   if tudo
-    tela.colar(pintura, 0, 0)             # a área foi limpa: a pintura inteira
+    tela.colar(pintura, 0, 0)             # the area was cleared: the whole painting
   else
-    for p: novos tela.circulo(p[0], p[1], 6, tela.AMARELO) end   # só o novo
+    for p: novos tela.circulo(p[0], p[1], 6, tela.AMARELO) end   # only the new part
   end
   novos = []
 end
 ```
 
-A aba **Dedo** do [`Mostruario.be`](../berry_exemplos/Mostruario.be) é este exemplo completo. Colar
-custa por pixel como desenhar (ver o `Bench.be`): cole a camada inteira só
-quando `tudo`, e pedaços (`rx, ry, rl, ra`) para restaurar o fundo sob algo
-que se mexe.
+The **Dedo** (finger) tab of [`Mostruario.be`](../berry_exemplos/Mostruario.be) is
+this example in full. Pasting costs per pixel just like drawing (see
+`Bench.be`): paste the whole layer only when `tudo`, and pieces
+(`rx, ry, rl, ra`) to restore the background under something that moves.
 
-## Módulo `teclado`
+## Module `teclado` (keyboard)
 
-O teclado virtual é **o do sistema** (o mesmo da senha do Wi-Fi): o app só
-abre e fecha. As teclas chegam no `tecla(texto, codigo)`, igual às do teclado
-físico - o mesmo código serve aos dois.
+The virtual keyboard is **the system's own** (the same one used for the Wi-Fi
+password): the app only opens and closes it. Keys arrive in
+`tecla(texto, codigo)`, just like those from the physical keyboard - the same
+code serves both.
 
-| função | o que faz |
+| function | what it does |
 |---|---|
-| `teclado.abrir([tipo])`, `teclado.fechar()` | mostra / esconde o virtual, na base da área. Aberto, `tela.altura()` diminui: desenhe até ela. O `tipo` diz o que o campo é, como nos apps do sistema: `"texto"` (o padrão), `"ascii"` (servidor, usuário), `"senha"`, `"numero"` (só dígitos), `"busca"`, `"paragrafo"` (maiúscula no começo da frase e acentos; a tecla verde é nova linha), `"codigo"`, `"comando"`. Aberto, chamar de novo só troca o tipo. A tecla verde chega como `teclado.ENTER` em todos |
-| `teclado.aberto()` | ele está na tela? (o ✕ dele fecha sozinho e manda `ESC`) |
-| `teclado.fisico()` | há teclado físico no ExtPort1? |
-| `teclado.ENTER`, `APAGAR`, `ESC`, `TAB`, `ESQUERDA`, `DIREITA`, `CIMA`, `BAIXO`, `DEL` | os códigos das teclas especiais |
+| `teclado.abrir([tipo])`, `teclado.fechar()` | shows / hides the virtual keyboard, at the bottom of the area. While it is open, `tela.altura()` shrinks: draw down to that. The `tipo` says what the field is, as in the system apps: `"texto"` (text, the default), `"ascii"` (server, user name), `"senha"` (password), `"numero"` (digits only), `"busca"` (search), `"paragrafo"` (paragraph: capital at the start of a sentence and accents; the green key is a new line), `"codigo"` (code), `"comando"` (command). While open, calling it again only changes the type. The green key arrives as `teclado.ENTER` in all of them |
+| `teclado.aberto()` | is it on screen? (its ✕ closes it by itself and sends `ESC`) |
+| `teclado.fisico()` | is there a physical keyboard on ExtPort1? |
+| `teclado.ENTER`, `APAGAR`, `ESC`, `TAB`, `ESQUERDA`, `DIREITA`, `CIMA`, `BAIXO`, `DEL` | the special key codes (`APAGAR` = backspace; left, right, up, down) |
 
 ```berry
 def tecla(texto, codigo)
   if texto != ""                    campo += texto
   elif codigo == teclado.ENTER      enviar(campo)  campo = ""
-  elif codigo == teclado.APAGAR     campo = sem_ultimo(campo)   # ver Mostruario.be
+  elif codigo == teclado.APAGAR     campo = sem_ultimo(campo)   # see Mostruario.be
   end
 end
 ```
 
-## Módulo `cartao`
+## Module `cartao` (card)
 
-Arquivos na pasta do app, **`/sdcard/apps/Berry/<nome do app>/`** (criada sozinha), ao lado dos `.be` - tudo o que é de Berry fica dentro de `apps/Berry/`.
-Só o nome do arquivo, sem pasta: o script não sai da pasta dele.
-É a única porta para arquivos: o `open()`, o `load("arquivo")` e o `save()` do
-Berry não abrem nada num script (devolvem erro) - quem abre o `.be` é o sistema,
-na hora de carregar o app.
+Files in the app's folder, **`/sdcard/apps/Berry/<nome do app>/`** (created
+automatically), next to the `.be` files - everything Berry-related lives inside
+`apps/Berry/`. Just the file name, no folder: the script cannot leave its own
+folder. It is the only way in to files: Berry's `open()`, `load("arquivo")` and
+`save()` open nothing in a script (they return an error) - it is the system
+that opens the `.be` file, when it loads the app.
 
-O script também não mexe na memória por fora do Berry: não há o módulo
-`introspect`, o `bytes` não aceita ponteiro (`bytes(ptr, n)`) e atributo que
-começa com `.` (os internos) não aceita atribuição.
+Nor can the script touch memory outside Berry: there is no `introspect`
+module, `bytes` does not accept a pointer (`bytes(ptr, n)`) and attributes
+starting with `.` (the internal ones) cannot be assigned.
 
-| função | o que faz |
+| function | what it does |
 |---|---|
-| `cartao.ler(nome)` | o arquivo inteiro como texto (até 64 KB), ou `nil` se não existe |
-| `cartao.gravar(nome, texto)` | substitui o conteúdo; `true` se gravou |
-| `cartao.anexar(nome, texto)` | acrescenta no fim (um log, um CSV) |
-| `cartao.existe(nome)` | o arquivo existe? |
-| `cartao.lista()` | os nomes dos arquivos da pasta |
+| `cartao.ler(nome)` | the whole file as text (up to 64 KB), or `nil` if it does not exist |
+| `cartao.gravar(nome, texto)` | replaces the contents; `true` if it was written |
+| `cartao.anexar(nome, texto)` | appends at the end (a log, a CSV) |
+| `cartao.existe(nome)` | does the file exist? |
+| `cartao.lista()` | the names of the files in the folder |
 
-Para guardar estrutura (listas, mapas), use o `json` do Berry:
-`cartao.gravar("estado.json", json.dump(estado))` e `json.load(cartao.ler("estado.json"))`.
+To store structured data (lists, maps), use Berry's `json`:
+`cartao.gravar("estado.json", json.dump(estado))` and `json.load(cartao.ler("estado.json"))`.
 
-## Módulo `arquivos`
+## Module `arquivos` (files)
 
-O cartão inteiro e o pendrive, pelo motor de arquivos do sistema. **A regra:
-o script enxerga tudo, mas só altera a própria pasta** (`/sdcard/apps/Berry/<nome do app>/`).
-O que está fora, ele lista e **copia para dentro** - e lê depois de trazer.
-Nada fora da pasta é gravado, apagado, movido ou renomeado por script. As
-senhas do sistema e os nomes que começam com `.` não aparecem. Exemplo
-completo: [`Importar.be`](../berry_exemplos/Importar.be).
+The whole card and the USB flash drive, through the system's file engine.
+**The rule: the script sees everything, but only changes its own folder**
+(`/sdcard/apps/Berry/<nome do app>/`). Whatever is outside, it lists and
+**copies in** - and reads after bringing it in. Nothing outside the folder is
+written, deleted, moved or renamed by a script. System passwords and names
+starting with `.` do not appear. Full example:
+[`Importar.be`](../berry_exemplos/Importar.be).
 
-| função | o que faz |
+| function | what it does |
 |---|---|
-| `arquivos.volumes()` | os discos de agora: `[{"raiz", "tipo", "nome", "disponivel"}]` (`"/sdcard"`; `"/usb"` com pendrive) |
-| `arquivos.pasta()` | o caminho absoluto da pasta do app |
-| `arquivos.lista(pasta [, filtro])` | o que há em **qualquer** pasta (absoluta: `"/usb/Rock"`; relativa: dentro da pasta do app, `""` = ela): `[{"nome", "tipo", "pasta", "bytes", "data", "caminho"}]`, pastas primeiro. `tipo`: `"pasta"`, `"musica"`, `"imagem"`, `"texto"`, `"berry"`, `"outro"`. `filtro`: `".mp3;.wav"`. `nil` = disco ausente ou pasta que não abre |
-| `arquivos.copiar(origem [, subpasta])` | **traz** um arquivo ou pasta (ou uma lista deles, até 64) de qualquer disco para a pasta do app (ou uma subpasta dela que já exista). Em segundo plano: `true` = começou; senão, o texto do motivo (`"já há uma cópia em andamento"`) |
-| `arquivos.estado()` | `{"fase", "pct", "itens", "feitos", "atual", "erro", "meu"}` - fase `"parado"`, `"contando"`, `"copiando"`, `"feito"`, `"falhou"`, `"cancelado"`; `meu` = foi este app que começou |
-| `arquivos.cancelar()` | para a cópia que este app começou |
-| `arquivos.ler(caminho)` | o conteúdo como texto (até 64 KB) - **só dentro da pasta do app** (`"sub/x.txt"`) |
-| `arquivos.apagar(caminho)`, `arquivos.renomear(caminho, nome)`, `arquivos.criar_pasta(nome)` | **só dentro da pasta do app**; apagar vai para a lixeira do cartão |
+| `arquivos.volumes()` | the disks present now: `[{"raiz", "tipo", "nome", "disponivel"}]` (`"/sdcard"`; `"/usb"` with a flash drive) |
+| `arquivos.pasta()` | the absolute path of the app's folder |
+| `arquivos.lista(pasta [, filtro])` | what is in **any** folder (absolute: `"/usb/Rock"`; relative: inside the app's folder, `""` = the folder itself): `[{"nome", "tipo", "pasta", "bytes", "data", "caminho"}]`, folders first. `tipo`: `"pasta"` (folder), `"musica"` (music), `"imagem"` (image), `"texto"` (text), `"berry"`, `"outro"` (other). `filtro`: `".mp3;.wav"`. `nil` = disk missing or a folder that will not open |
+| `arquivos.copiar(origem [, subpasta])` | **brings in** a file or folder (or a list of them, up to 64) from any disk to the app's folder (or an existing subfolder of it). In the background: `true` = started; otherwise the text of the reason (`"já há uma cópia em andamento"`, a copy is already in progress) |
+| `arquivos.estado()` | `{"fase", "pct", "itens", "feitos", "atual", "erro", "meu"}` - phase `"parado"` (idle), `"contando"` (counting), `"copiando"` (copying), `"feito"` (done), `"falhou"` (failed), `"cancelado"` (cancelled); `meu` = this app started it |
+| `arquivos.cancelar()` | stops the copy this app started |
+| `arquivos.ler(caminho)` | the contents as text (up to 64 KB) - **only inside the app's folder** (`"sub/x.txt"`) |
+| `arquivos.apagar(caminho)`, `arquivos.renomear(caminho, nome)`, `arquivos.criar_pasta(nome)` | **only inside the app's folder**; delete moves to the card's Trash |
 
-- **Uma cópia por vez no aparelho** (a do app Arquivos inclusive): peça
-  `# avisos: arquivos` para saber quando terminou, e mostre `estado()`.
-- A cópia continua com o app fechado; o progresso aparece também na barra.
-- Caminho relativo nunca sai da pasta do app: `".."`, `"/"` no começo e `"\\"`
-  dão `arquivos_error`.
-- O `cartao` continua o jeito simples para arquivos soltos na pasta do app
-  (`cartao.gravar("estado.json", ...)`); o `arquivos` acrescenta subpastas e
-  o resto dos discos.
+- **One copy at a time on the device** (including the Files app's): ask for
+  `# avisos: arquivos` to find out when it has finished, and show `estado()`.
+- The copy carries on with the app closed; progress also shows in the status
+  bar.
+- A relative path never leaves the app's folder: `".."`, a leading `"/"` and
+  `"\\"` give `arquivos_error`.
+- `cartao` is still the simple way for loose files in the app's folder
+  (`cartao.gravar("estado.json", ...)`); `arquivos` adds subfolders and the
+  rest of the disks.
 
-## Módulo `espnow`
+## Module `espnow`
 
-O rádio, o histórico e o aviso com o app fechado são do serviço do sistema: o
-app só mostra e envia. O [`EspNow.be`](../berry_exemplos/EspNow.be) é o app ESP-NOW do sistema refeito
-em Berry - o exemplo de um app de uso real.
+The radio, the history and the notification while the app is closed belong to
+the system service: the app only displays and sends. [`EspNow.be`](../berry_exemplos/EspNow.be)
+is the system's ESP-NOW app redone in Berry - the example of a real-world app.
 
-| função | o que faz |
+| function | what it does |
 |---|---|
-| `espnow.estado()` | `{"codigo", "texto"}`: 3 = no ar, 2 = ligando, 1 = Wi-Fi nunca ligado, 4 = rádio parado, 0 = C6 sem o firmware; `texto` diz o que fazer |
-| `espnow.pronto()` | está no ar? |
-| `espnow.enviar(texto)` | difusão no canal (todos ouvem); `true` se entrou na fila |
-| `espnow.enviar_para(mac, texto)` | direto para um MAC (`"AA:BB:CC:DD:EE:01"`); `false` se o MAC é inválido |
-| `espnow.enviar_todos(texto [, mac])` | repete o envio nos canais 1 a 13 (difusão, ou direto se vier `mac`) e volta ao canal de antes. **O Wi-Fi cai por alguns segundos** e volta sozinho |
-| `espnow.n()`, `espnow.msg(i)` | quantas mensagens guardadas e a de índice `i` (0 = a mais antiga): `{"texto", "minha", "quando", "de", "envio", "espressif"}`. `envio` (as minhas): 1 saindo, 2 saiu pela antena, 3 falhou. `espressif`: chegou no formato do componente esp-now (senão, texto puro) |
-| `espnow.total()` | só sobe a cada mensagem - compare para saber se chegou algo |
-| `espnow.janela(sim)` | `true` com a conversa na tela (receptor ligado, o que chega não vira aviso na barra); `false` ao fechar |
-| `espnow.marcar_lidas()`, `espnow.nao_lidas()` | o contador de não lidas |
-| `espnow.canal()`, `espnow.canal_fixo()`, `espnow.fixar_canal(c)` | o canal em uso; o fixo (0 = segue o roteador); fixar (0, ou 1 a 13) |
-| `espnow.mac()`, `espnow.vistos()`, `espnow.ultimo()` | o meu MAC, quantos aparelhos já foram ouvidos, ms desde a última recebida (-1 = nada) |
+| `espnow.estado()` | `{"codigo", "texto"}`: 3 = on air, 2 = starting, 1 = Wi-Fi never switched on, 4 = radio stopped, 0 = C6 without the firmware; `texto` says what to do |
+| `espnow.pronto()` | is it on air? |
+| `espnow.enviar(texto)` | broadcast on the channel (everyone hears it); `true` if it was queued |
+| `espnow.enviar_para(mac, texto)` | direct to a MAC (`"AA:BB:CC:DD:EE:01"`); `false` if the MAC is invalid |
+| `espnow.enviar_todos(texto [, mac])` | repeats the send on channels 1 to 13 (broadcast, or direct if `mac` is given) and returns to the previous channel. **Wi-Fi drops for a few seconds** and comes back by itself |
+| `espnow.n()`, `espnow.msg(i)` | how many messages are stored and the one at index `i` (0 = the oldest): `{"texto", "minha", "quando", "de", "envio", "espressif"}`. `envio` (for mine): 1 sending, 2 left the antenna, 3 failed. `espressif`: arrived in the esp-now component's format (otherwise, plain text) |
+| `espnow.total()` | only goes up with each message - compare it to know whether something arrived |
+| `espnow.janela(sim)` | `true` with the conversation on screen (receiver on, incoming messages do not become a status bar notice); `false` on closing |
+| `espnow.marcar_lidas()`, `espnow.nao_lidas()` | the unread counter (mark as read; unread count) |
+| `espnow.canal()`, `espnow.canal_fixo()`, `espnow.fixar_canal(c)` | the channel in use; the fixed one (0 = follows the router); set it (0, or 1 to 13) |
+| `espnow.mac()`, `espnow.vistos()`, `espnow.ultimo()` | my MAC, how many devices have been heard, ms since the last one received (-1 = nothing) |
 
-## Módulo `mesh`
+## Module `mesh`
 
-Leitura, mais uma escrita com limites - um script não sai falando num canal público: `mesh.enviar` só manda mensagem **direta** para um nó.
+Read access, plus one write with limits - a script does not go off talking on
+a public channel: `mesh.enviar` only sends a **direct** message to a node.
 
-| função | o que faz |
+| function | what it does |
 |---|---|
 | `mesh.estado()` | `{"ativo", "no_ar", "nos", "nao_lidas"}` |
-| `mesh.n_msgs()`, `mesh.msg(i)` | as mensagens recentes (até 8; `0` = a mais nova): `{"de", "nome", "texto", "quando", "canal", "direta", "snr", "mqtt", "minha"}`, ou `nil` |
-| `mesh.total()` | só sobe a cada mensagem - compare para saber se chegou algo (com `# avisos: mesh`) |
-| `mesh.n_nos()`, `mesh.no(i)` | os nós conhecidos (`0` = o nosso): `{"num", "id", "nome", "curto", "snr", "idade", "bateria", "saltos", "mqtt", "favorito"}`, mais `"lat"`/`"lon"` quando ele mandou posição |
-| `mesh.meu()` | o número do nosso nó |
-| `mesh.enviar(numero, texto)` | mensagem direta para o nó `numero`; `true` = entrou na fila. Recusa (`false`): número `0`, difusão (`0xFFFFFFFF`) ou o próprio nó; texto vazio ou com mais de 200 bytes; e mais de um envio a cada 10 s no aparelho inteiro |
+| `mesh.n_msgs()`, `mesh.msg(i)` | the recent messages (up to 8; `0` = the newest): `{"de", "nome", "texto", "quando", "canal", "direta", "snr", "mqtt", "minha"}`, or `nil` |
+| `mesh.total()` | only goes up with each message - compare it to know whether something arrived (with `# avisos: mesh`) |
+| `mesh.n_nos()`, `mesh.no(i)` | the known nodes (`0` = ours): `{"num", "id", "nome", "curto", "snr", "idade", "bateria", "saltos", "mqtt", "favorito"}`, plus `"lat"`/`"lon"` when it has sent a position |
+| `mesh.meu()` | our node's number |
+| `mesh.enviar(numero, texto)` | direct message to node `numero`; `true` = queued. Refused (`false`): number `0`, broadcast (`0xFFFFFFFF`) or our own node; empty text or more than 200 bytes; and more than one send every 10 s across the whole device |
 
-## Módulo `camera`
+## Module `camera`
 
-O preview ao vivo e a foto, com o mesmo serviço do app Câmera. O
-[`Camera.be`](../berry_exemplos/Camera.be) é o exemplo completo.
+The live preview and the photo, through the same service as the Camera app.
+[`Camera.be`](../berry_exemplos/Camera.be) is the full example.
 
-O preview **não passa pelo script**: a câmera escreve cada quadro direto na
-tela, numa faixa da largura inteira. O `desenhar()` continua chegando como
-sempre; a faixa do preview só não é apagada, e o que você desenhar nela (uma
-mira, uma grade) sai por cima da imagem. Com a câmera ligada o app é
-redesenhado a cada quadro (~30 por segundo): mantenha o `desenhar()` leve.
+The preview **does not go through the script**: the camera writes each frame
+straight to the screen, in a full-width strip. `desenhar()` keeps arriving as
+usual; the preview strip simply is not cleared, and whatever you draw on it (a
+crosshair, a grid) goes on top of the image. With the camera on, the app is
+redrawn every frame (~30 per second): keep `desenhar()` light.
 
-| função | o que faz |
+| function | what it does |
 |---|---|
-| `camera.ligar([y [, altura]])` | liga o preview de `y` até `y + altura` (padrão: a área toda abaixo de `y`). O topo e a altura são arredondados para múltiplos de 8. Só com o app **em pé** (`# orientacao: em_pe`, o padrão) |
-| `camera.desligar()` | desliga (o sistema também desliga sozinho ao fechar o app e no repouso, e religa ao acordar) |
-| `camera.ligada()` | o preview está no ar? Liga logo depois do evento que pediu: no `desenhar()` seguinte já vale |
-| `camera.faixa()` | `[y, altura]` do preview no ar (já arredondado), ou `nil` |
-| `camera.erro()` | por que não ligou (`""` = nada) |
-| `camera.foto([nome])` | tira a foto (1200×1600) e grava `<nome>.bmp` na pasta do app; sem nome, `foto_0001.bmp`, `foto_0002.bmp`... `false` = desligada ou já há uma em curso |
-| `camera.foto_estado()` | `""`, `"capturando"`, `"gravando"`, `"ok"` ou `"falhou"` |
-| `camera.ultima()` | o nome do último arquivo gravado |
+| `camera.ligar([y [, altura]])` | switches the preview on from `y` to `y + altura` (default: the whole area below `y`). The top and the height are rounded to multiples of 8. Only with the app in **portrait** (`# orientacao: em_pe`, the default) |
+| `camera.desligar()` | switches it off (the system also switches it off by itself when the app closes and on idle, and back on when it wakes) |
+| `camera.ligada()` | is the preview on? It comes on right after the event that asked for it: by the next `desenhar()` it is already true |
+| `camera.faixa()` | `[y, altura]` of the live preview (already rounded), or `nil` |
+| `camera.erro()` | why it did not start (`""` = no error) |
+| `camera.foto([nome])` | takes the photo (1200×1600) and writes `<nome>.bmp` to the app's folder; with no name, `foto_0001.bmp`, `foto_0002.bmp`... `false` = camera off or one already in progress |
+| `camera.foto_estado()` | `""`, `"capturando"` (capturing), `"gravando"` (saving), `"ok"` or `"falhou"` (failed) |
+| `camera.ultima()` | the name of the last file written |
 
-Mais a biblioteca padrão do Berry: `string`, `math`, `json`, `time`, `global`...
+Plus Berry's standard library: `string`, `math`, `json`, `time`, `global`...
 
-## Módulo `gnss`
+## Module `gnss`
 
-Os **satélites** que o receptor GPS do Grove vê (as sentenças GSV) - o que
-desenha um céu como o do [`Azimutal.be`](../berry_exemplos/Azimutal.be). A
-posição continua em `sistema.gps()`.
+The **satellites** the GPS receiver on the Grove port can see (the GSV
+sentences) - what draws a sky like the one in
+[`Azimutal.be`](../berry_exemplos/Azimutal.be). The position is still in
+`sistema.gps()`.
 
-| função | o que faz |
+| function | what it does |
 |---|---|
-| `gnss.ligar()` | começa a receber a constelação. `false` = o GPS já tem outro assinante (um só por vez) |
-| `gnss.desligar()`, `gnss.ligado()` | solta / diz se está recebendo. Apagar a máquina do app solta sozinho |
-| `gnss.satelites()` | lista de `{"sis", "prn", "elev", "azim", "snr", "pos", "idade"}`, ou `nil` sem rodada completa. `pos` falso = visto mas sem posição (não desenhe); `idade` = segundos desde a última posição observada |
-| `gnss.versao()` | muda a cada rodada nova |
-| `gnss.tempo()` | data e hora do **próprio GPS**, em UTC: `{"valida", "fix", "ano", "mes", "dia", "hora", "min", "seg"}` |
+| `gnss.ligar()` | starts receiving the constellation. `false` = the GPS already has another subscriber (only one at a time) |
+| `gnss.desligar()`, `gnss.ligado()` | releases it / says whether it is receiving. Deleting the app's machine releases it automatically |
+| `gnss.satelites()` | list of `{"sis", "prn", "elev", "azim", "snr", "pos", "idade"}`, or `nil` without a complete round. `pos` false = seen but no position (do not draw it); `idade` = seconds since the last observed position |
+| `gnss.versao()` | changes with every new round |
+| `gnss.tempo()` | date and time from the **GPS itself**, in UTC: `{"valida", "fix", "ano", "mes", "dia", "hora", "min", "seg"}` |
 
-- **Chame `gnss.satelites()` pelo menos a cada 1-2 s** (um `# periodo: 1000`,
-  ou `sistema.fundo(true, 1000)`). É o script que esvazia a fila do GPS - ela
-  guarda uns 2 s; cheia, o que chega depois se perde e a foto envelhece.
-- **Para gravar, só posição fresca** (`idade` pequena): quando a GSV chega sem
-  posição, o parser segura a última - gravar isso repetiria o mesmo ponto.
+- **Call `gnss.satelites()` at least every 1-2 s** (a `# periodo: 1000`, or
+  `sistema.fundo(true, 1000)`). It is the script that drains the GPS queue -
+  it holds about 2 s; once full, whatever arrives later is lost and the
+  snapshot goes stale.
+- **To record, use only fresh positions** (small `idade`): when a GSV arrives
+  without a position, the parser holds on to the last one - recording that
+  would repeat the same point.
 
-## Módulo `musica`
+## Module `musica` (music)
 
-O **tocador do sistema** (`services/tab5_musica`) - o mesmo do app Música. O
-script é só a interface: o serviço acha a pasta de música do cartão, lista,
-toca **com o app fechado**, mostra o que toca na barra e no miniplayer da
-central (com o X que para), encerra sozinho depois de 15 min pausado e
-calcula o espectro. Nenhuma linha de áudio no script. Exemplo completo:
-[`Tocador.be`](../berry_exemplos/Tocador.be).
+The **system player** (`services/tab5_musica`) - the same one as the Music
+app. The script is only the front end: the service finds the card's music
+folder, lists it, plays **with the app closed**, shows what is playing in the
+status bar and in the notification centre's mini player (with the X that
+stops it), shuts itself down after 15 min paused and computes the spectrum.
+Not a single line of audio code in the script. Full example:
+[`Tocador.be`](../berry_exemplos/Tocador.be) (player).
 
-| função | o que faz |
+| function | what it does |
 |---|---|
-| `musica.pasta()` | o nome da pasta de música (`"Music"`, `"Música"`...), ou `nil` sem cartão |
-| `musica.pendrive()` | o nome do pendrive no USB-A, ou `nil` sem pendrive. As músicas dele: `musica.lista("/usb")`, `musica.tocar("/usb", i)` - o pendrive inteiro é a "pasta" (aceita subpastas: `"/usb/Rock"`) |
-| `musica.lista([sub])` | o conteúdo da subpasta (`""` = a raiz): lista de `{"nome", "titulo", "pasta", "caminho"}`, pastas primeiro. `titulo` = o nome sem a extensão; `caminho` = o que `playlist_por` e `duracao` recebem. `nil` = sem cartão ou a pasta não existe |
-| `musica.tocar(sub, i)` | toca a pasta `sub` a partir do item `i` de `lista(sub)` (tem que ser música). `true` = foi. Tocar o título no miniplayer abre **este** app |
-| `musica.pausar()` | tocar/pausar |
-| `musica.proxima()`, `musica.anterior()` | pula. Anterior depois de 3 s volta ao começo da mesma |
-| `musica.ir_para(ms)` | busca |
-| `musica.parar()` | desliga o tocador |
-| `musica.estado()` | `{"ativo", "tocando", "titulo", "artista", "album", "pos", "dur", "idx", "n", "pasta", "playlist", "caminho", "aleatorio", "repetir", "erro", "kbps", "hz"}` - `pos`/`dur` em ms, do que **sai** no alto-falante |
-| `musica.espectro()` | as `musica.FAIXAS` (32) barras, 0..255, graves primeiro, do som que sai agora; `nil` = nada saindo |
-| `musica.volume([v])` | o volume do sistema, 0..100 (o mesmo de Ajustes) |
-| `musica.cor([c])` | a cor de destaque do tocador (`tela.cor`): a pastilha da barra e o miniplayer |
-| `musica.aleatorio([b])` | embaralhar a fila (a que toca continua); devolve como ficou |
-| `musica.repetir([r])` | `0` toca até o fim e para, `1` repete a fila toda, `2` repete a mesma música |
-| `musica.playlists()` | `[{"nome", "id"}]` - `nome` para mostrar, `id` para as funções abaixo; a `Favoritas` primeiro |
-| `musica.playlist(id)` | as faixas: `[{"caminho", "titulo"}]`; `nil` = não existe |
-| `musica.playlist_criar(nome)` | cria vazia; devolve o `id`, ou `nil` (já existe, sem cartão) |
-| `musica.playlist_apagar(id)` | apaga o `.m3u` (as músicas ficam) |
-| `musica.playlist_por(id, caminho)`, `musica.playlist_tirar(id, caminho)` | `caminho` = o de `lista()` ou `playlist()`; `false` = já estava / não estava |
-| `musica.playlist_tocar(id, [i])` | toca a playlist a partir da faixa `i` (sem `i`: do começo, ou uma qualquer com o aleatório) |
-| `musica.capa()` | o arquivo da capa do que toca (JPEG/PNG), ou `nil` |
-| `musica.duracao(caminho)` | quanto dura, em ms, sem tocar (lê só o cabeçalho) |
+| `musica.pasta()` | the name of the music folder (`"Music"`, `"Música"`...), or `nil` without a card |
+| `musica.pendrive()` | the name of the USB flash drive on USB-A, or `nil` without one. Its songs: `musica.lista("/usb")`, `musica.tocar("/usb", i)` - the whole flash drive is the "folder" (subfolders are accepted: `"/usb/Rock"`) |
+| `musica.lista([sub])` | the contents of the subfolder (`""` = the root): list of `{"nome", "titulo", "pasta", "caminho"}`, folders first. `titulo` = the name without the extension; `caminho` = what `playlist_por` and `duracao` take. `nil` = no card or the folder does not exist |
+| `musica.tocar(sub, i)` | plays folder `sub` starting from item `i` of `lista(sub)` (it has to be music). `true` = it worked. Tapping the title in the mini player opens **this** app |
+| `musica.pausar()` | play/pause |
+| `musica.proxima()`, `musica.anterior()` | skip (next, previous). Previous after 3 s goes back to the start of the same track |
+| `musica.ir_para(ms)` | seek |
+| `musica.parar()` | switches the player off |
+| `musica.estado()` | `{"ativo", "tocando", "titulo", "artista", "album", "pos", "dur", "idx", "n", "pasta", "playlist", "caminho", "aleatorio", "repetir", "erro", "kbps", "hz"}` - `pos`/`dur` in ms, of what is **coming out** of the speaker |
+| `musica.espectro()` | the `musica.FAIXAS` (32) bars, 0..255, bass first, of the sound playing now; `nil` = nothing playing |
+| `musica.volume([v])` | the system volume, 0..100 (the same as in Settings) |
+| `musica.cor([c])` | the player's accent colour (`tela.cor`): the status bar pill and the mini player |
+| `musica.aleatorio([b])` | shuffle the queue (the current track keeps playing); returns the resulting setting |
+| `musica.repetir([r])` | `0` plays to the end and stops, `1` repeats the whole queue, `2` repeats the same track |
+| `musica.playlists()` | `[{"nome", "id"}]` - `nome` for display, `id` for the functions below; `Favoritas` (Favourites) first |
+| `musica.playlist(id)` | the tracks: `[{"caminho", "titulo"}]`; `nil` = does not exist |
+| `musica.playlist_criar(nome)` | creates an empty one; returns the `id`, or `nil` (already exists, no card) |
+| `musica.playlist_apagar(id)` | deletes the `.m3u` (the songs stay) |
+| `musica.playlist_por(id, caminho)`, `musica.playlist_tirar(id, caminho)` | add / remove; `caminho` = the one from `lista()` or `playlist()`; `false` = it was already there / was not there |
+| `musica.playlist_tocar(id, [i])` | plays the playlist from track `i` (without `i`: from the start, or a random one with shuffle on) |
+| `musica.capa()` | the cover art file of what is playing (JPEG/PNG), or `nil` |
+| `musica.duracao(caminho)` | how long it lasts, in ms, without playing it (reads only the header) |
 
-- **Caminhos**: `sub` e `caminho` são relativos à pasta de música do cartão
-  (`"Rock"`, `"Rock/x.mp3"`) ou absolutos num disco (`"/usb/Rock/x.mp3"`, o
-  pendrive). Os dois cabem na mesma playlist; a faixa de um pendrive que não
-  está plugado é pulada. Para saber quando um pendrive entra ou sai, peça
-  `# avisos: volumes`.
-- **Um tocador só no aparelho.** `musica.tocar` de um app troca a fila de
-  quem estava tocando (inclusive do app Música).
-- **O espectro só é calculado enquanto alguém lê**: chame `musica.espectro()`
-  a cada quadro (`sistema.periodo(33)` tocando). Parou de ler - janela
-  fechada, tela apagada - o serviço para de calcular sozinho em 1 s.
-- **Não precisa de `sistema.fundo()`**: a música segue com a janela fechada
-  por conta do serviço.
+- **Paths**: `sub` and `caminho` are relative to the card's music folder
+  (`"Rock"`, `"Rock/x.mp3"`) or absolute on a disk (`"/usb/Rock/x.mp3"`, the
+  flash drive). Both fit in the same playlist; a track on a flash drive that
+  is not plugged in is skipped. To know when a flash drive is plugged in or
+  removed, ask for `# avisos: volumes`.
+- **Only one player on the device.** `musica.tocar` from an app replaces the
+  queue of whoever was playing (including the Music app).
+- **The spectrum is only computed while someone is reading it**: call
+  `musica.espectro()` every frame (`sistema.periodo(33)` while playing). Once
+  you stop reading - window closed, screen off - the service stops computing
+  it by itself within 1 s.
+- **No need for `sistema.fundo()`**: the music carries on with the window
+  closed thanks to the service.
 
-## Módulo `rede`
+## Module `rede` (network)
 
-Internet (HTTP e HTTPS) **sem esperar**: `rede.pedir(url [, max_bytes])` só começa
-(`true`/`false`; um pedido por vez no aparelho todo) e o download roda em segundo
-plano. No `desenhar()`, olhe `rede.estado()` (`"parado"`, `"baixando"`, `"pronto"`,
-`"erro"`) e leia `rede.resposta()` - `{"status", "texto", "tipo", "final", "ms", "erro"}`
-- que libera o resultado. Também: `rede.ip()` (`{"conectado", "ip", "mascara", "gateway", "dns1", "dns2", "ipv6", "mac", "nome"}`),
-`rede.cancelar()` e `rede.codificar(texto)` (texto para URL). Padrão de 64 KB de
-corpo, no máximo 256 KB. Ao fechar o app, o pedido é cancelado. Detalhes e exemplo
-em [BERRY_API.md](BERRY_API.md).
+Internet (HTTP and HTTPS) **without waiting**: `rede.pedir(url [, max_bytes])`
+only starts the request (`true`/`false`; one request at a time across the
+whole device) and the download runs in the background. In `desenhar()`, check
+`rede.estado()` (`"parado"` (idle), `"baixando"` (downloading), `"pronto"`
+(ready), `"erro"` (error)) and read `rede.resposta()` -
+`{"status", "texto", "tipo", "final", "ms", "erro"}` - which releases the
+result. Also: `rede.ip()` (`{"conectado", "ip", "mascara", "gateway", "dns1", "dns2", "ipv6", "mac", "nome"}`),
+`rede.cancelar()` and `rede.codificar(texto)` (URL-encodes text). Body limit
+64 KB by default, 256 KB at most. When the app closes, the request is
+cancelled. Details and an example in [BERRY_API.md](BERRY_API.md).
 
-## Módulo `ajustes`
+## Module `ajustes` (settings)
 
-As preferências da pessoa. `ajustes.brilho([pct])` e `ajustes.volume([pct])` leem e
-mudam (0 a 100); `ajustes.tela_segundos()`, `ajustes.casa()` (`[lat, lon]` ou `nil`)
-e `ajustes.fuso()` (minutos do UTC) só leem.
+The person's preferences. `ajustes.brilho([pct])` (brightness) and
+`ajustes.volume([pct])` read and change (0 to 100); `ajustes.tela_segundos()`
+(screen timeout), `ajustes.casa()` (home, `[lat, lon]` or `nil`) and
+`ajustes.fuso()` (time zone, minutes from UTC) only read.
 
-## Desempenho: quanto custa cada coisa
+## Performance: what each thing costs
 
-Medido no Tab5 com o [`Bench.be`](../berry_exemplos/Bench.be) (rode você também: ele mostra a
-tabela na tela e grava no log). Um quadro liso a 60 Hz tem **~16 ms**; o
-`desenhar()` inteiro precisa caber nisso.
+Measured on the Tab5 with [`Bench.be`](../berry_exemplos/Bench.be) (run it
+yourself too: it shows the table on screen and writes it to the log). A smooth
+frame at 60 Hz has **~16 ms**; the whole of `desenhar()` has to fit in that.
 
-| operação | custo |
+| operation | cost |
 |---|---|
-| conta, variável, `if` | < 1 µs |
-| chamar o sistema (`tela.cor`, `sistema.ms`...) | ~4 µs |
-| montar texto (`"x" + str(n)`) | ~15 µs |
-| **criar** lista `[1,2,3]` / mapa `{"a":1}` | ~35 / ~23 µs |
-| `tela.texto`, 20 letras (tam 3 / tam 5) | ~340 / ~710 µs |
+| arithmetic, variable, `if` | < 1 µs |
+| calling the system (`tela.cor`, `sistema.ms`...) | ~4 µs |
+| building text (`"x" + str(n)`) | ~15 µs |
+| **creating** a list `[1,2,3]` / map `{"a":1}` | ~35 / ~23 µs |
+| `tela.texto`, 20 characters (size 3 / size 5) | ~340 / ~710 µs |
 | `tela.botao` | ~560 µs |
-| retângulo 50×40 / 300×28 | ~36 / ~95 µs |
-| círculo r24, cantos redondos 120×80 | ~90 / ~165 µs |
-| linha de 100 px | ~60 µs |
+| rectangle 50×40 / 300×28 | ~36 / ~95 µs |
+| circle r24, rounded corners 120×80 | ~90 / ~165 µs |
+| 100 px line | ~60 µs |
 
-O que isso quer dizer na prática:
+What this means in practice:
 
-- **Desenho custa por pixel**, não por chamada: um retângulo grande custa
-  mais que dez pequenos. Não pinte fundo que já é preto (a área chega limpa).
-- **Texto é o desenho mais caro.** Uns 15 textos por quadro já são ~4 ms. Em
-  tela animada, escreva só o que muda; rótulo fixo grande é caro toda vez.
-- **Não crie listas e mapas dentro do `desenhar()`**: o que é fixo (cores,
-  tabelas, nomes) vai para fora das funções e é criado uma vez.
-- **Periodo só onde anima.** `sistema.periodo(16)` na tela que mexe e `0` nas
-  outras: parado, o app não gasta nada (ver o `Mostruario.be`).
-- `berry tempos` no console mostra o seu app por dentro: quanto do quadro é
-  desenho, quanto é script, e qual função de `tela` pesa mais.
+- **Drawing costs per pixel**, not per call: one large rectangle costs more
+  than ten small ones. Do not paint a background that is already black (the
+  area arrives cleared).
+- **Text is the most expensive drawing.** Some 15 texts per frame already come
+  to ~4 ms. On an animated screen, write only what changes; a large fixed label
+  is expensive every time.
+- **Do not create lists and maps inside `desenhar()`**: whatever is fixed
+  (colours, tables, names) goes outside the functions and is created once.
+- **Use a period only where something animates.** `sistema.periodo(16)` on the
+  screen that moves and `0` on the others: when idle, the app costs nothing
+  (see `Mostruario.be`).
+- `berry times` (`berry tempos`) in the console shows your app from the
+  inside: how much of the frame is drawing, how much is script, and which
+  `tela` function weighs the most.
 
-## Parte de fundo
+<a id="parte-de-fundo"></a>
 
-Um app pode seguir trabalhando com a janela fechada - gravar, vigiar, avisar -
-do mesmo jeito que o Azimutal e a Trilha em C:
+## Background part
+
+An app can keep working with the window closed - recording, monitoring,
+notifying - in the same way as the Azimutal and Trilha (track) apps in C:
 
 ```
-def fundo()                       # uma volta do trabalho, curta
+def fundo()                       # one short round of the work
   amostras.push(sistema.bateria())
   cartao.anexar("log.csv", sistema.hora() + "," + str(sistema.bateria()) + "\n")
-  sistema.fundo_estado(str(size(amostras)) + " amostras")
+  sistema.fundo_estado(str(size(amostras)) + " samples")
 end
 
 def tocar(x, y)
   if tela.dentro(x, y, 40, 40, 300, 90)
-    sistema.fundo(!sistema.fundo(), 10000)   # GRAVAR / PARAR, a cada 10 s
+    sistema.fundo(!sistema.fundo(), 10000)   # RECORD / STOP, every 10 s
   end
 end
 ```
 
-- **A mesma máquina.** Janela e fundo veem as **mesmas variáveis**: o que
-  `fundo()` guarda, `desenhar()` mostra. Os dois nunca rodam ao mesmo tempo
-  (uma tarefa só para todo o Berry), então não há trava a pôr.
-- **Fechar a janela não apaga a máquina** enquanto o fundo roda: `fechar()` é
-  chamado, as camadas são devolvidas e o lixo é coletado na hora. Ao reabrir,
-  o código de fora das funções **não** roda de novo - só `abrir()`: o estado
-  continua. Quando o fundo para com a janela fechada, a máquina é apagada.
-- **No fundo não há janela.** `tela`, camadas, `teclado`, `camera`,
-  `sistema.bip`, `acordado`, `periodo` e `acumular` dão o erro `fundo_error`.
-  `cartao`, `sistema.avisar`, `espnow`, `mesh` e as leituras valem.
-- **Prazo de 200 ms** por chamada de `fundo()`: enquanto ela roda, um toque na
-  tela espera. Faça uma volta curta e deixe o intervalo (`ms`) fazer o resto.
-- **Visível sempre.** Enquanto roda, uma pastilha na barra de status mostra o
-  nome do app (e o `fundo_estado`). Para pelo próprio app (`sistema.fundo(false)`,
-  também de dentro de `fundo()`), pelo console (`fundo parar <nome>`) ou por um
-  erro no script.
-- **Custo:** nenhuma tarefa nova - o laço é uma vaga do pool do sistema e o
-  Berry roda na tarefa de sempre. O que fica é a máquina (dezenas de KB na
-  PSRAM). Até 4 partes de fundo ao mesmo tempo, somando as do sistema.
+- **The same machine.** The window and the background part see the **same
+  variables**: what `fundo()` stores, `desenhar()` shows. The two never run at
+  the same time (a single task for all of Berry), so there is no lock to add.
+- **Closing the window does not delete the machine** while the background part is
+  running: `fechar()` is called, the layers are returned and garbage is
+  collected straight away. On reopening, the code outside the functions does
+  **not** run again - only `abrir()`: the state carries on. When the
+  background part stops with the window closed, the machine is deleted.
+- **In the background there is no window.** `tela`, layers, `teclado`,
+  `camera`, `sistema.bip`, `acordado`, `periodo` and `acumular` raise the
+  error `fundo_error`. `cartao`, `sistema.avisar`, `espnow`, `mesh` and the
+  readings work.
+- **Deadline of 200 ms** per `fundo()` call: while it runs, a touch on the
+  screen waits. Do a short round and let the interval (`ms`) do the rest.
+- **Always visible.** While it runs, a pill in the status bar shows the app's
+  name (and the `fundo_estado`). It is stopped by the app itself
+  (`sistema.fundo(false)`, also from inside `fundo()`), from the console
+  (`background stop <nome>`, i.e. `fundo parar <nome>`) or by an error in the
+  script.
+- **Cost:** no new task - the loop is a slot in the system pool and Berry
+  runs on its usual task. What remains is the machine (tens of KB in PSRAM). Up to
+  4 background parts at the same time, counting the system's own.
 
-## Limites e segurança
+## Limits and safety
 
-- **Cada app tem sua máquina.** Ela é criada ao abrir e apagada ao fechar (ou
-  quando o fundo para): um app não vê as variáveis de outro, e fechar devolve
-  toda a memória (o Berry usa a PSRAM, 32 MB).
-- **Orçamento de memória.** Todas as máquinas Berry juntas (apps, fundos,
-  console) não passam de **4 MB**. Passou, o script para com `memory_error` -
-  um laço que enche uma lista não come a memória da câmera e do sistema. Um app
-  típico usa de 10 a 50 KB (`sistema.memoria()` e `berry mem` mostram). As
-  camadas (`tela.camada`) são à parte, com o limite delas.
-- **Prazo.** Cada chamada (`desenhar`, `tocar`...) tem 2 s; o código de fora das
-  funções tem 5 s. Passou, o script para com o erro `tempo_esgotado` - que
-  **não** é pego por `try/except`: um laço que engole erros também para.
-- **Erro não derruba o aparelho.** A mensagem aparece na tela do app (nos erros de sintaxe, com a linha);
-  feche, corrija o arquivo e abra de novo.
-- **Script não é C++.** Serve bem para telas, lógica e controle. Jogo rápido ou
-  processamento pesado continuam sendo apps em C++ (ver [ESCREVENDO_APPS.md](ESCREVENDO_APPS.md)).
+- **Each app has its own machine.** It is created on opening and deleted on closing
+  (or when the background part stops): one app cannot see another's
+  variables, and closing returns all the memory (Berry uses the PSRAM, 32 MB).
+- **Memory budget.** All the Berry machines together (apps, background parts,
+  console) cannot exceed **4 MB**. Past that, the script stops with
+  `memory_error` - a loop that fills a list does not eat the camera's and the
+  system's memory. A typical app uses 10 to 50 KB (`sistema.memoria()` and
+  `berry mem` show it). Layers (`tela.camada`) are separate, with their own
+  limit.
+- **Deadline.** Each call (`desenhar`, `tocar`...) gets 2 s; the code outside
+  the functions gets 5 s. Past that, the script stops with the error
+  `tempo_esgotado` (timed out) - which is **not** caught by `try/except`: a
+  loop that swallows errors stops too.
+- **An error does not bring the device down.** The message appears on the
+  app's screen (with the line number for syntax errors); close it, fix the
+  file and open it again.
+- **A script is not C++.** It works well for screens, logic and control. Fast
+  games or heavy processing are still C++ apps (see
+  [ESCREVENDO_APPS.md](ESCREVENDO_APPS.md)).
 
-## Conferir no Mac antes de copiar
+## Checking on the Mac before copying
 
 ```
-testes/checar_be.sh                  (todos de berry_exemplos/)
+testes/checar_be.sh                  (all of berry_exemplos/)
 testes/checar_be.sh MeuApp.be
 ```
 
-Com o mesmo Berry do firmware, ele **compila** cada arquivo (sintaxe, nome não
-declarado) e depois **roda** com módulos de mentira
-([`testes/berry_falso.be`](../testes/berry_falso.be)): abre o app, toca cada ponto da faixa de cima (as
-abas) e uma grade na tela toda, manda teclas e arrasta o dedo, deitado e em pé.
-Tipo errado (`tela.texto(5, ...)`), índice fora da lista, desenho fora do
-`desenhar()` aparecem com o arquivo e a linha - no Mac, não no aparelho.
+With the same Berry as the firmware, it **compiles** each file (syntax,
+undeclared names) and then **runs** it with mock modules
+([`testes/berry_falso.be`](../testes/berry_falso.be)): opens the app, taps
+every point of the top strip (the tabs) and a grid over the whole screen,
+sends keys and drags the finger, in landscape and portrait. Wrong types
+(`tela.texto(5, ...)`), an index outside the list, drawing outside
+`desenhar()` show up with the file and line - on the Mac, not on the device.
 
-## Testar pelo console
+## Testing from the console
 
-O console serial roda Berry direto, na mesma máquina entre comandos:
+The serial console runs Berry directly, on the same machine between commands:
 
 ```
 berry 1+2*3
 berry "def dobro(x) return x*2 end"
 berry dobro(21)
-berry rodar apps/Berry/Ola.be
-berry reler                    (rele a pasta: icones novos sem reiniciar)
-berry tempos                   (quanto o script leva em cada evento)
-berry tempos zerar             (idem, e recomeca a contagem)
-berry mem                      (memoria de cada maquina viva, e o orcamento)
+berry run apps/Berry/Ola.be
+berry reload                   (rereads the folder: new icons without a restart)
+berry times                    (how long the script takes in each event)
+berry times reset              (the same, and restarts the count)
+berry mem                      (memory of each live machine, and the budget)
 ```
 
-O `berry tempos` mostra, para o app aberto, quantas vezes cada função rodou e
-a média e o pior tempo dela (só o Berry, sem o sistema). Use para achar o que
-pesa: um `desenhar()` de 3 ms anima liso; um de 30 ms já perde quadros.
+(The Portuguese forms `berry rodar`, `reler`, `tempos` and `tempos zerar` also
+work.) `berry times` shows, for the open app, how many times each function ran
+and its average and worst time (Berry only, not the system). Use it to find
+what is heavy: a 3 ms `desenhar()` animates smoothly; a 30 ms one already
+drops frames.

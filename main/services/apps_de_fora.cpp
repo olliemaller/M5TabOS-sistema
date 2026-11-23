@@ -1,8 +1,8 @@
-// A PONTE entre o nucleo e os apps que nao sao compilados junto (kernel/app.h,
-// "APPS DE FORA"). E o UNICO arquivo fora de services/berry_* que conhece o
-// Berry: na variante berry (M5_COM_BERRY=1) liga os apps .be do cartao; na
-// completa as funcoes nao fazem nada, e o Berry nem entra no binario.
-// Ver docs/VARIANTES.md.
+// THE BRIDGE between the core and the apps that are not compiled in (kernel/app.h,
+// "APPS DE FORA", third-party apps). It is the ONLY file outside services/berry_* that knows about
+// Berry: in the berry variant (M5_COM_BERRY=1) it wires up the .be apps on the card; in
+// the full variant the functions do nothing, and Berry does not even go into the binary.
+// See docs/VARIANTES.md.
 #include "app.h"
 
 #if M5_COM_BERRY

@@ -1,7 +1,7 @@
-// APP: Ajustes - as demais paginas: Data e hora (fuso), Acesso pelo PC, Idioma,
-// Tela, Teclado, Grove, Sobre e USB (pendrive), cada uma com o desenho e o toque.
-// Partido de app_config.cpp (o app); o que as partes compartilham esta em
-// app_config_interno.hpp.
+// APP: Ajustes (Settings) - the remaining pages: Date and time (time zone), PC
+// access, Language, Screen, Keyboard, Grove, About and USB (flash drive), each
+// with its drawing and touch handling. Split from app_config.cpp (the app);
+// what the parts share is in app_config_interno.hpp.
 
 #include "tab5_hora.hpp"
 #include "tab5_fuso.hpp"
@@ -26,11 +26,11 @@
 
 static const int PASSO_TELA_S = 5;
 
-// O carimbo do build inteiro (main/carimbo.cmake), e nao o __DATE__ deste
-// arquivo - que so mudava quando ESTE arquivo recompilava.
+// The stamp of the whole build (main/carimbo.cmake), and not this file's
+// __DATE__ - which only changed when THIS file was recompiled.
 extern "C" const char* const m5tabos_compilado;
 
-// ---- Data e hora (fuso) -------------------------------------------------------
+// ---- Date and time (time zone) ---------------------------------------------------
 // Layout shared by the drawing and the touch: region row, then manual offset row.
 static const int HORA_Y_REGIAO = CONTEUDO_Y + 84 + 84;   // label of the region row
 static const int HORA_Y_MANUAL = HORA_Y_REGIAO + 34 + BTN_A + 56;
@@ -100,14 +100,15 @@ void toque_hora(int tx, int ty)
   }
 }
 
-// ---- Acesso pelo PC --------------------------------------------------------
-// O SERVIDOR WEB DO SISTEMA num lugar so (services/tab5_web): o endereco e a
-// senha, cada app que tem pagina no PC (o catalogo, app_t.no_pc) com o botao
-// de abrir ou fechar a parte dele, e DESLIGAR TUDO - sem passar app por app.
-// Os paineis "No PC" de cada app continuam: este e o mesmo servidor visto de cima.
+// ---- PC access -------------------------------------------------------------
+// THE SYSTEM WEB SERVER in one place (services/tab5_web): the address and
+// password, each app that has a page on the PC (the catalogue, app_t.no_pc)
+// with the button to open or close its part, and TURN EVERYTHING OFF - without
+// going app by app. Each app's "No PC" panels remain: this is the same server
+// seen from above.
 static const int PC_PASSO = BTN_A + 16;
 
-// Onde comeca a lista dos apps (o desenho e o toque usam a mesma conta).
+// Where the app list starts (the drawing and the touch use the same maths).
 static int pc_y_apps(bool ligado) { return CONTEUDO_Y + (ligado ? 2 * 84 : 0) + 40; }
 
 void pag_pc(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
@@ -168,9 +169,9 @@ void toque_pc(int tx, int ty)
   }
 }
 
-// ---- Idioma ----------------------------------------------------------------
-// Uma linha por idioma, cada um com o nome NELE MESMO. Vale na hora: a pagina
-// (e a barra de status) repintam inteiras no idioma novo.
+// ---- Language --------------------------------------------------------------
+// One row per language, each with its name IN THAT LANGUAGE. Takes effect at
+// once: the page (and the status bar) repaint fully in the new language.
 static const int IDIOMA_PASSO = BTN_A + 16;
 
 void pag_idioma(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
@@ -197,18 +198,18 @@ void toque_idioma(int tx, int ty)
       continue;
     }
     idioma_definir(i);
-    sistema_pedir_redesenho_completo();   // o titulo e o VOLTAR tambem mudam
+    sistema_pedir_redesenho_completo();   // the title and VOLTAR (back) change too
     return;
   }
 }
 
-// ---- Tela ------------------------------------------------------------------
+// ---- Screen ----------------------------------------------------------------
 void pag_tela(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
 {
   char assin[64], v1[16], v2[16];
   snprintf(v1, sizeof(v1), "%u s", (unsigned)ajustes_tela_s());
-  // O relogio EM USO, e nao o gravado: na tela TDDI ele fica no de fabrica
-  // (tab5_painel em hal/tab5_power.hpp) e o gravado nao vale.
+  // The clock IN USE, not the saved one: on the TDDI screen it stays at the
+  // factory value (tab5_painel in hal/tab5_power.hpp) and the saved one does not apply.
   snprintf(v2, sizeof(v2), "%d MHz", tab5_power_relogio_dpi());
   snprintf(assin, sizeof(assin), "%s|%s|%d|%d", v1, v2, (int)ajustes_bloqueio(), (int)ajustes_parede());
   if (!pintura_mudou_s(&s_cfg_p, s_assin, sizeof(s_assin), assin) && !tudo) { return; }
@@ -219,7 +220,7 @@ void pag_tela(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
   char ajuda[64];
   snprintf(ajuda, sizeof(ajuda), tr("De %d a %d segundos."), AJUSTES_TELA_MIN_S, AJUSTES_TELA_MAX_S);
   y = paragrafo(d, a.x + MARGEM, a.y + y, a.largura - 2 * MARGEM, ajuda) - a.y + 24;
-  // Bloqueio: alturas fixas, o toque (toque_tela) repete esta conta.
+  // Lock: fixed heights, the touch handler (toque_tela) repeats this maths.
   const bool bq = ajustes_bloqueio();
   tab5_escrever(d, tr("Tela de bloqueio ao ligar e ao acordar"), a.x + MARGEM, a.y + y, 22, false, cor_sub(d), TEMA_FUNDO);
   y += 34;
@@ -227,7 +228,7 @@ void pag_tela(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
   tab5_botao(d, a.x + a.largura - MARGEM - 260, a.y + y, 260, BTN_A, bq ? tr("DESLIGAR") : tr("LIGAR"),
              bq ? TEMA_ALERTA : TEMA_DESTAQUE);
   y += BTN_A + 24;
-  // Papel de parede do inicio: TROCAR passa pelas opcoes em roda.
+  // Home wallpaper: TROCAR (change) cycles through the options.
   static const char* const PAREDE[] = { N_("Sorteio"), N_("Fios"), N_("Ondas"), N_("Teia"), N_("Raios"), N_("Círculos"), N_("Nenhum") };
   const uint8_t pp = ajustes_parede();
   tab5_escrever(d, tr("Papel de parede do início"), a.x + MARGEM, a.y + y, 22, false, cor_sub(d), TEMA_FUNDO);
@@ -246,13 +247,13 @@ void toque_tela(int tx, int ty)
   int y = CONTEUDO_Y + 34;
   int s = menos_mais_toque(tx, ty, y);
   if (s) { ajustes_definir_tela_s((uint8_t)(ajustes_tela_s() + s * PASSO_TELA_S)); sistema_pedir_redesenho(); return; }
-  y += BTN_A + 12 + 32 + 24 + 34;   // linha do botao do bloqueio
+  y += BTN_A + 12 + 32 + 24 + 34;   // lock button row
   if (tab5_dentro(tx, ty, area_pagina().largura - MARGEM - 260, y, 260, BTN_A)) {
     ajustes_definir_bloqueio(!ajustes_bloqueio());
     sistema_pedir_redesenho();
     return;
   }
-  y += BTN_A + 24 + 34;   // linha do papel de parede
+  y += BTN_A + 24 + 34;   // wallpaper row
   if (tab5_dentro(tx, ty, area_pagina().largura - MARGEM - 260, y, 260, BTN_A)) {
     ajustes_definir_parede((uint8_t)((ajustes_parede() + 1) % (AJUSTES_PAREDE_NENHUM + 1)));
     sistema_pedir_redesenho();
@@ -261,10 +262,10 @@ void toque_tela(int tx, int ty)
   y += BTN_A + 24 + 34;
   s = menos_mais_toque(tx, ty, y);
   if (s) {
-    // Anda pela tabela de relogios reais do painel (80, 60, 48, 40, 30, 24).
+    // Steps through the panel's table of real clocks (80, 60, 48, 40, 30, 24).
     const int v = tab5_power_relogio_vizinho(tab5_power_relogio_dpi(), s);
-    // Aplica primeiro, grava so se deu certo: um valor que o painel recusou
-    // nao pode virar o do proximo boot.
+    // Apply first, save only if it worked: a value the panel rejected must
+    // not become the one for the next boot.
     if (tab5_power_relogio_dpi(v)) {
       ajustes_definir_relogio_painel((uint8_t)v);
       sistema_pedir_redesenho_completo();
@@ -272,7 +273,7 @@ void toque_tela(int tx, int ty)
   }
 }
 
-// ---- Teclado ---------------------------------------------------------------
+// ---- Keyboard --------------------------------------------------------------
 void pag_teclado(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
 {
   char sub[48], assin[64];
@@ -312,7 +313,7 @@ void toque_grove(int tx, int ty)
   }
 }
 
-// ---- Sobre -----------------------------------------------------------------
+// ---- About -----------------------------------------------------------------
 void pag_sobre(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
 {
   char assin[96], mem[48], ps[48], ativo[32];
@@ -338,14 +339,15 @@ void pag_sobre(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
             tr("M5Stack Tab5: ESP32-P4 (sistema) e ESP32-C6 (Wi-Fi, Bluetooth e ESP-NOW)."));
 }
 
-// ---- USB (pendrive) --------------------------------------------------------
-// A tela do pendrive inteira: estado, transferencia, o diario das gravacoes
-// guardadas, o resultado da ultima volta e o ajuste de ligar sozinho. O
-// trabalho mora no servico (services/tab5_pendrive) - esta pagina so pede e
-// mostra, e a pessoa pode sair dela a vontade: o pendrive segue em segundo
-// plano. A CONFIRMACAO de devolver sem o computador ter ejetado e daqui.
+// ---- USB (flash drive) -----------------------------------------------------
+// The whole flash-drive screen: status, transfer, the log of saved writes,
+// the result of the last round and the auto-enable setting. The work lives
+// in the service (services/tab5_pendrive) - this page only requests and
+// displays, and the user may leave it freely: the flash drive carries on in
+// the background. The CONFIRMATION to hand back without the computer having
+// ejected lives here.
 typedef struct { int x, y, l, a; } usb_ret_t;
-static usb_ret_t s_usb_bt[4];          // os botoes como desenhados (coordenadas da area)
+static usb_ret_t s_usb_bt[4];          // the buttons as drawn (area coordinates)
 static bool      s_usb_confirmar = false;
 
 static int usb_botao(lgfx::LovyanGFX& d, const area_t& a, int i, int y, const char* txt, uint16_t cor)
@@ -363,10 +365,10 @@ void pag_usb(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
   tab5_sd_resumo_t r;
   tab5_sd_resumo(&r);
   if (e.fase != PENDRIVE_ATIVO) { s_usb_confirmar = false; }
-  // Aberta com um resultado esperando: a pessoa viu - o aviso da barra sai.
+  // Opened with a result waiting: the user has seen it - the status bar notice goes.
   if (e.fase == PENDRIVE_PARADO) { tab5_pendrive_resultado_visto(); }
 
-  // O QUE MOSTRAR
+  // WHAT TO SHOW
   char estado[64], l2[96] = "", l3[80] = "", fim[96] = "";
   uint16_t cor = TEMA_TEXTO;
   switch (e.fase) {
@@ -393,9 +395,9 @@ void pag_usb(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
     snprintf(l3, sizeof(l3), tr("%u gravação(ões) guardadas (%u de %u KB)"),
              (unsigned)r.no_diario, (unsigned)(r.diario_usado / 1024), (unsigned)(r.diario_total / 1024));
   }
-  // DIAGNOSTICO: ate onde o computador chegou, na ordem em que ele faz. E o
-  // que diz, num disco que nao aparece, se o problema e no USB (nem
-  // reconheceu), no pedido do disco ou na leitura (o sistema dele desistiu).
+  // DIAGNOSTICS: how far the computer got, in the order it does things. On a
+  // disk that does not appear, this is what tells whether the problem is in
+  // USB (not even recognised), in the disk request or in reading (its OS gave up).
   char diag[96] = "";
   if (e.fase == PENDRIVE_ATIVO) {
     const tab5_pendrive_usb_t& u = e.usb;
@@ -409,8 +411,8 @@ void pag_usb(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
     else                        { snprintf(diag, sizeof(diag), tr("USB: %u leitura(s), %u entregue(s), a mais lenta %u ms"),
                                            (unsigned)u.n_cmd_leitura, (unsigned)u.n_leituras_ok,
                                            (unsigned)u.leitura_max_ms); }
-    // Parou ha mais de 3 s: diz ONDE - e o que separa um travamento do USB
-    // (ou do cartao) do computador que simplesmente parou de pedir.
+    // Stopped for more than 3 s: says WHERE - that is what separates a USB (or
+    // SD card) hang from a computer that simply stopped asking.
     if (u.n_config && u.parado_ms >= 3000) {
       switch (u.onde) {
         case PENDRIVE_ESPERA_CARTAO:
@@ -444,8 +446,8 @@ void pag_usb(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
       case PENDRIVE_RECUSA_USB:        snprintf(fim, sizeof(fim), tr("O USB não iniciou. O cartão continua no Tab5.")); break;
       default:
         if (e.sem_ejetar) {
-          // Ver tab5_pendrive.cpp (s_saiu_sem_ejetar): o disco nao aparecer
-          // logo da proxima vez e o computador verificando o cartao.
+          // See tab5_pendrive.cpp (s_saiu_sem_ejetar): if the disk does not appear
+          // straight away next time, the computer is checking the card.
           snprintf(fim, sizeof(fim), tr("Saiu sem ejetar: o computador verifica o cartão antes de abrir."));
         } else if (r.completo) {
           snprintf(fim, sizeof(fim), tr("Última vez: %u gravação(ões) aplicada(s)%s%s"),
@@ -489,7 +491,7 @@ void pag_usb(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
       break;
     default:
       y = usb_botao(d, a, 0, y, tr("AGUARDE..."), TEMA_TEXTO_3);
-      s_usb_bt[0] = { };   // nao responde
+      s_usb_bt[0] = { };   // not responding
       break;
   }
   y = usb_botao(d, a, 2, y, ajustes_pendrive() ? tr("LIGAR SOZINHO NO COMPUTADOR: SIM") : tr("LIGAR SOZINHO NO COMPUTADOR: NÃO"),
@@ -498,7 +500,7 @@ void pag_usb(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
                 tr("O Tab5 segue usável enquanto isso. O que ele gravar fica na memória interna e "
                 "vai para o cartão na volta. Arquivos e Câmera esperam o cartão. Para terminar, "
                 "ejete o disco no computador.")) - a.y + 20;
-  // LIXEIRA dos discos (app Arquivos): apagar sozinho o que passou de 30 dias.
+  // Disk RECYCLE BIN (Arquivos/Files app): automatically delete what is older than 30 days.
   tab5_escrever(d, tr("Lixeira: apagar itens com mais de 30 dias"), a.x + MARGEM, a.y + y, 24, false, TEMA_TEXTO, TEMA_FUNDO);
   y += 40;
   usb_botao(d, a, 3, y, ajustes_lixeira_dias() ? tr("30 dias") : tr("Desligado"),
@@ -521,7 +523,7 @@ void toque_usb(int tx, int ty)
     return;
   }
   if (usb_em(3, tx, ty)) {
-    ajustes_definir_lixeira_dias(ajustes_lixeira_dias() ? 0 : 30);   // Desligado <-> 30 dias
+    ajustes_definir_lixeira_dias(ajustes_lixeira_dias() ? 0 : 30);   // Off <-> 30 days
     sistema_pedir_redesenho();
     return;
   }
@@ -537,7 +539,7 @@ void toque_usb(int tx, int ty)
     } else if (s_usb_confirmar && usb_em(0, tx, ty)) {
       s_usb_confirmar = false;
     } else if (s_usb_confirmar && usb_em(1, tx, ty)) {
-      ESP_LOGW("ajustes", "cartao devolvido sem ejecao do computador");
+      ESP_LOGW("ajustes", "SD card handed back without the computer ejecting it");
       s_usb_confirmar = false;
       tab5_pendrive_devolver();
     }

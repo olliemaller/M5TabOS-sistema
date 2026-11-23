@@ -1,18 +1,18 @@
-// Animacao do bloqueio: Fogos de artificio: foguete sobe, explode em particulas que caem e apagam.
-// (parte do bloqueio_anim; o que e comum a todas esta no bloqueio_anim_interno.hpp).
+// Lock screen animation: Fireworks: a rocket rises, bursts into particles that fall and fade.
+// (part of bloqueio_anim; what is common to all of them is in bloqueio_anim_interno.hpp).
 
 #include "bloqueio_anim_interno.hpp"
 
 namespace bq_anim {
 
 // ---------------------------------------------------------------------------
-// 2. FOGOS - foguete sobe, explode em particulas que caem e apagam
+// 2. FIREWORKS - a rocket rises, bursts into particles that fall and fade
 // ---------------------------------------------------------------------------
 namespace {
 static const int N_FOGUETES = 3;
 static const int N_PART     = 80;
 struct Foguete { float x, y, vy, alvo, oy; bool on; };
-// crep: ao apagar, solta uma chuvinha de faiscas pequenas (estalo).
+// crep: when fading, releases a little shower of small sparks (crackle).
 struct Part    { float x, y, vx, vy, vida, vida0, ox, oy; uint8_t h; bool on, crep; };
 struct Fogos   { Foguete f[N_FOGUETES]; Part p[N_PART]; float espera; };
 }
@@ -21,8 +21,8 @@ void fogos_iniciar(void)
 {
   Fogos& s = bq_estado_como<Fogos>();
   memset(&s, 0, sizeof(s));
-  // Ja comeca com um foguete a meio caminho: sem isso a tela fica vazia por
-  // cerca de 1 s ate o primeiro subir e explodir.
+  // Starts with a rocket already halfway up: without this the screen stays empty for
+  // about 1 s until the first one rises and bursts.
   Foguete& f = s.f[0];
   f.x = frand(s_ax + s_W * 0.25f, s_ax + s_W * 0.75f);
   f.y = f.oy = s_ay + s_H * 0.6f;
@@ -32,7 +32,7 @@ void fogos_iniciar(void)
   s.espera = 0.4f;
 }
 
-// Solta 'n' particulas a partir de (x, y). Anel: todas na mesma velocidade.
+// Releases 'n' particles from (x, y). Ring: all at the same speed.
 static int fogos_soltar(Fogos& s, float x, float y, uint8_t h, int n, float vmin, float vmax,
                         float vida_min, float vida_max, bool anel, bool crep)
 {
@@ -54,19 +54,19 @@ static int fogos_soltar(Fogos& s, float x, float y, uint8_t h, int n, float vmin
   return k;
 }
 
-// Explosao em camadas: nucleo + anel externo (+ estouros que estalam).
+// Layered burst: core + outer ring (+ crackling bursts).
 static void fogos_explodir(Fogos& s, float x, float y)
 {
   const uint8_t h = (uint8_t)irand(256);
   switch (irand(3)) {
-    case 0:   // anel duplo
+    case 0:   // double ring
       fogos_soltar(s, x, y, h, 22, 0, 330.0f, 1.0f, 1.5f, true, false);
       fogos_soltar(s, x, y, (uint8_t)(h + 85), 14, 0, 190.0f, 0.9f, 1.3f, true, false);
       break;
-    case 1:   // chuva de ouro: fica caindo e estalando
+    case 1:   // golden rain: keeps falling and crackling
       fogos_soltar(s, x, y, 40, 30, 100, 360, 1.3f, 2.0f, false, true);
       break;
-    default:  // esfera cheia, algumas estalam
+    default:  // full sphere, some crackle
       fogos_soltar(s, x, y, h, 24, 80, 360, 1.0f, 1.6f, false, true);
       fogos_soltar(s, x, y, (uint8_t)(h + 30), 10, 40, 170, 0.8f, 1.2f, false, false);
       break;
@@ -95,7 +95,7 @@ void fogos_passo(float dt)
     if (!f.on) { continue; }
     f.oy = f.y;
     f.y += f.vy * dt;
-    f.vy += 250 * dt;   // perde forca na subida
+    f.vy += 250 * dt;   // loses power on the way up
     if (f.y <= f.alvo || f.vy > -120) {
       f.on = false;
       rec(f.x - 3, f.oy - 3, 7, 30);
@@ -113,7 +113,7 @@ void fogos_passo(float dt)
     if (p.vida <= 0) {
       p.on = false;
       rec2(p.ox, p.oy, p.ox, p.oy, 3);
-      if (p.crep) {   // estalo: faiscas pequenas e curtas
+      if (p.crep) {   // crackle: small, short sparks
         fogos_soltar(s, p.x, p.y, p.h, 4, 30, 120, 0.3f, 0.6f, false, false);
       }
       continue;

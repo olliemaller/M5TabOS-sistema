@@ -1,24 +1,24 @@
-// O EDITOR DE BERRY NO NAVEGADOR DO PC - as rotas do servidor web
-// (tab5_web) para os scripts de apps/Berry.
+// THE BERRY EDITOR IN THE PC'S BROWSER - the web server routes
+// (tab5_web) for the scripts in apps/Berry.
 //
-// A pagina (berry_web.html, na flash) e uma so: a lista dos .be a esquerda e
-// um editor com cores a direita - quem carrega o editor (CodeMirror) e o
-// navegador do PC, de um CDN; sem internet no PC, vira uma caixa de texto
-// simples. Salvar, Verificar (berry_verificar: o erro volta com a linha
-// marcada) e Rodar (salva, verifica e abre o app no Tab5).
+// There is a single page (berry_web.html, in flash): the list of .be files on the left and
+// a syntax-highlighting editor on the right - the editor (CodeMirror) is loaded by the
+// PC's browser, from a CDN; with no internet on the PC, it becomes a plain
+// text box. Save, Check (berry_verificar: the error comes back with the line
+// marked) and Run (saves, checks and opens the app on the Tab5).
 //
-// As rotas, em http://<ip>/editor/ (a parte do Editor no servidor):
-//   GET  /                   a pagina
+// The routes, at http://<ip>/editor/ (the Editor's part of the server):
+//   GET  /                   the page
 //   GET  /api/scripts        [{"nome":"Ola.be","bytes":123}, ...]
-//   GET  /api/script?arq=    o texto do script
-//   POST /api/script?arq=    grava (corpo = o texto inteiro); com &auto=1 (a
-//                            gravacao automatica da pagina) nao rele a pasta
+//   GET  /api/script?arq=    the script's text
+//   POST /api/script?arq=    writes (body = the whole text); with &auto=1 (the
+//                            page's autosave) it does not reread the folder
 //   POST /api/verificar      {"ok":false,"linha":3,"erro":"..."}
-//   POST /api/rodar?arq=     grava, verifica e abre: {"ok":..., "aberto":...}
-// O cartao e pelo berry_scripts (portas do tab5_sd), na tarefa do servidor.
+//   POST /api/rodar?arq=     writes, checks and opens: {"ok":..., "aberto":...}
+// The card is via berry_scripts (tab5_sd doors), on the server task.
 #pragma once
 
-// Abre a parte do Editor no servidor (/editor/). Da tarefa de interface.
-// false = ver tab5_web_abrir.
-// O servidor roda de fundo: fechar o Editor nao o desliga (ver tab5_web.hpp).
+// Opens the Editor's part of the server (/editor/). From the UI task.
+// false = see tab5_web_abrir.
+// The server runs in the background: closing the Editor does not turn it off (see tab5_web.hpp).
 bool berry_web_ligar(void);

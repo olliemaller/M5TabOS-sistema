@@ -1,43 +1,45 @@
-// APP: Arquivos - os discos do aparelho (cartao e pendrive), e o que ha neles.
+// APP: Arquivos (Files) - the device's disks (SD card and USB flash drive),
+// and what is on them.
 //
-// SO INTERFACE. Quem lista, copia, move, apaga e ejeta e o sistema
-// (services/tab5_arquivos e services/tab5_volumes); este app mostra e pede.
-// As regras de "o que aparece / o que se mexe" tambem sao de la: /sdcard/apps
-// e so leitura (menos apps/Berry), nomes com '.' e as senhas do sistema nao
-// aparecem - o app so pergunta tab5_arq_gravavel/mexivel para acender botao.
+// UI ONLY. Listing, copying, moving, deleting and ejecting are the system's job
+// (services/tab5_arquivos and services/tab5_volumes); this app shows and asks.
+// The rules for "what appears / what can be touched" are also there:
+// /sdcard/apps is read-only (except apps/Berry), names starting with '.' and
+// the system passwords do not appear - the app only asks
+// tab5_arq_gravavel/mexivel to enable a button.
 //
-// NIVEIS:
-//   DISCOS    a raiz: Cartao SD e, plugado, o Pendrive - espaco, lixeira,
-//             ejetar.
-//   LIXEIRA   o que foi apagado naquele disco (botao "Lixeira" da raiz): toque
-//             restaura ou exclui de vez; toque LONGO seleciona varios.
-//   PASTA     o conteudo de uma pasta de qualquer disco. Toque abre; toque
-//             LONGO seleciona (e a partir dai toque marca/desmarca), com a
-//             barra Copiar / Recortar / Apagar / Renomear. Com algo copiado,
-//             "Colar aqui" em qualquer pasta gravavel. "+ Pasta" cria.
-//   CONTEUDO  o leitor de texto (log, CSV) e o visor de imagem.
+// LEVELS:
+//   DISCOS    the root: SD card and, when plugged in, the flash drive - space,
+//             recycle bin, eject.
+//   LIXEIRA   what was deleted on that disk (the root's "Lixeira" button): a
+//             tap restores or deletes for good; a LONG tap selects several.
+//   PASTA     the contents of a folder on any disk. A tap opens; a LONG tap
+//             selects (and from then on a tap marks/unmarks), with the
+//             Copy / Cut / Delete / Rename bar. With something copied,
+//             "Colar aqui" (paste here) in any writable folder. "+ Pasta" creates.
+//   CONTEUDO  the text reader (log, CSV) and the image viewer.
 //
-// ABRIR COM, pela extensao: musica toca pelo tocador do sistema e abre a
-// Musica; .be abre como texto, com o botao "Instalar" (variante com Berry);
-// imagem e texto abrem aqui.
-// COPIAR PARA MUSICA: numa pasta com musicas fora da pasta de musica (o
-// pendrive, tipicamente), um botao copia a pasta inteira (ou, na raiz do
-// disco, as musicas soltas) para a pasta de musica do cartao.
+// OPEN WITH, by extension: music plays through the system player and opens
+// Musica; .be opens as text, with the "Instalar" (install) button (Berry
+// variant); images and text open here.
+// COPY TO MUSIC: in a folder with music outside the music folder (typically
+// the flash drive), a button copies the whole folder (or, at the root of the
+// disk, the loose music files) to the SD card's music folder.
 //
-// COPIAR E TRABALHO DO SISTEMA: segue com o app fechado; o progresso aparece
-// aqui (barra no rodape) e na barra de status.
+// COPYING IS A SYSTEM JOB: it carries on with the app closed; the progress
+// shows here (bar in the footer) and in the status bar.
 
 #include "app.h"
 #include "idioma.h"
 #include "toque_longo.hpp"
-#include "esp_attr.h"   // EXT_RAM_BSS_ATTR - buffers grandes na PSRAM
+#include "esp_attr.h"   // EXT_RAM_BSS_ATTR - large buffers in PSRAM
 #include "tab5_tela.hpp"
 #include "tab5_ui.hpp"
 #include "tab5_tema.hpp"
 #include "tab5_teclado.hpp"
 #include "pintura.hpp"
 #include "lista.hpp"
-#include "conversa.hpp"   // conversa_quebrar_linhas: o mesmo quebrador dos baloes
+#include "conversa.hpp"   // conversa_quebrar_linhas: the same wrapper as the chat bubbles
 #include "teclado_virtual.hpp"
 #include "trabalho.hpp"
 #include "tab5_sd.hpp"
@@ -66,13 +68,13 @@
 
 static const char *TAG = "app.arquivos";
 
-// Quantos itens uma pasta mostra. A tabela mora na PSRAM so com o app aberto.
+// How many items a folder shows. The table lives in PSRAM only while the app is open.
 #define MAX_ITENS      512
-// LEITURA COMO TEXTO CORRIDO. Cada linha do arquivo e QUEBRADA na largura
-// real (por palavra; o CSV ganha um espaco depois de cada separador para
-// quebrar no campo), e a "pagina" e o que couber na tela.
-#define LER_LINHAS     48    // linhas do arquivo trazidas por leitura - mais do que cabem
-#define LARG_LINHA     600   // bytes guardados de UMA linha do arquivo; o resto vira "..."
+// READING AS FLOWING TEXT. Each line of the file is WRAPPED at the real
+// width (by word; CSV gets a space after each separator so it breaks at the
+// field), and the "page" is whatever fits on the screen.
+#define LER_LINHAS     48    // file lines fetched per read - more than fit
+#define LARG_LINHA     600   // bytes kept from ONE line of the file; the rest becomes "..."
 
 #define TUDO  pintura_completa(&s_p)
 
@@ -80,69 +82,70 @@ typedef enum { NIVEL_DISCOS, NIVEL_PASTA, NIVEL_CONTEUDO, NIVEL_LIXEIRA } nivel_
 typedef enum { VER_TEXTO, VER_IMG } ver_t;
 typedef enum { DLG_NADA, DLG_APAGAR, DLG_ESVAZIAR, DLG_NOME, DLG_LIXO_ITEM, DLG_LIXO_EXCLUIR } dialogo_t;
 
-// ---- estado ----------------------------------------------------------------
+// ---- state -----------------------------------------------------------------
 static nivel_t          s_nivel = NIVEL_DISCOS;
-static tab5_arq_item_t* s_itens = nullptr;   // MAX_ITENS, PSRAM, alocada ao abrir
+static tab5_arq_item_t* s_itens = nullptr;   // MAX_ITENS, PSRAM, allocated on open
 static int              s_n_itens = 0;
-static int              s_n_achados = 0;     // quantos a pasta TEM (pode passar de MAX_ITENS)
-static char             s_pasta[TAB5_ARQ_CAMINHO_MAX] = "";   // absoluta ("/usb/Rock")
+static int              s_n_achados = 0;     // how many the folder HAS (may exceed MAX_ITENS)
+static char             s_pasta[TAB5_ARQ_CAMINHO_MAX] = "";   // absolute ("/usb/Rock")
 static char             s_arquivo[TAB5_ARQ_NOME_MAX] = "";
-static bool             s_gravavel = false;  // a pasta aberta aceita criar/colar
-static bool             s_tem_musica = false;   // ha musica solta na pasta aberta
-static char             s_musica_raiz[TAB5_ARQ_CAMINHO_MAX] = "";   // "/sdcard/Música" ("" = sem cartao)
+static bool             s_gravavel = false;  // the open folder accepts create/paste
+static bool             s_tem_musica = false;   // there are loose music files in the open folder
+static char             s_musica_raiz[TAB5_ARQ_CAMINHO_MAX] = "";   // "/sdcard/Música" ("" = no SD card)
 
-// Os discos (nivel DISCOS), com o que o worker mediu.
+// The disks (DISCOS level), with what the worker measured.
 typedef struct {
   tab5_vol_t v;
   uint64_t   total, livre;
   int        lixeira;
-  uint64_t   lixeira_bytes;   // o peso de tudo o que esta na lixeira do disco
+  uint64_t   lixeira_bytes;   // the size of everything in the disk's recycle bin
 } disco_t;
 static disco_t s_discos[TAB5_VOL_N];
 static int     s_n_discos = 0;
 
-// A LIXEIRA aberta (nivel LIXEIRA): a raiz do disco e s_pasta. As duas tabelas
-// (a da tela e a do worker) nascem ao entrar na lixeira, na PSRAM, e saem ao fechar.
+// The open RECYCLE BIN (LIXEIRA level): the disk root is s_pasta. Both tables
+// (the screen's and the worker's) are created on entering the bin, in PSRAM,
+// and freed on closing.
 static tab5_arq_lixo_t* s_lixo = nullptr;
 static tab5_arq_lixo_t* s_lixo_carga = nullptr;
 static uint64_t         s_lixo_bytes = 0;
-// O que a acao em curso (ou o dialogo) vai tocar: copia dos itens escolhidos.
+// What the current action (or the dialogue) will touch: a copy of the chosen items.
 EXT_RAM_BSS_ATTR static tab5_arq_lixo_t s_lixo_alvo[TAB5_ARQ_ITENS_MAX];
 static int              s_lixo_alvo_n = 0;
 
-// SELECAO (toque longo). Indices de s_itens (ou de s_lixo, na lixeira).
+// SELECTION (long tap). Indices into s_itens (or s_lixo, in the recycle bin).
 EXT_RAM_BSS_ATTR static uint8_t s_sel[MAX_ITENS];
 static bool s_selecionando = false;
 static int  s_n_sel = 0;
 
-// A mensagem da ultima acao (na linha de descricao), ate navegar.
+// The message from the last action (on the description line), until navigating.
 static char s_msg[96] = "";
 static bool s_msg_erro = false;
 
-// Dialogos.
+// Dialogues.
 static dialogo_t s_dlg = DLG_NADA;
 static tecvirt_t s_kb;
 static char      s_nome_txt[TAB5_ARQ_NOME_MAX] = "";
-static bool      s_nome_criar = false;          // true = nova pasta; false = renomear
-static char      s_nome_alvo[TAB5_ARQ_CAMINHO_MAX] = "";   // o item a renomear
+static bool      s_nome_criar = false;          // true = new folder; false = rename
+static char      s_nome_alvo[TAB5_ARQ_CAMINHO_MAX] = "";   // the item to rename
 static char      s_esvaziar_raiz[16] = "";
 static int       s_esvaziar_itens = 0;
 static uint64_t  s_esvaziar_bytes = 0;
-static uint32_t  s_dlg_desde = 0;     // quando a confirmacao abriu (ver ao_tocar)
+static uint32_t  s_dlg_desde = 0;     // when the confirmation opened (see ao_tocar)
 
-// O trabalho de copia do sistema, como visto da ultima vez.
+// The system copy job, as seen last time.
 static tab5_arq_fase_t s_job_fase = TAB5_ARQ_PARADO;
-static bool            s_instalando_be = false;   // a copia em curso instala um app Berry
+static bool            s_instalando_be = false;   // the copy in progress installs a Berry app
 
 static lista_t s_lista;
 static int  item_altura(int i, void* ctx);
 static void item_desenhar(lgfx::LovyanGFX& d, int i, int x0, int y, int largura, void* ctx);
 
-// ---- leitor de texto ---------------------------------------------------------
+// ---- text reader -------------------------------------------------------------
 EXT_RAM_BSS_ATTR static char s_linhas[LER_LINHAS][LARG_LINHA + 1];
 static int      s_n_linhas = 0;
-static int      s_linha = 0;          // a primeira linha do arquivo na tela (0 = a primeira)
-static int      s_cabem = 1;          // quantas linhas do arquivo a ultima passada coube (o passo do DEPOIS)
+static int      s_linha = 0;          // the first line of the file on screen (0 = the first)
+static int      s_cabem = 1;          // how many file lines fitted on the last pass (the step for DEPOIS/next)
 static int      s_total_linhas = 0;
 #define VOLTAS_MAX 64
 static int      s_voltas[VOLTAS_MAX];
@@ -151,20 +154,20 @@ static const int TAM_LEITURA[] = { 24, 29, 36 };
 static int      s_tam_leitura = 1;
 static bool     s_abriu_ok = true;
 
-// ---- visor de imagem ---------------------------------------------------------
+// ---- image viewer ------------------------------------------------------------
 static ver_t    s_ver = VER_TEXTO;
-static uint32_t s_img_largura = 0, s_img_altura = 0;   // reais, lidos no cabecalho (0 = ainda nao sei)
+static uint32_t s_img_largura = 0, s_img_altura = 0;   // real, read from the header (0 = not known yet)
 
-static pintura_t s_p;   // pintura por diferenca desta tela
+static pintura_t s_p;   // differential painting for this screen
 
-// ---- geometria -------------------------------------------------------------
+// ---- geometry --------------------------------------------------------------
 static const int MARGEM_X = 16;
-static const int TOPO_Y = 16, TOPO_A = 64;           // VOLTAR + titulo
+static const int TOPO_Y = 16, TOPO_A = 64;           // VOLTAR (back) + title
 static const int VOLTAR_L = 200;
-static const int AA_L = 96;                            // "Aa" (so no conteudo)
-static const int DESC_Y = 92;                          // a linha de descricao (24 px)
+static const int AA_L = 96;                            // "Aa" (only in the content view)
+static const int DESC_Y = 92;                          // the description line (24 px)
 static const int DIVISA_Y = 128;
-static const int LISTA_Y = 140;                        // onde a lista comeca
+static const int LISTA_Y = 140;                        // where the list starts
 static const int NAV_Y = 140, NAV_A = 64, NAV_G = 10;
 static const int BARRA_Y = 220, BARRA_A = 14;
 static const int BARRA_TOQUE_Y = 204, BARRA_TOQUE_A = 48;
@@ -173,20 +176,20 @@ static const int ARRASTE_PAGINA = 90;
 static const char* NAV_NOME[4] = { N_("INÍCIO"), N_("ANTES"), N_("DEPOIS"), N_("FIM") };
 static int nav_l(int largura) { return (largura - 2 * MARGEM_X - 3 * NAV_G) / 4; }
 static int nav_x(int largura, int i) { return MARGEM_X + i * (nav_l(largura) + NAV_G); }
-static const int LIN_LISTA = 88;   // mais respiro entre os itens (pedido do usuario)
-static const uint16_t COR_DIVISA = TEMA_LINHA;   // separa sem pesar
+static const int LIN_LISTA = 88;   // more breathing room between items (user request)
+static const uint16_t COR_DIVISA = TEMA_LINHA;   // separates without weighing down
 static const int LIN_DISCO = 150;
-static const int RODAPE_A = 76;                        // uma faixa de botoes no rodape
-static const int PROG_A = 70;                          // a faixa do progresso da copia
+static const int RODAPE_A = 76;                        // a strip of buttons in the footer
+static const int PROG_A = 70;                          // the copy progress strip
 static const float TAM_BASE   = 2.6f;
 static const float TAM_LISTA  = TAM_BASE * 1.6f;
 
-static const uint16_t CINZA_BT = TEMA_SUPERFICIE_ALTA;   // botao apagado (sem acao aqui)
+static const uint16_t CINZA_BT = TEMA_SUPERFICIE_ALTA;   // greyed-out button (no action here)
 
-// ---- botoes: o que foi desenhado e o que o toque acerta ----------------------
-// Cada passada registra os botoes que desenhou (coordenadas da AREA, as do
-// toque); o ao_tocar pergunta qual foi tocado. Assim desenho e toque usam a
-// mesma conta, nunca duas.
+// ---- buttons: what was drawn and what a touch hits ----------------------
+// Each pass records the buttons it drew (AREA coordinates, the touch ones);
+// ao_tocar asks which one was tapped. That way drawing and touch use the
+// same maths, never two.
 typedef enum {
   BT_NADA = 0, BT_VOLTAR, BT_AA, BT_NOVA_PASTA, BT_PARA_MUSICA, BT_TODOS, BT_INSTALAR,
   BT_COPIAR, BT_RECORTAR, BT_APAGAR, BT_RENOMEAR, BT_SAIR_SEL,
@@ -217,7 +220,7 @@ static bt_id_t botao_tocado(int x, int y)
 }
 
 // ---------------------------------------------------------------------------
-// CAMINHOS
+// PATHS
 // ---------------------------------------------------------------------------
 static bool juntar(char* out, size_t tam, const char* pasta, const char* nome)
 {
@@ -231,7 +234,7 @@ static bool eh_raiz_de_disco(const char* c)
   return !strcmp(c, TAB5_VOL_CARTAO_RAIZ) || !strcmp(c, TAB5_VOL_PENDRIVE_RAIZ);
 }
 
-// "Pendrive / Rock / Anos 80" - onde se esta, para a descricao.
+// "Pendrive / Rock / Anos 80" - where you are, for the description.
 static void trilha_de(const char* c, char* out, size_t tam)
 {
   snprintf(out, tam, "%s", tr(tab5_volume_tipo(c)));
@@ -256,10 +259,10 @@ static void mensagem(const char* txt, bool erro)
 }
 
 // ---------------------------------------------------------------------------
-// LISTAGEM NO WORKER
+// LISTING ON THE WORKER
 // ---------------------------------------------------------------------------
-// O worker lista para s_carga (o buffer que a tela NAO desenha) e o ao_aviso
-// troca os dois.
+// The worker lists into s_carga (the buffer the screen does NOT draw) and
+// ao_aviso swaps the two.
 static tab5_arq_item_t* s_carga = nullptr;
 static volatile bool    s_listando = false;
 static volatile bool    s_l_pronto = false;
@@ -274,8 +277,8 @@ static char             s_l_musica[TAB5_ARQ_CAMINHO_MAX];
 
 static void trabalho_listar(void*)
 {
-  // A pasta de musica do cartao: para o "Copiar para Musica" saber o destino
-  // (e nao aparecer dentro dela).
+  // The SD card's music folder: so "Copiar para Musica" knows the destination
+  // (and does not appear inside it).
   if (!tab5_musica_pasta(s_l_musica, sizeof(s_l_musica))) { s_l_musica[0] = '\0'; }
   if (s_l_discos) {
     tab5_vol_t v[TAB5_VOL_N];
@@ -288,11 +291,11 @@ static void trabalho_listar(void*)
       dk.lixeira_bytes = 0;
       if (v[i].disponivel) {
         tab5_volume_espaco(v[i].raiz, &dk.total, &dk.livre);
-        // Limpeza automatica (se ligada) e o aviso de lixeira grande: do servico.
+        // Automatic cleanup (if enabled) and the large-recycle-bin notice: the service's job.
         tab5_arq_lixeira_manter(v[i].raiz);
         dk.lixeira = tab5_arq_lixeira_itens(v[i].raiz);
         if (dk.lixeira > 0) {
-          tab5_arq_lixo_t um;   // so o peso total interessa
+          tab5_arq_lixo_t um;   // only the total size matters
           tab5_arq_lixeira_listar(v[i].raiz, &um, 1, &dk.lixeira_bytes);
         }
       }
@@ -313,7 +316,7 @@ static void trabalho_listar(void*)
 
 static void pedir_listagem(bool manter_posicao)
 {
-  if (s_listando) {   // uma por vez: a ultima vontade vale
+  if (s_listando) {   // one at a time: the latest request wins
     s_l_de_novo = true; s_l_de_novo_manter = manter_posicao;
     return;
   }
@@ -333,7 +336,7 @@ static void sair_da_selecao(void)
   memset(s_sel, 0, sizeof(s_sel));
 }
 
-// Vai para a pasta 'c' ("" = os discos).
+// Goes to folder 'c' ("" = the disks).
 static void navegar(const char* c)
 {
   sair_da_selecao();
@@ -350,7 +353,7 @@ static void navegar(const char* c)
   sistema_pedir_redesenho_completo();
 }
 
-// Abre a lixeira do disco de 'raiz'.
+// Opens the recycle bin of the disk at 'raiz'.
 static void navegar_lixeira(const char* raiz)
 {
   if (!s_lixo) { s_lixo = (tab5_arq_lixo_t*)heap_caps_calloc(MAX_ITENS, sizeof(tab5_arq_lixo_t), MALLOC_CAP_SPIRAM); }
@@ -359,7 +362,7 @@ static void navegar_lixeira(const char* raiz)
   sair_da_selecao();
   s_msg[0] = '\0';
   s_nivel = NIVEL_LIXEIRA;
-  snprintf(s_pasta, sizeof(s_pasta), "%s", raiz);   // a raiz do disco (o AVISO_VOLUMES confere por ela)
+  snprintf(s_pasta, sizeof(s_pasta), "%s", raiz);   // the disk root (AVISO_VOLUMES checks against it)
   s_gravavel = false;
   s_lixo_bytes = 0;
   pedir_listagem(false);
@@ -377,15 +380,15 @@ static void listagem_chegou(void)
     s_n_itens = s_n_discos;
     s_n_achados = s_n_discos;
   } else if (s_l_lixo) {
-    // So vale se ainda estamos na lixeira DAQUELE disco (a pessoa pode ter voltado).
+    // Only valid if we are still in THAT disk's recycle bin (the user may have gone back).
     if (s_nivel == NIVEL_LIXEIRA && !strcmp(s_l_pasta, s_pasta)) {
       tab5_arq_lixo_t* t = s_lixo; s_lixo = s_lixo_carga; s_lixo_carga = t;
       s_n_itens = s_n_achados = s_l_n;
       s_lixo_bytes = s_l_bytes;
-      if (s_selecionando) { sair_da_selecao(); }   // os indices mudaram
+      if (s_selecionando) { sair_da_selecao(); }   // the indices changed
     }
   } else if (s_l_n < 0) {
-    // A pasta sumiu (pendrive saiu, cartao foi para o computador): os discos.
+    // The folder vanished (flash drive removed, SD card lent to the computer): back to the disks.
     s_n_itens = s_n_achados = 0;
     if (s_nivel == NIVEL_PASTA && !strcmp(s_l_pasta, s_pasta)) {
       navegar("");
@@ -398,7 +401,7 @@ static void listagem_chegou(void)
     s_n_achados = s_l_achados;
     s_tem_musica = false;
     for (int i = 0; i < s_n_itens; ++i) { if (s_itens[i].tipo == TAB5_ARQ_MUSICA) { s_tem_musica = true; break; } }
-    if (s_selecionando) { sair_da_selecao(); }   // os indices mudaram
+    if (s_selecionando) { sair_da_selecao(); }   // the indices changed
   }
   lista_itens_mudaram(&s_lista, s_n_itens);
   if (!s_l_manter) { lista_ao_inicio(&s_lista); }
@@ -410,7 +413,7 @@ static void listagem_chegou(void)
 }
 
 // ---------------------------------------------------------------------------
-// AS ACOES NO WORKER (tocam no disco: nunca na interface)
+// ACTIONS ON THE WORKER (they touch the disk: never on the UI)
 // ---------------------------------------------------------------------------
 typedef enum {
   OP_APAGAR, OP_RENOMEAR, OP_CRIAR, OP_COLAR, OP_EJETAR, OP_PARA_MUSICA,
@@ -420,15 +423,15 @@ typedef enum {
 EXT_RAM_BSS_ATTR static char s_op_itens[TAB5_ARQ_ITENS_MAX][TAB5_ARQ_CAMINHO_MAX];
 static struct {
   op_t  op;
-  int   n;                                   // itens em s_op_itens
+  int   n;                                   // items in s_op_itens
   char  pasta[TAB5_ARQ_CAMINHO_MAX];
   char  nome[TAB5_ARQ_NOME_MAX];
-  // resultado
+  // result
   char  msg[96];
   bool  erro;
-  bool  reler;          // listar de novo a pasta
-  bool  abrir_musica;   // abrir o app Musica (tocou)
-  bool  instalou;       // comecou a copia de um app Berry
+  bool  reler;          // list the folder again
+  bool  abrir_musica;   // open the Musica app (it started playing)
+  bool  instalou;       // started copying a Berry app
 } s_op;
 static volatile bool s_op_rodando = false;
 static volatile bool s_op_pronto = false;
@@ -439,10 +442,11 @@ static void resultado(tab5_arq_erro_t r, const char* ok_txt)
   snprintf(s_op.msg, sizeof(s_op.msg), "%s", r == TAB5_ARQ_OK ? ok_txt : tr(tab5_arq_erro_texto(r)));
 }
 
-// Para onde um item da lixeira volta, como TEXTO para mostrar: a pasta de
-// origem sem a raiz do disco ("/Fotos/2026"), ou o nome do disco quando a
-// origem e a raiz, e desconhecida ou fora dele. 'conferir' = a mesma regra do
-// servico (pasta que nao aceita gravar -> raiz do disco); so texto, sem disco.
+// Where a recycle-bin item goes back to, as TEXT for display: the original
+// folder without the disk root ("/Fotos/2026"), or the disk name when the
+// origin is the root, unknown or outside it. 'conferir' = the same rule as
+// the service (folder that does not accept writes -> disk root); text only,
+// no disk access.
 static void lixo_destino(const char* raiz, const char* origem, bool conferir, char* out, size_t tam)
 {
   snprintf(out, tam, "%s", tr(tab5_volume_tipo(raiz)));
@@ -504,7 +508,7 @@ static void trabalho_op(void*)
       break;
     }
     case OP_TOCAR: {
-      // O tocador toca a PASTA a partir de um item da lista dele: acha o indice.
+      // The player plays the FOLDER starting from an item in its list: find the index.
       tab5_musica_item_t* lista = (tab5_musica_item_t*)heap_caps_malloc(sizeof(tab5_musica_item_t) * MAX_ITENS, MALLOC_CAP_SPIRAM);
       const int n = lista ? tab5_musica_listar(s_op.pasta, lista, MAX_ITENS, nullptr) : -1;
       int idx = -1;
@@ -559,15 +563,15 @@ static void trabalho_op(void*)
       sistema_apps_de_fora_reler();
       break;
   }
-  // Mexeu em arquivo: os apps de fora (os .be de apps/Berry) podem ter mudado
-  // - apagado, renomeado, colado. A releitura so troca os icones se a lista
-  // mudou de fato (e na variante sem Berry nao faz nada).
+  // Touched a file: the external apps (the .be files in apps/Berry) may have
+  // changed - deleted, renamed, pasted. The re-read only swaps the icons if the
+  // list actually changed (and in the variant without Berry it does nothing).
   if (s_op.op == OP_APAGAR || s_op.op == OP_RENOMEAR) { sistema_apps_de_fora_reler(); }
   s_op_pronto = true;
 }
 
-// s_op e s_op_itens sao do worker enquanto uma acao roda: quem vai preencher
-// pergunta antes.
+// s_op and s_op_itens belong to the worker while an action runs: whoever is
+// about to fill them asks first.
 static bool op_livre(void)
 {
   if (s_op_rodando) { mensagem(tr("Aguarde a ação anterior terminar."), true); return false; }
@@ -598,11 +602,11 @@ static void op_chegou(void)
 }
 
 // ---------------------------------------------------------------------------
-// LEITURA DE TEXTO NO WORKER
+// TEXT READING ON THE WORKER
 // ---------------------------------------------------------------------------
-// Contar as linhas e ler uma pagina no worker, SO com o estado abaixo (s_c_*)
-// e o texto aberto (s_texto); a interface copia o resultado no ao_aviso.
-// Caminho e pagina sao FOTOGRAFADOS no pedido.
+// Counting the lines and reading a page on the worker, ONLY with the state
+// below (s_c_*) and the open text (s_texto); the UI copies the result in
+// ao_aviso. Path and page are SNAPSHOTTED in the request.
 static char          s_c_caminho[TAB5_ARQ_CAMINHO_MAX + TAB5_ARQ_NOME_MAX];
 static int           s_c_linha = 0;
 static bool          s_c_contar = false;
@@ -616,14 +620,15 @@ static bool          s_c_de_novo = false;
 static bool          s_c_contar_de_novo = false;
 static bool          s_precisa_ler = false;
 
-// O texto aberto (indice de linhas): quem monta e le e o servico tab5_texto.
-// Nasce e e trocado no worker (ao abrir um arquivo); a interface so fecha com o worker livre.
+// The open text (line index): building and reading it is the tab5_texto
+// service's job. Created and replaced on the worker (when a file is opened);
+// the UI only closes it with the worker idle.
 static tab5_texto_t* s_texto = nullptr;
 
 static void trabalho_ler(void*)
 {
-  // Abrir (contar) monta o indice; ler pega as linhas da pagina. Cada chamada
-  // do servico segura o disco (cartao ou pendrive) so enquanto le.
+  // Opening (counting) builds the index; reading fetches the page's lines. Each
+  // service call holds the disk (SD card or flash drive) only while reading.
   if (s_c_contar) {
     tab5_texto_fechar(s_texto);
     s_texto = tab5_texto_abrir(s_c_caminho, sistema_trabalho_cancelado);
@@ -651,29 +656,31 @@ static void pedir_leitura(bool contar)
 }
 
 // ---------------------------------------------------------------------------
-// IMAGEM NO WORKER
+// IMAGE ON THE WORKER
 // ---------------------------------------------------------------------------
-// Quem le e decodifica e o servico de imagem (services/tab5_imagem): JPEG, PNG,
-// BMP, QOI e GIF, de qualquer tamanho de arquivo. O worker pede que ele desenhe
-// a imagem inteira, ja na escala que cabe, no sprite do tamanho da caixa.
+// Reading and decoding is the image service's job (services/tab5_imagem):
+// JPEG, PNG, BMP, QOI and GIF, of any file size. The worker asks it to draw
+// the whole image, already at the scale that fits, into a sprite the size of
+// the box.
 //
-// GIF ANIMADO: o worker abre o GIF (s_gif) e decodifica UM quadro por pedido,
-// sempre no mesmo sprite. O app repinta quando o quadro chega e, passado o
-// atraso dele (periodo_agora), pede o seguinte. Nada e decodificado na interface.
-static M5Canvas*     s_img_spr = nullptr;       // a caixa inteira, desenhada pelo worker
-static uint32_t      s_img_px_l = 0, s_img_px_a = 0;   // tamanho do sprite
+// ANIMATED GIF: the worker opens the GIF (s_gif) and decodes ONE frame per
+// request, always into the same sprite. The app repaints when the frame
+// arrives and, after its delay (periodo_agora), asks for the next one.
+// Nothing is decoded on the UI.
+static M5Canvas*     s_img_spr = nullptr;       // the whole box, drawn by the worker
+static uint32_t      s_img_px_l = 0, s_img_px_a = 0;   // sprite size
 static char          s_img_px_caminho[TAB5_ARQ_CAMINHO_MAX + TAB5_ARQ_NOME_MAX] = "";
 static volatile bool s_img_lendo = false;
 static volatile bool s_img_lida = false;
 static volatile bool s_img_lida_ok = false;
-static tab5_gif_t*   s_gif = nullptr;           // o GIF aberto: o worker abre, a interface fecha com o worker livre
-static volatile int  s_gif_atraso = 0;          // atraso do ultimo quadro (ms)
-static volatile bool s_gif_anima = false;       // o GIF aberto tem mais de um quadro
-static int64_t       s_gif_pedido_us = 0;       // quando o quadro em andamento foi pedido
-static int64_t       s_gif_devido_us = 0;       // quando o proximo quadro deve ser pedido
+static tab5_gif_t*   s_gif = nullptr;           // the open GIF: the worker opens it, the UI closes it with the worker idle
+static volatile int  s_gif_atraso = 0;          // delay of the last frame (ms)
+static volatile bool s_gif_anima = false;       // the open GIF has more than one frame
+static int64_t       s_gif_pedido_us = 0;       // when the frame in progress was requested
+static int64_t       s_gif_devido_us = 0;       // when the next frame should be requested
 
-// Um quadro do GIF (abre o arquivo na primeira vez). false = nao abriu como GIF
-// ou o quadro falhou.
+// One GIF frame (opens the file the first time). false = did not open as a GIF
+// or the frame failed.
 static bool ler_quadro_gif(void)
 {
   if (!s_gif) {
@@ -693,20 +700,20 @@ static void trabalho_ler_imagem(void*)
   const int64_t t0 = esp_timer_get_time();
   if (s_gif || tab5_arq_extensao_e(s_img_px_caminho, ".gif")) { s_img_lida_ok = ler_quadro_gif(); }
   if (!s_img_lida_ok && !s_gif) {
-    // Os outros formatos (e o ".gif" que nao e GIF: o servico reconhece pelo conteudo).
+    // The other formats (and a ".gif" that is not a GIF: the service recognises it by content).
     int l = 0, a = 0;
     if (tab5_imagem_tamanho(s_img_px_caminho, &l, &a)) { s_img_largura = (uint32_t)l; s_img_altura = (uint32_t)a; }
     s_img_lida_ok = tab5_imagem_desenhar(s_img_px_caminho, s_img_spr, sistema_trabalho_cancelado);
   }
-  ESP_LOGI(TAG, "imagem %s lida em %d ms (ok=%d)", s_img_px_caminho,
+  ESP_LOGI(TAG, "image %s read in %d ms (ok=%d)", s_img_px_caminho,
            (int)((esp_timer_get_time() - t0) / 1000), (int)s_img_lida_ok);
   s_img_lida = true;
 }
 
 static void soltar_imagem(void)
 {
-  if (s_img_lendo) { return; }   // o worker esta escrevendo nele: solta quando ele avisar
-  if (s_gif) { tab5_gif_fechar(s_gif); s_gif = nullptr; }   // so libera memoria (o disco ja foi solto)
+  if (s_img_lendo) { return; }   // the worker is writing into it: free it when it reports back
+  if (s_gif) { tab5_gif_fechar(s_gif); s_gif = nullptr; }   // only frees memory (the disk has already been released)
   s_gif_anima = false;
   tab5_sprite_soltar(&s_img_spr);
   s_img_px_l = s_img_px_a = 0;
@@ -715,7 +722,7 @@ static void soltar_imagem(void)
 }
 
 // ---------------------------------------------------------------------------
-// AVISOS
+// NOTIFICATIONS
 // ---------------------------------------------------------------------------
 static void job_mudou(void)
 {
@@ -725,10 +732,10 @@ static void job_mudou(void)
   const bool roda   = t.fase == TAB5_ARQ_CONTANDO || t.fase == TAB5_ARQ_COPIANDO || t.fase == TAB5_ARQ_APAGANDO;
   s_job_fase = t.fase;
   if (rodava && !roda) {
-    // Terminou: o que se ve pode ter mudado (destino e, num mover, a origem).
+    // Finished: what is shown may have changed (destination and, on a move, the source).
     if (s_nivel != NIVEL_CONTEUDO) { pedir_listagem(true); }
-    // Copiar/mover para (ou de) apps/Berry muda os apps: rele. Calado, a
-    // nao ser na instalacao (que avisa "o icone esta na tela inicial").
+    // Copying/moving to (or from) apps/Berry changes the apps: re-read. Silently,
+    // except on install (which says "the icon is on the home screen").
     const bool instalou = s_instalando_be && t.fase == TAB5_ARQ_FEITO;
     s_instalando_be = false;
     if (!s_op_rodando) { pedir_op(instalou ? OP_RELER_BERRY : OP_RELER); }
@@ -740,8 +747,8 @@ static void ao_aviso(uint32_t av)
 {
   if (av & AVISO_ARQUIVOS) { job_mudou(); }
   if (av & AVISO_VOLUMES) {
-    // Um disco entrou ou saiu. Na raiz, a lista dos discos muda; dentro de um
-    // disco que saiu, volta para a raiz.
+    // A disk came or went. At the root, the disk list changes; inside a disk that
+    // went away, go back to the root.
     if (s_nivel == NIVEL_DISCOS) { pedir_listagem(true); }
     else if (!tab5_volume_disponivel(s_pasta)) {
       if (s_nivel == NIVEL_CONTEUDO) { soltar_imagem(); }
@@ -753,12 +760,12 @@ static void ao_aviso(uint32_t av)
   if (s_op_pronto) { op_chegou(); }
   if (s_img_lendo && s_img_lida) {
     s_img_lendo = false;
-    // Falhou: o caminho fica (e o desenho mostra o erro em vez de tentar de novo).
+    // Failed: the path stays (and the drawing shows the error instead of retrying).
     if (!s_img_lida_ok) { s_gif_anima = false; }
     if (s_nivel != NIVEL_CONTEUDO || s_ver == VER_TEXTO) {
       soltar_imagem();
     } else if (s_gif && s_gif_anima && s_img_lida_ok && tab5_gif_quadros_vistos(s_gif) > 1) {
-      // Quadro novo do GIF: so repinta (nao e tela nova). O seguinte vem passado o atraso.
+      // New GIF frame: just repaint (it is not a new screen). The next one comes after the delay.
       const int64_t agora = esp_timer_get_time();
       s_gif_devido_us = s_gif_pedido_us + (int64_t)s_gif_atraso * 1000;
       if (s_gif_devido_us < agora) { s_gif_devido_us = agora; }
@@ -790,8 +797,8 @@ static void ao_aviso(uint32_t av)
   if (mesmo_arquivo) { sistema_pedir_redesenho_completo(); }
 }
 
-// GIF animado na tela: redesenha a cada atraso de quadro (o desenho pede o
-// quadro seguinte ao worker). Nos outros casos so acorda por aviso ou toque.
+// Animated GIF on screen: redraws at each frame delay (the drawing asks the
+// worker for the next frame). Otherwise it only wakes on a notification or a tap.
 static uint32_t periodo_agora(void)
 {
   if (s_nivel != NIVEL_CONTEUDO || !s_gif_anima) { return 0; }
@@ -799,7 +806,7 @@ static uint32_t periodo_agora(void)
 }
 
 // ---------------------------------------------------------------------------
-// CICLO DE VIDA
+// LIFE CYCLE
 // ---------------------------------------------------------------------------
 static bool ao_abrir(void)
 {
@@ -827,20 +834,20 @@ static void ao_fechar(void)
   s_dlg = DLG_NADA;
   s_n_itens = 0;
   if (s_itens) { heap_caps_free(s_itens); s_itens = nullptr; }
-  if (s_carga) { heap_caps_free(s_carga); s_carga = nullptr; }   // o fechamento ja esperou o worker
+  if (s_carga) { heap_caps_free(s_carga); s_carga = nullptr; }   // closing has already waited for the worker
   if (s_lixo) { heap_caps_free(s_lixo); s_lixo = nullptr; }
   if (s_lixo_carga) { heap_caps_free(s_lixo_carga); s_lixo_carga = nullptr; }
   s_n_linhas = 0;
-  tab5_texto_fechar(s_texto);   // o fechamento ja esperou o worker
+  tab5_texto_fechar(s_texto);   // closing has already waited for the worker
   s_texto = nullptr;
   s_ver = VER_TEXTO;
-  s_img_lendo = false;   // fechar o app ja esperou o worker
+  s_img_lendo = false;   // closing the app has already waited for the worker
   soltar_imagem();
   sair_da_selecao();
 }
 
 // ---------------------------------------------------------------------------
-// DESENHO: icones e itens
+// DRAWING: icons and items
 // ---------------------------------------------------------------------------
 static void icone_pasta_pequena(lgfx::LovyanGFX& d, int x, int y, int w, int h)
 {
@@ -852,8 +859,8 @@ static void icone_pasta_pequena(lgfx::LovyanGFX& d, int x, int y, int w, int h)
   d.fillRoundRect(x, y + aba_a - 1,     w,     h - aba_a + 1,  3, pasta);
 }
 
-// Folha com o canto dobrado; a faixa de baixo tem a cor do tipo (musica,
-// imagem, texto, app) - le-se o tipo sem ler a extensao.
+// Sheet with a folded corner; the bottom strip has the type's colour (music,
+// image, text, app) - the type reads without reading the extension.
 static void icone_arquivo_pequeno(lgfx::LovyanGFX& d, int x, int y, int w, int h, tab5_arq_tipo_t tipo)
 {
   const uint16_t pagina = TEMA_TEXTO_2;
@@ -884,10 +891,10 @@ static void icone_disco(lgfx::LovyanGFX& d, int x, int y, int lado, bool pendriv
 {
   const uint16_t corpo = ativo ? (pendrive ? TEMA_APP_AZUL : TEMA_APP_VERDE) : CINZA_BT;
   if (pendrive) {
-    d.fillRoundRect(x + lado / 4, y, lado / 2, lado / 4, 3, TEMA_TEXTO_2);           // o conector
+    d.fillRoundRect(x + lado / 4, y, lado / 2, lado / 4, 3, TEMA_TEXTO_2);           // the connector
     d.fillRoundRect(x + lado / 8, y + lado / 4 - 2, lado * 3 / 4, lado * 3 / 4, 8, corpo);
   } else {
-    // Cartao: o canto cortado e os contatos.
+    // SD card: the cut corner and the contacts.
     d.fillRoundRect(x + lado / 8, y, lado * 3 / 4, lado, 8, corpo);
     d.fillTriangle(x + lado / 8, y, x + lado / 8 + lado / 4, y, x + lado / 8, y + lado / 4, TEMA_FUNDO);
     for (int k = 0; k < 4; ++k) { d.fillRect(x + lado / 3 + k * lado / 10, y + 6, lado / 16, lado / 5, TEMA_FUNDO); }
@@ -896,9 +903,10 @@ static void icone_disco(lgfx::LovyanGFX& d, int x, int y, int lado, bool pendriv
 
 static int item_altura(int, void*) { return s_nivel == NIVEL_DISCOS ? LIN_DISCO : LIN_LISTA; }
 
-// A linha de um disco: icone, nome, espaco, lixeira e os botoes da direita
-// (Ejetar, Esvaziar). Os botoes nao entram no registro: o toque na lista
-// decide pelo 'x' (ver tocar_disco) - a lista rola, o registro nao.
+// A disk row: icon, name, space, recycle bin and the buttons on the right
+// (Ejetar/eject, Esvaziar/empty). The buttons are not registered: the tap on
+// the list decides by 'x' (see tocar_disco) - the list scrolls, the register
+// does not.
 static const int DISCO_BT_L = 190, DISCO_BT_A = 56;
 
 static void disco_desenhar(lgfx::LovyanGFX& d, int i, int x0, int y, int largura)
@@ -927,7 +935,7 @@ static void disco_desenhar(lgfx::LovyanGFX& d, int i, int x0, int y, int largura
     tab5_bytes_txt(a2, sizeof(a2), dk.total);
     snprintf(t, sizeof(t), tr("livres %s de %s"), a1, a2);
     d.drawString(t, tx, y + 56);
-    // A barra do usado.
+    // The used-space bar.
     const int bl = bt_x - tx - 20;
     if (bl > 40 && dk.total) {
       d.fillRoundRect(tx, y + 92, bl, 10, 5, TEMA_SUPERFICIE_ALTA);
@@ -941,20 +949,20 @@ static void disco_desenhar(lgfx::LovyanGFX& d, int i, int x0, int y, int largura
       d.drawString(t, tx, y + 110);
     }
   }
-  // Botoes da direita.
+  // Buttons on the right.
   if (dk.v.disponivel) {
     int by = y + 12;
     if (pendrive) {
       tab5_botao(d, bt_x, by, DISCO_BT_L, DISCO_BT_A, tr("Ejetar"), TEMA_ALERTA, TEMA_FUNDO);
       by += DISCO_BT_A + 10;
     }
-    // Abre a lixeira (la se restaura, exclui ou esvazia). Discreto de proposito.
+    // Opens the recycle bin (where you restore, delete or empty). Understated on purpose.
     if (dk.lixeira > 0) { tab5_botao(d, bt_x, by, DISCO_BT_L, DISCO_BT_A, tr("Lixeira"), TEMA_SUPERFICIE_ALTA, TEMA_TEXTO_2); }
   }
   if (i + 1 < s_n_itens) { d.drawFastHLine(x0 + MARGEM_X, y + LIN_DISCO - 4, largura - MARGEM_X, COR_DIVISA); }
 }
 
-// "de /Fotos · 07/11 14:32 · 1.2 MB" - a segunda linha de um item da lixeira.
+// "de /Fotos · 07/11 14:32 · 1.2 MB" - the second line of a recycle-bin item.
 static void lixo_detalhe(const tab5_arq_lixo_t& it, char* out, size_t tam)
 {
   char destino[96], peso[16];
@@ -977,8 +985,9 @@ static void lixo_detalhe(const tab5_arq_lixo_t& it, char* out, size_t tam)
   snprintf(out + k, tam - k, " · %s", peso);
 }
 
-// Um item da lixeira: icone, o nome em destaque e, embaixo, de onde veio,
-// quando foi apagado e o tamanho. Selecionando: a caixinha antes do icone.
+// A recycle-bin item: icon, the name highlighted and, below, where it came
+// from, when it was deleted and the size. While selecting: the checkbox
+// before the icon.
 static void lixo_desenhar(lgfx::LovyanGFX& d, int i, int x0, int y, int largura)
 {
   const tab5_arq_lixo_t& it = s_lixo[i];
@@ -1024,10 +1033,10 @@ static void item_desenhar(lgfx::LovyanGFX& d, int i, int x0, int y, int largura,
   tab5_texto(d, TAM_LISTA);
   d.setTextDatum(top_left);
   const int icone_a = d.fontHeight();
-  // O conteudo no meio da altura do item; a linha que separa, embaixo.
+  // The content centred in the item's height; the separating line at the bottom.
   const int y_item = y;
   y += (LIN_LISTA - icone_a) / 2 - 2;
-  // Selecionando: a caixinha antes do icone.
+  // While selecting: the checkbox before the icon.
   if (s_selecionando) {
     const bool marcado = s_sel[i] != 0;
     d.fillRoundRect(x, y + 2, icone_a - 4, icone_a - 4, 6, marcado ? TEMA_DESTAQUE : TEMA_FUNDO);
@@ -1078,7 +1087,7 @@ static void milhar(char* out, size_t n, int v)
 }
 
 // ---------------------------------------------------------------------------
-// DESENHO: o conteudo (texto e imagem)
+// DRAWING: the content (text and image)
 // ---------------------------------------------------------------------------
 static int desenhar_texto(lgfx::LovyanGFX& d, const area_t& a, int y)
 {
@@ -1141,16 +1150,16 @@ static void desenhar_imagem(lgfx::LovyanGFX& d, const area_t& a, int x, int y)
   caminho_arquivo(caminho, sizeof(caminho));
   const bool mesma = s_img_px_caminho[0] && !strcmp(s_img_px_caminho, caminho);
 
-  // O worker escreve no sprite: nao se pinta enquanto ele trabalha. Num GIF que ja
-  // esta na tela, a imagem fica como esta ate o proximo quadro chegar.
+  // The worker writes into the sprite: no painting while it works. For a GIF
+  // already on screen, the image stays as it is until the next frame arrives.
   if (s_img_lendo && s_gif_anima && mesma) { return; }
 
-  // O sprite e a caixa inteira; o servico desenha a imagem dentro, reduzida
-  // para caber e centralizada, com o fundo preto.
+  // The sprite is the whole box; the service draws the image inside it,
+  // reduced to fit and centred, on a black background.
   const bool pronta = !s_img_lendo && mesma && s_img_spr && s_img_px_l == (uint32_t)caixa_l && s_img_px_a == (uint32_t)caixa_a;
   if (pronta) {
     s_img_spr->pushSprite(&d, a.x + (a.largura - caixa_l) / 2, y);
-    // GIF animado: passado o atraso do quadro, o worker decodifica o seguinte.
+    // Animated GIF: after the frame's delay, the worker decodes the next one.
     if (s_gif_anima && esp_timer_get_time() + 16000 >= s_gif_devido_us) {
       s_gif_pedido_us = esp_timer_get_time();
       s_img_lida = false;
@@ -1184,7 +1193,7 @@ static void desenhar_imagem(lgfx::LovyanGFX& d, const area_t& a, int x, int y)
 }
 
 // ---------------------------------------------------------------------------
-// DESENHO: dialogos, rodape e a tela
+// DRAWING: dialogues, footer and the screen
 // ---------------------------------------------------------------------------
 static void desenhar_dialogo(lgfx::LovyanGFX& d, const area_t& a)
 {
@@ -1215,7 +1224,7 @@ static void desenhar_dialogo(lgfx::LovyanGFX& d, const area_t& a)
     return;
   }
   if (s_dlg == DLG_LIXO_ITEM) {
-    // Um item da lixeira: o que fazer com ele (tres botoes, um sobre o outro).
+    // A recycle-bin item: what to do with it (three buttons, one above the other).
     const int bl = a.largura - 80, bh = 400;
     const int bx = 40, by = (a.altura - bh) / 2;
     const uint16_t caixa = TEMA_SUPERFICIE;
@@ -1236,7 +1245,7 @@ static void desenhar_dialogo(lgfx::LovyanGFX& d, const area_t& a)
     botao(d, a, bx + 30, by + 288, bl - 60, 72, tr("Cancelar"), CINZA_BT, TEMA_TEXTO, BT_DLG_NAO);
     return;
   }
-  // Confirmar: caixa no meio.
+  // Confirm: box in the middle.
   const int bl = a.largura - 80, bh = 330;
   const int bx = 40, by = (a.altura - bh) / 2;
   d.fillRect(a.x, a.y, a.largura, a.altura, TEMA_FUNDO);
@@ -1268,7 +1277,7 @@ static void desenhar_dialogo(lgfx::LovyanGFX& d, const area_t& a)
         TEMA_PERIGO, TEMA_SOBRE_DESTAQUE, BT_DLG_SIM);
 }
 
-// Uma fileira de botoes no rodape, de larguras iguais.
+// A row of equal-width buttons in the footer.
 typedef struct { const char* txt; bt_id_t id; uint16_t cor; uint16_t tinta; } bt_def_t;
 static bt_def_t bt_def(const char* txt, bt_id_t id, uint16_t cor, uint16_t tinta) { return { txt, id, cor, tinta }; }
 static void fileira(lgfx::LovyanGFX& d, const area_t& a, int y, const bt_def_t* b, int n)
@@ -1281,13 +1290,13 @@ static void fileira(lgfx::LovyanGFX& d, const area_t& a, int y, const bt_def_t* 
   }
 }
 
-// O rodape: progresso da copia (se houver) e a fileira de acoes da vez.
-// Devolve a altura que ocupou (a lista termina acima dela).
+// The footer: copy progress (if any) and the current row of actions.
+// Returns the height it took (the list ends above it).
 static int desenhar_rodape(lgfx::LovyanGFX& d, const area_t& a)
 {
   int ocupado = 0;
   int y = a.altura - 8;
-  // 1. A fileira de acoes.
+  // 1. The row of actions.
   bt_def_t b[5];
   int n = 0;
   bool recortar = false;
@@ -1318,7 +1327,7 @@ static int desenhar_rodape(lgfx::LovyanGFX& d, const area_t& a)
     fileira(d, a, y + 6, b, n);
     ocupado += RODAPE_A;
   }
-  // 2. O trabalho de copia: rodando, ou terminado e ainda nao visto.
+  // 2. The copy job: running, or finished and not yet seen.
   tab5_arq_trabalho_t t;
   tab5_arq_trabalho(&t);
   if (t.fase != TAB5_ARQ_PARADO) {
@@ -1374,7 +1383,7 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
   const bool conteudo = s_nivel == NIVEL_CONTEUDO;
   const bool texto = conteudo && s_ver == VER_TEXTO;
 
-  // ---- cabecalho: [< VOLTAR] titulo [botoes da direita] -----------------
+  // ---- header: [< VOLTAR] title [buttons on the right] -----------------
   int titulo_x = x;
   int titulo_fim = a.x + a.largura - MARGEM_X;
   if (s_nivel != NIVEL_DISCOS) {
@@ -1396,13 +1405,13 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
     direita(tr("Todos"), 150, TEMA_SUPERFICIE_ALTA, TEMA_TEXTO, BT_TODOS);
   } else if (s_nivel == NIVEL_PASTA) {
     if (s_gravavel) { direita(tr("+ Pasta"), 160, TEMA_SUPERFICIE_ALTA, TEMA_TEXTO, BT_NOVA_PASTA); }
-    // COPIAR PARA MUSICA: ha musica aqui, ha pasta de musica, e nao estamos nela.
+    // COPY TO MUSIC: there is music here, there is a music folder, and we are not in it.
     if (s_tem_musica && s_musica_raiz[0] && strncmp(s_pasta, s_musica_raiz, strlen(s_musica_raiz))) {
       direita(tr("Para Música"), 230, TEMA_APP_ROXO, TEMA_TEXTO, BT_PARA_MUSICA);
     }
   }
   if (s_nivel == NIVEL_LIXEIRA && !s_selecionando && s_n_itens > 0) {
-    // Discreto de proposito: esvaziar apaga de vez (o vermelho fica so na confirmacao).
+    // Understated on purpose: emptying deletes for good (the red is only on the confirmation).
     direita(tr("Esvaziar"), 190, TEMA_SUPERFICIE_ALTA, TEMA_TEXTO_2, BT_ESVAZIAR);
   }
   tab5_titulo(d, 36);
@@ -1420,7 +1429,7 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
   }
   d.setTextDatum(top_left);
 
-  // ---- descricao -------------------------------------------------------------
+  // ---- description -----------------------------------------------------------
   linha[0] = '\0';
   uint16_t cor_desc = TEMA_TEXTO_2;
   if (s_msg[0] && !conteudo) {
@@ -1452,7 +1461,7 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
   d.drawFastHLine(a.x, a.y + DIVISA_Y, a.largura, TEMA_LINHA);
   tab5_texto(d, TAM_BASE);
 
-  // ---- corpo -----------------------------------------------------------------
+  // ---- body ------------------------------------------------------------------
   if (conteudo) {
     lista_esconder(&s_lista);
     if (s_ver != VER_TEXTO) { desenhar_imagem(d, a, x, a.y + LISTA_Y); return; }
@@ -1499,7 +1508,7 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
 }
 
 // ---------------------------------------------------------------------------
-// TOQUE
+// TOUCH
 // ---------------------------------------------------------------------------
 static void ir_para(int nova, bool lembrar)
 {
@@ -1532,7 +1541,7 @@ static void pagina_anterior(void)
   sistema_pedir_redesenho_completo();
 }
 
-// Junta os caminhos selecionados (ate 'max') em 'out'. Devolve quantos.
+// Gathers the selected paths (up to 'max') into 'out'. Returns how many.
 static int selecionados(char (*out)[TAB5_ARQ_CAMINHO_MAX], int max)
 {
   int n = 0;
@@ -1552,7 +1561,7 @@ static void marcar(int i)
   s_sel[i] = !s_sel[i];
   s_n_sel += s_sel[i] ? 1 : -1;
   lista_item_mudou(&s_lista, i);
-  sistema_pedir_redesenho_completo();   // a descricao e o rodape mudam junto
+  sistema_pedir_redesenho_completo();   // the description and the footer change with it
 }
 
 static void abrir_dialogo_nome(bool criar, const char* atual)
@@ -1589,11 +1598,11 @@ static void nome_tecla(int ac)
   sistema_pedir_redesenho();
 }
 
-// Abre o arquivo 'i' da pasta, pelo tipo ("abrir com").
+// Opens file 'i' of the folder, by type ("open with").
 static void abrir_arquivo(int i)
 {
   const tab5_arq_item_t& it = s_itens[i];
-  // .avi: o servico de video abre (e toca o .mp3 de mesmo nome ao lado); o app so mostra.
+  // .avi: the video service opens it (and plays the .mp3 with the same name alongside); the app only shows it.
   if (tab5_video_suportado(it.nome)) {
     char caminho[TAB5_ARQ_CAMINHO_MAX + TAB5_ARQ_NOME_MAX];
     juntar(caminho, sizeof(caminho), s_pasta, it.nome);
@@ -1608,8 +1617,8 @@ static void abrir_arquivo(int i)
     pedir_op(OP_TOCAR);
     return;
   }
-  // Um .be ABRE como texto (para ler o script antes); instalar e o botao
-  // "Instalar" no alto dessa tela. Antes o toque ja copiava para apps/Berry.
+  // A .be OPENS as text (to read the script first); installing is the
+  // "Instalar" button at the top of that screen. Before, a tap copied it straight to apps/Berry.
   snprintf(s_arquivo, sizeof(s_arquivo), "%s", it.nome);
   s_nivel = NIVEL_CONTEUDO;
   s_linha = 0;
@@ -1624,11 +1633,11 @@ static void abrir_arquivo(int i)
     s_n_linhas = 0;
     pedir_leitura(true);
   }
-  ESP_LOGI(TAG, "abrindo %s/%s", s_pasta, s_arquivo);
+  ESP_LOGI(TAG, "opening %s/%s", s_pasta, s_arquivo);
   sistema_pedir_redesenho_completo();
 }
 
-// Toque numa linha de disco: os botoes da direita pelo x/dy, senao entra.
+// Tap on a disk row: the buttons on the right by x/dy, otherwise enter it.
 static void tocar_disco(int i, int x, int dy)
 {
   const disco_t& dk = s_discos[i];
@@ -1669,7 +1678,7 @@ static void voltar(void)
   sistema_pedir_redesenho_completo();
 }
 
-// Copia para s_lixo_alvo os itens marcados na lixeira. Devolve quantos.
+// Copies the items marked in the recycle bin into s_lixo_alvo. Returns how many.
 static int lixo_levar_marcados(void)
 {
   s_lixo_alvo_n = 0;
@@ -1679,7 +1688,7 @@ static int lixo_levar_marcados(void)
   return s_lixo_alvo_n;
 }
 
-// Pede ao worker o que esta em s_lixo_alvo.
+// Asks the worker for what is in s_lixo_alvo.
 static void lixo_pedir(op_t op)
 {
   snprintf(s_op.pasta, sizeof(s_op.pasta), "%s", s_pasta);
@@ -1688,7 +1697,7 @@ static void lixo_pedir(op_t op)
   pedir_op(op);
 }
 
-// Pergunta de excluir de vez o que esta em s_lixo_alvo.
+// Asks whether to delete for good what is in s_lixo_alvo.
 static void lixo_perguntar_excluir(void)
 {
   s_dlg = DLG_LIXO_EXCLUIR;
@@ -1713,8 +1722,8 @@ static void tocar_botao(bt_id_t b)
       break;
     case BT_PARA_MUSICA:
       if (!op_livre()) { break; }
-      // Numa pasta: a pasta inteira (o album vai junto com o nome dele). Na
-      // raiz do disco (que nao se copia): as musicas soltas dela.
+      // In a folder: the whole folder (the album goes along with its name). At the
+      // disk root (which cannot be copied): its loose music files.
       if (!eh_raiz_de_disco(s_pasta)) {
         snprintf(s_op_itens[0], sizeof(s_op_itens[0]), "%s", s_pasta);
         s_op.n = 1;
@@ -1741,7 +1750,7 @@ static void tocar_botao(bt_id_t b)
       const int n = selecionados(s_op_itens, TAB5_ARQ_ITENS_MAX);
       const char* ptrs[TAB5_ARQ_ITENS_MAX];
       for (int i = 0; i < n; ++i) { ptrs[i] = s_op_itens[i]; }
-      // So texto (as regras de permissao nao tocam no disco): pode na interface.
+      // Text only (the permission rules do not touch the disk): allowed on the UI.
       const bool ok = n && tab5_arq_area_por(ptrs, n, b == BT_RECORTAR);
       sair_da_selecao();
       char t[96];
@@ -1815,10 +1824,10 @@ static void tocar_botao(bt_id_t b)
   }
 }
 
-// TOQUE LONGO (kernel/toque_longo.hpp): o dedo parado num item da pasta vira "selecionar".
+// LONG TAP (kernel/toque_longo.hpp): a finger held still on a folder item becomes "select".
 static toque_longo_t s_lp;
 
-// ARRASTE no texto: para cima vira a pagina seguinte, para baixo volta.
+// DRAG on the text: up turns to the next page, down goes back.
 static int  s_arr_y0 = -1;
 static bool s_arr_valeu = false;
 
@@ -1847,7 +1856,7 @@ static void ao_tocar_nivel(int x, int y, bool pressionado)
     }
     return;
   }
-  // Toque longo (so nas pastas).
+  // Long tap (folders only).
   if ((s_nivel == NIVEL_PASTA || s_nivel == NIVEL_LIXEIRA) && toque_longo(&s_lp, x, y, pressionado) && !s_listando) {
     const int i = lista_item_em(&s_lista, x, y, nullptr);
     if (i >= 0) {
@@ -1873,8 +1882,8 @@ static void ao_tocar(int x, int y)
   }
   const bt_id_t b = botao_tocado(x, y);
   if (s_dlg != DLG_NADA) {
-    // Um toque duplo nao pode confirmar sem querer um apagar de vez: o SIM so
-    // vale 0,7 s depois de a pergunta aparecer.
+    // A double tap must not confirm a permanent delete by accident: YES only
+    // counts 0.7 s after the question appears.
     if (b == BT_DLG_SIM && (s_dlg == DLG_ESVAZIAR || s_dlg == DLG_LIXO_EXCLUIR) && tab5_agora_ms() - s_dlg_desde < 700) { return; }
     if (b == BT_DLG_SIM || b == BT_DLG_NAO || b == BT_DLG_RESTAURAR || b == BT_DLG_EXCLUIR) { tocar_botao(b); }
     return;
@@ -1906,14 +1915,14 @@ static void ao_tocar(int x, int y)
     return;
   }
 
-  if (s_listando) { return; }   // a lista na tela esta para ser trocada
+  if (s_listando) { return; }   // the list on screen is about to be replaced
   int dy = 0;
   const int i = lista_item_tocado(&s_lista, x, y, &dy);
   if (i < 0 || i >= s_n_itens) { return; }
   if (s_nivel == NIVEL_DISCOS) { tocar_disco(i, x, dy); return; }
   if (s_selecionando) { marcar(i); return; }
   if (s_nivel == NIVEL_LIXEIRA) {
-    // Um item: o dialogo (restaurar / excluir de vez / cancelar).
+    // One item: the dialogue (restore / delete for good / cancel).
     if (!op_livre()) { return; }
     s_lixo_alvo[0] = s_lixo[i];
     s_lixo_alvo_n = 1;
@@ -1943,7 +1952,7 @@ static void ao_teclar(const char* txt, uint8_t codigo, uint8_t)
 }
 
 // ---------------------------------------------------------------------------
-// ICONE DA TELA INICIAL
+// HOME SCREEN ICON
 // ---------------------------------------------------------------------------
 static void icone_arquivos(lgfx::LovyanGFX& d, int x, int y, int lado)
 {
@@ -1953,7 +1962,7 @@ static void icone_arquivos(lgfx::LovyanGFX& d, int x, int y, int lado)
   d.fillRoundRect(x, y, lado, lado, lado / 6, fundo);
   #define IX(f) (x + (int)((f) * lado))
   #define IY(f) (y + (int)((f) * lado))
-  // ORDEM IMPORTA: aba, folha, corpo - cada camada cobre a junta da anterior.
+  // ORDER MATTERS: tab, sheet, body - each layer covers the previous one's seam.
   d.fillRoundRect(IX(0.16f), IY(0.26f), (int)(0.34f * lado), (int)(0.14f * lado), lado / 22, aba);
   d.fillRoundRect(IX(0.26f), IY(0.30f), (int)(0.48f * lado), (int)(0.10f * lado), lado / 30, d.color565(245, 245, 245));
   d.fillRoundRect(IX(0.16f), IY(0.36f), (int)(0.68f * lado), (int)(0.40f * lado), lado / 16, pasta);
@@ -1961,14 +1970,14 @@ static void icone_arquivos(lgfx::LovyanGFX& d, int x, int y, int lado)
   #undef IY
 }
 
-// 'extern' e OBRIGATORIO: em C++ um const no escopo de arquivo tem ligacao
-// interna, e o apps.cpp nao enxergaria este simbolo.
+// 'extern' is MANDATORY: in C++ a const at file scope has internal
+// linkage, and apps.cpp would not see this symbol.
 extern const app_t APP_ARQUIVOS = {
   .nome  = "Arquivos",
   .cor   = TFT_SKYBLUE,
   .perfil = { },
-  // O cartao fica montado com o app aberto (ele e o disco principal). Sem
-  // cartao o app abre assim mesmo: o pendrive pode estar ai.
+  // The SD card stays mounted while the app is open (it is the main disk).
+  // Without a card the app opens anyway: the flash drive may be there.
   .usa_sd = true,
   .exige_sd = false,
   .ao_abrir  = ao_abrir,
@@ -1982,5 +1991,5 @@ extern const app_t APP_ARQUIVOS = {
   .avisos = AVISO_TRABALHO | AVISO_VOLUMES | AVISO_ARQUIVOS,
   .ao_aviso = ao_aviso,
   .icone = icone_arquivos,
-  .fundo_tema = true,   // o sistema limpa a area com TEMA_FUNDO
+  .fundo_tema = true,   // the system clears the area with TEMA_FUNDO
 };

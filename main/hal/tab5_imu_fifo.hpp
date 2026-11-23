@@ -1,56 +1,60 @@
-// IMU (BMI270) - o FIFO do chip, para quem precisa de TODAS as amostras do
-// giroscopio e nao so da ultima (hoje: o app Radar, que integra o rumo).
+// IMU (BMI270) - the chip's FIFO, for whoever needs ALL the gyroscope
+// samples and not just the last one (today: the Radar app, which integrates
+// the heading).
 //
-// POR QUE ISTO MORA NO HAL: ler o FIFO e falar com o chip pelo I2C interno
-// (registradores, cabecalhos de quadro, relogio do chip). Isso e driver, e
-// driver nao fica em app - o app so recebe as amostras prontas.
+// WHY THIS LIVES IN THE HAL: reading the FIFO means talking to the chip over
+// the internal I2C (registers, frame headers, the chip's clock). That is
+// driver work, and driver work does not belong in an app - the app just
+// receives the finished samples.
 //
-// O M5Unified le so os registradores de dado (a ULTIMA amostra). O FIFO e uma
-// fila de ~2 KB dentro do chip: cada amostra do giroscopio entra la, e quem le
-// recebe todas, em ordem. Ligar o FIFO nao muda nada para quem le os
-// registradores (tab5_imu_medir, tab5_imu_amostra): sao caminhos independentes.
+// M5Unified only reads the data registers (the LATEST sample). The FIFO is a
+// ~2 KB queue inside the chip: every gyroscope sample goes in, and the reader
+// gets them all, in order. Turning the FIFO on changes nothing for those
+// reading the registers (tab5_imu_medir, tab5_imu_amostra): they are
+// independent paths.
 //
-// TODAS as funcoes abaixo so da TAREFA DE INTERFACE - a regra do I2C interno
-// (ver tab5_imu.hpp e tab5_power.hpp).
+// ALL the functions below are UI TASK only - the internal I2C rule (see
+// tab5_imu.hpp and tab5_power.hpp).
 #pragma once
 
 #include <stdbool.h>
 #include <stdint.h>
 
 typedef struct {
-  float gyr_hz;             // taxa nominal do giroscopio
-  float gyr_lsb, acc_lsb;   // contagens por grau/s e por g
+  float gyr_hz;             // nominal gyroscope rate
+  float gyr_lsb, acc_lsb;   // counts per degree/s and per g
 } tab5_imu_fifo_info_t;
 
-// Liga o FIFO (giro + acelerometro, com cabecalho). 'info' pode ser nullptr.
-// false = sem chip ou sem memoria: quem chamou usa tab5_imu_amostra().
+// Turns the FIFO on (gyro + accelerometer, with headers). 'info' may be
+// nullptr. false = no chip or no memory: the caller uses tab5_imu_amostra().
 bool tab5_imu_fifo_ligar(tab5_imu_fifo_info_t* info);
 
-// Devolve o chip ao estado de antes e libera o buffer.
+// Returns the chip to its previous state and frees the buffer.
 void tab5_imu_fifo_desligar(void);
 
 bool tab5_imu_fifo_ligado(void);
 
-// Uma amostra de giro (graus/s) e, quando veio junto, o acelerometro (g;
-// nullptr se nao veio). 'dt' e o passo (s) e 't_us' o horario (esp_timer) dela.
+// One gyro sample (degrees/s) and, when it came along, the accelerometer (g;
+// nullptr if not). 'dt' is the step (s) and 't_us' its timestamp (esp_timer).
 typedef void (*tab5_imu_fifo_cb)(const float g[3], const float* a, float dt, int64_t t_us, void* ctx);
 
-// Le o que a fila do chip juntou e chama 'cb' para cada amostra de giro, em
-// ordem. 'parado' = o app sabe que o aparelho esta parado (calibrando): so
-// entao o driver confere a ordem giro/acelerometro dentro do quadro (o
-// acelerometro e que marca ~1 g). Descartes do chip e a taxa real do giroscopio
-// (o relogio do BMI270 nao e o do P4) sao tratados aqui dentro.
+// Reads what the chip's queue has gathered and calls 'cb' for each gyro
+// sample, in order. 'parado' = the app knows the device is still
+// (calibrating): only then does the driver check the gyro/accelerometer order
+// within the frame (the accelerometer is the one reading ~1 g). Chip drops
+// and the real gyroscope rate (the BMI270's clock is not the P4's) are
+// handled in here.
 void tab5_imu_fifo_ler(bool parado, tab5_imu_fifo_cb cb, void* ctx);
 
-// Contadores para diagnostico.
+// Diagnostic counters.
 typedef struct {
   uint32_t lidas, bytes, cortes, vazios, ctrl[4], desconhecidos, cheios;
-  uint32_t pulos;           // vezes que o chip descartou amostras; ACUMULADO, nao zera
-  bool     acel_primeiro;   // ordem do quadro "giro + acel" neste chip
-  float    dt;              // passo atual do giroscopio (s)
-  uint8_t  quadro[21];      // inicio do ultimo quadro de giro lido
-  int      quadro_tam;      // tamanho real daquele quadro (o que nao cabe em quadro[] fica de fora)
+  uint32_t pulos;           // times the chip dropped samples; CUMULATIVE, never reset
+  bool     acel_primeiro;   // order of the "gyro + accel" frame on this chip
+  float    dt;              // current gyroscope step (s)
+  uint8_t  quadro[21];      // start of the last gyro frame read
+  int      quadro_tam;      // real size of that frame (what does not fit in quadro[] is left out)
 } tab5_imu_fifo_diag_t;
 
-// Copia os contadores. 'zerar' recomeca os da janela (menos 'pulos').
+// Copies the counters. 'zerar' restarts the window ones (except 'pulos').
 void tab5_imu_fifo_diag(tab5_imu_fifo_diag_t* d, bool zerar);

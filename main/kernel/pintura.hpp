@@ -1,39 +1,39 @@
-// Pintura por diferenca - o auxilio que faltava aos apps.
+// Paint by difference - the helper the apps were missing.
 //
 // -------------------------------------------------------------------------
-// O PROBLEMA QUE ISTO RESOLVE
+// THE PROBLEM THIS SOLVES
 // -------------------------------------------------------------------------
-// O M5GFX desenha direto no framebuffer visivel, entao APAGAR PARA REDESENHAR
-// aparece como flash. A regra e escrever por cima, com largura fixa, e so
-// quando o valor mudou.
+// M5GFX draws straight onto the visible framebuffer, so CLEARING TO REDRAW
+// shows up as a flash. The rule is to write over the top, at a fixed width, and only
+// when the value changed.
 //
-// So que a regra sozinha nao bastou: foi esquecida em cinco apps (Energia,
-// Tarefas, Ajustes, Arquivos e Mesh), cada um corrigido separadamente. E
-// junto vinha sempre o mesmo segundo erro: esquecer que o SISTEMA limpa a area
-// (na abertura, ao voltar do repouso) e que dali o app precisa repintar TUDO,
-// senao a tela fica em branco - foi o que aconteceu com o app Ajustes.
+// But the rule alone was not enough: it was forgotten in five apps (Energia,
+// Tarefas, Ajustes, Arquivos and Mesh), each fixed separately. And
+// with it always came the same second mistake: forgetting that the SYSTEM clears the area
+// (on opening, on returning from idle) and that from then on the app must repaint EVERYTHING,
+// otherwise the screen is left blank - which is what happened with the Settings app.
 //
-// Enquanto isso for memoria do programador, vai continuar falhando. Aqui os
-// dois passos ficam embutidos: pintura_iniciar() consulta a limpeza da area
-// sozinho, e numa passada completa TODO comparador devolve "mudou" - entao o
-// app repinta tudo sem precisar lembrar de nada.
+// As long as this relies on the programmer's memory, it will keep failing. Here the
+// two steps are built in: pintura_iniciar() checks the area clearing
+// by itself, and on a full pass EVERY comparator returns "changed" - so the
+// app repaints everything without having to remember anything.
 //
 // -------------------------------------------------------------------------
-// COMO SE USA
+// HOW TO USE IT
 // -------------------------------------------------------------------------
 //   static pintura_t s_p;
 //   static int s_bat; static char s_nome[24];
 //
 //   void desenhar(lgfx::LovyanGFX& d, const area_t& a)
 //   {
-//     pintura_iniciar(&s_p);                       // decide se e completa
-//     if (pintura_completa(&s_p)) { ...fundo, titulos, molduras... }
+//     pintura_iniciar(&s_p);                       // decides whether it is full
+//     if (pintura_completa(&s_p)) { ...background, titles, frames... }
 //
-//     if (pintura_mudou_i(&s_p, &s_bat, bateria)) { ...desenha o numero... }
+//     if (pintura_mudou_i(&s_p, &s_bat, bateria)) { ...draws the number... }
 //     if (pintura_mudou_s(&s_p, s_nome, sizeof(s_nome), nome)) { ... }
 //   }
 //
-//   // ao trocar de pagina, de selecao, de qualquer coisa estrutural:
+//   // when changing page, selection, anything structural:
 //   pintura_pedir(&s_p);  sistema_pedir_redesenho_completo();
 
 #pragma once
@@ -42,30 +42,30 @@
 #include <stddef.h>
 
 typedef struct {
-  bool completo;    // esta passada repinta tudo
-  bool pedido;      // o app pediu repintura total
-  bool ja_desenhou; // false ate a primeira passada (que e sempre completa)
+  bool completo;    // this pass repaints everything
+  bool pedido;      // the app requested a total repaint
+  bool ja_desenhou; // false until the first pass (which is always full)
 } pintura_t;
 
-// Chamar no INICIO do desenhar(). Decide se a passada e completa, olhando: se
-// e a primeira, se o app pediu, ou se o sistema limpou a area.
+// Call at the START of desenhar(). Decides whether the pass is full, by checking: whether
+// it is the first, whether the app asked, or whether the system cleared the area.
 void pintura_iniciar(pintura_t* p);
 
-// O app pede repintura total. Use ao mudar de pagina, de item selecionado ou
-// qualquer coisa que reorganize a tela - e chame tambem
-// sistema_pedir_redesenho_completo(), que e quem agenda o desenho.
+// The app requests a total repaint. Use it when changing page, selected item or
+// anything that reorganises the screen - and also call
+// sistema_pedir_redesenho_completo(), which is what schedules the drawing.
 void pintura_pedir(pintura_t* p);
 
 static inline bool pintura_completa(const pintura_t* p) { return p->completo; }
 
-// SO PARA DECIDIR DESENHO. Nao use estes comparadores para decidir E/S (reler
-// cartao, abrir arquivo, falar com hardware): eles devolvem true em toda passada
-// COMPLETA, por desenho, e uma E/S que dispare repintura completa entra em loop
-// foi o que fez o teclado virtual do app Mesh piscar sozinho.
-// Para decisao de E/S, compare na mao.
+// ONLY FOR DRAWING DECISIONS. Do not use these comparators to decide I/O (rereading
+// the card, opening a file, talking to hardware): they return true on every
+// FULL pass, by design, and an I/O that triggers a full repaint goes into a loop -
+// that is what made the Mesh app's virtual keyboard flicker by itself.
+// For I/O decisions, compare by hand.
 //
-// Comparadores COM MEMORIA. Guardam o valor e devolvem true quando ele muda -
-// e SEMPRE true numa passada completa, que e o que faz o app repintar tudo sem
-// precisar lembrar disso.
+// Comparators WITH MEMORY. They store the value and return true when it changes -
+// and ALWAYS true on a full pass, which is what makes the app repaint everything without
+// having to remember to.
 bool pintura_mudou_i(const pintura_t* p, int* mem, int agora);
 bool pintura_mudou_s(const pintura_t* p, char* mem, size_t tam, const char* agora);

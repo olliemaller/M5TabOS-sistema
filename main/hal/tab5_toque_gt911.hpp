@@ -1,23 +1,23 @@
-// Toque GT911 (ILI9881C do Tab5) sem "dedo fantasma" quando o I2C falha.
+// GT911 touch (Tab5's ILI9881C) without a "phantom finger" when I2C fails.
 //
-// DEFEITO DO DRIVER DO M5GFX (Touch_GT911.inl, getTouchRaw): se a leitura do
-// I2C falha, o buffer interno (_readdata) continua com a ULTIMA leitura boa e
-// o getTouchRaw devolve esses pontos como se fossem novos. Se o ultimo estado
-// bom tinha um dedo, uma unica falha de I2C vira dedo parado na tela (toque
-// segurado). Os membros sao private, entao nao ha como consertar por heranca
-// simples: esta classe refaz so o getTouchRaw, com buffer proprio, e devolve
-// 0 pontos quando a leitura falha. O resto (init/sleep/wakeup) e do original.
+// M5GFX DRIVER DEFECT (Touch_GT911.inl, getTouchRaw): if the I2C read
+// fails, the internal buffer (_readdata) keeps the LAST good read and
+// getTouchRaw returns those points as if they were new. If the last good
+// state had a finger, a single I2C failure becomes a finger stuck on the screen (touch
+// held). The members are private, so it can't be fixed by simple
+// inheritance: this class redoes only getTouchRaw, with its own buffer, and returns
+// 0 points when the read fails. The rest (init/sleep/wakeup) is the original's.
 //
-// COMO ENTRA: tab5_toque_gt911_instalar(), chamada uma vez depois do M5.begin().
+// HOW IT GOES IN: tab5_toque_gt911_instalar(), called once after M5.begin().
 #pragma once
 
 #include <M5Unified.h>
 #include <stdint.h>
 
-// Troca o toque do painel pelo Toque_GT911. So age no ILI9881C (GT911); nos
-// outros paineis nao faz nada. Devolve true se trocou. Chamar uma vez, depois
-// do M5.begin().
+// Swaps the panel's touch for Toque_GT911. Only acts on the ILI9881C (GT911); on
+// other panels it does nothing. Returns true if it swapped. Call once, after
+// M5.begin().
 bool tab5_toque_gt911_instalar(void);
 
-// Quantas leituras de I2C falharam desde o boot (para diagnostico).
+// How many I2C reads have failed since boot (for diagnostics).
 uint32_t tab5_toque_gt911_falhas(void);

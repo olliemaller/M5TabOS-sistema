@@ -1,288 +1,301 @@
-# USB-A (host) e fone P2 - análise para implementar
+# USB-A (host) and 3.5 mm headphone jack - analysis before implementing
 
-Levantamento feito em 2026-10-17, antes de qualquer código. Fontes: o
-**esquema oficial do Tab5** (Tab5_Schematics_PDF, Altium, 2025-06-09 - lido
-página a página), o código do M5Unified 0.2.21 que já usamos, o BSP
-`espressif/m5stack_tab5` 1.3.x, o ESP-IDF 5.5.5 local e o registro de
-componentes da Espressif. O que é dedução (e não está escrito no esquema) está
-marcado **[a confirmar no teste]**.
+Survey done on 2026-10-17, before any code. Sources: the
+**official Tab5 schematic** (Tab5_Schematics_PDF, Altium, 2025-06-09 - read
+page by page), the M5Unified 0.2.21 code we already use, the BSP
+`espressif/m5stack_tab5` 1.3.x, the local ESP-IDF 5.5.5 and Espressif's
+component registry. What is deduction (and not written in the schematic) is
+marked **[to be confirmed in testing]**.
 
 ---
 
 ## 1. USB-A
 
-### 1.1 O hardware (do esquema)
+### 1.1 The hardware (from the schematic)
 
-| O quê | Como está ligado |
+| What | How it is connected |
 |---|---|
-| Dados | J10 (USB-A) ← ESD0524P (D21) ← choque de modo comum FT2 (SDMM0806H, 90 Ω) ← R113/R114 **33 Ω em série** ← `USB_HOST_DP/DM` ← pinos 49/50 do P4: **`USB2_OTG_D-/D+`** |
-| Controlador | o **OTG 2.0 High-Speed (480 Mbit/s)**, com PHY UTMI próprio - pinos dedicados, não é GPIO |
-| VBUS | `SYS_INT5V` → **MT9700** (U27, chave com limite de corrente) → `SYS_USB5V` → J10. Enable = `USB5V_EN` (expansor 1 / 0x44, bit 3) |
-| Limite de corrente | programado por R84 = 5,1 kΩ no SET. O datasheet do MT9700 só traz o gráfico I×R; pela curva fica na casa de ~1 A **[a confirmar medindo]** |
-| Sinal de falha | **não existe** - o MT9700 não tem pino de flag. Sobrecorrente só se percebe pelo aparelho sumindo do barramento (ou pelo INA226) |
-| USB-C, para comparar | `USB_DEVICE_DP/DM` → GPIO24/25 (`USB1P1_0`), o PHY full speed do console - o que o modo pendrive troca |
+| Data | J10 (USB-A) ← ESD0524P (D21) ← common-mode choke FT2 (SDMM0806H, 90 Ω) ← R113/R114 **33 Ω in series** ← `USB_HOST_DP/DM` ← P4 pins 49/50: **`USB2_OTG_D-/D+`** |
+| Controller | the **OTG 2.0 High-Speed (480 Mbit/s)**, with its own UTMI PHY - dedicated pins, not GPIO |
+| VBUS | `SYS_INT5V` → **MT9700** (U27, current-limited switch) → `SYS_USB5V` → J10. Enable = `USB5V_EN` (expander 1 / 0x44, bit 3) |
+| Current limit | set by R84 = 5.1 kΩ on SET. The MT9700 datasheet only gives the I×R graph; from the curve it is around ~1 A **[to be confirmed by measuring]** |
+| Fault signal | **does not exist** - the MT9700 has no flag pin. Overcurrent can only be noticed by the device disappearing from the bus (or via the INA226) |
+| USB-C, for comparison | `USB_DEVICE_DP/DM` → GPIO24/25 (`USB1P1_0`), the console's full-speed PHY - the one the pendrive mode switches |
 
-**Consequências diretas:**
+**Direct consequences:**
 
-1. **O USB-A é independente de tudo que já existe.** Outro controlador, outro
-   PHY, outros pinos. Não briga com o console (USB-C), nem com o modo pendrive
-   (que usa o OTG *full speed* pelo USB-C), nem com o I2S do alto-falante: o
-   problema de GPIO26/27 (memória "pendrive") é do PHY1 full speed, não deste.
-   Dá para ter pendrive no computador **e** um pendrive no USB-A ao mesmo tempo.
-2. **Alta velocidade de verdade**, mas com ressalva: os 33 Ω em série + o choque
-   estão no caminho de um sinal de 480 Mbit/s (o PHY já tem a terminação de
-   45 Ω interna). Deve funcionar em trilha curta, mas é o primeiro ponto a medir:
-   enumerar um pendrive HS e conferir que veio como HS e não caiu para FS.
-3. O padrão do IDF já é o certo: `usb_host_config_t.peripheral_map = 0` no P4
-   instala no periférico **HS** (BIT0) - igual ao BSP da Espressif, que não
-   passa nada.
-4. **Revisão do chip.** O `usb_phy.c` do IDF liga os pull-downs de 15 kΩ do
-   host por software só no P4 v3 (`!CONFIG_ESP32P4_SELECTS_REV_LESS_V3`); no
-   v1 o próprio controlador cuida. Temos as duas variantes de sdkconfig
-   (`chip_v1`/`chip_v3`) - testar nas duas.
+1. **USB-A is independent of everything that already exists.** A different
+   controller, a different PHY, different pins. It does not clash with the
+   console (USB-C), nor with the pendrive mode (which uses the *full-speed* OTG
+   via USB-C), nor with the speaker's I2S: the GPIO26/27 problem (the "pendrive"
+   notes) belongs to the full-speed PHY1, not this one. You can have the SD card
+   on the computer **and** a flash drive in the USB-A port at the same time.
+2. **Real high speed**, with a caveat: the 33 Ω series resistors + the choke
+   sit in the path of a 480 Mbit/s signal (the PHY already has internal 45 Ω
+   termination). It should work on a short trace, but it is the first thing to
+   measure: enumerate an HS flash drive and check that it came up as HS and did
+   not fall back to FS.
+3. The IDF default is already right: `usb_host_config_t.peripheral_map = 0` on
+   the P4 installs on the **HS** peripheral (BIT0) - the same as Espressif's
+   BSP, which passes nothing.
+4. **Chip revision.** The IDF's `usb_phy.c` enables the host's 15 kΩ
+   pull-downs in software only on the P4 v3 (`!CONFIG_ESP32P4_SELECTS_REV_LESS_V3`);
+   on v1 the controller itself takes care of it. We have both sdkconfig variants
+   (`chip_v1`/`chip_v3`) - test on both.
 
-### 1.2 Os 5 V do conector
+### 1.2 The connector's 5 V
 
-Já temos o controle em `tab5_power` (`perfil.usb_a_5v`, `M5.Power.setExtOutput(.., m5::ext_USB)`).
-Atenção à divergência: o nosso mapa (tirado do M5Unified) diz que `USB5V_EN`
-fica como **entrada com pull** (o enable real é resistor na placa) e o
-M5Unified inverte o *pull*; o BSP da Espressif programa o mesmo pino como
-**saída push-pull**. Os dois funcionam; seguimos com o M5Unified, que é dono
-do expansor aqui.
+We already have the control in `tab5_power` (`perfil.usb_a_5v`,
+`M5.Power.setExtOutput(.., m5::ext_USB)`).
+Note the discrepancy: our map (taken from M5Unified) says `USB5V_EN`
+is an **input with pull** (the real enable is a resistor on the board) and
+M5Unified inverts the *pull*; Espressif's BSP programs the same pin as a
+**push-pull output**. Both work; we stay with M5Unified, which owns
+the expander here.
 
-Regras para o serviço:
-- 5 V do USB-A **só ligados enquanto o serviço host estiver ativo** (é consumo
-  de bateria mesmo sem nada plugado: a chave e o que estiver no conector).
-- Com o Tab5 na bateria, o orçamento é o do conversor de 5 V interno;
-  aparelhos gulosos (HD externo de 2,5", hub com muita coisa) vão bater no
-  limite do MT9700. Hub com fonte própria é o caminho para isso.
+Rules for the service:
+- USB-A 5 V **only on while the host service is active** (it draws on the
+  battery even with nothing plugged in: the switch and whatever is in the
+  connector).
+- With the Tab5 on battery, the budget is that of the internal 5 V converter;
+  power-hungry devices (2.5" external HDD, a hub with lots on it) will hit the
+  MT9700's limit. A self-powered hub is the way to go for that.
 
-### 1.3 Bibliotecas
+### 1.3 Libraries
 
-| Pilha | Situação no P4 | Veredito |
+| Stack | Status on the P4 | Verdict |
 |---|---|---|
-| **USB Host Library do IDF** (`components/usb`, já no IDF 5.5.5) | HS no P4, hubs opcionais (`CONFIG_USB_HOST_HUBS_SUPPORTED`, hoje desligado), multi-hub | **usar esta** |
-| `espressif/usb` 1.6.0 (a mesma biblioteca, como componente) | exige IDF ≥ 5.5.3 (temos 5.5.5). Traz o que a embutida não tem: **suspende a porta antes do sono leve** (1.5.0), evento `DEV_REMOVED`, `fsls_only` (forçar FS se o HS der problema de sinal, 1.6.0), dual host no P4 | trocar para ela **se** o sono leve ou o sinal HS pedirem |
-| TinyUSB (`espressif/tinyusb` 0.21) | "Only Device part ... is supported" - host não | não serve (fica só no pendrive) |
-| CherryUSB 1.6.1 | host HS, hubs, muitas classes | segunda pilha USB no firmware, sem ganho que a da Espressif não dê; descartada |
+| **IDF USB Host Library** (`components/usb`, already in IDF 5.5.5) | HS on the P4, optional hubs (`CONFIG_USB_HOST_HUBS_SUPPORTED`, off today), multi-hub | **use this one** |
+| `espressif/usb` 1.6.0 (the same library, as a component) | requires IDF ≥ 5.5.3 (we have 5.5.5). Brings what the built-in one lacks: **suspends the port before light sleep** (1.5.0), `DEV_REMOVED` event, `fsls_only` (force FS if HS has signal problems, 1.6.0), dual host on the P4 | switch to it **if** light sleep or the HS signal calls for it |
+| TinyUSB (`espressif/tinyusb` 0.21) | "Only Device part ... is supported" - no host | not suitable (stays for pendrive mode only) |
+| CherryUSB 1.6.1 | HS host, hubs, many classes | a second USB stack in the firmware, with no gain Espressif's does not give; discarded |
 
-Drivers de classe (todos da Espressif, todos com P4; no IDF 5.x usam o `usb` embutido):
+Class drivers (all from Espressif, all with P4 support; on IDF 5.x they use the built-in `usb`):
 
-| Componente | Versão | Para quê no M5tabOS |
+| Component | Version | What for in M5tabOS |
 |---|---|---|
-| `usb_host_msc` | 1.3.0 | **pendrive no USB-A** → montado em VFS/FAT (`/usb`), Arquivos e Música leem dele. Só BOT/SCSI transparente (todo pendrive comum). Bloco 512-4096 |
-| `usb_host_hid` | 1.2.1 | **teclado e mouse**. Entrega o relatório cru (+ atalhos para Boot Protocol). O layout (ABNT2) é nosso - encaixa no `hal/tab5_teclado` |
-| `usb_host_cdc_acm` + `usb_host_vcp` (CH34x 2.2.1, CP210x 2.2.0, FTDI 2.1.1) | 2.4.1 | serial USB: nó Meshtastic/rádio no cabo, GPS USB, Arduino |
-| `usb_host_uac` | 1.5.0 | headset/DAC USB. **Só UAC 1.0** (a maioria dos headsets e adaptadores baratos é UAC1; DACs "hi-fi" UAC2 não funcionam) |
-| `usb_host_uvc` | 2.6.0 (temos 2.4.2 por tabela, via esp_video) | webcam. O `esp_video` já tem o caminho pronto: `CONFIG_ESP_VIDEO_ENABLE_USB_UVC_VIDEO_DEVICE` vira um `/dev/videoN` para o app Câmera |
+| `usb_host_msc` | 1.3.0 | **flash drive on USB-A** → mounted in VFS/FAT (`/usb`), Files and Music read from it. Only transparent BOT/SCSI (every ordinary flash drive). Block 512-4096 |
+| `usb_host_hid` | 1.2.1 | **keyboard and mouse**. Delivers the raw report (+ shortcuts for Boot Protocol). The layout (ABNT2) is ours - it slots into `hal/tab5_teclado` |
+| `usb_host_cdc_acm` + `usb_host_vcp` (CH34x 2.2.1, CP210x 2.2.0, FTDI 2.1.1) | 2.4.1 | USB serial: Meshtastic node/radio on the cable, USB GPS, Arduino |
+| `usb_host_uac` | 1.5.0 | USB headset/DAC. **UAC 1.0 only** (most cheap headsets and adaptors are UAC1; "hi-fi" UAC2 DACs do not work) |
+| `usb_host_uvc` | 2.6.0 (we have 2.4.2 indirectly, via esp_video) | webcam. `esp_video` already has the path ready: `CONFIG_ESP_VIDEO_ENABLE_USB_UVC_VIDEO_DEVICE` becomes a `/dev/videoN` for the Camera app |
 
-Versões: travar com `==` no `main/idf_component.yml`, como o resto (ver o
-aviso no topo dele: build limpo ao trocar componente).
+Versions: pin with `==` in `main/idf_component.yml`, like the rest (see the
+warning at the top of it: clean build when changing a component).
 
-### 1.4 Como montar para o melhor desempenho
+### 1.4 How to put it together for the best performance
 
-Arquitetura (regra da casa: motor em `services/`, apps só interface, módulo Berry por serviço):
+Architecture (house rule: engine in `services/`, apps only interface, one Berry module per service):
 
 ```
-services/tab5_usb_host.{hpp,cpp}   motor: instala/desinstala, tarefa usb_lib,
-                                   eventos de conexão, 5 V, energia
-  ├─ classe MSC  → monta /usb, avisa "pendrive conectado" (notificacao)
-  ├─ classe HID  → injeta no tab5_teclado / ponteiro
-  └─ classe CDC  → fluxo de bytes para quem pedir (Mesh, GPS)
-apps (Arquivos, Música, Config) e Berry 'usb' → só pedem e mostram
+services/tab5_usb_host.{hpp,cpp}   engine: install/uninstall, usb_lib task,
+                                   connection events, 5 V, power
+  ├─ MSC class   → mounts /usb, notifies "flash drive connected" (notificacao)
+  ├─ HID class   → injects into tab5_teclado / pointer
+  └─ CDC class   → byte stream for whoever asks (Mesh, GPS)
+apps (Files, Music, Settings) and Berry 'usb' → only ask and display
 ```
 
-Pontos de desempenho e robustez:
+Performance and robustness points:
 
-1. **Tarefas.** Uma tarefa `usb_lib` (`usb_host_lib_handle_events`) + a do
-   driver de classe. Prioridade acima da UI, abaixo do áudio. Fixar núcleo
-   conforme `reserva_nucleo` (não disputar com o núcleo da tela).
-2. **Memória.** Os buffers DMA do DWC ficam na RAM interna por padrão - e RAM
-   interna é o recurso mais apertado (ver auditoria de RAM). Existe
-   `CONFIG_USB_HOST_DWC_DMA_CAP_MEMORY_IN_PSRAM` (só P4) com "pequena perda de
-   desempenho". Medir os dois; o mais provável é ir para a PSRAM, como o
-   esp_hosted foi.
-3. **Leitura de arquivos (MSC).** A lição do SD vale aqui:
-   `read()` POSIX com blocos grandes, não `fread` de 4 KB. O próprio
-   componente diz que o cache por arquivo (`setvbuf`) para de ajudar acima de
-   16 KB. Medir MB/s HS com o mesmo `ensaio` do SD.
-4. **FIFO.** `CONFIG_USB_HOST_HW_BUFFER_BIAS_*`: *Balanced* (atual) para MSC;
-   *Bias IN* se o uso principal for webcam/áudio de entrada.
-5. **Hot-plug.** Tirar o pendrive com arquivo aberto: o serviço tem que
-   desmontar o VFS e avisar os apps (igual ao "cartão foi para o computador"
-   do pendrive/Música).
-6. **Energia/sono leve.** Com host ativo, o sono leve derruba o barramento
-   (mesmo tipo de problema do UART do Mesh). Ou o serviço segura uma trava de
-   PM enquanto há aparelho conectado, ou usamos o `espressif/usb` ≥ 1.5 que
-   suspende a porta sozinho. Sem nada conectado: desinstala o host e corta os
-   5 V.
-7. **Hub.** Ligar `CONFIG_USB_HOST_HUBS_SUPPORTED` (custa um pouco de RAM)
-   permite teclado + pendrive juntos. O MSC suporta até 4 drives no P4.
+1. **Tasks.** One `usb_lib` task (`usb_host_lib_handle_events`) + the class
+   driver's. Priority above the UI, below audio. Pin the core according to
+   `reserva_nucleo` (do not compete with the screen's core).
+2. **Memory.** The DWC's DMA buffers sit in internal RAM by default - and
+   internal RAM is the tightest resource (see the RAM audit). There is
+   `CONFIG_USB_HOST_DWC_DMA_CAP_MEMORY_IN_PSRAM` (P4 only) with a "small
+   performance loss". Measure both; the most likely outcome is moving to PSRAM,
+   as esp_hosted did.
+3. **Reading files (MSC).** The lesson from the SD card applies here:
+   POSIX `read()` with large blocks, not 4 KB `fread`. The component itself
+   says the per-file cache (`setvbuf`) stops helping above
+   16 KB. Measure HS MB/s with the same `ensaio` (trial) as the SD.
+4. **FIFO.** `CONFIG_USB_HOST_HW_BUFFER_BIAS_*`: *Balanced* (current) for MSC;
+   *Bias IN* if the main use is a webcam/audio input.
+5. **Hot-plug.** Pulling the flash drive with a file open: the service has to
+   unmount the VFS and notify the apps (just like "the card went to the
+   computer" in pendrive mode/Music).
+6. **Power/light sleep.** With the host active, light sleep takes the bus down
+   (the same kind of problem as the Mesh UART). Either the service holds a PM
+   lock while a device is connected, or we use `espressif/usb` ≥ 1.5, which
+   suspends the port by itself. With nothing connected: uninstall the host and
+   cut the 5 V.
+7. **Hub.** Enabling `CONFIG_USB_HOST_HUBS_SUPPORTED` (costs a little RAM)
+   allows keyboard + flash drive together. MSC supports up to 4 drives on the P4.
 
-Ordem sugerida: **MSC → HID → CDC/VCP → UVC → UAC**.
+Suggested order: **MSC → HID → CDC/VCP → UVC → UAC**.
 
 ---
 
-## 2. Fone P2 (3,5 mm)
+## 2. 3.5 mm headphone jack
 
-### 2.1 O hardware (do esquema)
+### 2.1 The hardware (from the schematic)
 
 ```
-ES8388 LOUT1 ─ 22µF ─ HPOUT_L ─ 22Ω ─ J5 pino 6 (L)   ──┐
-ES8388 ROUT1 ─ 22µF ─ HPOUT_R ─ 22Ω ─ J5 pino 3 (R)     │ PJ-342, 4 polos (TRRS)
-AUDIO_VDD ─ 3,3k ─ HPMIC ─────────── J5 pino 5 (mic)   │
+ES8388 LOUT1 ─ 22µF ─ HPOUT_L ─ 22Ω ─ J5 pin 6 (L)    ──┐
+ES8388 ROUT1 ─ 22µF ─ HPOUT_R ─ 22Ω ─ J5 pin 3 (R)      │ PJ-342, 4 poles (TRRS)
+AUDIO_VDD ─ 3.3k ─ HPMIC ─────────── J5 pin 5 (mic)    │
                      └─ 1µF ─ ES7210 MIC4P             │
-AUDIO_VDD ─ 100k ─┬─ J5 pino 7 (chave do L)            │
-                  └─ 10k ─ HP_DET → expansor 0, bit 7 ──┘
-HPOUT_L ─ 0Ω ─ AEC_P ─ 1µF ─ ES7210 MIC3P   (referência para cancelar eco)
-HPOUT_L ─ 100nF/68k ─ NS4150B (U15) ─ alto-falante;  SPK_EN = CTRL (expansor 0, bit 1)
-ES8388 LOUT2/ROUT2: não ligados
+AUDIO_VDD ─ 100k ─┬─ J5 pin 7 (L switch contact)       │
+                  └─ 10k ─ HP_DET → expander 0, bit 7 ──┘
+HPOUT_L ─ 0Ω ─ AEC_P ─ 1µF ─ ES7210 MIC3P   (reference for echo cancellation)
+HPOUT_L ─ 100nF/68k ─ NS4150B (U15) ─ speaker;  SPK_EN = CTRL (expander 0, bit 1)
+ES8388 LOUT2/ROUT2: not connected
 ```
 
-O que isto significa:
+What this means:
 
-1. **Fone e alto-falante saem do mesmo par de pinos (LOUT1/ROUT1).** Não há
-   chaveamento por hardware: plugar o fone **não** cala o alto-falante. Quem
-   cala é o software, desligando `SPK_EN` quando `HP_DET` acusar o plugue.
-2. **O alto-falante é mono e só recebe o canal ESQUERDO.** Hoje o
-   M5Unified está em `stereo = false` (o mesmo sinal nos dois canais), então
-   não se perde nada. Ao ligar estéreo para o fone, **com o alto-falante ativo
-   é preciso misturar (L+R)/2 no esquerdo** - senão o alto-falante perde tudo
-   que só existe no direito.
-3. **`HP_DET`** - sem plugue a chave do pino 7 encosta no L (5,1k para o
-   terra) e o sinal fica baixo (~0,16 V); com plugue a chave abre e o 100k puxa
-   para 3,3 V. Logo **alto = fone plugado [a confirmar no teste]**. O `nINT`
-   do expansor não vai ao P4: é por leitura (I2C, na tarefa de interface, que
-   é a dona do barramento - ex.: a cada 300-500 ms, só com som ativo ou tela
-   acesa).
-4. **O P2 tem microfone de headset** (CTIA, polarizado por 3,3k) no **MIC4**
-   do ES7210. MIC1/MIC2 são os dois microfones da placa, **MIC3 é a cópia da
-   saída esquerda** (referência de AEC). Só o SDOUT1 do ES7210 vai ao P4 - para
-   ler MIC3/MIC4 o ES7210 tem que ir para TDM de 4 canais. O M5Unified hoje
-   lê só MIC1/2 e deixa MIC3/4 com ganho 0.
-5. **Graves.** O capacitor de acoplamento de 22 µF + 22 Ω forma um passa-altas
-   com o fone: ~134 Hz para fone de 32 Ω, ~190 Hz para 16 Ω. Fone de ouvido
-   comum vai soar **sem grave**. Não é defeito do nosso código; dá para
-   compensar com um *low-shelf* (biquad) no software, só quando for fone (o
-   alto-falante não reproduz grave e iria distorcer). Em entrada de linha
-   (amplificador, caixa ativa ~10 kΩ) o corte cai para ~1 Hz - som cheio.
-6. **LOUT2/ROUT2 não estão ligados**, mas o M5Unified liga os quatro
-   (`reg 4 = 0x3C`). `0x30` liga só LOUT1/ROUT1 - pouca economia, mas
-   correto.
+1. **Headphones and speaker come out of the same pair of pins (LOUT1/ROUT1).**
+   There is no hardware switching: plugging in headphones does **not** mute the
+   speaker. Muting is the software's job, switching off `SPK_EN` when `HP_DET`
+   reports the plug.
+2. **The speaker is mono and only gets the LEFT channel.** Today M5Unified is
+   set to `stereo = false` (the same signal on both channels), so nothing is
+   lost. When switching to stereo for headphones, **with the speaker active
+   (L+R)/2 must be mixed into the left** - otherwise the speaker loses everything
+   that only exists on the right.
+3. **`HP_DET`** - with no plug the pin 7 switch touches L (5.1k to
+   ground) and the signal is low (~0.16 V); with a plug the switch opens and the
+   100k pulls it up to 3.3 V. So **high = headphones plugged in [to be confirmed
+   in testing]**. The expander's `nINT` does not go to the P4: it is read by
+   polling (I2C, in the interface task, which owns the bus - e.g. every
+   300-500 ms, only with sound active or the screen on).
+4. **The jack has a headset microphone** (CTIA, biased via 3.3k) on the
+   ES7210's **MIC4**. MIC1/MIC2 are the board's two microphones, **MIC3 is a copy
+   of the left output** (AEC reference). Only the ES7210's SDOUT1 goes to the
+   P4 - to read MIC3/MIC4 the ES7210 has to switch to 4-channel TDM. M5Unified
+   today reads only MIC1/2 and leaves MIC3/4 at gain 0.
+5. **Bass.** The 22 µF coupling capacitor + 22 Ω form a high-pass filter
+   with the headphones: ~134 Hz for 32 Ω headphones, ~190 Hz for 16 Ω. Ordinary
+   earphones will sound **bass-less**. It is not a defect in our code; it can be
+   compensated with a *low-shelf* (biquad) in software, only for headphones (the
+   speaker cannot reproduce bass and would distort). Into a line input
+   (amplifier, active speaker ~10 kΩ) the cut-off drops to ~1 Hz - full sound.
+6. **LOUT2/ROUT2 are not connected**, but M5Unified turns all four on
+   (`reg 4 = 0x3C`). `0x30` turns on only LOUT1/ROUT1 - a small saving, but
+   correct.
 
-### 2.2 Bibliotecas
+### 2.2 Libraries
 
-| Opção | Prós | Contras |
+| Option | Pros | Cons |
 |---|---|---|
-| **M5Unified `Speaker`** (hoje) | já integrado (bips, fluxo da Música, desligar I2S ocioso, ceder pinos ao pendrive); mixer de canais | `sample_rate` fixo em 48 kHz com reamostragem linear própria (MP3 é 44,1 kHz → reamostra tudo); `magnification = 4` (ganho ×4 digital → corte/clip em música alta); volume por software (perde resolução); não sabe de fone |
-| **`esp_codec_dev` 1.6.2** + driver I2S `i2s_std` do IDF | volume **no codec** (0,5 dB por passo, sem perder bits), taxa de amostragem nativa por arquivo, o mesmo caminho do BSP oficial | é trocar o dono do I2S0 e do ES8388 - o microfone (ES7210) divide o mesmo barramento I2S (clock comum), então teria que migrar junto; refazer o que o `sistema_som_*` já resolve. Seleção LOUT1/2 e detecção de fone **não** constam no driver |
-| ESP-ADF | pipeline completo | pesado, traz muita coisa que já temos (decoder, SD) |
+| **M5Unified `Speaker`** (today) | already integrated (beeps, Music streaming, switching off idle I2S, handing pins over to pendrive mode); channel mixer | `sample_rate` fixed at 48 kHz with its own linear resampling (MP3 is 44.1 kHz → everything is resampled); `magnification = 4` (×4 digital gain → clipping on loud music); software volume (loses resolution); knows nothing about headphones |
+| **`esp_codec_dev` 1.6.2** + the IDF `i2s_std` I2S driver | volume **in the codec** (0.5 dB per step, without losing bits), native sample rate per file, the same path as the official BSP | means changing the owner of I2S0 and the ES8388 - the microphone (ES7210) shares the same I2S bus (common clock), so it would have to migrate too; redoing what `sistema_som_*` already solves. LOUT1/2 selection and headphone detection are **not** in the driver |
+| ESP-ADF | complete pipeline | heavy, brings a lot we already have (decoder, SD) |
 
-**Recomendação: ficar no M5Unified e acertar por cima, em fases.**
-O `sistema_som_*` em `kernel/core.cpp` já isola todo mundo do M5Unified - a
-troca de motor, se um dia vier, fica escondida ali.
+**Recommendation: stay on M5Unified and fix things on top of it, in phases.**
+`sistema_som_*` in `kernel/core.cpp` already isolates everyone from M5Unified -
+switching engines, if it ever happens, stays hidden there.
 
-### 2.3 Como montar para o melhor desempenho
+### 2.3 How to put it together for the best performance
 
-1. **Detecção (`HP_DET`) no sistema**, não em app: o kernel lê o bit 7 do
-   expansor 0, gera o evento "fone plugado/tirado" e:
-   - plugou → rampa de volume para baixo, `SPK_EN` desliga, aplica o volume do
-     fone, estéreo;
-   - tirou → **pausa a Música** (o comportamento que todo celular tem), volta
-     ao volume do alto-falante, mono, `SPK_EN` liga.
-2. **Dois volumes guardados nos ajustes** (alto-falante e fone), aplicados
-   **no ES8388** (registros 46/47, `LOUT1VOL/ROUT1VOL`) e não no PCM - o PCM
-   fica em ganho 1 e preserva os 16 bits. Volume inicial do fone baixo, com
-   teto (segurança auditiva; hoje o M5Unified deixa a saída em +4,5 dB, `0x21`).
-3. **Estéreo e taxa nativa para o fone.** Com fone: `spk_cfg.stereo = true` e
-   `sample_rate` = a do arquivo (44 100) quando a Música abre o fluxo -
-   elimina a reamostragem. Os bips de sistema continuam funcionando (o mixer do
-   M5Unified converte o resto). Reabrir o I2S nessa troca só entre faixas, nunca
-   no meio.
-4. **Ganho digital.** Rever `magnification = 4` para o fluxo de música (é
-   ganho pensado para o alto-falante pequeno); no fone, 1.
-5. **Graves no fone**: biquad *low-shelf* (~120 Hz, +6 a +9 dB) no laço da
-   Música, só com fone, com *headroom* (baixar 3-6 dB antes para não clipar).
-   Custo desprezível no P4.
-6. **Microfone do headset**: fase posterior - ES7210 em TDM, escolher MIC4
-   quando `HP_DET` acusar (e o MIC3 de referência abre caminho para
-   cancelamento de eco com o esp-sr, se um dia houver chamada/voz).
-7. **Estalos**: o ES8388 já tem o "click free" ligado (`reg 28 = 0x08`); a
-   troca de `SPK_EN` tem que acontecer com o DAC mudo (o próprio M5Unified faz
-   assim no `end()`).
-8. **Sem conflito com o USB-A.** Os pinos do I2S (GPIO26/27) só conflitam com
-   o PHY full speed (modo pendrive) - já tratado por `sistema_som_ceder_pinos`.
+1. **Detection (`HP_DET`) in the system**, not in an app: the kernel reads bit 7
+   of expander 0, generates the "headphones plugged/unplugged" event and:
+   - plugged → ramp the volume down, switch `SPK_EN` off, apply the headphone
+     volume, stereo;
+   - unplugged → **pause Music** (the behaviour every phone has), back to the
+     speaker volume, mono, `SPK_EN` on.
+2. **Two volumes stored in the settings** (speaker and headphones), applied
+   **in the ES8388** (registers 46/47, `LOUT1VOL/ROUT1VOL`) and not in the PCM -
+   the PCM stays at gain 1 and keeps its 16 bits. Low initial headphone volume,
+   with a ceiling (hearing safety; today M5Unified leaves the output at +4.5 dB,
+   `0x21`).
+3. **Stereo and native rate for headphones.** With headphones:
+   `spk_cfg.stereo = true` and `sample_rate` = the file's (44 100) when Music
+   opens the stream - eliminating resampling. System beeps keep working (the
+   M5Unified mixer converts the rest). Reopening the I2S for this change only
+   between tracks, never in the middle.
+4. **Digital gain.** Revisit `magnification = 4` for the music stream (it is gain
+   meant for the small speaker); on headphones, 1.
+5. **Bass on headphones**: *low-shelf* biquad (~120 Hz, +6 to +9 dB) in the Music
+   loop, only with headphones, with *headroom* (drop 3-6 dB first so as not to
+   clip). Negligible cost on the P4.
+6. **Headset microphone**: a later phase - ES7210 in TDM, select MIC4
+   when `HP_DET` reports (and the MIC3 reference opens the way to
+   echo cancellation with esp-sr, if there is ever calling/voice).
+7. **Pops**: the ES8388 already has "click free" on (`reg 28 = 0x08`); switching
+   `SPK_EN` has to happen with the DAC muted (M5Unified itself does it that way
+   in `end()`).
+8. **No conflict with USB-A.** The I2S pins (GPIO26/27) only conflict with
+   the full-speed PHY (pendrive mode) - already handled by
+   `sistema_som_ceder_pinos`.
 
 ---
 
-## 3. O que já foi feito (fases 0 e 1 - 2026-10-17)
+## 3. What has already been done (phases 0 and 1 - 2026-10-17)
 
-- **FAT em UTF-8** (`CONFIG_FATFS_API_ENCODING_UTF_8`): os nomes chegam e
-  abrem como o computador gravou ("Canção.mp3", não `CANCAO~1.MP3`). A Música
-  entende os `.m3u` antigos em CP437.
-- **`services/tab5_volumes`**: os discos por caminho absoluto (`/sdcard`,
-  `/usb`) - montar/desmontar, disponível, versão, `AVISO_VOLUMES`.
-- **`services/tab5_usb`**: host HS (`peripheral_map = 0`), `usb_host_msc`
-  1.3.0 travado, pendrive em `/usb`, retirada com até 3 s para quem lê
-  soltar, aviso "USB-A" na barra (abre a Música), sono leve segurado
-  (`ECONOMIA_SEGURA_USB`) com aparelho plugado, buffers de DMA na PSRAM.
-  Ajuste `usb_a` (nasce ligado) → `usb_a_5v` no perfil (kernel/core.cpp).
-- **Música**: o pendrive no topo das Pastas; caminhos `/usb/...` em listar,
-  tocar, duração, capa (cache no cartão), playlists e Favoritas. O laço segura
-  só o disco que a fila usa.
+- **FAT in UTF-8** (`CONFIG_FATFS_API_ENCODING_UTF_8`): names arrive and
+  open as the computer wrote them ("Canção.mp3", not `CANCAO~1.MP3`). Music
+  understands old `.m3u` files in CP437.
+- **`services/tab5_volumes`**: the disks by absolute path (`/sdcard`,
+  `/usb`) - mount/unmount, available, version, `AVISO_VOLUMES`.
+- **`services/tab5_usb`**: HS host (`peripheral_map = 0`), `usb_host_msc`
+  1.3.0 pinned, flash drive at `/usb`, removal with up to 3 s for readers to
+  let go, "USB-A" notice in the status bar (opens Music), light sleep held off
+  (`ECONOMIA_SEGURA_USB`) with a device plugged in, DMA buffers in PSRAM.
+  Setting `usb_a` (on by default) → `usb_a_5v` in the profile (kernel/core.cpp).
+- **Music**: the flash drive at the top of Folders; `/usb/...` paths in listing,
+  playing, duration, cover art (cached on the card), playlists and Favourites.
+  The loop holds only the disk the queue is using.
 - **Berry**: `musica.pendrive()`, `musica.lista("/usb")`, `# avisos: volumes`.
-- **Console**: `usb`, `usb ler <arquivo>`, `usb espaco`, `usb ligar|desligar`.
+- **Console**: `usb`, `usb read <file>` (`usb ler`), `usb space` (`usb espaco`),
+  `usb on|off` (`usb ligar|desligar`).
 
-Fica para a próxima fase: o serviço de arquivos (copiar/mover/apagar com
-lixeira, área de transferência, "abrir com" por extensão) e o app Arquivos
-navegando nos dois discos - e daí o "copiar músicas do pendrive para o
-cartão" sai da mesma operação.
+Left for the next phase: the file service (copy/move/delete with
+trash, clipboard, "open with" by extension) and the Files app
+browsing both disks - and then "copy music from the flash drive to the
+card" falls out of the same operation.
 
-## 4. Plano de teste (quando o Tab5 voltar ao cabo)
+## 4. Test plan (when the Tab5 is back on the cable)
 
-**Pendrive tocando (fase 1)**
-- [ ] Boot com o pendrive já espetado: `usb` mostra o aparelho, a velocidade
-      e o disco montado; a barra mostra "Pendrive <nome>".
-- [ ] Espetar com o Tab5 ligado (tela acesa e em repouso).
-- [ ] Música > Pastas: a linha do pendrive no topo; entrar, subpastas, voltar.
-- [ ] Tocar do pendrive; a capa (etiqueta e cover.jpg da pasta); duração.
-- [ ] Arrancar tocando: a música para em até ~3 s, a lista volta à raiz, nada
-      trava (`usb` com 0 segurando).
-- [ ] Nome com acento ("Canção.mp3") no cartão e no pendrive.
-- [ ] Favoritar uma faixa do pendrive; tirar o pendrive; a playlist pula a
-      faixa; pôr de volta, toca.
-- [ ] Pendrive exFAT (64 GB de fabrica): monta e toca. Pendrive NTFS: aviso "use FAT32/exFAT", nada trava.
-- [ ] Cartao SD exFAT (SDXC de 64 GB): monta no boot; o modo pendrive continua funcionando.
-- [ ] `usb ler` num MP3 grande: KB/s com DMA na PSRAM.
-- [ ] Modo pendrive (cartão no computador) tocando do USB-A: o som continua.
-- [ ] Consumo em repouso com e sem pendrive (`energia ensaio`).
+**Flash drive playing (phase 1)**
+- [ ] Boot with the flash drive already plugged in: `usb` shows the device, the
+      speed and the mounted disk; the status bar shows "Pendrive <nome>" (USB
+      drive <name>).
+- [ ] Plug it in with the Tab5 on (screen on and idle).
+- [ ] Music > Folders: the flash drive row at the top; enter, subfolders, back.
+- [ ] Play from the flash drive; the cover art (tag and the folder's cover.jpg);
+      duration.
+- [ ] Yank it out while playing: the music stops within ~3 s, the list goes back
+      to the root, nothing locks up (`usb` with 0 holding).
+- [ ] Name with an accent ("Canção.mp3") on the card and on the flash drive.
+- [ ] Favourite a track from the flash drive; remove the flash drive; the
+      playlist skips the track; put it back, it plays.
+- [ ] exFAT flash drive (64 GB as shipped): mounts and plays. NTFS flash drive:
+      notice "use FAT32/exFAT", nothing locks up.
+- [ ] exFAT SD card (64 GB SDXC): mounts at boot; pendrive mode keeps working.
+- [ ] `usb read` on a large MP3: KB/s with DMA in PSRAM.
+- [ ] Pendrive mode (card on the computer) while playing from USB-A: the sound
+      carries on.
+- [ ] Idle consumption with and without the flash drive (`power trial` /
+      `energia ensaio`).
 
-**Fone e USB-A em geral**
+**Headphones and USB-A in general**
 
-Medições antes de escrever o serviço - cada uma responde uma dúvida acima.
+Measurements before writing the service - each one answers a question above.
 
-**Fone**
-- [ ] Ler o bit 7 do expansor 0 com e sem plugue → confirma a polaridade do `HP_DET`.
-- [ ] Plugue de 3 polos (TRS) e de 4 polos (TRRS): o `HP_DET` acusa os dois?
-- [ ] Tom só no L, só no R → confirma estéreo no fone e que o alto-falante só toca o L.
-- [ ] `SPK_EN` desligado com fone: alto-falante mudo, fone tocando.
-- [ ] Varredura 40 Hz-2 kHz no fone: conferir a perda de grave estimada.
-- [ ] Volume no ES8388 (regs 46/47): faixa útil e ruído de fundo em volume baixo.
+**Headphones**
+- [ ] Read bit 7 of expander 0 with and without a plug → confirms the `HP_DET` polarity.
+- [ ] 3-pole (TRS) and 4-pole (TRRS) plug: does `HP_DET` detect both?
+- [ ] Tone only on L, only on R → confirms stereo on headphones and that the speaker only plays L.
+- [ ] `SPK_EN` off with headphones: speaker silent, headphones playing.
+- [ ] 40 Hz-2 kHz sweep on headphones: check the estimated bass loss.
+- [ ] Volume in the ES8388 (regs 46/47): usable range and noise floor at low volume.
 
 **USB-A**
-- [ ] 5 V no conector com `usb_a_5v` ligado/desligado (e corrente em repouso pelo INA226).
-- [ ] Pendrive HS: enumera como **high speed**? (se cair para FS, olhar sinal/`fsls_only`).
-- [ ] MB/s de leitura e escrita, buffers DMA na RAM interna × PSRAM.
-- [ ] Teclado e mouse USB (boot protocol); hub simples.
-- [ ] Pendrive no USB-A **junto** com o modo pendrive no USB-C.
-- [ ] Sobrecorrente: aparelho guloso → o que o MT9700 faz e como o host percebe.
-- [ ] Repetir o básico com `sdkconfig` chip_v1 e chip_v3.
+- [ ] 5 V at the connector with `usb_a_5v` on/off (and idle current via the INA226).
+- [ ] HS flash drive: does it enumerate as **high speed**? (if it falls back to FS, look at the signal/`fsls_only`).
+- [ ] Read and write MB/s, DMA buffers in internal RAM × PSRAM.
+- [ ] USB keyboard and mouse (boot protocol); simple hub.
+- [ ] Flash drive on USB-A **together** with pendrive mode on USB-C.
+- [ ] Overcurrent: a power-hungry device → what the MT9700 does and how the host notices.
+- [ ] Repeat the basics with the chip_v1 and chip_v3 `sdkconfig`.
 
-## Referências
+## References
 
-- Esquema: https://m5stack-doc.oss-cn-shenzhen.aliyuncs.com/1132/Tab5_Schematics_PDF.pdf (pág. 1: P4 e expansores; pág. 3: áudio; pág. 4: conectores USB; pág. 5: MT9700)
-- Página do Tab5: https://docs.m5stack.com/en/core/Tab5
-- BSP Espressif: https://components.espressif.com/components/espressif/m5stack_tab5
-- Classes USB host: https://github.com/espressif/esp-usb/tree/master/host/class
+- Schematic: https://m5stack-doc.oss-cn-shenzhen.aliyuncs.com/1132/Tab5_Schematics_PDF.pdf (p. 1: P4 and expanders; p. 3: audio; p. 4: USB connectors; p. 5: MT9700)
+- Tab5 page: https://docs.m5stack.com/en/core/Tab5
+- Espressif BSP: https://components.espressif.com/components/espressif/m5stack_tab5
+- USB host classes: https://github.com/espressif/esp-usb/tree/master/host/class
 - `espressif/usb`: https://components.espressif.com/components/espressif/usb
 - `esp_codec_dev`: https://components.espressif.com/components/espressif/esp_codec_dev

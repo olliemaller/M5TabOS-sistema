@@ -1,37 +1,37 @@
-// CSI - o estado do canal WiFi entre o roteador e o Tab5, visto do P4.
+// CSI - the state of the WiFi channel between the router and the Tab5, seen from the P4.
 //
-// O QUE ELE DIZ. O CSI e a amplitude e a fase de cada subportadora OFDM de um
-// quadro recebido. Com uma antena so ele NAO da direcao - mas muda muito quando
-// algo se mexe no caminho entre o roteador e o Tab5: uma pessoa andando, uma
-// porta abrindo, mesmo sem celular nenhum. Este servico transforma isso num
-// nivel de MOVIMENTO (parado / leve / forte).
+// WHAT IT TELLS. CSI is the amplitude and phase of each OFDM subcarrier of a
+// received frame. With a single antenna it gives NO direction - but it changes a lot when
+// something moves in the path between the router and the Tab5: a person walking, a
+// door opening, even with no phone at all. This service turns that into a
+// MOTION level (still / light / strong).
 //
-// DE ONDE VEM. O CSI e medido no preambulo OFDM, e o beacon do roteador em
-// 2,4 GHz (1 Mbps, 11b) nao tem: sem trafego para o C6, quase nada chega. Por
-// isso o servico pinga o roteador a 20 Hz enquanto ligado (o mesmo truque do
-// esp-csi da Espressif) e pede ao C6 so o CSI que vem DO ROTEADOR - com o
-// farejo ligado, o C6 tambem mede o CSI de quadros alheios, que nao servem de
-// referencia.
+// WHERE IT COMES FROM. CSI is measured on the OFDM preamble, and the router's beacon at
+// 2.4 GHz (1 Mbps, 11b) doesn't have one: with no traffic to the C6, almost nothing arrives. That is
+// why the service pings the router at 20 Hz while on (the same trick as
+// Espressif's esp-csi) and asks the C6 only for CSI coming FROM THE ROUTER - with
+// sniffing on, the C6 also measures CSI from other people's frames, which are no use as a
+// reference.
 //
-// O APARELHO NAO PODE MEXER. Girar ou segurar o Tab5 na mao muda o CSI tanto
-// quanto uma pessoa andando. Quem usa avisa (tab5_csi_aparelho_mexendo) e o
-// servico congela a referencia; o nivel volta depois de o aparelho ficar parado.
+// THE DEVICE MUST NOT MOVE. Rotating or holding the Tab5 in your hand changes the CSI as much
+// as a person walking. The user signals it (tab5_csi_aparelho_mexendo) and the
+// service freezes the reference; the level comes back after the device is still.
 //
-// DONO UNICO DA MENSAGEM. O peer_data do P4 guarda UM ouvinte por msg_id, e
-// registrar de novo SUBSTITUI o anterior. Por isso so este servico registra
-// C6_MSG_CSI; quem mais quiser os records crus (o teste do console) usa
+// SOLE OWNER OF THE MESSAGE. The P4's peer_data keeps ONE listener per msg_id, and
+// registering again REPLACES the previous one. That is why only this service registers
+// C6_MSG_CSI; anyone else who wants the raw records (the console test) uses
 // tab5_csi_ouvinte().
 //
-// CUSTO PARADO: zero - nem tarefa, nem ping, nem pedido ao C6. Ligado: uma vaga
-// do pool, o ping de 20 Hz e o receptor do C6 sempre ligado.
+// COST WHEN OFF: zero - no task, no ping, no request to the C6. On: a pool
+// slot, the 20 Hz ping and the C6's receiver always on.
 #pragma once
 
 #include <stdint.h>
 #include <stdbool.h>
 #include "tab5_c6.h"
 
-// Quem pede (um bit cada): o servico fica ligado enquanto houver um e declara
-// RECURSO_RADIO_ESCUTA (kernel/recursos.h); o kernel aplica o receptor ligado.
+// Who requests (one bit each): the service stays on while there is one and declares
+// RECURSO_RADIO_ESCUTA (kernel/recursos.h); the kernel keeps the receiver on.
 #define TAB5_CSI_RADAR    (1u << 0)
 #define TAB5_CSI_CONSOLE  (1u << 1)
 
@@ -40,9 +40,9 @@ void tab5_csi_desligar(uint32_t quem);
 
 typedef enum {
   TAB5_CSI_DESLIGADO = 0,
-  TAB5_CSI_SEM_C6,          // C6 sem o firmware nosso, ou sem CSI gravado
-  TAB5_CSI_SEM_ROTEADOR,    // sem WiFi conectado: nao ha de onde medir
-  TAB5_CSI_APRENDENDO,      // medindo o "parado" deste lugar (primeiros segundos)
+  TAB5_CSI_SEM_C6,          // C6 without our firmware, or without CSI flashed
+  TAB5_CSI_SEM_ROTEADOR,    // no WiFi connected: nothing to measure from
+  TAB5_CSI_APRENDENDO,      // measuring this place's "still" baseline (first few seconds)
   TAB5_CSI_APARELHO_MEXENDO,
   TAB5_CSI_MEDINDO,
 } tab5_csi_fase_t;
@@ -51,19 +51,19 @@ typedef enum { TAB5_CSI_PARADO = 0, TAB5_CSI_LEVE, TAB5_CSI_FORTE } tab5_csi_niv
 
 typedef struct {
   tab5_csi_fase_t  fase;
-  tab5_csi_nivel_t nivel;      // vale em TAB5_CSI_MEDINDO
-  float            razao;      // desvio agora / desvio do parado (1 = parado)
-  uint16_t         por_s;      // records de CSI no ultimo segundo
-  int8_t           rssi;       // do ultimo record
+  tab5_csi_nivel_t nivel;      // valid in TAB5_CSI_MEDINDO
+  float            razao;      // deviation now / still deviation (1 = still)
+  uint16_t         por_s;      // CSI records in the last second
+  int8_t           rssi;       // from the last record
 } tab5_csi_estado_t;
 
 void tab5_csi_estado(tab5_csi_estado_t* out);
 
-// O Tab5 esta se mexendo (giro, mao)? Enquanto sim, a medida fica suspensa e
-// a referencia recomeca quando parar. Barato: so grava uma variavel.
+// Is the Tab5 moving (rotation, hand)? While it is, the measurement is suspended and
+// the reference restarts when it stops. Cheap: just writes a variable.
 void tab5_csi_aparelho_mexendo(bool sim);
 
-// Os records crus, na tarefa de eventos do esp_hosted: so copiar e sair.
-// Um ouvinte so (o ultimo a chamar); nullptr tira.
+// The raw records, in esp_hosted's event task: just copy and leave.
+// A single listener (the last to call); nullptr removes it.
 typedef void (*tab5_csi_ouvinte_t)(const c6_csi_cab_t* cab, const uint8_t* dados, uint16_t n);
 void tab5_csi_ouvinte(tab5_csi_ouvinte_t cb);

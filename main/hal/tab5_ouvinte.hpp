@@ -1,32 +1,33 @@
-// OUVINTE UNICO DE UM EVENTO, com remocao que ESPERA a chamada em voo.
+// SINGLE LISTENER FOR AN EVENT, with removal that WAITS for the call in flight.
 //
 // -------------------------------------------------------------------------
-// POR QUE ISTO EXISTE
+// WHY THIS EXISTS
 // -------------------------------------------------------------------------
-// Tres modulos entregam evento a UM ouvinte registrado: a varredura BLE
-// (tab5_ble), o farejo de Wi-Fi e o CSI. Os tres guardavam so um ponteiro
-// volatile: quem chama copia e chama, quem remove escreve nullptr. Copiar
-// evita o ponteiro nulo - mas NAO diz quando a chamada que ja comecou acaba.
-// Quem remove o ouvinte para em seguida destruir o que ele usa (a fila do
-// Radar) ficava sem saber se podia. O Radar "resolvia" esperando 40 ms ao
-// fechar - um palpite na tarefa de interface, e um uso de memoria liberada
-// para o primeiro ouvinte mais lento que o palpite.
+// Three modules deliver events to ONE registered listener: the BLE scan
+// (tab5_ble), the Wi-Fi sniffer and CSI. All three kept just a volatile
+// pointer: the caller copies and calls, the remover writes nullptr. Copying
+// avoids the null pointer - but does NOT say when a call that has already
+// started finishes. Whoever removes the listener in order to then destroy
+// what it uses (the Radar's queue) could not know whether it was safe. The
+// Radar "solved" it by waiting 40 ms on close - a guess in the UI task, and a
+// use-after-free for the first listener slower than the guess.
 //
-// Aqui a remocao (definir nullptr) so VOLTA depois que nenhuma chamada esta
-// em voo. Daqui para baixo, quem removeu pode destruir o que quiser.
+// Here removal (setting nullptr) only RETURNS once no call is in flight.
+// From then on, the remover can destroy whatever it likes.
 //
 // -------------------------------------------------------------------------
-// COMO, sem trava
+// HOW, without a lock
 // -------------------------------------------------------------------------
-// Quem chama CONTA-SE em voo ANTES de ler o ponteiro; quem remove troca o
-// ponteiro ANTES de olhar a contagem. Com atomicos (ordem sequencial), so ha
-// dois casos: ou a chamada leu o ponteiro antigo - e entao ja estava contada
-// quando a remocao olhou, e a remocao espera -, ou leu o nulo e nao chama.
-// A espera e de uma chamada curta (os ouvintes so enfileiram e voltam): na
-// pratica a remocao nunca da uma volta no laco.
+// The caller COUNTS ITSELF in flight BEFORE reading the pointer; the remover
+// swaps the pointer BEFORE looking at the count. With atomics (sequential
+// consistency), there are only two cases: either the call read the old
+// pointer - and so was already counted when the removal looked, and the
+// removal waits -, or it read null and does not call.
+// The wait is for one short call (listeners just enqueue and return): in
+// practice the removal never goes round the loop.
 //
-// NAO remova o ouvinte de DENTRO dele mesmo: a remocao esperaria a propria
-// chamada para sempre.
+// Do NOT remove the listener from INSIDE itself: the removal would wait for
+// its own call for ever.
 
 #pragma once
 
@@ -40,7 +41,7 @@ struct tab5_ouvinte_t {
   std::atomic<int> em_voo{0};
 };
 
-// Do lado do evento (qualquer tarefa).
+// On the event side (any task).
 template <typename F, typename... A>
 inline void tab5_ouvinte_chamar(tab5_ouvinte_t<F>* o, A... args)
 {
@@ -50,8 +51,8 @@ inline void tab5_ouvinte_chamar(tab5_ouvinte_t<F>* o, A... args)
   o->em_voo.fetch_sub(1);
 }
 
-// Troca o ouvinte (nullptr remove) e so volta quando a chamada em voo, se
-// havia uma, terminou.
+// Swaps the listener (nullptr removes) and only returns once the call in
+// flight, if there was one, has finished.
 template <typename F>
 inline void tab5_ouvinte_definir(tab5_ouvinte_t<F>* o, F f)
 {

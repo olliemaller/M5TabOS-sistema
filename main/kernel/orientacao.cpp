@@ -1,4 +1,4 @@
-// ORIENTACAO DA TELA - ver orientacao.hpp.
+// SCREEN ORIENTATION - see orientacao.hpp.
 #include "orientacao.hpp"
 
 #include <math.h>
@@ -7,90 +7,90 @@
 #include "tela_virtual.hpp"
 #include "tab5_imu.hpp"
 #include "tab5_teclado.hpp"
-#include "tab5_hora.hpp"   // tab5_agora_ms - o mesmo relogio do laco da interface
+#include "tab5_hora.hpp"   // tab5_agora_ms - the same clock as the UI loop
 #include "esp_log.h"
 
 static const char* TAG = "orientacao";
 
-// As duas rotacoes do M5GFX que existem no sistema. 3 e nao 1: e a que deixa
-// o ExtPort1 - onde o teclado encaixa - na borda de baixo, junto de quem
-// digita. Com a 1 a tela ficava de cabeca para baixo em relacao ao teclado.
+// The two M5GFX rotations that exist in the system. 3 and not 1: it is the one that puts
+// ExtPort1 - where the keyboard docks - on the bottom edge, next to whoever
+// is typing. With 1 the screen was upside down relative to the keyboard.
 static const uint8_t ROT_EM_PE   = 0;
 static const uint8_t ROT_DEITADO = 3;
 
 // ---------------------------------------------------------------------------
-// A DECISAO
+// THE DECISION
 // ---------------------------------------------------------------------------
-// So o PLANO DA TELA importa (ax, ay). O eixo y do IMU corre ao longo do lado
-// comprido do painel (o mesmo referencial do nivel do app IMU), entao:
+// Only the SCREEN PLANE matters (ax, ay). The IMU's y axis runs along the long
+// side of the panel (the same frame of reference as the IMU app's level), so:
 //
-//   gravidade quase toda em y  -> em pe
-//   gravidade quase toda em x  -> deitado
+//   gravity almost all in y    -> portrait
+//   gravity almost all in x    -> landscape
 //
-// O SINAL NAO ENTRA, de proposito. Os dois estados sao um por eixo, e o lado
-// oposto de cada um (de cabeca para baixo, ou deitado com o teclado em cima)
-// cai no mesmo estado - a tela nao vira para o outro lado, so fica. Isso e o
-// que se quer, e ainda dispensa saber a polaridade de cada eixo do BMI270
-// neste aparelho: errar um sinal aqui inverteria a regra inteira em
-// silencio.
+// THE SIGN DOES NOT COUNT, on purpose. The two states are one per axis, and the
+// opposite side of each (upside down, or landscape with the keyboard on top)
+// falls into the same state - the screen does not flip to the other side, it just stays. That is
+// what we want, and it also avoids needing to know the polarity of each BMI270 axis
+// on this device: getting a sign wrong here would silently invert the whole
+// rule.
 //
-// DUAS ZONAS MORTAS, onde nada muda com o app ABERTO:
-//   - aparelho na mesa: a gravidade quase toda em z, o plano da tela com
-//     menos de ~0,4 g (inclinado menos de ~24 graus). Pousar o aparelho nao
-//     pode girar a tela. Era 0,5 g (30 graus): segurando o aparelho recostado
-//     na mao, em pe, a leitura ficava abaixo disso e um app aberto deitado
-//     nunca se corrigia.
-//   - na diagonal: um eixo precisa passar o outro por PLANO_RAZAO (tangente
-//     de 60 graus). Entre 30 e 60 graus de giro, fica como esta - a histerese
-//     que impede a tela de pular de um estado para o outro na fronteira.
+// TWO DEAD ZONES, where nothing changes with the app OPEN:
+//   - device on the table: gravity almost all in z, the screen plane with
+//     less than ~0.4 g (tilted less than ~24 degrees). Putting the device down must
+//     not rotate the screen. It was 0.5 g (30 degrees): holding the device reclined
+//     in the hand, portrait, the reading stayed below that and an app opened in landscape
+//     never corrected itself.
+//   - on the diagonal: one axis must exceed the other by PLANO_RAZAO (tangent
+//     of 60 degrees). Between 30 and 60 degrees of rotation, it stays as it is - the hysteresis
+//     that stops the screen jumping from one state to the other at the boundary.
 static const float PLANO_MIN_G2 = 0.16f;   // (0,4 g)^2
 static const float PLANO_RAZAO  = 1.73f;
 
-// NA ABERTURA NAO HA ESTADO ANTERIOR A PROTEGER: a histerese existe para nao
-// pular de um lado para o outro, e abrindo nao ha "outro lado" ainda. Vale o
-// eixo que domina, com folga pequena (tangente de ~50 graus), e um plano
-// menor (0,3 g, ~17 graus de inclinacao). Fora disso - na mesa, ou
-// exatamente na diagonal - abre na posicao em que a tela ja esta (a home e
-// sempre em pe), nunca num palpite fixo.
+// ON OPENING THERE IS NO PREVIOUS STATE TO PROTECT: the hysteresis exists so as not to
+// jump back and forth, and on opening there is no "other side" yet. The
+// dominant axis wins, with a small margin (tangent of ~50 degrees), and a smaller
+// plane (0.3 g, ~17 degrees of tilt). Outside that - on the table, or
+// exactly on the diagonal - it opens in the position the screen is already in (home is
+// always portrait), never on a fixed guess.
 static const float ABRIR_MIN_G2 = 0.09f;   // (0,3 g)^2
 static const float ABRIR_RAZAO  = 1.2f;
 
-// TEMPO. Uma amostra a cada 200 ms (5 Hz) e a pose precisa se repetir em 3
-// seguidas: ~0,6 s parado na postura nova antes de girar. Um balanco da mao
-// nao gira; virar o aparelho de proposito gira logo. Depois de girar, 1,5 s
-// de carencia: a passada completa leva um quadro, e trocar de novo no meio
-// do gesto seria pior que esperar.
+// TIMING. One sample every 200 ms (5 Hz) and the pose must repeat in 3
+// consecutive ones: ~0.6 s still in the new posture before rotating. A sway of the hand
+// does not rotate; turning the device on purpose rotates promptly. After rotating, 1.5 s
+// of grace: the full pass takes a frame, and switching again in the middle
+// of the gesture would be worse than waiting.
 static const uint32_t AMOSTRA_MS   = 200;
 static const int      SEGUIDAS     = 3;
 static const uint32_t CARENCIA_MS  = 1500;
 
-static orientacao_t s_modo      = ORI_EM_PE;   // o do app aberto
+static orientacao_t s_modo      = ORI_EM_PE;   // that of the open app
 static uint32_t     s_ultima_ms = 0;
 static uint32_t     s_girou_ms  = 0;
-static int          s_cand      = -1;          // a rotacao que esta pedindo passagem
+static int          s_cand      = -1;          // the rotation asking to come through
 static int          s_seguidas  = 0;
 
-// TECLADO FISICO ENCAIXADO = TUDO DEITADO: a home e todo app, qualquer que
-// seja a orientacao declarada - menos ORI_FIXO_EM_PE. Ele encaixa no ExtPort1, que a rotacao 3 poe
-// embaixo, junto de quem digita; em pe ficaria pendurado na lateral. Tirar o
-// teclado volta cada um ao que declarou (o IMU segue decidindo quem o segue).
-static bool         s_teclado   = false;       // o estado do teclado ja aplicado na tela
+// PHYSICAL KEYBOARD DOCKED = EVERYTHING LANDSCAPE: home and every app, whatever
+// the declared orientation - except ORI_FIXO_EM_PE. It docks on ExtPort1, which rotation 3 puts
+// at the bottom, next to whoever is typing; in portrait it would hang off the side. Removing the
+// keyboard returns each one to what it declared (the IMU keeps deciding for those who follow it).
+static bool         s_teclado   = false;       // the keyboard state already applied to the screen
 
-// A rotacao de quem esta na tela sem teclado: a home e ORI_EM_PE; quem segue
-// o IMU fica como esta ate a vigia decidir.
+// The rotation for whoever is on screen without a keyboard: home is ORI_EM_PE; whoever follows
+// the IMU stays as it is until the watcher decides.
 static uint8_t rotacao_sem_teclado(void)
 {
-  // (ORI_FIXO_EM_PE cai no em pe do fim.)
+  // (ORI_FIXO_EM_PE falls through to the portrait at the end.)
   if (s_modo == ORI_DEITADO) { return ROT_DEITADO; }
   if (s_modo == ORI_SEGUE_IMU) { return M5.Display.getRotation(); }
   return ROT_EM_PE;
 }
 
-// A rotacao que a postura de AGORA pede, ou -1 (zona morta, IMU sem leitura).
+// The rotation the CURRENT posture asks for, or -1 (dead zone, IMU without a reading).
 static int rotacao_pedida(tab5_imu_dados_t* m)
 {
-  // Teclado fisico encaixado: deitado, sempre. Em pe ele ficaria pendurado
-  // na lateral, e girar no colo enquanto se digita seria o pior defeito.
+  // Physical keyboard docked: landscape, always. In portrait it would hang
+  // off the side, and rotating on the lap while typing would be the worst defect.
   if (tab5_teclado_presente()) { return ROT_DEITADO; }
   if (!tab5_imu_ultima(m)) { return -1; }
   const float ax = fabsf(m->ax), ay = fabsf(m->ay);
@@ -100,14 +100,14 @@ static int rotacao_pedida(tab5_imu_dados_t* m)
   return -1;
 }
 
-// UMA LEITURA EM QUE DA PARA CONFIAR, para a abertura. O cache do IMU e
-// atualizado 1x/s e pode estar velho; e a primeira leitura depois de o chip
-// ficar quieto pode vir zerada (o M5Unified so atualiza os valores quando ha
-// dado novo, e no modo de economia do BMI270 o dado novo demora). Uma leitura
-// zerada caia na zona morta, e a tela abria deitada com o aparelho em pe.
-// Aqui: ate 6 leituras, 10 ms entre elas, ate o modulo da gravidade fazer
-// sentido (0,6 a 1,4 g - parado, so a gravidade). ~60 ms no pior caso, uma vez
-// por abertura de app.
+// A READING THAT CAN BE TRUSTED, for opening. The IMU cache is
+// updated 1x/s and may be stale; and the first reading after the chip
+// has been quiet may come back zeroed (M5Unified only updates the values when there is
+// new data, and in the BMI270's power-saving mode new data takes a while). A zeroed
+// reading fell into the dead zone, and the screen opened landscape with the device portrait.
+// Here: up to 6 readings, 10 ms apart, until the gravity magnitude makes
+// sense (0.6 to 1.4 g - still, gravity only). ~60 ms in the worst case, once
+// per app opening.
 static bool ler_postura_fresca(tab5_imu_dados_t* m)
 {
   for (int k = 0; k < 6; ++k) {
@@ -121,7 +121,7 @@ static bool ler_postura_fresca(tab5_imu_dados_t* m)
   return false;
 }
 
-// A rotacao para ABRIR (ver ABRIR_RAZAO), ou -1 para ficar como a tela esta.
+// The rotation for OPENING (see ABRIR_RAZAO), or -1 to stay as the screen is.
 static int rotacao_para_abrir(tab5_imu_dados_t* m)
 {
   if (tab5_teclado_presente()) { return ROT_DEITADO; }
@@ -156,25 +156,25 @@ void orientacao_ao_abrir(const app_t* app)
   } else if (s_modo == ORI_DEITADO) {
     rot = ROT_DEITADO;
   } else if (s_modo == ORI_SEGUE_IMU) {
-    // A postura de agora, medida agora (ver ler_postura_fresca). Sem decisao
-    // clara, abre como a tela ja esta - quem abre um app da home esta olhando
-    // para ela em pe. Antes o padrao era deitado, e era o que aparecia sempre
-    // que a leitura falhava.
+    // The current posture, measured now (see ler_postura_fresca). Without a clear
+    // decision, open as the screen already is - whoever opens an app from home is looking
+    // at it in portrait. Before, the default was landscape, and that was what always appeared
+    // when the reading failed.
     p = rotacao_para_abrir(&m);
     const uint8_t agora = M5.Display.getRotation();
     rot = (p >= 0) ? (uint8_t)p : (agora == ROT_DEITADO ? ROT_DEITADO : ROT_EM_PE);
   }
   aplicar(rot);
   if (s_modo == ORI_SEGUE_IMU) {
-    // A gravidade junto, como no giro: confirma no log por que abriu assim.
-    ESP_LOGI(TAG, "'%s' abre %s, seguindo o aparelho (%dx%d)  ax=%+.2f ay=%+.2f az=%+.2f%s", app->nome,
-             rot == ROT_EM_PE ? "em pe" : "deitado", M5.Display.width(), M5.Display.height(),
+    // Gravity alongside, as with rotation: confirms in the log why it opened like that.
+    ESP_LOGI(TAG, "'%s' opens %s, following the device (%dx%d)  ax=%+.2f ay=%+.2f az=%+.2f%s", app->nome,
+             rot == ROT_EM_PE ? "portrait" : "landscape", M5.Display.width(), M5.Display.height(),
              (double)m.ax, (double)m.ay, (double)m.az,
-             tab5_teclado_presente() ? "  (teclado encaixado)" : p < 0 ? "  (sem decisao: a posicao da tela)" : "");
+             tab5_teclado_presente() ? "  (keyboard docked)" : p < 0 ? "  (no decision: the screen's position)" : "");
   } else {
-    ESP_LOGI(TAG, "'%s' abre %s (%dx%d)%s", app->nome, rot == ROT_EM_PE ? "em pe" : "deitado",
+    ESP_LOGI(TAG, "'%s' opens %s (%dx%d)%s", app->nome, rot == ROT_EM_PE ? "portrait" : "landscape",
              M5.Display.width(), M5.Display.height(),
-             s_modo == ORI_FIXO_EM_PE ? "  (fixo)" : s_teclado ? "  (teclado encaixado)" : "");
+             s_modo == ORI_FIXO_EM_PE ? "  (fixed)" : s_teclado ? "  (keyboard docked)" : "");
   }
 }
 
@@ -185,7 +185,7 @@ void orientacao_ao_fechar(void)
   const uint8_t rot = s_teclado ? ROT_DEITADO : ROT_EM_PE;
   if (M5.Display.getRotation() != rot) {
     aplicar(rot);
-    ESP_LOGI(TAG, "tela de volta %s (%dx%d)", rot == ROT_EM_PE ? "em pe" : "deitada (teclado encaixado)",
+    ESP_LOGI(TAG, "screen back %s (%dx%d)", rot == ROT_EM_PE ? "portrait" : "landscape (keyboard docked)",
              M5.Display.width(), M5.Display.height());
   }
 }
@@ -199,8 +199,8 @@ uint32_t orientacao_prazo_ms(uint32_t agora)
 
 bool orientacao_vigiar(uint32_t agora, bool pode_girar)
 {
-  // O teclado entrou ou saiu: gira ja (sem amostras nem carencia - nao e um
-  // balanco da mao), assim que der (sem dedo na tela, nada na frente).
+  // The keyboard was docked or removed: rotate right away (no samples or grace - it is not a
+  // sway of the hand), as soon as possible (no finger on the screen, nothing in front).
   const bool teclado = tab5_teclado_presente();
   if (teclado != s_teclado && pode_girar) {
     s_teclado = teclado;
@@ -210,8 +210,8 @@ bool orientacao_vigiar(uint32_t agora, bool pode_girar)
     const uint8_t rot = (teclado && s_modo != ORI_FIXO_EM_PE) ? ROT_DEITADO : rotacao_sem_teclado();
     if (rot != M5.Display.getRotation()) {
       aplicar(rot);
-      ESP_LOGI(TAG, "teclado %s: tela %s (%dx%d)", teclado ? "encaixado" : "retirado",
-               rot == ROT_EM_PE ? "em pe" : "deitada", M5.Display.width(), M5.Display.height());
+      ESP_LOGI(TAG, "keyboard %s: screen %s (%dx%d)", teclado ? "docked" : "removed",
+               rot == ROT_EM_PE ? "portrait" : "landscape", M5.Display.width(), M5.Display.height());
       return true;
     }
   }
@@ -236,10 +236,10 @@ bool orientacao_vigiar(uint32_t agora, bool pode_girar)
   s_girou_ms = agora;
   s_cand = -1;
   s_seguidas = 0;
-  // A gravidade junto: e o que confirma no log, sem adivinhar, que o eixo e o
-  // limiar estao certos neste aparelho.
-  ESP_LOGI(TAG, "girou para %s (%dx%d)  ax=%+.2f ay=%+.2f az=%+.2f%s",
-           p == ROT_EM_PE ? "em pe" : "deitado", M5.Display.width(), M5.Display.height(),
-           (double)m.ax, (double)m.ay, (double)m.az, tab5_teclado_presente() ? "  (teclado encaixado)" : "");
+  // Gravity alongside: it is what confirms in the log, without guessing, that the axis and the
+  // threshold are right on this device.
+  ESP_LOGI(TAG, "rotated to %s (%dx%d)  ax=%+.2f ay=%+.2f az=%+.2f%s",
+           p == ROT_EM_PE ? "portrait" : "landscape", M5.Display.width(), M5.Display.height(),
+           (double)m.ax, (double)m.ay, (double)m.az, tab5_teclado_presente() ? "  (keyboard docked)" : "");
   return true;
 }

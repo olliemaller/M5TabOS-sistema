@@ -1,5 +1,5 @@
-// Comandos do console - CARTAO: cartao, lista, ler, despejar, apagar, receber, arquivos.
-// (Partido de console.cpp; a tabela COMANDOS e a ajuda continuam la.)
+// Console commands - CARTAO (SD CARD): cartao, lista, ler, despejar, apagar, receber, arquivos.
+// (Split from console.cpp; the COMANDOS table and the help remain there.)
 
 #include "mbedtls/base64.h"
 #include "tab5_ui.hpp"   // tab5_bytes_txt
@@ -16,10 +16,10 @@
 #include "ff.h"
 #include "console/console_interno.hpp"
 
-// Tamanho legivel, num buffer estatico proprio. Estatico e nao do chamador
-// porque ele aparece duas vezes na MESMA linha de printf em alguns pontos - e
-// dois usos simultaneos do mesmo buffer se atropelariam. Por isso alterna
-// entre dois.
+// Human-readable size, in its own static buffer. Static and not the caller's
+// because it appears twice in the SAME printf line in some places - and
+// two simultaneous uses of the same buffer would trample each other. That is why it alternates
+// between two.
 static const char* tamanho_curto(uint64_t bytes)
 {
   static char buf[2][16];
@@ -29,14 +29,14 @@ static const char* tamanho_curto(uint64_t bytes)
   return b;
 }
 
-// Panorama do cartao: espaco e uma linha por pasta de aplicativo.
+// Overview of the SD card: space and one line per app folder.
 //
-// O `lista` mostra UMA pasta e serve para procurar arquivo. Este responde outra
-// pergunta, a que se faz primeiro: "o que existe aqui e quanto esta ocupado?".
+// `lista` shows ONE folder and is for looking for a file. This one answers another
+// question, the one asked first: "what is here and how much is used?".
 void cmd_cartao(void)
 {
   {
-    // O gravador do sistema (hal/tab5_sd.hpp): o que ainda espera, o que ja foi.
+    // The system writer (hal/tab5_sd.hpp): what is still waiting, what has already gone.
     uint32_t pend = 0, grav = 0, perd = 0;
     tab5_sd_anexos_estado(&pend, &grav, &perd);
     printf(tr("gravador: %lu B esperando, %lu linha(s) gravadas, %lu perdida(s) desde o boot\n"),
@@ -49,17 +49,17 @@ void cmd_cartao(void)
 
   printf(tr("--- cartao ---\n  %s\n"), tab5_sd_descricao());
 
-  // Espaco livre pelo FATFS. O statvfs do VFS nao e implementado para FAT no
-  // IDF, entao vamos ao driver: clusters livres x setores por cluster.
+  // Free space via FATFS. The VFS statvfs is not implemented for FAT in the
+  // IDF, so we go to the driver: free clusters x sectors per cluster.
   FATFS* fs = nullptr;
   DWORD livres = 0;
   if (f_getfree("0:", &livres, &fs) == FR_OK && fs) {
-    // SETOR REAL, nao FF_MAX_SS. O FF_MAX_SS e o setor MAXIMO que o FATFS foi
-    // compilado para aceitar (4096 no IDF); o do cartao e 512. Multiplicar pelo
-    // maximo dava 8x a mais - um cartao de 14,5GB aparecia com 118GB.
+    // REAL SECTOR, not FF_MAX_SS. FF_MAX_SS is the MAXIMUM sector FATFS was
+    // compiled to accept (4096 in the IDF); the card's is 512. Multiplying by the
+    // maximum gave 8x too much - a 14.5GB card showed up as 118GB.
     //
-    // Quando FF_MAX_SS == FF_MIN_SS o campo ssize nem existe (o FATFS o remove,
-    // porque so ha um tamanho possivel), dai o #if.
+    // When FF_MAX_SS == FF_MIN_SS the ssize field does not even exist (FATFS removes it,
+    // because there is only one possible size), hence the #if.
 #if FF_MAX_SS != FF_MIN_SS
     const uint64_t setor = fs->ssize;
 #else
@@ -89,14 +89,14 @@ void cmd_cartao(void)
     char sub[160];
     snprintf(sub, sizeof(sub), "%s/%s", TAB5_SD_APPS, e->d_name);
 
-    // Conta e soma sem recursao: as pastas de app sao planas por convencao
-    // (ver tab5_sd.hpp), e descer em arvore aqui so criaria caminho para
-    // estourar stack num cartao que alguem encheu de subpastas.
+    // Counts and sums without recursion: app folders are flat by convention
+    // (see tab5_sd.hpp), and walking a tree here would only open a way to
+    // overflow the stack on a card someone filled with subfolders.
     DIR* sd = opendir(sub);
     if (!sd) { continue; }
 
-    // Guarda os nomes para imprimir DEPOIS do cabecalho da pasta - o total tem
-    // que aparecer em cima, e so da para saber o total depois de percorrer.
+    // Stores the names to print AFTER the folder header - the total has
+    // to appear on top, and the total can only be known after walking it.
     #define CARTAO_MOSTRA 10
     char nomes[CARTAO_MOSTRA][40];
     uint64_t tams[CARTAO_MOSTRA];
@@ -120,9 +120,9 @@ void cmd_cartao(void)
 
     printf("  %-16s %6d  %s\n", e->d_name, n, tamanho_curto(bytes));
 
-    // Os arquivos, indentados. Faltava exatamente isto: dava para ver que a
-    // pasta Sistema tinha 3 arquivos e 1,5MB, e NAO dava para ver se o firmware
-    // do C6 era um deles.
+    // The files, indented. This was exactly what was missing: you could see that the
+    // Sistema folder had 3 files and 1.5MB, and you could NOT see whether the C6
+    // firmware was one of them.
     const int mostrar = (n < CARTAO_MOSTRA) ? n : CARTAO_MOSTRA;
     for (int i = 0; i < mostrar; ++i) {
       printf("      %-28.28s %10s\n", nomes[i], tamanho_curto(tams[i]));
@@ -137,32 +137,32 @@ void cmd_cartao(void)
 }
 
 // ---------------------------------------------------------------------------
-// RECEBER ARQUIVO PELA SERIAL
+// RECEIVING A FILE OVER THE SERIAL PORT
 // ---------------------------------------------------------------------------
-//   receber <app> <arquivo> <bytes>
+//   receber <app> <file> <bytes>
 //
-// Nasceu de uma necessidade concreta: mandar 1,4MB de firmware do C6 para o
-// cartao sem tirar o cartao do aparelho.
+// It was born of a concrete need: sending 1.4MB of C6 firmware to the
+// SD card without taking the card out of the device.
 //
-// TRES DECISOES QUE NAO SAO OBVIAS:
+// THREE DECISIONS THAT ARE NOT OBVIOUS:
 //
-// 1. LE DIRETO DO DRIVER, nao do stdin. O console roda com
-//    usb_serial_jtag_vfs_set_rx_line_endings(ESP_LINE_ENDINGS_CR), que traduz
-//    fim de linha na entrada - inofensivo para texto, DESTRUTIVO para binario:
-//    todo 0x0D viraria outra coisa. O usb_serial_jtag_read_bytes() passa ao
-//    largo do VFS e entrega o byte como veio.
+// 1. READS STRAIGHT FROM THE DRIVER, not from stdin. The console runs with
+//    usb_serial_jtag_vfs_set_rx_line_endings(ESP_LINE_ENDINGS_CR), which translates
+//    line endings on input - harmless for text, DESTRUCTIVE for binary:
+//    every 0x0D would become something else. usb_serial_jtag_read_bytes() bypasses
+//    the VFS and delivers the byte as it came.
 //
-// 2. GUARDA TUDO NA PSRAM ANTES DE ESCREVER NO CARTAO. A serial nao tem
-//    controle de fluxo: se a gente parar para escrever no SD - e o FATFS para,
-//    as vezes por centenas de milissegundos, quando fecha um cluster - o buffer
-//    de recepcao enche e os bytes se perdem em silencio. Com 32MB de PSRAM,
-//    receber inteiro e depois gravar desacopla as duas coisas por completo.
+// 2. KEEPS EVERYTHING IN PSRAM BEFORE WRITING TO THE CARD. The serial port has no
+//    flow control: if we stop to write to the SD - and FATFS does stop,
+//    sometimes for hundreds of milliseconds, when it closes a cluster - the receive
+//    buffer fills and the bytes are silently lost. With 32MB of PSRAM,
+//    receiving it all and writing afterwards decouples the two completely.
 //
-// 3. NAO IMPRIME NADA DURANTE A RECEPCAO. O jeito natural de mandar o arquivo e
-//    "cat arquivo > /dev/cu.usbmodem*", e nesse arranjo NINGUEM esta lendo a
-//    saida. Se a gente escrever, o buffer de TX enche e a escrita bloqueia -
-//    parando justamente o loop que precisa consumir a entrada. Silencio ate o
-//    fim e o que mantem o fluxo vivo.
+// 3. PRINTS NOTHING DURING RECEPTION. The natural way to send the file is
+//    "cat file > /dev/cu.usbmodem*", and in that set-up NOBODY is reading the
+//    output. If we write, the TX buffer fills and the write blocks -
+//    stopping precisely the loop that needs to consume the input. Silence until the
+//    end is what keeps the stream alive.
 #define RECEBER_MAX (6u * 1024u * 1024u)
 
 
@@ -200,13 +200,13 @@ void cmd_receber(int argc, char** argv)
     const int n = usb_serial_jtag_read_bytes(buf + lidos, (size_t)tam - lidos,
                                              pdMS_TO_TICKS(1000));
     if (n > 0) { lidos += (size_t)n; vazios = 0; }
-    else if (++vazios >= 10) { break; }   // desistiu de esperar
+    else if (++vazios >= 10) { break; }   // gave up waiting
   }
 
-  // GRAVA O QUE CHEGOU, mesmo incompleto. Jogar 1,4MB fora por causa dos
-  // ultimos 2KB nao ajuda ninguem: com o arquivo no cartao e o md5 na tela,
-  // da para ver SE faltou e QUANTO faltou. Quem decide se serve e voce - e o
-  // `c6 gravar` confere o cabecalho antes de usar, de qualquer forma.
+  // WRITES WHAT ARRIVED, even if incomplete. Throwing away 1.4MB because of the
+  // last 2KB helps nobody: with the file on the card and the md5 on screen,
+  // you can see WHETHER something is missing and HOW MUCH. You decide whether it is usable - and
+  // `c6 gravar` checks the header before using it, in any case.
   const bool completo = (lidos == (size_t)tam);
   if (lidos == 0) {
     printf("%s", tr("\nnao chegou byte nenhum.\n"));
@@ -219,8 +219,8 @@ void cmd_receber(int argc, char** argv)
            (unsigned)lidos, tam, tam - (long)lidos);
   }
 
-  // MD5 para conferir contra o `md5 -q` do Mac. Um tamanho igual nao prova
-  // nada: byte trocado no meio da serial da o mesmo tamanho.
+  // MD5 to check against the Mac's `md5 -q`. An equal size proves
+  // nothing: a byte swapped in the middle of the serial transfer gives the same size.
   unsigned char md5[16];
   mbedtls_md5(buf, lidos, md5);
 
@@ -244,16 +244,16 @@ void cmd_receber(int argc, char** argv)
 }
 
 // ---------------------------------------------------------------------------
-// ler <caminho> [linhas]
+// ler <path> [lines]
 // ---------------------------------------------------------------------------
 int cmd_ler(int argc, char** argv)
 {
   if (argc < 2) { printf("%s", tr("uso: ler <caminho> [linhas]\n")); return 1; }
   char buf[160];
   const char* caminho = caminho_sd(argv[1], buf, sizeof(buf));
-  // Teto de linhas: um satelites-*.csv de um dia inteiro tem milhares delas,
-  // e despejar tudo a 115200 baud prenderia o console por minutos. Quem quer
-  // mais pede o numero; quem quer o arquivo inteiro usa 'despejar'.
+  // Line ceiling: a satelites-*.csv for a whole day has thousands of them,
+  // and dumping everything at 115200 baud would hold the console for minutes. Whoever wants
+  // more asks for the number; whoever wants the whole file uses 'despejar'.
   int teto = (argc >= 3) ? atoi(argv[2]) : 200;
   if (teto < 1) { teto = 1; }
 
@@ -279,25 +279,25 @@ int cmd_ler(int argc, char** argv)
 }
 
 // ---------------------------------------------------------------------------
-// despejar <caminho>  - o arquivo INTEIRO, para ser capturado do outro lado
+// despejar <path>  - the WHOLE file, to be captured on the other side
 // ---------------------------------------------------------------------------
-// Irmao do "ler", com tres diferencas que sao a razao de ele existir separado:
+// Sibling of "ler", with three differences that are the reason it exists separately:
 //
-//   1. SEM TETO DE LINHAS. O "ler" corta em 200 porque ele e para OLHAR - e
-//      olhar mais que isso na tela do terminal nao serve para nada. Este e para
-//      COPIAR: um energia.csv de uma descarga inteira tem umas 500 linhas, e um
-//      arquivo cortado no meio nao serve para ajustar curva nenhuma.
+//   1. NO LINE CEILING. "ler" cuts at 200 because it is for LOOKING - and
+//      looking at more than that on the terminal screen is no use. This one is for
+//      COPYING: an energia.csv of a whole discharge has about 500 lines, and a
+//      file cut in the middle is no use for fitting any curve.
 //
-//   2. CALA O LOG ENQUANTO DESPEJA. Este console divide a serial com o
-//      ESP_LOG de todas as tarefas. Sem calar, uma linha de "power" ou
-//      "mesh" cai NO MEIO do CSV, e quem esta capturando do outro lado recebe
-//      um arquivo contaminado. Restaurado no fim, sempre - inclusive quando o
-//      fopen falha.
+//   2. SILENCES THE LOG WHILE DUMPING. This console shares the serial port with the
+//      ESP_LOG of every task. Without silencing, a "power" or
+//      "mesh" line lands IN THE MIDDLE of the CSV, and whoever is capturing on the other side gets
+//      a contaminated file. Restored at the end, always - including when
+//      fopen fails.
 //
-//   3. MARCADORES QUE O SCRIPT RECONHECE. O ">>>INICIO" e o ">>>FIM" com a
-//      contagem de linhas dizem ao capturador onde comeca, onde termina e se
-//      chegou tudo. Sem eles, o script do outro lado teria que adivinhar
-//      quando parar de escutar - e adivinhar sempre erra na hora errada.
+//   3. MARKERS THE SCRIPT RECOGNISES. ">>>INICIO" and ">>>FIM" with the
+//      line count tell the capturer where it starts, where it ends and whether
+//      everything arrived. Without them, the script on the other side would have to guess
+//      when to stop listening - and guessing always gets it wrong at the wrong moment.
 int cmd_despejar(int argc, char** argv)
 {
   if (argc < 2) {
@@ -306,8 +306,8 @@ int cmd_despejar(int argc, char** argv)
            "  no Mac, para salvar:  ./ferramentas/baixar.py <caminho>\n"));
     return 1;
   }
-  // -b: BINARIO (foto, firmware), em base64 - fgets/fputs quebram no
-  // primeiro byte nulo. O baixar.py decodifica.
+  // -b: BINARY (photo, firmware), in base64 - fgets/fputs break on the
+  // first null byte. baixar.py decodes it.
   const bool binario = strcmp(argv[1], "-b") == 0;
   if (binario && argc < 3) { printf("%s", tr("uso: despejar -b <caminho>\n")); return 1; }
   char buf[160];
@@ -332,8 +332,8 @@ int cmd_despejar(int argc, char** argv)
           mbedtls_base64_encode(b64, sizeof(b64), &olen, cru + o, pedaco);
           b64[olen] = 0;
           puts((const char*)b64);
-          // Mais vezes que no texto: com o buffer da serial USB cheio, linhas
-          // inteiras eram descartadas (medido: 6% de uma foto se perdia).
+          // More often than for text: with the USB serial buffer full, whole lines
+          // were discarded (measured: 6% of a photo was lost).
           if ((++n % 2) == 0) { fflush(stdout); vTaskDelay(1); }
         }
       }
@@ -349,11 +349,11 @@ int cmd_despejar(int argc, char** argv)
     FILE* f = fopen(caminho, "r");
     if (!f) { printf(tr("erro: %s nao abriu\n"), caminho); return 1; }
 
-    // Tamanho ANTES, para o outro lado poder conferir o que recebeu.
+    // Size FIRST, so the other side can check what it received.
     long tam = 0;
     tam = tab5_sd_tamanho(f); if (tam < 0) { tam = 0; }
 
-    // A partir daqui, silencio - ver o motivo 2 no cabecalho.
+    // From here on, silence - see reason 2 in the header.
     esp_log_level_set("*", ESP_LOG_NONE);
 
     printf(tr(">>>INICIO %s %ld\n"), caminho, tam);
@@ -361,9 +361,9 @@ int cmd_despejar(int argc, char** argv)
     long n = 0;
     while (fgets(linha, sizeof(linha), f)) {
       fputs(linha, stdout);
-      // Uma pausa a cada 64 linhas. Nao e educacao: o despejo de um arquivo
-      // grande e um loop fechado nesta tarefa, e sem ceder a CPU o watchdog de
-      // tarefa ociosa reclama e a interface engasga.
+      // A pause every 64 lines. It is not politeness: dumping a large
+      // file is a tight loop on this task, and without yielding the CPU the idle
+      // task watchdog complains and the UI stutters.
       if ((++n % 64) == 0) { fflush(stdout); vTaskDelay(1); }
     }
     fflush(stdout);
@@ -376,7 +376,7 @@ int cmd_despejar(int argc, char** argv)
 }
 
 // ---------------------------------------------------------------------------
-// lista [caminho]
+// lista [path]
 // ---------------------------------------------------------------------------
 int cmd_lista(int argc, char** argv)
 {
@@ -409,14 +409,14 @@ int cmd_lista(int argc, char** argv)
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// apagar <caminho>  - remove UM arquivo do cartao
+// apagar <path>  - removes ONE file from the SD card
 // ---------------------------------------------------------------------------
 //
-// Existe para poder comecar uma gravacao do zero sem tirar o cartao. Apagar e
-// irreversivel, entao:
-//   - so aceita caminho dentro de /sdcard/, para um dedo errado nao alcancar
-//     outra coisa;
-//   - um arquivo por vez, sem curinga: nada de "apagar *".
+// It exists so a recording can be started from scratch without taking the card out. Deleting is
+// irreversible, so:
+//   - it only accepts paths inside /sdcard/, so a slip of the finger cannot reach
+//     anything else;
+//   - one file at a time, no wildcard: no "apagar *".
 int cmd_apagar(int argc, char** argv)
 {
   if (argc < 2) { printf("%s", tr("uso: apagar apps/<App>/<arquivo>\n")); return 1; }
@@ -459,8 +459,8 @@ void listar_pasta(const char* pasta, const char* filtro)
   heap_caps_free(it);
 }
 
-// 'arquivos lixeira <raiz> [restaurar <nome> | excluir <nome> | esvaziar | antigos <dias>]'
-// Sem acao, lista. O nome pode ter espacos ("x (2).txt"): junta o resto da linha.
+// 'arquivos lixeira <root> [restaurar <name> | excluir <name> | esvaziar | antigos <days>]'
+// With no action, lists. The name may have spaces ("x (2).txt"): joins the rest of the line.
 static void lixeira_arquivos(int argc, char** argv, const char* raiz, void (*erro)(tab5_arq_erro_t))
 {
   const char* acao = argc >= 4 ? argv[3] : "";
@@ -481,7 +481,7 @@ static void lixeira_arquivos(int argc, char** argv, const char* raiz, void (*err
   }
   if (acao[0]) { printf("%s", tr("acao desconhecida: use restaurar, excluir, esvaziar ou antigos\n")); return; }
 
-  // Listar
+  // List
   const int MAX = 200;
   tab5_arq_lixo_t* it = (tab5_arq_lixo_t*)heap_caps_malloc(sizeof(tab5_arq_lixo_t) * MAX, MALLOC_CAP_SPIRAM);
   if (!it) { printf("%s", tr("sem memoria\n")); return; }
@@ -503,9 +503,9 @@ static void lixeira_arquivos(int argc, char** argv, const char* raiz, void (*err
   heap_caps_free(it);
 }
 
-// O motor de arquivos (services/tab5_arquivos): o mesmo que o app Arquivos
-// usa, para testar sem tela. Caminhos absolutos (/sdcard/..., /usb/...) ou
-// relativos a pasta atual da sessao ('cd').
+// The file engine (services/tab5_arquivos): the same one the Arquivos (Files) app
+// uses, for testing without a screen. Absolute paths (/sdcard/..., /usb/...) or
+// relative to the session's current folder ('cd').
 void c_arquivos(int argc, char** argv)
 {
   static void (*const erro)(tab5_arq_erro_t) = [](tab5_arq_erro_t r) {
@@ -527,7 +527,7 @@ void c_arquivos(int argc, char** argv)
   if (argc >= 3 && eh(argv[1], "rm"))     { erro(tab5_arq_apagar(c2)); return; }
   if (argc >= 4 && eh(argv[1], "mkdir"))  { erro(tab5_arq_criar_pasta(c2, argv[3])); return; }
   if (argc == 3 && eh(argv[1], "mkdir")) {
-    // Um caminho so (o mkdir de sempre): a pasta pai e o nome novo.
+    // A single path (the usual mkdir): the parent folder and the new name.
     char* b = strrchr(c2, '/');
     if (!b || !b[1]) { printf("%s", tr("uso: mkdir <pasta nova>\n")); return; }
     *b = 0;
@@ -543,7 +543,7 @@ void c_arquivos(int argc, char** argv)
     return;
   }
   if (argc >= 3 && eh(argv[1], "colar")) { erro(tab5_arq_colar(c2)); return; }
-  // estado
+  // status
   tab5_arq_trabalho_t t;
   tab5_arq_trabalho(&t);
   static const char* const FASE[] = { "parado", "contando", "copiando", "apagando", "feito", "FALHOU", "cancelado" };

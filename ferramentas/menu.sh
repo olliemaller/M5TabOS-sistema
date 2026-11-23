@@ -1,34 +1,34 @@
 #!/bin/bash
-# O MENU DO M5tabOS - tudo o que se faz com o projeto, sem decorar comando.
+# THE M5tabOS MENU - everything you do with the project, without memorising commands.
 #
-#   ferramentas/menu.sh     (ou dois cliques no M5tabOS.command, no Finder,
-#                            ou o botao "Menu" na barra do VSCode)
+#   ferramentas/menu.sh     (or double-click M5tabOS.command in the Finder,
+#                            or the "Menu" button in the VSCode status bar)
 #
-# Cada opcao chama o script de sempre - o menu nao faz nada que eles nao
-# facam; ele so lembra quais existem. Opcao cujo script nao esta nesta copia
-# (a publica nao tem o publicar.sh, por exemplo) nao aparece.
+# Each option calls the usual script - the menu does nothing they do not
+# do; it just reminds you which ones exist. An option whose script is not in this copy
+# (the public one has no publicar.sh, for example) does not appear.
 cd "$(dirname "$0")/.." || exit 1
 
-PUBLICO="../M5TabOS-sistema"   # a copia do GitHub (ver docs/GITLAB.md)
+PUBLICO="../M5TabOS-sistema"   # the GitHub copy (see docs/GITLAB.md)
 
-pausa() { printf "\n(Enter para voltar ao menu) "; read -r _; }
+pausa() { printf "\n(Enter to return to the menu) "; read -r _; }
 
 publicar() {
     if [ ! -d "$PUBLICO/.git" ]; then
-        echo "Nao achei a copia publica em $PUBLICO."; return
+        echo "Could not find the public copy at $PUBLICO."; return
     fi
-    echo ">>> 1/3 trazendo o que ja esta no GitHub"
-    git -C "$PUBLICO" pull --ff-only || { echo "o pull falhou - resolva antes de publicar"; return; }
-    echo ">>> 2/3 gerando a copia (e compilando)"
+    echo ">>> 1/3 fetching what is already on GitHub"
+    git -C "$PUBLICO" pull --ff-only || { echo "the pull failed - sort it out before publishing"; return; }
+    echo ">>> 2/3 generating the copy (and building)"
     ferramentas/publicar.sh "$PUBLICO" --compilar || return
-    echo ">>> 3/3 o que vai para o GitHub:"
+    echo ">>> 3/3 what is going to GitHub:"
     git -C "$PUBLICO" show --stat --format="%h %s" | head -40
-    printf "\nEnviar para o GitHub agora? Digite 'sim' para enviar: "
+    printf "\nPush to GitHub now? Type 'sim' (yes) to push: "
     read -r R
     if [ "$R" = "sim" ]; then
-        git -C "$PUBLICO" push && echo ">>> publicado"
+        git -C "$PUBLICO" push && echo ">>> published"
     else
-        echo "Nao enviado. O commit ficou na copia local; envie depois com:"
+        echo "Not pushed. The commit stayed in the local copy; push it later with:"
         echo "  git -C $PUBLICO push"
     fi
 }
@@ -41,15 +41,15 @@ while true; do
     echo
     OPC=()
     item() { OPC+=("$1"); printf "  %d) %s\n" "${#OPC[@]}" "$2"; }
-    item gravar   "Gravar no Tab5 (escolhe a variante)"
-    item monitor  "So o monitor serial (sem gravar)"
-    [ -x ferramentas/compilar_tudo.sh ] && item tudo     "Compilar todas as variantes (o que o CI faz)"
-    [ -x testes/checar_be.sh ]          && item berry    "Conferir os apps Berry de exemplo"
-    [ -x ferramentas/m5burner.sh ]      && item m5burner "Gerar o .bin do M5Burner"
-    [ -x ferramentas/lancar.sh ]        && item lancar   "Lancar uma versao nova"
-    [ -x ferramentas/publicar.sh ]      && item publicar "Publicar a base no GitHub"
-    echo "  0) Sair"
-    printf "\nOpcao: "
+    item gravar   "Flash the Tab5 (choose the variant)"
+    item monitor  "Serial monitor only (no flashing)"
+    [ -x ferramentas/compilar_tudo.sh ] && item tudo     "Build all variants (what CI does)"
+    [ -x testes/checar_be.sh ]          && item berry    "Check the example Berry apps"
+    [ -x ferramentas/m5burner.sh ]      && item m5burner "Generate the M5Burner .bin"
+    [ -x ferramentas/lancar.sh ]        && item lancar   "Release a new version"
+    [ -x ferramentas/publicar.sh ]      && item publicar "Publish the base to GitHub"
+    echo "  0) Quit"
+    printf "\nOption: "
     read -r N
     [ "$N" = "0" ] && exit 0
     [[ "$N" =~ ^[0-9]+$ ]] && [ "$N" -ge 1 ] && [ "$N" -le "${#OPC[@]}" ] || continue
@@ -60,14 +60,14 @@ while true; do
         tudo)     ferramentas/compilar_tudo.sh; pausa ;;
         berry)    testes/checar_be.sh; pausa ;;
         m5burner)
-            printf "Variante (Enter = m5burner; ou berry): "; read -r V
-            printf "Chip P4 (Enter = v1; ou v3): "; read -r C
+            printf "Variant (Enter = m5burner; or berry): "; read -r V
+            printf "P4 chip (Enter = v1; or v3): "; read -r C
             ferramentas/m5burner.sh ${V:-m5burner} ${C:-v1}; pausa ;;
         lancar)
-            echo "patch = so correcoes   minor = algo novo   (regras em docs/VERSIONAMENTO.md)"
-            printf "Tipo (patch/minor): "; read -r T
+            echo "patch = fixes only   minor = something new   (rules in docs/VERSIONAMENTO.md)"
+            printf "Type (patch/minor): "; read -r T
             [ -n "$T" ] && ferramentas/lancar.sh "$T"
-            echo; echo "Para enviar ao GitLab: git push origin main --tags"; pausa ;;
+            echo; echo "To push to GitLab: git push origin main --tags"; pausa ;;
         publicar) publicar; pausa ;;
     esac
 done

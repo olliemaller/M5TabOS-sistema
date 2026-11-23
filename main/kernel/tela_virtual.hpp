@@ -1,63 +1,63 @@
-// O OBJETO DE DESENHO DO SISTEMA (nome historico: "tela virtual").
+// THE SYSTEM DRAWING OBJECT (historical name: "tela virtual", virtual screen).
 //
-// Um LovyanGFX comum cujo painel e um RASTREADOR: anota cada retangulo que
-// qualquer primitiva do M5GFX tocou e o entrega ao compositor
-// (comp_invalidar). Home, barras e todos os apps desenham aqui, sem saber de
-// nada disso.
+// An ordinary LovyanGFX whose panel is a TRACKER: it records every rectangle that
+// any M5GFX primitive touched and hands it to the compositor
+// (comp_invalidar). The home screen, the bars and every app draw here, knowing
+// nothing of this.
 //
-// MODO DIRETO (docs/COMPOSITOR.md): o rastreador escreve na PAGINA DE TRAS do
-// painel. A primeira escrita de cada volta abre o quadro (comp_abrir: espera a
-// troca anterior e sincroniza), e so entao o pixel e escrito. Ate a etapa 3a
-// isto era um canvas de 1,84 MB na PSRAM que o compositor copiava para a
-// pagina a cada quadro - a copia saiu, e a memoria tambem.
+// DIRECT MODE (docs/COMPOSITOR.md): the tracker writes to the panel's BACK PAGE.
+// The first write of each pass opens the frame (comp_abrir: waits for the
+// previous swap and synchronises), and only then is the pixel written. Up to stage 3a
+// this was a 1.84 MB canvas in PSRAM that the compositor copied to the
+// page every frame - the copy went, and so did the memory.
 //
-// O que continua valendo, sem mudar uma linha de app:
-//   - nenhum desenho acontece na pagina que o painel esta varrendo;
-//   - as areas mudadas sao descobertas SOZINHAS.
-// O que mudou: o conteudo NAO sobrevive mais ao repouso (as paginas morrem
-// com o painel). Ao acordar, o core redesenha tudo - como ja fazia.
+// What still holds, without changing a line of any app:
+//   - no drawing happens on the page the panel is scanning;
+//   - changed areas are discovered AUTOMATICALLY.
+// What changed: the content NO LONGER survives idle (the pages die
+// with the panel). On waking, the core redraws everything - as it already did.
 
 #pragma once
 
 #include <M5Unified.h>
 
-// Liga o objeto de desenho as paginas do painel e o torna o alvo do sistema
-// (tab5_tela_definir_alvo). Chamar uma vez, da tarefa de interface.
+// Binds the drawing object to the panel pages and makes it the system's target
+// (tab5_tela_definir_alvo). Call once, from the UI task.
 bool tela_virtual_iniciar(void);
 
-// O alvo de desenho. Enquanto ele nao existir, e o M5.Display.
+// The drawing target. Until it exists, it is M5.Display.
 lgfx::LovyanGFX& tela_virtual(void);
 
-// Copia a rotacao do M5.Display (o Mesh abre em paisagem). O toque continua
-// sendo convertido pelo M5.Display; aqui so precisa desenhar igual.
+// Copies M5.Display's rotation (Mesh opens in landscape). Touch is still
+// converted by M5.Display; here we only need to draw the same way.
 void tela_virtual_seguir_rotacao(void);
 
-// O retangulo (x, y, w, h), em coordenadas de desenho, vai ser INTEIRO
-// sobrescrito por quem chamou, ainda neste quadro - o que a pagina de tras
-// tinha de atrasado ali nao precisa vir da frente. E o que o fillRect ja diz
-// sozinho; serve para quem cobre com imagem (pushSprite) em vez de cor.
+// The rectangle (x, y, w, h), in drawing coordinates, will be ENTIRELY
+// overwritten by the caller, still within this frame - whatever the back page
+// had out of date there need not come from the front. fillRect already says
+// this by itself; this is for whoever covers with an image (pushSprite) instead of a colour.
 void tela_virtual_cobrir(int x, int y, int w, int h);
 
-// Texto suave transparente, depressa: mistura a mascara de cinza (w x h,
-// 'passo' bytes por linha) na cor dada, DIRETO na pagina de tras - so os
-// pixels de tinta sao tocados. O retangulo ja vem recortado. false = 'gfx'
-// nao e este objeto (quem chama segue pelo caminho comum).
+// Smooth transparent text, fast: blends the grey mask (w x h,
+// 'passo' bytes per row) in the given colour, STRAIGHT onto the back page - only the
+// ink pixels are touched. The rectangle arrives already clipped. false = 'gfx'
+// is not this object (the caller carries on down the ordinary path).
 bool tela_virtual_misturar_mascara(lgfx::LGFXBase* gfx, int x, int y, int w, int h,
                                    const uint8_t* mascara, int passo, uint32_t cor888);
 
-// Cola uma imagem RGB565 ('passo' pixels por linha) em (x, y), w x h, DIRETO
-// na pagina de tras, como coberta inteira. O retangulo ja vem recortado.
-// false = 'gfx' nao e este objeto.
+// Pastes an RGB565 image ('passo' pixels per row) at (x, y), w x h, STRAIGHT
+// onto the back page, as a full cover. The rectangle arrives already clipped.
+// false = 'gfx' is not this object.
 bool tela_virtual_colar(lgfx::LGFXBase* gfx, int x, int y, int w, int h, const uint16_t* src, int passo);
 
-// Cola uma faixa de tela inteira (largura toda, 'alt' linhas a partir de
-// y0) pelo DMA2D (comp_copiar_faixa). So com a tela em pe (rotacao 0) e a
-// faixa em memoria de DMA. false = nao deu (use tela_virtual_colar).
+// Pastes a full-screen band (whole width, 'alt' rows starting at
+// y0) via DMA2D (comp_copiar_faixa). Only with the screen in portrait (rotation 0) and the
+// band in DMA memory. false = it did not work (use tela_virtual_colar).
 bool tela_virtual_colar_faixa(const uint16_t* faixa, int y0, int alt);
 
-// Pede a tela inteira no proximo quadro (qualquer tarefa).
+// Requests the whole screen on the next frame (any task).
 void tela_virtual_invalidar_tudo(void);
 
-// Devolve a superficie de DMA (sistema_superficie) do app que fechou. Chamar
-// depois do ao_fechar() - quem escrevia nela (a camera) ja parou.
+// Returns the DMA surface (sistema_superficie) of the app that closed. Call
+// after ao_fechar() - whoever was writing to it (the camera) has already stopped.
 void tela_virtual_soltar_superficie(void);

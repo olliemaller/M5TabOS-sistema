@@ -1,25 +1,25 @@
-// O PAINEL "NO PC" - a tela do servidor web (services/tab5_web) num app.
+// THE "NO PC" (PC ACCESS) PANEL - the web server's screen (services/tab5_web) in an app.
 //
-// Quem usa o navegador do PC (o Editor, o Mesh) mostra a MESMA coisa: com a
-// parte do app fechada, o que e e o botao Ligar (e quem mais esta aberto);
-// aberta, o endereco do PORTAL (http://<ip>/, que abre direto neste app), a
-// senha, quem conectou e o Desligar - que fecha so a parte dele. O app so diz o retangulo, quem e o dono e como abrir
-// as rotas dele.
+// Those that use the PC's browser (the Editor, Mesh) show the SAME thing: with the
+// app's part closed, what it is and the Ligar (Turn on) button (and who else is open);
+// open, the PORTAL address (http://<ip>/, which opens straight on this app), the
+// password, who connected and Desligar (Turn off) - which closes only its own part. The app only gives the rectangle, who the owner is and how to open
+// its routes.
 //
-// Tudo da tarefa de interface. Redesenhar: quando painel_web_assinatura()
-// mudar (o app declara AVISO_WEB e compara no ao_aviso ou no desenho).
+// All on the UI task. Redraw: when painel_web_assinatura()
+// changes (the app declares AVISO_WEB and compares in ao_aviso or in the drawing).
 #pragma once
 
 #include <M5Unified.h>
 #include <stdint.h>
 
-// Desenha o painel no retangulo (coordenadas de tela). Limpa o retangulo.
+// Draws the panel in the rectangle (screen coordinates). Clears the rectangle.
 void painel_web_desenhar(lgfx::LovyanGFX& d, int x, int y, int l, int a, const char* dono);
 
-// O toque (tx, ty, mesmo referencial do retangulo) caiu no botao? Entao
-// abre (com 'ligar', as rotas do app) ou fecha a parte de 'dono', e avisa
-// por recado quando nao deu (sem Wi-Fi, o servidor nao subiu). true = era o botao.
+// Did the touch (tx, ty, same frame of reference as the rectangle) land on the button? Then
+// opens (with 'ligar', the app's routes) or closes the part of 'dono', and reports
+// via a bar message when it failed (no Wi-Fi, the server did not come up). true = it was the button.
 bool painel_web_tocar(int x, int y, int l, int a, int tx, int ty, const char* dono, bool (*ligar)(void));
 
-// Muda quando o que o painel mostra muda (ligou, desligou, alguem conectou).
+// Changes when what the panel shows changes (turned on, turned off, someone connected).
 uint32_t painel_web_assinatura(void);

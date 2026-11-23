@@ -1,6 +1,6 @@
 #include "tab5_espnow.hpp"
 #include "idioma.h"
-#include "tab5_farejo.hpp"   // repassa o PRONTO (versao e capacidades do C6)
+#include "tab5_farejo.hpp"   // relays PRONTO (the C6's version and capabilities)
 #include "tab5_donos.hpp"
 #include "tab5_wifi.hpp"
 #include "tab5_sd.hpp"
@@ -29,17 +29,17 @@ static const char* TAG = "espnow";
 
 #define ESPNOW_PASTA     "ESPNOW"
 #define ESPNOW_ARQUIVO   "historico.txt"
-#define REPEDIR_MS       5000     // sem PRONTO, pede de novo
-#define CANAL_MS         10000    // o canal segue o roteador: confere de tempos em tempos
+#define REPEDIR_MS       5000     // no PRONTO: ask again
+#define CANAL_MS         10000    // the channel follows the router: check from time to time
 
 // ---------------------------------------------------------------------------
-// ESTADO - escrito pela tarefa do servico, lido pela interface (copia, trava)
+// STATE - written by the service task, read by the UI (copy, lock)
 // ---------------------------------------------------------------------------
-static EXT_RAM_BSS_ATTR espnow_msg_t s_hist[ESPNOW_HIST];   // anel: s_ini e a mais antiga
+static EXT_RAM_BSS_ATTR espnow_msg_t s_hist[ESPNOW_HIST];   // ring: s_ini is the oldest
 static int      s_n = 0, s_ini = 0;
 static uint32_t s_total = 0;
-// Carimbada pelo relogio DESTA sessao (as do cartao nao): so essas sao
-// corrigidas quando o relogio salta - ver ao_saltar_relogio().
+// Stamped by THIS session's clock (the SD card ones aren't): only these are
+// corrected when the clock jumps - see ao_saltar_relogio().
 static bool     s_da_sessao[ESPNOW_HIST];
 static bool     s_lendo_cartao = false;
 static int      s_nao_lidas = 0;
@@ -50,70 +50,70 @@ static volatile uint8_t s_canal  = 0;
 static uint8_t          s_mac[6] = { };
 static int              s_notif  = -1;
 
-// Aparelhos ouvidos (so para contar "quantos"), e o ultimo frame.
+// Devices heard (only to count "how many"), and the last frame.
 #define VISTOS_MAX 16
 static uint8_t  s_vistos[VISTOS_MAX][6];
 static int      s_n_vistos = 0;
 static int64_t  s_ultimo_rx_us = 0;
 
-// ENERGIA. O receptor do C6 so fica ligado o tempo todo quando o
-// ESP-NOW esta de fato em uso - ver quer_receptor_ligado(). Fora disso, modem
-// sleep, como qualquer WiFi.
-#define CONVERSA_VIVA_US (5LL * 60 * 1000000)   // 5 min desde a ultima mensagem
+// POWER. The C6's receiver only stays on all the time when
+// ESP-NOW is actually in use - see quer_receptor_ligado(). Otherwise, modem
+// sleep, like any WiFi.
+#define CONVERSA_VIVA_US (5LL * 60 * 1000000)   // 5 min since the last message
 static int64_t       s_ultimo_tx_us = 0;
-static volatile bool s_janela = false;          // o app ESP-NOW esta aberto
+static volatile bool s_janela = false;          // the ESP-NOW app is open
 
 static inline void travar(void)    { xSemaphoreTake(s_trava, portMAX_DELAY); }
 static inline void destravar(void) { xSemaphoreGive(s_trava); }
 
 // ---------------------------------------------------------------------------
-// A QUEUE DO SERVICO - uma so, para o que chega do C6 e o que a interface pede
+// THE SERVICE QUEUE - just one, for what arrives from the C6 and what the UI asks for
 // ---------------------------------------------------------------------------
-// Os avisos do peer_data chegam na tarefa de recepcao do esp_hosted, que nao
-// pode esperar por nada (e ela que entrega TODO o trafego do WiFi). O callback
-// so copia para a queue; quem pensa e a tarefa do servico. O envio vem da
-// interface pela MESMA queue, porque eh_host_peer_data_send() BLOQUEIA ate o C6
-// responder (ate 5 s) - na interface isso seria tela congelada.
+// peer_data notifications arrive in esp_hosted's receive task, which
+// can't wait for anything (it delivers ALL the WiFi traffic). The callback
+// only copies to the queue; the thinking is done by the service task. Sending comes from the
+// UI via the SAME queue, because eh_host_peer_data_send() BLOCKS until the C6
+// replies (up to 5 s) - on the UI that would be a frozen screen.
 typedef struct {
-  uint32_t tipo;                         // C6_MSG_* recebido, ou EV_ENVIAR
+  uint32_t tipo;                         // C6_MSG_* received, or EV_ENVIAR
   uint16_t n;
-  uint8_t  mac[6];                       // destino de EV_ENVIAR/EV_VARRER (FF.. = difusao)
+  uint8_t  mac[6];                       // destination for EV_ENVIAR/EV_VARRER (FF.. = broadcast)
   uint8_t  dados[7 + C6_TEXTO_MAX + 1];
 } evento_t;
 
 #define EV_ENVIAR 0x1000
-#define EV_CANAL  0x1001   // dados[0] = canal fixo (0 = o do roteador)
-#define EV_NADA   0x1002   // so acorda o loop (reavaliar o receptor)
-#define EV_VARRER 0x1003   // mac = destino, dados = texto: envia nos canais 1 a 13
+#define EV_CANAL  0x1001   // dados[0] = fixed channel (0 = the router's)
+#define EV_NADA   0x1002   // just wakes the loop (re-evaluate the receiver)
+#define EV_VARRER 0x1003   // mac = destination, dados = text: sends on channels 1 to 13
 
 static volatile uint8_t s_canal_fixo = 0;
-static int s_notif_canal = -1;   // pastilha cinza enquanto o WiFi esta solto do roteador
+static int s_notif_canal = -1;   // grey pill while WiFi is detached from the router
 
 static QueueHandle_t s_fila = nullptr;
 
 static void ao_peer_data(uint32_t msg_id, const uint8_t* dados, size_t n, void*)
 {
   if (!s_fila) { return; }
-  // ESTATICO: este callback roda na tarefa de recepcao do esp_hosted, cuja
-  // stack nao e nossa - 270 bytes a mais nela e aposta. So essa tarefa chama
-  // aqui (uma por vez), e o xQueueSend copia antes de voltar.
+  // STATIC: this callback runs in esp_hosted's receive task, whose
+  // stack isn't ours - 270 more bytes on it is a gamble. Only that task calls
+  // here (one at a time), and xQueueSend copies before returning.
   static evento_t ev;
   ev.tipo = msg_id;
   ev.n = (uint16_t)(n > sizeof(ev.dados) ? sizeof(ev.dados) : n);
   if (dados && ev.n) { memcpy(ev.dados, dados, ev.n); }
-  xQueueSend(s_fila, &ev, 0);   // nunca espera: perder um frame e melhor que travar o WiFi
+  xQueueSend(s_fila, &ev, 0);   // never waits: losing a frame is better than stalling WiFi
 }
 
 // ---------------------------------------------------------------------------
-// HISTORICO
+// HISTORY
 // ---------------------------------------------------------------------------
 static void publicar_notif(void)
 {
   if (s_notif < 0) { return; }
   char resumo[NOTIF_RESUMO];
   if (s_nao_lidas > 0) {
-    // Quem mandou a ultima: os dois ultimos bytes do MAC bastam para distinguir
-    // os aparelhos de uma mesa.
+    // Who sent the last one: the last two bytes of the MAC are enough to tell apart
+    // the devices on a table.
     const espnow_msg_t* m = &s_hist[(s_ini + s_n - 1) % ESPNOW_HIST];
     snprintf(resumo, sizeof(resumo), tr("%d de %02X%02X"), s_nao_lidas, m->mac[4], m->mac[5]);
   } else {
@@ -122,7 +122,7 @@ static void publicar_notif(void)
   notif_publicar(s_notif, s_nao_lidas, NOTIF_INFO, resumo);
 }
 
-// Com a trava tomada. Devolve o indice (no anel) da mensagem guardada.
+// With the lock held. Returns the index (in the ring) of the stored message.
 static int guardar(const espnow_msg_t* m)
 {
   int k;
@@ -134,19 +134,19 @@ static int guardar(const espnow_msg_t* m)
   return k;
 }
 
-// Uma linha por mensagem: epoch, MAC, flags e o texto - sem TAB nem quebra de
-// linha dentro dele. Flags: m/r (minha/recebida), d/u (difusao/direta) - EM
-// MAIUSCULA (D/U) quando veio no formato Espressif, o que mantem legivel o
-// historico gravado antes de existir o dialeto -, e o estado do envio.
-// Pelo gravador do sistema (tab5_sd_anexar, urgente): a tarefa do servico nao
-// monta mais o cartao a cada mensagem.
+// One line per message: epoch, MAC, flags and the text - with no TAB or line
+// break inside it. Flags: m/r (mine/received), d/u (broadcast/direct) - IN
+// UPPER CASE (D/U) when it came in the Espressif format, which keeps readable the
+// history written before the dialect existed -, and the send state.
+// Through the system writer (tab5_sd_anexar, urgent): the service task no longer
+// mounts the SD card for every message.
 static void gravar_no_cartao(const espnow_msg_t* m)
 {
-  static char txt[sizeof(m->texto)];   // estatico: so a tarefa do servico chama
+  static char txt[sizeof(m->texto)];   // static: only the service task calls
   size_t k = 0;
   for (const char* c = m->texto; *c && k < sizeof(txt) - 1; ++c) {
-    // O registro e de UMA linha: tabulacao vira espaco e a quebra de linha
-    // (a conversa tem linhas) vai como 0x1F, que volta a ser \n na leitura.
+    // The record is ONE line: a tab becomes a space and a line break
+    // (the conversation has lines) goes as 0x1F, which becomes \n again when read.
     txt[k++] = *c == '\n' ? '\x1f' : (*c == '\t' || *c == '\r') ? ' ' : *c;
   }
   txt[k] = 0;
@@ -159,16 +159,16 @@ static void gravar_no_cartao(const espnow_msg_t* m)
   tab5_sd_anexar(ESPNOW_PASTA, ESPNOW_ARQUIVO, linha, nullptr, true);
 }
 
-// No boot do servico: as ultimas ESPNOW_HIST mensagens do cartao voltam para a
-// RAM, e a conversa abre com o que ja foi dito.
+// At service boot: the last ESPNOW_HIST messages from the SD card come back into
+// RAM, and the conversation opens with what has already been said.
 //
-// SO O FIM DO ARQUIVO, E SEM A TRAVA DURANTE A LEITURA. O
-// historico so cresce, e antes era lido INTEIRO com a trava presa - a
-// interface, que pergunta pelas mensagens a cada desenho do app, ficava
-// esperando o cartao, e cada vez mais conforme o arquivo engordasse. Agora:
-// pula direto para os ultimos ~ESPNOW_HIST x 300 bytes (uma linha nao passa
-// de ~290: epoch, MAC, flags e ate 250 de texto), descarta a primeira linha
-// (provavelmente cortada no meio) e trava so o instante de guardar cada uma.
+// ONLY THE END OF THE FILE, AND WITHOUT THE LOCK DURING THE READ. The
+// history only grows, and it used to be read WHOLE with the lock held - the
+// UI, which asks for the messages on every app draw, was left
+// waiting for the SD card, more and more as the file grew. Now:
+// skip straight to the last ~ESPNOW_HIST x 300 bytes (a line doesn't exceed
+// ~290: epoch, MAC, flags and up to 250 of text), discard the first line
+// (probably cut in the middle) and lock only for the instant of storing each one.
 #define ESPNOW_CAUDA_BYTES ((long)ESPNOW_HIST * 300)
 static void carregar_do_cartao(void)
 {
@@ -176,12 +176,12 @@ static void carregar_do_cartao(void)
   s_lendo_cartao = true;
   FILE* f = tab5_sd_abrir(ESPNOW_PASTA, ESPNOW_ARQUIVO, "r");
   if (f) {
-    static char linha[400];   // estatico: a stack e da montagem do cartao
+    static char linha[400];   // static: the stack belongs to the SD card mount
     int lidas = 0;
     if (fseek(f, 0, SEEK_END) == 0) {
       const long tam = ftell(f);
       if (tam > ESPNOW_CAUDA_BYTES && fseek(f, tam - ESPNOW_CAUDA_BYTES, SEEK_SET) == 0) {
-        fgets(linha, sizeof(linha), f);   // o pedaco da linha cortada
+        fgets(linha, sizeof(linha), f);   // the piece of the cut line
       } else {
         fseek(f, 0, SEEK_SET);
       }
@@ -201,15 +201,15 @@ static void carregar_do_cartao(void)
       for (int i = 0; i < 6; ++i) { m.mac[i] = (uint8_t)mac[i]; }
       m.minha = (quem == 'm');
       m.difusao = (dif == 'd' || dif == 'D');
-      m.espressif = (dif == 'D' || dif == 'U');   // sem isto, depois do boot tudo virava "texto puro"
-      // Um envio que ficou pendente quando o aparelho desligou nao vai ser
-      // confirmado nunca mais: mostra como falhou, nao como "enviando" eterno.
+      m.espressif = (dif == 'D' || dif == 'U');   // without this, after boot everything became "plain text"
+      // A send left pending when the device switched off will never be
+      // confirmed: show it as failed, not as "sending" forever.
       m.envio = (uint8_t)((envio == ESPNOW_ENVIO_PENDENTE) ? ESPNOW_ENVIO_FALHOU : envio);
       snprintf(m.texto, sizeof(m.texto), "%s", linha + pos);
       const size_t n = strlen(m.texto);
       if (n && m.texto[n - 1] == '\n') { m.texto[n - 1] = 0; }
-      for (char* c = m.texto; *c; ++c) { if (*c == '\x1f') { *c = '\n'; } }   // a quebra de linha (ver gravar_no_cartao)
-      // O cartao so guarda o texto: o "bruto" do que veio de la e o proprio texto.
+      for (char* c = m.texto; *c; ++c) { if (*c == '\x1f') { *c = '\n'; } }   // the line break (see gravar_no_cartao)
+      // The SD card only keeps the text: the "raw" of what came from there is the text itself.
       m.n = (uint16_t)strlen(m.texto);
       memcpy(m.bruto, m.texto, m.n);
       travar();
@@ -218,7 +218,7 @@ static void carregar_do_cartao(void)
       ++lidas;
     }
     fclose(f);
-    if (lidas) { ESP_LOGI(TAG, "cartao: %d mensagem(ns) no historico", lidas); }
+    if (lidas) { ESP_LOGI(TAG, "SD card: %d message(s) in the history", lidas); }
   }
   s_lendo_cartao = false;
   tab5_sd_desmontar();
@@ -233,13 +233,13 @@ static void contar_visto(const uint8_t mac[6])
 static uint32_t agora_epoch(void) { return tab5_hora_epoch(); }
 
 // ---------------------------------------------------------------------------
-// A TAREFA
+// THE TASK
 // ---------------------------------------------------------------------------
 static void tratar(const evento_t* ev);
 
-// O ESP-NOW caiu (radio parado, C6 sem enlace): um envio pendente nao vai ser
-// confirmado nunca - o C6 so responde pelo que ele mesmo tem na queue. Vira
-// falha, igual ao que o carregar_do_cartao faz no boot.
+// ESP-NOW dropped (radio stopped, C6 without a link): a pending send will never be
+// confirmed - the C6 only answers for what it has in its own queue. It becomes
+// a failure, just like carregar_do_cartao does at boot.
 static void falhar_pendentes(void)
 {
   for (;;) {
@@ -251,7 +251,7 @@ static void falhar_pendentes(void)
     }
     destravar();
     if (!achou) { return; }
-    static evento_t falha;   // mesmo caminho do ESTADO do C6: marca e grava no cartao
+    static evento_t falha;   // same path as the C6's ESTADO: marks and writes to the SD card
     memset(&falha, 0, sizeof(falha));
     falha.tipo = C6_MSG_ESTADO;
     falha.n = 7;
@@ -260,28 +260,28 @@ static void falhar_pendentes(void)
   }
 }
 
-// De volta ao roteador: o canal passa a ser o dele (o loop confere).
+// Back to the router: the channel becomes its channel (the loop checks).
 static void voltar_ao_roteador(void)
 {
   tab5_wifi_modo_so_radio(false);
   notif_limpar(s_notif_canal);
-  ESP_LOGI(TAG, "canal: o do roteador");
+  ESP_LOGI(TAG, "channel: the router's");
 }
 
-// Poe o radio no canal c (1 a 13) e devolve se o C6 confirmou. Nao grava o
-// ajuste nem mexe no canal "fixo" do usuario: quem chama decide (EV_CANAL
-// grava, EV_VARRER so passa).
+// Puts the radio on channel c (1 to 13) and returns whether the C6 confirmed. Doesn't write the
+// setting or touch the user's "fixed" channel: the caller decides (EV_CANAL
+// writes, EV_VARRER just passes through).
 static bool ir_para_canal(uint8_t c)
 {
-  // O radio so muda de canal SOLTO do roteador: pede e espera soltar.
+  // The radio only changes channel DETACHED from the router: ask and wait for it to let go.
   tab5_wifi_modo_so_radio(true);
   for (int k = 0; k < 30 && tab5_wifi_estado() == TAB5_WIFI_CONECTADO; ++k) {
     vTaskDelay(pdMS_TO_TICKS(100));
   }
-  // CONFERE NO C6, e repete. Pedido no meio de uma
-  // reconexao (toque rapido roteador -> 1), o C6 recusa a troca calado e
-  // o radio fica no canal anterior - visto no log: "canal 1 -> 11". A
-  // unica verdade e o canal que o C6 diz que esta.
+  // CHECK ON THE C6, and repeat. A request in the middle of a
+  // reconnection (quick tap router -> 1), the C6 silently refuses the change and
+  // the radio stays on the previous channel - seen in the log: "canal 1 -> 11". The
+  // only truth is the channel the C6 says it is on.
   uint8_t real = 0; wifi_second_chan_t sec;
   for (int tent = 0; tent < 5; ++tent) {
     vTaskDelay(pdMS_TO_TICKS(200));
@@ -290,12 +290,12 @@ static bool ir_para_canal(uint8_t c)
     if (esp_wifi_get_channel(&real, &sec) == ESP_OK && real == c) { break; }
   }
   s_canal = real ? real : c;
-  if (real == c) { ESP_LOGI(TAG, "canal fixo %u (WiFi solto do roteador)", (unsigned)c); }
-  else           { ESP_LOGW(TAG, "canal fixo %u pedido, mas o C6 ficou no %u", (unsigned)c, (unsigned)real); }
+  if (real == c) { ESP_LOGI(TAG, "fixed channel %u (WiFi detached from the router)", (unsigned)c); }
+  else           { ESP_LOGW(TAG, "fixed channel %u requested, but the C6 stayed on %u", (unsigned)c, (unsigned)real); }
   return real == c;
 }
 
-// VISIVEL NO SISTEMA: sem isto, o WiFi solto parecia WiFi quebrado.
+// VISIBLE IN THE SYSTEM: without this, detached WiFi looked like broken WiFi.
 static void publicar_canal_solto(void)
 {
   char resumo[NOTIF_RESUMO];
@@ -303,8 +303,8 @@ static void publicar_canal_solto(void)
   notif_publicar(s_notif_canal, 1, NOTIF_ESTADO, resumo);
 }
 
-// O C6 nem recebeu o pedido de envio: nao vai haver ESTADO, entao a mensagem
-// pendente mais antiga vira falha pelo mesmo caminho do ESTADO.
+// The C6 didn't even receive the send request: there will be no ESTADO, so the oldest
+// pending message becomes a failure by the same path as ESTADO.
 static void falhar_envio(void)
 {
   static evento_t falha;
@@ -316,8 +316,8 @@ static void falhar_envio(void)
   tratar(&falha);
 }
 
-// Guarda no historico a mensagem que vai sair (destino em ev->mac, texto em
-// ev->dados). Pendente; ja falhada se o ESP-NOW esta fora do ar.
+// Stores in the history the message about to go out (destination in ev->mac, text in
+// ev->dados). Pending; already failed if ESP-NOW is off air.
 static void guardar_envio(const evento_t* ev, espnow_msg_t* m)
 {
   static const uint8_t TODOS[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
@@ -338,7 +338,7 @@ static void guardar_envio(const evento_t* ev, espnow_msg_t* m)
   sistema_avisar(AVISO_ESPNOW);
 }
 
-// Pede ao C6 o envio (MAC destino + texto). false = o pedido nem chegou nele.
+// Asks the C6 to send (destination MAC + text). false = the request didn't even reach it.
 static bool mandar_ao_c6(const uint8_t mac[6], const char* texto)
 {
   static uint8_t buf[6 + C6_TEXTO_MAX];
@@ -355,16 +355,16 @@ static void tratar(const evento_t* ev)
       if (ev->n < 7) { return; }
       memcpy(s_mac, ev->dados, 6);
       s_canal = ev->dados[6];
-      // O PRONTO v2 traz versao do contrato e capacidades; o farejo precisa
-      // saber se este C6 sabe farejar/CSI/FTM/802.15.4.
+      // PRONTO v2 carries the contract version and capabilities; sniffing needs
+      // to know whether this C6 can sniff/CSI/FTM/802.15.4.
       tab5_farejo_anotar_pronto(ev->dados, ev->n);
       if (!s_pronto) {
         s_pronto = true;
-        ESP_LOGI(TAG, "no ar: MAC %02X:%02X:%02X:%02X:%02X:%02X, canal %u",
+        ESP_LOGI(TAG, "on air: MAC %02X:%02X:%02X:%02X:%02X:%02X, channel %u",
                  s_mac[0], s_mac[1], s_mac[2], s_mac[3], s_mac[4], s_mac[5], (unsigned)s_canal);
-        // O CANAL FIXO SOBREVIVE A VOLTA DO RADIO. Desligar e religar o WiFi
-        // (ou a desistencia) para o radio, e o C6 volta no canal padrao dele -
-        // o app continuava dizendo "canal N fixo" com o radio em outro.
+        // THE FIXED CHANNEL SURVIVES THE RADIO COMING BACK. Switching WiFi off and on
+        // (or giving up) stops the radio, and the C6 comes back on its default channel -
+        // the app kept saying "channel N fixed" with the radio on another.
         if (s_canal_fixo) {
           static evento_t canal;
           memset(&canal, 0, sizeof(canal));
@@ -380,11 +380,11 @@ static void tratar(const evento_t* ev)
 
     case C6_MSG_RECEBIDO: {
       if (ev->n < 8) { return; }
-      static espnow_msg_t m;   // estatico: so esta tarefa; a stack fica para o cartao
+      static espnow_msg_t m;   // static: this task only; the stack is left for the SD card
       memset(&m, 0, sizeof(m));
       memcpy(m.mac, ev->dados, 6);
       m.difusao   = (ev->dados[6] & 1) != 0;
-      m.espressif = (ev->dados[6] & 2) != 0;   // bit 1: o C6 tirou o cabecalho Espressif (ver c6/ DOIS DIALETOS)
+      m.espressif = (ev->dados[6] & 2) != 0;   // bit 1: the C6 stripped the Espressif header (see c6/ DOIS DIALETOS)
       m.minha   = false;
       m.envio   = ESPNOW_ENVIO_NADA;
       m.quando  = agora_epoch();
@@ -392,18 +392,18 @@ static void tratar(const evento_t* ev)
       if (t > C6_TEXTO_MAX) { t = C6_TEXTO_MAX; }
       memcpy(m.texto, ev->dados + 7, t);
       m.texto[t] = 0;
-      // Os bytes como chegaram, ANTES do tratamento abaixo (que apaga controles
-      // e corta no '\0'): e o que o 'espnow msgs' mostra em hexa.
+      // The bytes as they arrived, BEFORE the treatment below (which erases control characters
+      // and cuts at the '\0'): it is what 'espnow msgs' shows in hex.
       m.n = (uint16_t)t;
       memcpy(m.bruto, ev->dados + 7, t);
-      // Texto de outro aparelho pode vir com lixo no fim (um '\0' do C, uma
-      // quebra de linha do teclado dele): o que nao e imprimivel no final sai.
+      // Text from another device may come with garbage at the end (a '\0' from C, a
+      // line break from its keyboard): whatever isn't printable at the end goes.
       size_t n = strlen(m.texto);
       while (n && (unsigned char)m.texto[n - 1] < 0x20) { m.texto[--n] = 0; }
-      // No MEIO, controle vira espaco: um formato que nao e texto (uma struct
-      // com numero depois do texto, por exemplo) nao vira caractere quebrado no
-      // balao. O corte no primeiro '\0' ja fez o resto: de "struct {char
-      // texto[50]; int valor;}" aparece o texto.
+      // In the MIDDLE, a control character becomes a space: a format that isn't text (a struct
+      // with a number after the text, for example) doesn't become a broken character in the
+      // bubble. Cutting at the first '\0' already did the rest: from "struct {char
+      // texto[50]; int valor;}" the text shows.
       for (size_t k = 0; k < n; ++k) {
         if ((unsigned char)m.texto[k] < 0x20) { m.texto[k] = ' '; }
       }
@@ -416,17 +416,17 @@ static void tratar(const evento_t* ev)
       publicar_notif();
       destravar();
       gravar_no_cartao(&m);
-      // O texto nao vai ao log: o log diario mora no cartao, e a conversa ja
-      // tem o historico dela (gravar_no_cartao).
-      ESP_LOGI(TAG, "de %02X%02X: %u letra(s)", m.mac[4], m.mac[5], (unsigned)strlen(m.texto));
+      // The text doesn't go to the log: the daily log lives on the SD card, and the conversation already
+      // has its own history (gravar_no_cartao).
+      ESP_LOGI(TAG, "from %02X%02X: %u character(s)", m.mac[4], m.mac[5], (unsigned)strlen(m.texto));
       sistema_avisar(AVISO_ESPNOW);
       break;
     }
 
     case C6_MSG_ESTADO: {
       if (ev->n < 7) { return; }
-      // Os envios saem em queue, um de cada vez: o estado que chega e o do mais
-      // antigo ainda pendente.
+      // Sends go out in a queue, one at a time: the state that arrives is for the
+      // oldest one still pending.
       travar();
       static espnow_msg_t copia;
       memset(&copia, 0, sizeof(copia));
@@ -450,7 +450,7 @@ static void tratar(const evento_t* ev)
       guardar_envio(ev, &m);
       if (!s_pronto) { gravar_no_cartao(&m); break; }
       if (!mandar_ao_c6(ev->mac, m.texto)) {
-        falhar_envio();   // o C6 nem recebeu o pedido: nao vai haver ESTADO
+        falhar_envio();   // the C6 didn't even receive the request: there will be no ESTADO
         return;
       }
       break;
@@ -458,21 +458,21 @@ static void tratar(const evento_t* ev)
 
     case EV_VARRER: {
       static espnow_msg_t m;
-      guardar_envio(ev, &m);   // UMA mensagem no historico, nao 13
+      guardar_envio(ev, &m);   // ONE message in the history, not 13
       if (!s_pronto) { gravar_no_cartao(&m); break; }
-      // O canal de antes: 0 = o do roteador. NAO grava o ajuste - a varredura e
-      // de passagem, o que o usuario escolheu continua valendo.
+      // The previous channel: 0 = the router's. Does NOT write the setting - the sweep is
+      // just passing through, what the user chose still applies.
       const uint8_t antes = s_canal_fixo;
       int enviados = 0;
       for (uint8_t c = 1; c <= 13; ++c) {
-        // Sem o C6 confirmar o canal, o envio sairia no canal errado: pula.
+        // Without the C6 confirming the channel, the send would go out on the wrong channel: skip.
         if (!ir_para_canal(c)) { continue; }
         if (mandar_ao_c6(ev->mac, m.texto)) { ++enviados; }
-        vTaskDelay(pdMS_TO_TICKS(60));   // o frame sai antes de o radio trocar de canal
+        vTaskDelay(pdMS_TO_TICKS(60));   // the frame goes out before the radio changes channel
       }
       if (antes == 0) { voltar_ao_roteador(); }
       else            { ir_para_canal(antes); publicar_canal_solto(); }
-      ESP_LOGI(TAG, "varredura 1-13: %d canais enviados", enviados);
+      ESP_LOGI(TAG, "sweep 1-13: %d channels sent", enviados);
       if (enviados == 0) { falhar_envio(); }
       sistema_avisar(AVISO_ESPNOW);
       break;
@@ -481,7 +481,7 @@ static void tratar(const evento_t* ev)
     case EV_CANAL: {
       const uint8_t c = ev->dados[0];
       s_canal_fixo = c;
-      ajustes_definir_espnow_canal(c);   // sobrevive ao reinicio (so grava se mudou)
+      ajustes_definir_espnow_canal(c);   // survives a restart (only writes if it changed)
       if (c == 0) {
         voltar_ao_roteador();
       } else {
@@ -497,16 +497,16 @@ static void tratar(const evento_t* ev)
   }
 }
 
-// O RECEPTOR LIGADO SEM PARAR E CARO, e so vale quando alguem pode estar
-// falando com o Tab5. Cochilando entre beacons (modem sleep), o C6 perde o
-// frame de ESP-NOW que chega no cochilo. Pede o receptor ligado quando:
-//   - o canal esta FIXO: o usuario escolheu o modo ESP-NOW (e sem roteador o
-//     modem sleep nem funciona);
-//   - o app esta aberto com a tela acesa: a conversa esta na frente dele;
-//   - houve mensagem, recebida ou enviada, nos ultimos 5 min: conversa viva,
-//     e a resposta tem que chegar mesmo com o app fechado ou a tela apagada.
-// Fora disso o radio economiza. Uma mensagem que chegar no cochilo pode se
-// perder - e o formato Espressif repete o frame, o que ajuda.
+// THE RECEIVER ON NON-STOP IS EXPENSIVE, and only worth it when someone might be
+// talking to the Tab5. Dozing between beacons (modem sleep), the C6 loses the
+// ESP-NOW frame that arrives during the doze. Asks for the receiver on when:
+//   - the channel is FIXED: the user chose ESP-NOW mode (and without a router
+//     modem sleep doesn't even work);
+//   - the app is open with the screen on: the conversation is in front of them;
+//   - there was a message, received or sent, in the last 5 min: a live conversation,
+//     and the reply has to arrive even with the app closed or the screen off.
+// Otherwise the radio saves power. A message arriving during a doze may be
+// lost - and the Espressif format repeats the frame, which helps.
 static bool quer_receptor_ligado(void)
 {
   if (!s_pronto) { return false; }
@@ -519,8 +519,8 @@ static bool quer_receptor_ligado(void)
 
 static void vTaskEspnow(void*)
 {
-  // Espera o firmware nosso responder: sem ele nao ha ESP-NOW para ligar.
-  // Enquanto isso, um envio da interface falha na hora (nao fica pendurado).
+  // Waits for our firmware to respond: without it there is no ESP-NOW to switch on.
+  // Meanwhile, a send from the UI fails immediately (doesn't hang).
   bool registrado = false;
   bool carregado = false;
   int64_t pedido_us = 0, canal_us = 0;
@@ -528,8 +528,8 @@ static void vTaskEspnow(void*)
 
   for (;;) {
     const bool enlace = tab5_wifi_c6_nosso() && tab5_wifi_c6_enlace();
-    // ESP-NOW precisa do RADIO INICIADO, nao so do enlace: desligar o WiFi no
-    // Ajustes para o radio com o C6 alimentado e o enlace de pe.
+    // ESP-NOW needs the RADIO STARTED, not just the link: switching WiFi off in
+    // Ajustes (Settings) stops the radio with the C6 powered and the link up.
     const bool no_ar = enlace && tab5_wifi_radio_ativo();
 
     if (enlace && !registrado) {
@@ -540,51 +540,51 @@ static void vTaskEspnow(void*)
     }
     if (enlace && !carregado) { carregar_do_cartao(); carregado = true; sistema_avisar(AVISO_ESPNOW); }
 
-    // Radio parado (WiFi desligado em Ajustes, desistencia fora do alcance do roteador): o
-    // ESP-NOW caiu com ele. Quando o radio voltar, o pedido abaixo traz um
-    // PRONTO novo - e com ele o canal fixo, se houver.
+    // Radio stopped (WiFi off in Ajustes, gave up out of the router's range): ESP-NOW
+    // went down with it. When the radio comes back, the request below brings a
+    // new PRONTO - and with it the fixed channel, if any.
     if (!no_ar && s_pronto) {
       s_pronto = false;
       falhar_pendentes();
-      ESP_LOGI(TAG, "radio parado - ESP-NOW fora do ar");
+      ESP_LOGI(TAG, "radio stopped - ESP-NOW off air");
       sistema_avisar(AVISO_ESPNOW);
     }
 
-    // PEDE PARA LIGAR, e repete ate o PRONTO chegar. O C6 so liga o ESP-NOW
-    // quando o host manda (ver "LIGAR O ESP-NOW E DECISAO DO HOST" em
-    // c6/main/app_main.c) - e o host so manda depois do WiFi de pe.
+    // ASKS TO SWITCH ON, and repeats until PRONTO arrives. The C6 only switches ESP-NOW on
+    // when the host says so (see "LIGAR O ESP-NOW E DECISAO DO HOST" in
+    // c6/main/app_main.c) - and the host only says so after WiFi is up.
     const int64_t agora = esp_timer_get_time();
     if (no_ar && !s_pronto && (agora - pedido_us) >= (int64_t)REPEDIR_MS * 1000) {
       pedido_us = agora;
       eh_host_peer_data_send(C6_MSG_HOST_ESPNOW, nullptr, 0);
     }
 
-    // O canal segue o roteador (reconexao pode trocar): confere de tempos em
-    // tempos - acordado. Em repouso ninguem ve o canal, e cada conferencia e
-    // uma ida ao C6 pelo SDIO; ao acordar, a proxima volta confere.
+    // The channel follows the router (a reconnection may change it): check from time to
+    // time - while awake. When idle nobody sees the channel, and each check is
+    // a trip to the C6 over SDIO; on waking, the next round checks.
     if (s_pronto && !tab5_power_em_repouso() && (agora - canal_us) >= (int64_t)CANAL_MS * 1000) {
       canal_us = agora;
       uint8_t c = 0; wifi_second_chan_t sec;
       if (esp_wifi_get_channel(&c, &sec) == ESP_OK && c && c != s_canal) {
-        ESP_LOGI(TAG, "canal %u -> %u", (unsigned)s_canal, (unsigned)c);
+        ESP_LOGI(TAG, "channel %u -> %u", (unsigned)s_canal, (unsigned)c);
         s_canal = c;
         sistema_avisar(AVISO_ESPNOW);
       }
     }
 
-    // O pedido so vai ao WiFi quando MUDA (a API ja ignora repeticao).
+    // The request only goes to WiFi when it CHANGES (the API already ignores repeats).
     sistema_recurso(RECURSO_RADIO_ESCUTA, "ESP-NOW", quer_receptor_ligado());
 
-    // SEM ENLACE COM O C6 (Wi-Fi nunca subiu, ou o C6 nao tem o firmware
-    // nosso) nada aqui muda ate a pilha subir - e o Wi-Fi avisa nessa hora
-    // (tab5_wifi_ao_subir -> espnow_cutucar). Entao dorme 30 s em vez de
-    // acordar todo segundo para perguntar.
+    // NO LINK WITH THE C6 (Wi-Fi never came up, or the C6 doesn't have our
+    // firmware) nothing here changes until the stack comes up - and Wi-Fi notifies at that point
+    // (tab5_wifi_ao_subir -> espnow_cutucar). So it sleeps 30 s instead of
+    // waking every second to ask.
     uint32_t espera_ms = enlace ? 1000 : 30000;
-    // NO REPOUSO, COM O ESP-NOW PRONTO: o canal so e conferido acordado e o
-    // REPEDIR so vale sem PRONTO - o unico prazo que sobra e o fim da
-    // conversa viva (o receptor volta a cochilar). Dorme ate ele, no maximo
-    // 30 s, em vez de acordar todo segundo. Mensagem, envio e o Wi-Fi subindo
-    // chegam pela fila e acordam na hora.
+    // WHEN IDLE, WITH ESP-NOW READY: the channel is only checked while awake and
+    // REPEDIR only applies without PRONTO - the only deadline left is the end of the
+    // live conversation (the receiver goes back to dozing). Sleep until then, at most
+    // 30 s, instead of waking every second. Messages, sends and Wi-Fi coming up
+    // arrive through the queue and wake it immediately.
     if (enlace && s_pronto && tab5_power_em_repouso()) {
       espera_ms = 30000;
       const int64_t ult = (s_ultimo_rx_us > s_ultimo_tx_us) ? s_ultimo_rx_us : s_ultimo_tx_us;
@@ -596,9 +596,9 @@ static void vTaskEspnow(void*)
 }
 
 // ---------------------------------------------------------------------------
-// O RELOGIO SALTOU (ver tab5_hora.hpp): as mensagens desta sessao foram
-// carimbadas pela hora velha e andam junto. So a RAM - a linha que ja foi para
-// o cartao fica com a hora de quando foi gravada.
+// THE CLOCK JUMPED (see tab5_hora.hpp): this session's messages were
+// stamped with the old time and move along with it. RAM only - a line that has already gone to
+// the SD card keeps the time it was written.
 static void ao_saltar_relogio(int32_t delta)
 {
   if (!s_trava) { return; }
@@ -610,14 +610,14 @@ static void ao_saltar_relogio(int32_t delta)
     s_hist[k].quando = (uint32_t)((int64_t)s_hist[k].quando + delta);
     ++n;
   }
-  if (n) { ++s_total; }   // a tela rele e redesenha com os dias certos
+  if (n) { ++s_total; }   // the screen rereads and redraws with the right days
   destravar();
   if (n) { sistema_avisar(AVISO_ESPNOW); }
 }
 
 // API
 // ---------------------------------------------------------------------------
-// O Wi-Fi subiu a pilha: acorda o laco para ver o enlace na hora.
+// Wi-Fi brought the stack up: wake the loop to check the link immediately.
 static void espnow_cutucar(void)
 {
   if (!s_fila) { return; }
@@ -635,28 +635,28 @@ void tab5_espnow_iniciar(void)
   s_notif = notif_registrar("ESP-NOW");
   s_notif_canal = notif_registrar("ESP-NOW canal");
   notif_associar_app(s_notif_canal, "ESP-NOW");
-  // E um ESTADO (o WiFi solto do roteador), nao uma mensagem: mudar de canal
-  // nao pode soar como notificacao nova.
+  // It is a STATE (WiFi detached from the router), not a message: changing channel
+  // must not sound like a new notification.
   notif_silenciar(s_notif_canal, true);
-  if (!s_trava || !s_fila) { ESP_LOGE(TAG, "sem memoria - servico fora do ar"); return; }
-  // O canal escolhido da ultima vez. Nao aplica aqui: quem aplica e o PRONTO
-  // do C6 (ele reaplica o canal fixo toda vez que o radio volta), entao basta
-  // a vontade estar em s_canal_fixo antes disso.
+  if (!s_trava || !s_fila) { ESP_LOGE(TAG, "out of memory - service off air"); return; }
+  // The channel chosen last time. Not applied here: what applies it is the C6's
+  // PRONTO (it reapplies the fixed channel every time the radio comes back), so it's enough
+  // for the wish to be in s_canal_fixo before that.
   s_canal_fixo = ajustes_espnow_canal();
   tab5_hora_ao_saltar(ao_saltar_relogio);
-  tab5_wifi_ao_subir(espnow_cutucar);   // sem enlace a tarefa dorme 30 s; o Wi-Fi acorda ela
-  // 6 KB, e nao 4: esta tarefa MONTA O CARTAO (gravar/carregar o historico),
-  // e o f_mount do FATFS desce fundo na stack. Com 4 KB o monitor viu 140
-  // bytes livres e o envio seguinte estourou a stack no meio da montagem
-  // (Guru Meditation em sdmmc_read_sectors) - pico de ~4 KB. Com 8 KB, dois
-  // dias de pilhas-*.csv deram ~2,6 KB. 6 KB cobre o pico da montagem com 2 KB
-  // de folga; os buffers grandes daqui sao static (PSRAM), nao pilha.
+  tab5_wifi_ao_subir(espnow_cutucar);   // without a link the task sleeps 30 s; Wi-Fi wakes it
+  // 6 KB, not 4: this task MOUNTS THE SD CARD (write/load the history),
+  // and FATFS's f_mount goes deep into the stack. With 4 KB the monitor saw 140
+  // bytes free and the next send overflowed the stack in the middle of the mount
+  // (Guru Meditation in sdmmc_read_sectors) - peak of ~4 KB. With 8 KB, two
+  // days of pilhas-*.csv gave ~2.6 KB. 6 KB covers the mount's peak with 2 KB
+  // to spare; the big buffers here are static (PSRAM), not stack.
   {
     TaskHandle_t h = nullptr;
     xTaskCreatePinnedToCore(vTaskEspnow, "espnow", 6144, nullptr, 3, &h, tskNO_AFFINITY);
-    tab5_dono_registrar(h, DONO_SERVICO, "ESP-NOW");   // ver hal/tab5_donos.hpp
+    tab5_dono_registrar(h, DONO_SERVICO, "ESP-NOW");   // see hal/tab5_donos.hpp
   }
-  ESP_LOGI(TAG, "servico no ar (espera o firmware nosso no C6)");
+  ESP_LOGI(TAG, "service on air (waiting for our firmware on the C6)");
 }
 
 bool    tab5_espnow_pronto(void)          { return s_pronto; }
@@ -692,10 +692,10 @@ uint32_t tab5_espnow_ms_desde_rx(void)
 
 uint8_t tab5_espnow_canal_fixo(void) { return s_canal_fixo; }
 
-// LOCAL, e nao estatico: o comentario dizia "so a interface
-// chama", mas o console (comandos espnow canal/enviar) chama da tarefa DELE -
-// duas tarefas no mesmo buffer estatico podiam mandar uma mensagem com o texto
-// da outra. 266 bytes cabem folgados nas stacks das duas (8 e 12 KB).
+// LOCAL, not static: the comment said "only the UI
+// calls", but the console (espnow canal/enviar commands) calls from ITS task -
+// two tasks on the same static buffer could send a message with the other's
+// text. 266 bytes fit comfortably in both stacks (8 and 12 KB).
 bool tab5_espnow_definir_canal(uint8_t canal)
 {
   if (!s_fila || canal > 13) { return false; }
@@ -707,14 +707,14 @@ bool tab5_espnow_definir_canal(uint8_t canal)
   return xQueueSend(s_fila, &ev, 0) == pdTRUE;
 }
 
-// Uma so logica de enfileirar: o destino e o texto vao no evento.
+// A single enqueueing logic: the destination and text go in the event.
 static bool enfileirar(uint32_t tipo, const uint8_t* mac_ou_null, const char* texto)
 {
   if (!s_fila || !texto || !texto[0]) { return false; }
-  evento_t ev;   // local: ver tab5_espnow_definir_canal
+  evento_t ev;   // local: see tab5_espnow_definir_canal
   ev.tipo = tipo;
   if (mac_ou_null) { memcpy(ev.mac, mac_ou_null, 6); }
-  else             { memset(ev.mac, 0xFF, 6); }   // difusao
+  else             { memset(ev.mac, 0xFF, 6); }   // broadcast
   size_t n = strlen(texto);
   if (n > C6_TEXTO_MAX) { n = C6_TEXTO_MAX; }
   ev.n = (uint16_t)n;
@@ -752,7 +752,7 @@ int tab5_espnow_nao_lidas(void) { return s_nao_lidas; }
 void tab5_espnow_janela(bool aberta)
 {
   s_janela = aberta;
-  if (s_fila) {   // reavalia ja, sem esperar a volta de 1 s do loop
+  if (s_fila) {   // re-evaluate now, without waiting for the loop's 1 s round
     evento_t ev;
     memset(&ev, 0, sizeof(ev));
     ev.tipo = EV_NADA;

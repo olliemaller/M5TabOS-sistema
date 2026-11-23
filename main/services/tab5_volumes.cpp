@@ -78,8 +78,8 @@ void tab5_volume_desmontar(const char* caminho)
 FILE* tab5_volume_abrir_leitura(const char* caminho)
 {
   if (!tab5_volume_montar(caminho)) { return nullptr; }
-  // No cartao, a leitura por fopen nao passa pela fila de gravacao: grava o
-  // pendente antes, para ver a ultima escrita.
+  // On the card, a read through fopen does not go through the write queue: write
+  // out what is pending first, to see the last write.
   if (tab5_volume_de(caminho) == TAB5_VOL_CARTAO) { tab5_sd_gravar_pendentes(); }
   FILE* f = fopen(caminho, "rb");
   if (!f) { tab5_volume_desmontar(caminho); }
@@ -101,7 +101,7 @@ uint8_t* tab5_volume_ler_tudo(const char* caminho, size_t max, size_t* n)
   const long tam = tab5_sd_tamanho(f);
   if (tam > 0 && (size_t)tam <= max) {
     buf = (uint8_t*)heap_caps_malloc((size_t)tam, MALLOC_CAP_SPIRAM);
-    if (buf && fread(buf, 1, (size_t)tam, f) != (size_t)tam) {   // leitura curta
+    if (buf && fread(buf, 1, (size_t)tam, f) != (size_t)tam) {   // short read
       heap_caps_free(buf);
       buf = nullptr;
     }
@@ -112,26 +112,26 @@ uint8_t* tab5_volume_ler_tudo(const char* caminho, size_t max, size_t* n)
 }
 
 // ---------------------------------------------------------------------------
-// LEITOR RAPIDO (ver o porque no .hpp)
+// FAST READER (see the reasons in the .hpp)
 // ---------------------------------------------------------------------------
 #define LEITOR_BLOCO       (64 * 1024)
-#define LEITOR_ALINHAMENTO 128   // linha de cache L2: o DMA do cartao exige na PSRAM
-#define LEITOR_SETOR       512   // o lseek vai para o inicio do setor
+#define LEITOR_ALINHAMENTO 128   // L2 cache line: the card's DMA requires it in PSRAM
+#define LEITOR_SETOR       512   // lseek goes to the start of the sector
 
 struct tab5_leitor {
   int      fd;
-  uint8_t* buf;        // LEITOR_BLOCO bytes, alinhado
-  size_t   n;          // bytes validos no buffer
-  size_t   pos;        // proximo byte a entregar, dentro do buffer
-  uint64_t fim_buf;    // posicao no arquivo logo depois do ultimo byte do buffer
+  uint8_t* buf;        // LEITOR_BLOCO bytes, aligned
+  size_t   n;          // valid bytes in the buffer
+  size_t   pos;        // next byte to hand out, within the buffer
+  uint64_t fim_buf;    // file position just after the buffer's last byte
   uint64_t tamanho;
-  char     caminho[256];   // so o inicio importa: serve para achar o disco ao soltar
+  char     caminho[256];   // only the prefix matters: used to find the disk on release
 };
 
 tab5_leitor_t* tab5_leitor_abrir(const char* caminho)
 {
   if (!tab5_volume_montar(caminho)) { return nullptr; }
-  // Como no fopen: no cartao a leitura nao passa pela fila de gravacao.
+  // As with fopen: on the card the read does not go through the write queue.
   if (tab5_volume_de(caminho) == TAB5_VOL_CARTAO) { tab5_sd_gravar_pendentes(); }
   tab5_leitor_t* r = (tab5_leitor_t*)heap_caps_calloc(1, sizeof(*r), MALLOC_CAP_SPIRAM);
   if (r) {
@@ -156,10 +156,10 @@ int tab5_leitor_ler(tab5_leitor_t* r, void* dst, size_t n)
   uint8_t* d = (uint8_t*)dst;
   size_t feito = 0;
   while (feito < n) {
-    if (r->pos >= r->n) {   // buffer esgotado: traz o proximo bloco
+    if (r->pos >= r->n) {   // buffer exhausted: fetch the next block
       const ssize_t lidos = read(r->fd, r->buf, LEITOR_BLOCO);
       if (lidos < 0) { return -1; }
-      if (lidos == 0) { break; }   // fim do arquivo
+      if (lidos == 0) { break; }   // end of file
       r->n = (size_t)lidos;
       r->pos = 0;
       r->fim_buf += (uint64_t)lidos;
@@ -182,12 +182,12 @@ bool tab5_leitor_ir(tab5_leitor_t* r, uint64_t pos)
 {
   if (pos > r->tamanho) { return false; }
   const uint64_t ini_buf = r->fim_buf - r->n;
-  if (r->n && pos >= ini_buf && pos <= r->fim_buf) {   // ja esta no buffer
+  if (r->n && pos >= ini_buf && pos <= r->fim_buf) {   // already in the buffer
     r->pos = (size_t)(pos - ini_buf);
     return true;
   }
-  // Fora do buffer: o lseek vai para o inicio do setor (o DMA do cartao nao
-  // gosta de comecar no meio) e o resto ate 'pos' e descartado na leitura.
+  // Outside the buffer: lseek goes to the start of the sector (the card's DMA does
+  // not like starting in the middle) and the rest up to 'pos' is discarded on reading.
   const uint64_t inicio = pos & ~(uint64_t)(LEITOR_SETOR - 1);
   if (lseek(r->fd, (off_t)inicio, SEEK_SET) != (off_t)inicio) { return false; }
   r->n = r->pos = 0;

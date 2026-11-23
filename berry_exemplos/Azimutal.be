@@ -2,49 +2,52 @@
 # cor: 0x5D1F
 # periodo: 1000
 #
-# AZIMUTAL EM BERRY - o ceu dos satelites (skyplot) lido do GPS no Grove, e a
-# gravacao da constelacao COM O APP FECHADO. O mesmo app do sistema em C,
-# refeito em script: aba Ceu (o mapa polar ao vivo, com o rastro de cada
-# satelite), aba Lista (cada um com o sinal) e aba Dias (os arquivos gravados).
+# AZIMUTAL IN BERRY - the satellite sky (skyplot) read from the GPS on the
+# Grove port, and recording of the constellation WITH THE APP CLOSED. The same
+# app as the system one in C, redone as a script: Sky tab (the live polar map,
+# with each satellite's track), List tab (each one with its signal) and Days
+# tab (the recorded files).
 #
-# GRAVAR liga a parte de fundo: uma vez por segundo ela le a constelacao (a
-# fila do GPS precisa ser esvaziada - ver gnss em docs/BERRY.md) e a cada
-# minuto grava no cartao, em /sdcard/apps/Berry/Azimutal/satelites-AAAA-MM-DD.csv
-# (o dia UTC do proprio GPS), o mesmo formato do Azimutal em C:
-#   POS,hh:mm:ss,lat,lon,alt,hdop,qualidade,sats    onde o receptor estava
-#   SAT,hh:mm:ss,sistema,prn,elevacao,azimute,snr   um por satelite
-# So grava com fix (sem fix a geometria do receptor e de almanaque, falsa) e
-# so satelite com posicao FRESCA (o parser segura a ultima quando a GSV chega
-# sem posicao - gravar isso repetiria o mesmo ponto como se fosse novo).
+# RECORD turns on the background part: once a second it reads the
+# constellation (the GPS queue must be drained - see gnss in docs/BERRY.md)
+# and every minute writes to the card, to
+# /sdcard/apps/Berry/Azimutal/satelites-AAAA-MM-DD.csv (the GPS's own UTC
+# date), in the same format as the C Azimutal:
+#   POS,hh:mm:ss,lat,lon,alt,hdop,qualidade,sats    where the receiver was
+#   SAT,hh:mm:ss,sistema,prn,elevacao,azimute,snr   one per satellite
+# It only records with a fix (without a fix the receiver's geometry comes from
+# the almanac and is false) and only satellites with a FRESH position (the
+# parser holds the last one when a GSV arrives without a position - recording
+# that would repeat the same point as if it were new).
 #
-# MEMORIA: o rastro guarda no maximo RASTRO_MAX pontos por satelite (um por
-# minuto: 3 h), empacotados num inteiro cada - ~60 KB no pior caso.
+# MEMORY: the track keeps at most RASTRO_MAX points per satellite (one per
+# minute: 3 h), each packed into one integer - ~60 KB in the worst case.
 
 import math
 import string
 
 var BARRA_A = 96
 var M = 20
-var DESPEJO_MS = 60000   # uma amostra por minuto: um satelite leva horas para cruzar o ceu
+var DESPEJO_MS = 60000   # one sample per minute: a satellite takes hours to cross the sky
 var RASTRO_MAX = 180
-var FRESCO_S = 90        # posicao mais velha que isto nao e observacao nova
+var FRESCO_S = 90        # a position older than this is not a new observation
 var CORES = {"GPS": 0x07E0, "GLONASS": 0xF8A0, "GALILEO": 0x5D1F, "BEIDOU": 0xFFE0,
              "QZSS": 0xF81F, "SBAS": 0xAD55}
 
-var sats = nil           # a ultima rodada (lista de mapas de gnss.satelites)
-var rastros = {}         # "GPS-12" -> [elev * 1000 + azim, ...] (um por minuto)
-var ultimo_ms = 0        # quando foi a ultima amostra de minuto
-var gravadas = 0         # linhas SAT gravadas nesta gravacao
+var sats = nil           # the latest round (list of maps from gnss.satelites)
+var rastros = {}         # "GPS-12" -> [elev * 1000 + azim, ...] (one per minute)
+var ultimo_ms = 0        # when the last per-minute sample was taken
+var gravadas = 0         # SAT lines written in this recording
 var arquivo = ""
-var aviso_gravacao = ""  # por que a ultima amostra nao gravou ("" = gravou)
-var dias = nil           # os arquivos da aba Dias (lidos ao entrar nela)
-var aba = 0              # 0 = Ceu, 1 = Lista, 2 = Dias
+var aviso_gravacao = ""  # why the last sample was not recorded ("" = it was)
+var dias = nil           # the files in the Days tab (read on entering it)
+var aba = 0              # 0 = Sky, 1 = List, 2 = Days
 var bt_abas = []
 var bt_gravar = [0, 0, 0, 0]
 
-# ---- a constelacao (janela e fundo) --------------------------------------------
-# Ordena por insercao (a lista do Berry nao tem sort): 'antes(a, b)' diz se a
-# vem antes de b. Listas pequenas - dezenas de itens.
+# ---- the constellation (window and background) ---------------------------------
+# Insertion sort (Berry's list has no sort): 'antes(a, b)' says whether a
+# comes before b. Small lists - dozens of items.
 def ordenar(l, antes)
   var i = 1
   while i < size(l)
@@ -72,8 +75,8 @@ def guardar_rastro(s)
 end
 
 def gravar(t)
-  if !t["valida"] aviso_gravacao = "sem hora do GPS ainda" return end
-  if !t["fix"] aviso_gravacao = "sem fix: a geometria seria falsa" return end
+  if !t["valida"] aviso_gravacao = idioma.escolher("sem hora do GPS ainda", "no GPS time yet") return end
+  if !t["fix"] aviso_gravacao = idioma.escolher("sem fix: a geometria seria falsa", "no fix: the geometry would be false") return end
   arquivo = nome_do_dia(t)
   var hora = dois(t["hora"]) + ":" + dois(t["min"]) + ":" + dois(t["seg"])
   var texto = ""
@@ -89,18 +92,18 @@ def gravar(t)
       n += 1
     end
   end
-  if n == 0 aviso_gravacao = "nenhum satelite com posicao fresca" return end
+  if n == 0 aviso_gravacao = idioma.escolher("nenhum satelite com posicao fresca", "no satellite with a fresh position") return end
   if cartao.anexar(arquivo, texto)
     gravadas += n
     aviso_gravacao = ""
-    dias = nil   # a aba Dias rele
+    dias = nil   # the Days tab re-reads
   else
-    aviso_gravacao = "o cartao recusou a gravacao"
+    aviso_gravacao = idioma.escolher("o cartao recusou a gravacao", "the card refused the write")
   end
 end
 
-# Uma volta: le a constelacao e, a cada minuto, guarda o rastro (e grava, se
-# estiver gravando). Chamada pelo fundo() a cada segundo e pelo desenhar().
+# One pass: reads the constellation and, every minute, stores the track (and
+# writes it, if recording). Called by fundo() every second and by desenhar().
 def volta()
   var l = gnss.satelites()
   if l != nil sats = l end
@@ -114,11 +117,11 @@ def volta()
   if sistema.fundo() gravar(gnss.tempo()) end
 end
 
-# A PARTE DE FUNDO: a cada segundo (a fila do GPS guarda ~2 s).
+# THE BACKGROUND PART: every second (the GPS queue holds ~2 s).
 def fundo()
   if !gnss.ligado() gnss.ligar() end
   volta()
-  sistema.fundo_estado(str(gravadas) + " linha(s)", gravadas)
+  sistema.fundo_estado(str(gravadas) + idioma.escolher(" linha(s)", " line(s)"), gravadas)
 end
 
 def gravando() return sistema.fundo() end
@@ -128,20 +131,20 @@ def ligar_desligar()
     sistema.fundo(false)
   else
     gravadas = 0
-    ultimo_ms = 0          # a primeira rodada completa ja grava
+    ultimo_ms = 0          # the first complete round already records
     aviso_gravacao = ""
     sistema.fundo(true, 1000)
   end
 end
 
-# ---- a janela ------------------------------------------------------------------
+# ---- the window ----------------------------------------------------------------
 def abrir()
   gnss.ligar()
 end
 
 def fechar()
-  # Gravando, o fundo segue com a assinatura; senao a maquina e apagada e o
-  # sistema solta o GPS sozinho.
+  # While recording, the background keeps the subscription; otherwise the
+  # virtual machine is torn down and the system releases the GPS by itself.
 end
 
 def barra()
@@ -152,7 +155,7 @@ def barra()
     tela.texto("Azimutal", x, 30, 4.2)
     x += tela.medir("Azimutal", 4.2) + 30
   end
-  var nomes = ["Céu", "Lista", "Dias"]
+  var nomes = [idioma.escolher("Céu", "Sky"), idioma.escolher("Lista", "List"), idioma.escolher("Dias", "Days")]
   bt_abas = []
   for i: 0 .. 2
     var l = tela.medir(nomes[i], 3) + 40
@@ -164,12 +167,12 @@ def barra()
   var on = gravando()
   var bl = 210
   bt_gravar = [L - M - bl, 12, bl, 72]
-  tela.botao(bt_gravar[0], bt_gravar[1], bl, 72, on ? "PARAR" : "GRAVAR", on ? tela.VERMELHO : tela.VERDE)
+  tela.botao(bt_gravar[0], bt_gravar[1], bl, 72, on ? idioma.escolher("PARAR", "STOP") : idioma.escolher("GRAVAR", "RECORD"), on ? tela.VERMELHO : tela.VERDE)
 end
 
 def cor_de(sis) var c = CORES.find(sis) return c != nil ? c : tela.CINZA end
 
-# O ponto do ceu: centro = zenite (90 graus), borda = horizonte, norte em cima.
+# The point in the sky: centre = zenith (90 degrees), edge = horizon, north at the top.
 def ponto(cx, cy, R, elev, azim)
   var r = R * (90 - elev) / 90.0
   var a = azim * math.pi / 180.0
@@ -185,9 +188,9 @@ def ceu(cx, cy, R)
   tela.linha(cx, cy - R, cx, cy + R, grade)
   tela.texto("N", cx, cy - R - 34, 3, tela.CINZA_CLARO, tela.CENTRO)
   tela.texto("S", cx, cy + R + 8, 3, tela.CINZA_CLARO, tela.CENTRO)
-  tela.texto("L", cx + R + 10, cy - 12, 3, tela.CINZA_CLARO)
-  tela.texto("O", cx - R - 30, cy - 12, 3, tela.CINZA_CLARO)
-  # Os rastros: por onde cada satelite passou (um ponto por minuto).
+  tela.texto(idioma.escolher("L", "E"), cx + R + 10, cy - 12, 3, tela.CINZA_CLARO)
+  tela.texto(idioma.escolher("O", "W"), cx - R - 30, cy - 12, 3, tela.CINZA_CLARO)
+  # The tracks: where each satellite has been (one point per minute).
   for k: rastros.keys()
     var r = rastros[k]
     var c = cor_de(string.split(k, "-")[0])
@@ -199,7 +202,7 @@ def ceu(cx, cy, R)
     end
   end
   if sats == nil return end
-  # Os satelites de agora: cheio = com sinal (snr > 0), vazado = so visto.
+  # The current satellites: filled = with signal (snr > 0), outline = only seen.
   for s: sats
     if s["pos"]
       var p = ponto(cx, cy, R, s["elev"], s["azim"])
@@ -232,34 +235,34 @@ def painel(x, y)
   var g = sistema.gps()
   var t = gnss.tempo()
   if g == nil
-    linha_info("GPS", "nenhum no Grove", x, y, tela.CINZA)
+    linha_info("GPS", idioma.escolher("nenhum no Grove", "none on Grove"), x, y, tela.CINZA)
   else
-    linha_info("Fix", g["fix"] ? string.format("%.5f, %.5f", g["lat"], g["lon"]) : "procurando...", x, y,
+    linha_info("Fix", g["fix"] ? string.format("%.5f, %.5f", g["lat"], g["lon"]) : idioma.escolher("procurando...", "searching..."), x, y,
                g["fix"] ? tela.VERDE : tela.AMARELO)
   end
   y += 48
   var c = contar()
-  linha_info("Satélites", str(c[0]) + " vistos, " + str(c[1]) + " no céu, " + str(c[2]) + " com sinal", x, y)
+  linha_info(idioma.escolher("Satélites", "Satellites"), str(c[0]) + idioma.escolher(" vistos, ", " seen, ") + str(c[1]) + idioma.escolher(" no céu, ", " in the sky, ") + str(c[2]) + idioma.escolher(" com sinal", " with signal"), x, y)
   y += 48
-  linha_info("Hora UTC", t["valida"] ? dois(t["hora"]) + ":" + dois(t["min"]) + ":" + dois(t["seg"]) : "--", x, y)
+  linha_info(idioma.escolher("Hora UTC", "UTC time"), t["valida"] ? dois(t["hora"]) + ":" + dois(t["min"]) + ":" + dois(t["seg"]) : "--", x, y)
   y += 48
   if gravando()
-    linha_info("Gravando", str(gravadas) + " linha(s), 1 por minuto", x, y, tela.VERMELHO)
+    linha_info(idioma.escolher("Gravando", "Recording"), str(gravadas) + idioma.escolher(" linha(s), 1 por minuto", " line(s), 1 per minute"), x, y, tela.VERMELHO)
     y += 48
     if aviso_gravacao != ""
-      linha_info("Agora", aviso_gravacao, x, y, tela.AMARELO)
+      linha_info(idioma.escolher("Agora", "Now"), aviso_gravacao, x, y, tela.AMARELO)
     else
-      linha_info("Arquivo", arquivo, x, y, tela.CINZA_CLARO)
+      linha_info(idioma.escolher("Arquivo", "File"), arquivo, x, y, tela.CINZA_CLARO)
     end
   else
-    linha_info("Gravação", "parada - GRAVAR segue com o app fechado", x, y, tela.CINZA)
+    linha_info(idioma.escolher("Gravação", "Recording"), idioma.escolher("parada - GRAVAR segue com o app fechado", "stopped - RECORD continues with the app closed"), x, y, tela.CINZA)
   end
 end
 
 def pag_ceu(y0)
   var L = tela.largura()
   var A = tela.altura()
-  if L > A   # deitado: o ceu a esquerda, o painel a direita
+  if L > A   # landscape: the sky on the left, the panel on the right
     var R = (A - y0 - 90) / 2
     ceu(M + 40 + R, y0 + 45 + R, R)
     painel(2 * R + M + 110, y0 + 40)
@@ -274,15 +277,15 @@ def pag_lista(y0)
   var L = tela.largura()
   var A = tela.altura()
   if sats == nil
-    tela.texto("Nenhuma rodada do GPS ainda.", M, y0 + 40, 3.2)
+    tela.texto(idioma.escolher("Nenhuma rodada do GPS ainda.", "No GPS round yet."), M, y0 + 40, 3.2)
     return
   end
-  # Do sinal mais forte para o mais fraco.
+  # From the strongest signal to the weakest.
   var l = []
   for s: sats l.push(s) end
   ordenar(l, def (a, b) return a["snr"] > b["snr"] end)
   var y = y0 + 20
-  tela.texto("sistema    prn   elev   azim   sinal", M, y, 2.4, tela.CINZA_CLARO)
+  tela.texto(idioma.escolher("sistema    prn   elev   azim   sinal", "system     prn   elev   azim   signal"), M, y, 2.4, tela.CINZA_CLARO)
   y += 44
   var barra_x = M + 560
   for s: l
@@ -306,18 +309,18 @@ def pag_dias(y0)
     for n: cartao.lista()
       if string.find(n, "satelites-") == 0 dias.push(n) end
     end
-    ordenar(dias, def (a, b) return a < b end)   # o nome ja e a data: AAAA-MM-DD
+    ordenar(dias, def (a, b) return a < b end)   # the name is already the date: AAAA-MM-DD (YYYY-MM-DD)
   end
   var y = y0 + 24
-  tela.texto("Arquivos em apps/Berry/Azimutal/ (um por dia, UTC):", M, y, 2.6, tela.CINZA_CLARO)
+  tela.texto(idioma.escolher("Arquivos em apps/Berry/Azimutal/ (um por dia, UTC):", "Files in apps/Berry/Azimutal/ (one per day, UTC):"), M, y, 2.6, tela.CINZA_CLARO)
   y += 56
   if size(dias) == 0
-    tela.texto("Nada gravado ainda - toque em GRAVAR.", M, y, 3)
+    tela.texto(idioma.escolher("Nada gravado ainda - toque em GRAVAR.", "Nothing recorded yet - tap RECORD."), M, y, 3)
     return
   end
   var A = tela.altura()
   var i = size(dias) - 1
-  while i >= 0 && y < A - 50   # o mais novo em cima
+  while i >= 0 && y < A - 50   # newest at the top
     tela.texto(dias[i], M, y, 3)
     y += 48
     i -= 1
@@ -340,7 +343,7 @@ def tocar(x, y)
     b = bt_abas[i]
     if tela.dentro(x, y, b[0], b[1], b[2], b[3])
       aba = i
-      if i == 2 dias = nil end   # entrar na aba rele a pasta
+      if i == 2 dias = nil end   # entering the tab re-reads the folder
     end
   end
 end

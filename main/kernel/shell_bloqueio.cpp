@@ -1,6 +1,6 @@
-// SHELL - a tela de bloqueio: bloquear e desbloquear, a animacao ao fundo, o
-// relogio, a data e os avisos na frente dela. Partido de shell.cpp; o que as
-// partes compartilham esta em shell_interno.hpp.
+// SHELL - the lock screen: locking and unlocking, the background animation, the
+// clock, the date and the notices in front of it. Split out of shell.cpp; what
+// the parts share lives in shell_interno.hpp.
 
 #include "esp_attr.h"
 #include "bloqueio_anim.hpp"
@@ -18,15 +18,15 @@
 #include "shell_interno.hpp"
 
 // ---------------------------------------------------------------------------
-// TELA DE BLOQUEIO
+// LOCK SCREEN
 // ---------------------------------------------------------------------------
-// v1, de proposito simples: hora grande, data, o aviso em destaque (a mesma
-// fonte que a barra de status usa) e a dica de deslizar. Sem senha. Tudo
-// que muda com o tempo compara com o cache antes de pintar, como o resto do
-// sistema - o relogio e conferido a cada segundo e so repinta quando o
-// minuto vira.
+// v1, deliberately simple: big clock, date, the highlighted notice (the same
+// source the status bar uses) and the swipe hint. No password. Everything
+// that changes over time compares with the cache before painting, like the rest
+// of the system - the clock is checked every second and only repaints when the
+// minute ticks over.
 static char     s_bq_hora[8]   = "";
-EXT_RAM_BSS_ATTR static char s_bq_aviso[4 * (NOTIF_RESUMO + 24)];   // zerado = ""
+EXT_RAM_BSS_ATTR static char s_bq_aviso[4 * (NOTIF_RESUMO + 24)];   // zeroed = ""
 static uint32_t s_bq_dia       = 0;
 
 static void data_por_extenso(char* out, size_t n)
@@ -38,23 +38,23 @@ static void data_por_extenso(char* out, size_t n)
   idioma_data_por_extenso(&lt, out, n);
 }
 
-// Os textos da tela de bloqueio ficam NA FRENTE da animacao.
+// The lock screen's texts sit IN FRONT of the animation.
 //
-// Cada texto e pintado UMA vez (quando muda) num sprite pequeno, com fundo
-// preto e a fonte suave de sempre - o mesmo desenho de antes da animacao. A
-// cada quadro, so onde a animacao passou por cima, o sprite e copiado para a
-// tela com o PRETO TRANSPARENTE. Assim o texto nunca depende do que ha na
-// pagina de tras: pintar texto suave sem fundo faz o M5GFX LER os pixels da
-// tela e misturar a borda das letras com eles, e isso engrossa a letra a cada
-// repintura e a deixa feia.
+// Each text is painted ONCE (when it changes) into a small sprite, with a black
+// background and the usual smooth font - the same drawing as before the
+// animation. On each frame, only where the animation has passed over it, the
+// sprite is copied to the screen with BLACK AS TRANSPARENT. That way the text
+// never depends on what is on the back page: painting smooth text with no
+// background makes M5GFX READ the screen pixels and blend the letter edges
+// with them, which thickens the letters on every repaint and makes them ugly.
 //
-// Caixas fixas, sem se sobrepor, com folga em volta do texto.
+// Fixed boxes, non-overlapping, with slack around the text.
 enum { BQ_HORA, BQ_DATA, BQ_AVISO, BQ_DICA, BQ_N };
 
 static lgfx::LGFX_Sprite* s_bq_spr[BQ_N] = {};
 
-// AVISOS NO BLOQUEIO: uma linha por app, quantas couberem entre a data e a
-// dica (ate 4). Deitado sobra espaco para uma so - a mais grave.
+// NOTICES ON THE LOCK SCREEN: one row per app, as many as fit between the date
+// and the hint (up to 4). In landscape there is room for only one - the most severe.
 static const int BQ_AVISO_LINHA = 52;
 static int bq_linhas_aviso(const area_t& a)
 {
@@ -76,10 +76,10 @@ static void bq_caixas(const area_t& a, bq_ret_t r[BQ_N])
   r[BQ_DICA]  = { (int16_t)(cx - 200), (int16_t)(y_dica - 48),  400, 80 };
 }
 
-// Desenha o texto 'i' em 't' (um sprite ou a tela), com (ox, oy) = canto da
-// caixa em coordenadas de tela. Fundo preto, sempre: o preto (TFT_BLACK) nao e
-// cor de tema, e a chave TRANSPARENTE da copia para a tela - e ele que deixa a
-// animacao aparecer atras do texto.
+// Draws text 'i' into 't' (a sprite or the screen), with (ox, oy) = the box's
+// corner in screen coordinates. Always a black background: black (TFT_BLACK) is
+// not a theme colour, and it is the TRANSPARENT key for the copy to the screen -
+// it is what lets the animation show behind the text.
 static void bq_texto(lgfx::LovyanGFX& t, const area_t& a, int i, const char* hora,
                      const char* data, const char* aviso, int ox, int oy)
 {
@@ -89,8 +89,8 @@ static void bq_texto(lgfx::LovyanGFX& t, const area_t& a, int i, const char* hor
   switch (i) {
     case BQ_HORA:
       tab5_fonte_corpo(t);
-      tab5_texto(t, 7.0f);    // 56 px, a maior altura nativa da fonte de corpo; dobrada abaixo
-      t.setTextSize(2);       // inteiro (nao fracionario): 1 pixel de fonte = 2x2 na tela
+      tab5_texto(t, 7.0f);    // 56 px, the body font's largest native height; doubled below
+      t.setTextSize(2);       // integer (not fractional): 1 font pixel = 2x2 on screen
       t.setTextColor(TEMA_TEXTO, TFT_BLACK);
       t.drawString(hora, cx, y_hora);
       t.setTextSize(1);
@@ -102,8 +102,8 @@ static void bq_texto(lgfx::LovyanGFX& t, const area_t& a, int i, const char* hor
       t.drawString(data, cx, y_hora + 110);
       break;
     case BQ_AVISO: {
-      // 'aviso' e uma linha por app: o primeiro caractere e o nivel ('0'..'3'),
-      // o resto o texto, e '\n' separa (montado em desenhar_bloqueio).
+      // 'aviso' is one line per app: the first character is the level ('0'..'3'),
+      // the rest is the text, and '\n' separates them (built in desenhar_bloqueio).
       tab5_fonte_corpo(t);
       tab5_texto(t, 3.0f);
       int y = y_hora + 225;
@@ -123,7 +123,7 @@ static void bq_texto(lgfx::LovyanGFX& t, const area_t& a, int i, const char* hor
     } break;
     default: {
       const int y_dica = a.y + a.altura - 110 - oy;
-      t.fillRoundRect(cx - 60, y_dica - 40, 120, 8, 4, TEMA_DESTAQUE);   // barra de deslizar
+      t.fillRoundRect(cx - 60, y_dica - 40, 120, 8, 4, TEMA_DESTAQUE);   // swipe bar
       tab5_fonte_corpo(t);
       tab5_texto(t, 3.0f);
       t.setTextColor(TEMA_TEXTO_3, TFT_BLACK);
@@ -140,8 +140,8 @@ static void bq_sprites_soltar(void)
   }
 }
 
-// Cria os sprites (PSRAM, so enquanto bloqueado). false = sem memoria: o
-// texto cai no desenho direto, com fundo preto.
+// Creates the sprites (PSRAM, only while locked). false = out of memory: the
+// text falls back to direct drawing, with a black background.
 static bool bq_sprites_criar(const bq_ret_t cx[BQ_N])
 {
   for (int i = 0; i < BQ_N; ++i) {
@@ -163,36 +163,36 @@ static bool bq_sprites_criar(const bq_ret_t cx[BQ_N])
 void bloquear_tela(void)
 {
   s_bloqueado   = true;
-  s_painel_avisos = false;   // a central nao sobrevive ao bloqueio
-  s_bq_hora[0]  = 0;   // forca o primeiro desenho completo
+  s_painel_avisos = false;   // the notification centre does not survive locking
+  s_bq_hora[0]  = 0;   // forces the first full draw
   s_sujo_layout = true;
   bq_anim_sortear();
 }
 
 void bloqueio_ao_ligar_tela(void)
 {
-  if (s_bloqueado)            { bq_anim_sortear(); }   // acordou ainda bloqueada: outra animacao
+  if (s_bloqueado)            { bq_anim_sortear(); }   // woke up still locked: another animation
   else if (ajustes_bloqueio()) { bloquear_tela(); }
 }
 
 void desbloquear_tela(void)
 {
   s_bloqueado   = false;
-  s_sujo_layout = true;   // volta home/app: repintura completa, nav inclusive
+  s_sujo_layout = true;   // back to home/app: full repaint, nav included
   bq_sprites_soltar();
   bq_anim_soltar();
 }
 
-// Um quadro da tela de bloqueio (~25 Hz): animacao ao fundo, texto na frente.
+// One lock-screen frame (~25 Hz): animation in the background, text in front.
 void desenhar_bloqueio(lgfx::LovyanGFX& d, const area_t& a, bool completo)
 {
   char hora[8], data[48], aviso[sizeof(s_bq_aviso)] = "";
   hora_agora(hora, sizeof(hora));
   data_por_extenso(data, sizeof(data));
 
-  // UM APP POR LINHA, e nao so o destaque: com Mesh e ESP-NOW avisando ao
-  // mesmo tempo, o bloqueio mostrava um e escondia o outro. A ultima linha
-  // que cabe vira "+N" quando sobra app.
+  // ONE APP PER ROW, not just the highlighted one: with Mesh and ESP-NOW notifying
+  // at the same time, the lock screen showed one and hid the other. The last row
+  // that fits becomes "+N" when there are apps left over.
   notif_item_t lista[NOTIF_MAX_FONTES];
   const int n_av = notif_listar(lista, NOTIF_MAX_FONTES);
   const int cabem = bq_linhas_aviso(a);
@@ -221,8 +221,8 @@ void desenhar_bloqueio(lgfx::LovyanGFX& d, const area_t& a, bool completo)
   bq_caixas(a, caixa);
   const bool mudou[BQ_N] = { completo || hora_mudou, completo || hora_mudou, completo || aviso_mudou, completo };
 
-  // Os sprites nascem (ou renascem) com o desenho completo e so sao pintados
-  // de novo quando o texto muda.
+  // The sprites are born (or reborn) with the full draw and are only painted
+  // again when the text changes.
   if (completo && !s_bq_spr[0]) { bq_sprites_criar(caixa); }
   const lgfx::TextStyle estilo = d.getTextStyle();
   for (int i = 0; i < BQ_N; ++i) {
@@ -231,7 +231,7 @@ void desenhar_bloqueio(lgfx::LovyanGFX& d, const area_t& a, bool completo)
     bq_texto(*s_bq_spr[i], a, i, hora, data, aviso, caixa[i].x, caixa[i].y);
   }
 
-  // Texto que mudou: a caixa e apagada (a animacao se refaz nela) e repintada.
+  // Text that changed: the box is cleared (the animation redraws itself there) and repainted.
   bq_ret_t extras[BQ_N];
   int n_extras = 0;
   if (completo) {
@@ -242,7 +242,7 @@ void desenhar_bloqueio(lgfx::LovyanGFX& d, const area_t& a, bool completo)
   bq_ret_t clips[BQ_N];
   bq_anim_quadro(d, extras, n_extras, caixa, BQ_N, clips);
 
-  const uint16_t preto = 0;   // cor transparente do sprite
+  const uint16_t preto = 0;   // the sprite's transparent colour
   for (int i = 0; i < BQ_N; ++i) {
     bq_ret_t clip = clips[i];
     if (mudou[i]) { clip = caixa[i]; }

@@ -1,12 +1,12 @@
-// Animacao do bloqueio: Bolas que quicam nas paredes e umas nas outras (choque elastico).
-// (parte do bloqueio_anim; o que e comum a todas esta no bloqueio_anim_interno.hpp).
+// Lock screen animation: Balls bouncing off the walls and each other (elastic collision).
+// (part of bloqueio_anim; what is common to all of them is in bloqueio_anim_interno.hpp).
 
 #include "bloqueio_anim_interno.hpp"
 
 namespace bq_anim {
 
 // ---------------------------------------------------------------------------
-// 1. BOLAS - quicam nas paredes e umas nas outras (choque elastico)
+// 1. BALLS - bounce off the walls and each other (elastic collision)
 // ---------------------------------------------------------------------------
 namespace {
 struct Bola { float x, y, vx, vy, r, ox, oy; uint16_t cor; };
@@ -42,7 +42,7 @@ void bolas_passo(float dt)
     if (b.y < s_ay + b.r)            { b.y = s_ay + b.r;            b.vy =  fabsf(b.vy); }
     else if (b.y > s_ay + s_H - b.r) { b.y = s_ay + s_H - b.r;      b.vy = -fabsf(b.vy); }
   }
-  // Choque elastico; a massa vai com a area (r^2).
+  // Elastic collision; mass goes with area (r^2).
   for (int i = 0; i < 7; ++i) {
     for (int j = i + 1; j < 7; ++j) {
       Bola& a = s.b[i];

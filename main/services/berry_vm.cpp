@@ -1,12 +1,12 @@
-// A tarefa do Berry - ver berry_vm.hpp.
+// The Berry task - see berry_vm.hpp.
 
 #include "berry_vm.hpp"
 #include "idioma.h"
 #include "berry_apps.hpp"
 #include "berry_mem.h"
 extern "C" {
-#include "be_gc.h"   // be_gc_setsteprate (fora da API publica)
-#include "be_exec.h" // be_throw (idem): o erro de tempo que o except nao pega
+#include "be_gc.h"   // be_gc_setsteprate (outside the public API)
+#include "be_exec.h" // be_throw (likewise): the timeout error that except does not catch
 void be_port_liberar_arquivos(int sim);   // components/berry/port/be_port.c
 }
 
@@ -25,40 +25,40 @@ static const char* TAG = "berry";
 static const uint32_t BERRY_PILHA = 32 * 1024;
 
 static TaskHandle_t      s_tarefa = nullptr;
-static SemaphoreHandle_t s_vez    = nullptr;   // um pedido por vez (console e interface)
-static SemaphoreHandle_t s_ir     = nullptr;   // ha trabalho
-static SemaphoreHandle_t s_fim    = nullptr;   // terminou
+static SemaphoreHandle_t s_vez    = nullptr;   // one request at a time (console and UI)
+static SemaphoreHandle_t s_ir     = nullptr;   // there is work
+static SemaphoreHandle_t s_fim    = nullptr;   // finished
 
 static berry_trabalho_t  s_fn  = nullptr;
 static void*             s_ctx = nullptr;
-static volatile int64_t  s_prazo_us = 0;       // 0 = sem limite
-static volatile int64_t  s_entregue_us = 0;    // quando o pedido foi entregue (medida)
+static volatile int64_t  s_prazo_us = 0;       // 0 = no limit
+static volatile int64_t  s_entregue_us = 0;    // when the request was handed over (measurement)
 
-// A PRIORIDADE DE FOLGA. Parada, a tarefa fica la embaixo (1): o console e
-// quem mais pede, e nao tem pressa. Com um pedido, ela sobe para a prioridade
-// de QUEM PEDIU (ver berry_rodar) - a interface (4) fica parada esperando, e
-// um app Berry nao pode ser atropelado pelo Wi-Fi, ESP-NOW e cartao (2-3)
-// enquanto a tela inteira espera por ele.
+// THE IDLE PRIORITY. When idle, the task sits right down at (1): the console is
+// the main requester, and it is in no hurry. With a request, it rises to the priority
+// of WHOEVER ASKED (see berry_rodar) - the UI (4) sits waiting, and
+// a Berry app must not be trampled by Wi-Fi, ESP-NOW and the card (2-3)
+// while the whole screen waits for it.
 static const UBaseType_t PRIO_FOLGA = 1;
 
 static berry_medida_t s_med = {};
 
-// O GANCHO DE TEMPO. A maquina chama a cada 2^13 instrucoes (8192,
-// BE_VM_OBSERVABILITY_SAMPLING = 14 no berry_conf.h); passou do prazo, o erro
-// sobe pelo script ate o pcall de quem chamou - nenhum estado fica pela metade.
-// Antes era a cada ~500 mil: um script que passa o tempo em chamadas ao
-// sistema (desenho, contas) faz poucas instrucoes, e o prazo de 200 ms de um
-// fundo() virava 500 ms de cada vez por quase um minuto (app Estresse,
-// 2026-11-13). As chamadas a tela tambem conferem (berry_prazo_conferir, em
-// so_janela): uma so pode levar alguns ms.
+// THE TIME HOOK. The machine calls it every 2^13 instructions (8192,
+// BE_VM_OBSERVABILITY_SAMPLING = 14 in berry_conf.h); once past the deadline, the error
+// rises through the script up to the caller's pcall - no state is left half-done.
+// It used to be every ~500 thousand: a script that spends its time in system
+// calls (drawing, maths) executes few instructions, and a fundo()'s 200 ms
+// deadline became 500 ms each time for almost a minute (Estresse app,
+// 2026-11-13). Calls to tela also check (berry_prazo_conferir, in
+// so_janela): a single one may take a few ms.
 //
-// O ERRO NAO E UMA EXCECAO DO SCRIPT. Com be_raise, um 'try ... except ..'
-// dentro de um laco engolia o tempo_esgotado e o laco seguia - e, com o prazo
-// zerado depois do primeiro erro, para sempre, com a interface esperando. O
-// BE_EXIT o except do Berry nao pega (be_except_block_resume so trata
-// BE_EXCEPTION): ele atravessa todo try e so para no pcall do sistema.
-// Depois dele o prazo vira uma folga curta, nao zero: o que o sistema ainda
-// rodar de Berry neste trabalho (o fechar() de um app com erro) tambem tem fim.
+// THE ERROR IS NOT A SCRIPT EXCEPTION. With be_raise, a 'try ... except ..'
+// inside a loop swallowed tempo_esgotado and the loop carried on - and, with the deadline
+// cleared after the first error, forever, with the UI waiting. Berry's except
+// does not catch BE_EXIT (be_except_block_resume only handles
+// BE_EXCEPTION): it goes straight through every try and only stops at the system's pcall.
+// After it the deadline becomes a short grace period, not zero: whatever Berry the system still
+// runs in this job (the fechar() of an app with an error) also comes to an end.
 static const int64_t FOLGA_DEPOIS_US = 500 * 1000;
 
 void berry_prazo_conferir(bvm* vm)
@@ -67,7 +67,7 @@ void berry_prazo_conferir(bvm* vm)
   const int64_t agora = esp_timer_get_time();
   if (agora <= s_prazo_us) { return; }
   s_prazo_us = agora + FOLGA_DEPOIS_US;
-  // Como o be_raise deixa a mensagem: logo acima do topo, onde o pcall a pega.
+  // The way be_raise leaves the message: just above the top, where pcall picks it up.
   be_pushstring(vm, "tempo_esgotado: the script ran too long (infinite loop?)");
   be_pop(vm, 1);
   be_throw(vm, BE_EXIT);
@@ -111,46 +111,46 @@ static bool subir(void)
 
 bool berry_rodar(berry_trabalho_t fn, void* ctx, uint32_t prazo_ms)
 {
-  if (!subir()) { ESP_LOGE(TAG, "a tarefa do Berry nao subiu"); return false; }
+  if (!subir()) { ESP_LOGE(TAG, "the Berry task did not come up"); return false; }
   const UBaseType_t prio = uxTaskPriorityGet(nullptr);
-  // QUEM ESPERA NA FILA EMPURRA QUEM ESTA RODANDO. Com um fundo() (prioridade
-  // 1) no meio, a interface (4) que chega fica parada em s_vez - e o trabalho
-  // do fundo, na tarefa do Berry, seguiria na 1, atras do Wi-Fi e do cartao.
-  // Sobe ja: o fundo termina na prioridade de quem espera por ele.
+  // WHOEVER WAITS IN THE QUEUE PUSHES WHOEVER IS RUNNING. With a fundo() (priority
+  // 1) in the middle, the UI (4) arriving sits waiting on s_vez - and the
+  // background job, on the Berry task, would carry on at 1, behind Wi-Fi and the card.
+  // Raise it now: the background finishes at the priority of whoever is waiting for it.
   if (prio > uxTaskPriorityGet(s_tarefa)) { vTaskPrioritySet(s_tarefa, prio); }
-  xSemaphoreTake(s_vez, portMAX_DELAY);   // a fila de s_vez anda por prioridade
+  xSemaphoreTake(s_vez, portMAX_DELAY);   // the s_vez queue moves by priority
   s_fn = fn;
   s_ctx = ctx;
-  if (prio > uxTaskPriorityGet(s_tarefa)) { vTaskPrioritySet(s_tarefa, prio); }   // herda: ver PRIO_FOLGA
+  if (prio > uxTaskPriorityGet(s_tarefa)) { vTaskPrioritySet(s_tarefa, prio); }   // inherits: see PRIO_FOLGA
   s_entregue_us = esp_timer_get_time();
   s_prazo_us = prazo_ms ? s_entregue_us + (int64_t)prazo_ms * 1000 : 0;
   xSemaphoreGive(s_ir);
-  xSemaphoreTake(s_fim, portMAX_DELAY);   // o prazo e garantido pelo gancho
-  vTaskPrioritySet(s_tarefa, PRIO_FOLGA);   // parada, volta para baixo (quem esperar sobe de novo)
+  xSemaphoreTake(s_fim, portMAX_DELAY);   // the deadline is guaranteed by the hook
+  vTaskPrioritySet(s_tarefa, PRIO_FOLGA);   // idle, it goes back down (whoever waits raises it again)
   xSemaphoreGive(s_vez);
   return true;
 }
 
 bvm* berry_vm_nova(void)
 {
-  // Os modulos sao montados fora de pcall: faltar memoria ali abortaria o
-  // aparelho. Sem a folga no orcamento, nem comeca (quem chama mostra o erro).
+  // The modules are built outside pcall: running out of memory there would abort the
+  // device. Without the budget headroom, it does not even start (the caller shows the error).
   if (!berry_mem_cabe(BERRY_FOLGA_VM)) {
-    ESP_LOGW(TAG, "orcamento do Berry cheio: %u KB em uso", (unsigned)(berry_mem_usada() / 1024));
+    ESP_LOGW(TAG, "Berry budget full: %u KB in use", (unsigned)(berry_mem_usada() / 1024));
     return nullptr;
   }
   bvm* vm = be_vm_new();
   be_set_obs_hook(vm, gancho);
-  // O COLETOR DE LIXO roda quando a memoria do script passa de um limite, e
-  // o limite seguinte e o que sobrou x (taxa/100). O padrao (200) e para
-  // microcontrolador sem memoria: aqui ha 32 MB de PSRAM, e cada coleta e
-  // uma pausa no meio de um quadro. 350 (o maximo) coleta ~2,5x menos vezes.
+  // THE GARBAGE COLLECTOR runs when the script's memory passes a limit, and
+  // the next limit is what was left x (rate/100). The default (200) is for
+  // a microcontroller with no memory: here there are 32 MB of PSRAM, and each collection is
+  // a pause in the middle of a frame. 350 (the maximum) collects ~2.5x less often.
   be_gc_setsteprate(vm, 350);
   berry_modulos_registrar(vm);
   return vm;
 }
 
-// O erro do topo da pilha: imprime, copia e desempilha.
+// The error at the top of the stack: prints, copies and pops.
 static void erro_do_topo(bvm* vm, char* erro, size_t erro_tam)
 {
   const char* msg = be_tostring(vm, -1);
@@ -164,13 +164,13 @@ bool berry_executar(bvm* vm, const char* codigo, bool arquivo, bool mostrar,
 {
   int res;
   if (arquivo) {
-    // O unico momento em que o Berry abre arquivo (components/berry/port/
-    // be_port.c): o sistema carregando o .be. O script, rodando, nao abre.
+    // The only moment Berry opens a file (components/berry/port/
+    // be_port.c): the system loading the .be. The running script does not open files.
     be_port_liberar_arquivos(1);
     res = be_loadfile(vm, codigo);
     be_port_liberar_arquivos(0);
   } else {
-    // Como no REPL: tenta como expressao (para mostrar o valor); senao, comando.
+    // As in the REPL: tries it as an expression (to show the value); otherwise, a statement.
     res = BE_SYNTAX_ERROR;
     if (mostrar) {
       char expr[224];
@@ -198,8 +198,8 @@ static void verificar_na_tarefa(void* ctx)
   if (be_loadbuffer(vm, "script", v->cod, v->n) == BE_OK) {
     v->ok = true;
   } else {
-    // "script:12: unexpected symbol near 'end'" - a linha vem depois do nome.
-    // A linha vira numero, e a mensagem fica so com o que deu errado.
+    // "script:12: unexpected symbol near 'end'" - the line comes after the name.
+    // The line becomes a number, and the message keeps only what went wrong.
     const char* m = be_tostring(vm, -1);
     const char* p = m ? strchr(m, ':') : nullptr;
     const char* q = p ? strchr(p + 1, ':') : nullptr;

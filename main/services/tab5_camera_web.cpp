@@ -1,4 +1,4 @@
-// A camera no navegador do PC - ver tab5_camera_web.hpp.
+// The camera in the PC's browser - see tab5_camera_web.hpp.
 #include "tab5_camera_web.hpp"
 
 #include <stdio.h>
@@ -19,53 +19,53 @@ static const char* TAG = "camera_web";
 extern const char PAGINA_INICIO[] asm("_binary_tab5_camera_web_html_start");
 extern const char PAGINA_FIM[]    asm("_binary_tab5_camera_web_html_end");
 
-#define CAMERA_OCIOSA_MS 5000   // sem pedir quadro: a camera desliga
-#define QUADRO_ESPERA_MS 1500   // teto da espera por um frame (o primeiro depois de ligar demora)
+#define CAMERA_OCIOSA_MS 5000   // no frame requested: the camera switches off
+#define QUADRO_ESPERA_MS 1500   // ceiling on the wait for a frame (the first one after switching on takes a while)
 
-// Os tamanhos, multiplos de 16 (o bloco do JPEG com YUV420). O VIDEO vai
-// DEITADO, como o sensor ve (4:3): girar no Tab5 custa ~117 ms por quadro, e
-// a pagina gira de graca (ver tab5_camera_pedir_quadro). A FOTO, que vira
-// arquivo, sai em pe.
+// The sizes, multiples of 16 (the JPEG block with YUV420). The VIDEO goes
+// LANDSCAPE, as the sensor sees it (4:3): rotating on the Tab5 costs ~117 ms per frame, and
+// the page rotates for free (see tab5_camera_pedir_quadro). The PHOTO, which becomes
+// a file, comes out portrait.
 typedef struct { int l, a, qualidade; bool em_pe; } tamanho_t;
 static const tamanho_t VIDEO    = { 640, 480, 70, false };
 static const tamanho_t VIDEO_HD = { 960, 720, 70, false };
 static const tamanho_t FOTO     = { TAB5_CAM_FOTO_L, TAB5_CAM_FOTO_A, 92, true };
 
-// TUDO SOB s_trava: a camera ligada, o codificador e os buffers (PSRAM) do
-// tamanho em uso. Quem pede um quadro segura a trava ate responder - o
-// desligamento por ociosidade espera ele terminar.
+// EVERYTHING UNDER s_trava: the camera being on, the encoder and the buffers (PSRAM) for
+// the size in use. Whoever asks for a frame holds the lock until it replies - the
+// idle shutdown waits for it to finish.
 //
-// DOIS QUADROS, UM ADIANTADO. Reduzir o quadro custa ~75 ms de PPA (medido
-// 05/11/2026), e comprimir + enviar outros ~70: um depois do outro, ~6 q/s.
-// Assim que um quadro fica pronto, o seguinte ja e pedido no outro buffer - a
-// camera o prepara enquanto este e comprimido e enviado, e o proximo pedido o
-// encontra pronto ou quase. So no video: a foto e uma de cada vez.
+// TWO FRAMES, ONE AHEAD. Scaling the frame costs ~75 ms of PPA (measured
+// 05/11/2026), and compressing + sending another ~70: one after the other, ~6 fps.
+// As soon as a frame is ready, the next one is already requested in the other buffer - the
+// camera prepares it while this one is compressed and sent, and the next request
+// finds it ready or nearly. Video only: photos are one at a time.
 static SemaphoreHandle_t     s_trava = nullptr;
 static bool                  s_ligada = false;
 static uint32_t              s_ligou_ms = 0;
 static jpeg_encoder_handle_t s_jpeg = nullptr;
-static uint16_t*             s_buf[2] = { nullptr, nullptr };   // RGB565 do tamanho s_l x s_a
-static int                   s_adiantado = -1;   // o buffer com o pedido ja feito (-1 = nenhum)
+static uint16_t*             s_buf[2] = { nullptr, nullptr };   // RGB565 of size s_l x s_a
+static int                   s_adiantado = -1;   // the buffer with the request already made (-1 = none)
 static uint8_t*              s_saida = nullptr;  // o JPEG
 static size_t                s_saida_n = 0;
 static int                   s_l = 0, s_a = 0;
 static bool                  s_em_pe = false;
 static uint32_t              s_ultimo_ms = 0;
 static esp_timer_handle_t    s_relogio = nullptr;
-// QUANTO CUSTA UM QUADRO, somado e mostrado no log a cada QUADROS_MEDIDA:
-// a espera do frame, o JPEG e o envio pela rede - o numero que diz onde o
-// video perde tempo.
+// WHAT A FRAME COSTS, summed and shown in the log every QUADROS_MEDIDA:
+// the wait for the frame, the JPEG and sending over the network - the number that says where the
+// video loses time.
 #define QUADROS_MEDIDA 30
 static struct { uint32_t n; int64_t espera, jpeg, envio; uint64_t bytes; } s_medida;
 
-// Os primeiros frames depois de ligar saem do pipeline sem sentido (visto
-// 05/11/2026: listras e lixo ate o ISP assentar): esses nao vao ao navegador.
+// The first frames after switching on come out of the pipeline as nonsense (seen
+// 05/11/2026: stripes and garbage until the ISP settles): those don't go to the browser.
 #define AQUECER_MS 400
 
 static void travar(void)    { xSemaphoreTake(s_trava, portMAX_DELAY); }
 static void destravar(void) { xSemaphoreGive(s_trava); }
 
-// Espera o quadro pedido em 'b' chegar. false = nao chegou no prazo.
+// Waits for the frame requested in 'b' to arrive. false = didn't arrive in time.
 static bool esperar(uint16_t* b, bool* ok)
 {
   for (uint32_t esperou = 0; esperou < QUADRO_ESPERA_MS; esperou += 5) {
@@ -75,8 +75,8 @@ static bool esperar(uint16_t* b, bool* ok)
   return false;
 }
 
-// O pedido adiantado que ninguem vai usar (troca de tamanho, foto): espera a
-// camera largar o buffer antes de qualquer um mexer nele.
+// The request made ahead that nobody will use (size change, photo): waits for the
+// camera to let go of the buffer before anyone touches it.
 static void descartar_adiantado(void)
 {
   if (s_adiantado < 0) { return; }
@@ -92,18 +92,18 @@ static void soltar_buffers(void)
   s_saida = nullptr; s_saida_n = 0; s_l = s_a = 0;
 }
 
-// Os buffers do tamanho pedido (trocar de tamanho realoca). Sob a trava.
+// The buffers for the requested size (changing size reallocates). Under the lock.
 static bool buffers(const tamanho_t& t)
 {
   if (s_buf[0] && s_l == t.l && s_a == t.a && s_em_pe == t.em_pe) { return true; }
   descartar_adiantado();
   soltar_buffers();
   for (auto& b : s_buf) { b = tab5_camera_quadro_alocar(t.l, t.a); }
-  // A SAIDA: 1 byte por pixel e teto folgado para o JPEG nestas qualidades.
+  // THE OUTPUT: 1 byte per pixel is a generous ceiling for the JPEG at these qualities.
   const jpeg_encode_memory_alloc_cfg_t mem = { .buffer_direction = JPEG_ENC_ALLOC_OUTPUT_BUFFER };
   s_saida = (uint8_t*)jpeg_alloc_encoder_mem((size_t)t.l * t.a, &mem, &s_saida_n);
   if (!s_buf[0] || !s_buf[1] || !s_saida) {
-    ESP_LOGE(TAG, "sem PSRAM para %dx%d", t.l, t.a);
+    ESP_LOGE(TAG, "no PSRAM for %dx%d", t.l, t.a);
     soltar_buffers();
     return false;
   }
@@ -111,37 +111,37 @@ static bool buffers(const tamanho_t& t)
   return true;
 }
 
-// Liga a camera e o codificador na primeira vez. Sob a trava.
+// Switches on the camera and the encoder the first time. Under the lock.
 static bool ligar(void)
 {
   if (s_ligada) { return true; }
   if (!s_jpeg) {
     const jpeg_encode_engine_cfg_t cfg = { .intr_priority = 0, .timeout_ms = 300 };
-    if (jpeg_new_encoder_engine(&cfg, &s_jpeg) != ESP_OK) { ESP_LOGE(TAG, "codificador JPEG nao subiu"); s_jpeg = nullptr; return false; }
+    if (jpeg_new_encoder_engine(&cfg, &s_jpeg) != ESP_OK) { ESP_LOGE(TAG, "JPEG encoder didn't start"); s_jpeg = nullptr; return false; }
   }
-  if (!tab5_camera_iniciar("navegador")) { ESP_LOGE(TAG, "a camera nao ligou"); return false; }
+  if (!tab5_camera_iniciar("navegador")) { ESP_LOGE(TAG, "the camera didn't switch on"); return false; }
   s_ligada = true;
   s_ligou_ms = tab5_agora_ms();
-  ESP_LOGI(TAG, "camera ligada para o navegador");
+  ESP_LOGI(TAG, "camera on for the browser");
   return true;
 }
 
-// Desliga tudo (ociosa). Fora da trava de quem chama: pega a trava.
+// Switches everything off (idle). Outside the caller's lock: takes the lock.
 static void desligar(void*)
 {
   travar();
   if (s_ligada && tab5_agora_ms() - s_ultimo_ms >= CAMERA_OCIOSA_MS) {
-    tab5_camera_parar("navegador");   // espera a tarefa da camera: depois disso os buffers sao nossos
+    tab5_camera_parar("navegador");   // waits for the camera task: after that the buffers are ours
     s_ligada = false;
     s_adiantado = -1;
     soltar_buffers();
     if (s_jpeg) { jpeg_del_encoder_engine(s_jpeg); s_jpeg = nullptr; }
-    ESP_LOGI(TAG, "camera desligada (%d s sem quadro)", CAMERA_OCIOSA_MS / 1000);
+    ESP_LOGI(TAG, "camera off (%d s without a frame)", CAMERA_OCIOSA_MS / 1000);
   }
   destravar();
 }
 
-// O relogio de ociosidade: desligar mexe no esp_video (pesado) - numa vaga do pool.
+// The idle clock: switching off touches esp_video (heavy) - in a pool slot.
 static void ao_relogio(void*)
 {
   if (!pool_criar(nullptr, desligar, nullptr, "cam_web_parar", 4096, 3)) { desligar(nullptr); }
@@ -159,12 +159,12 @@ static void rearmar(void)
   esp_timer_start_once(s_relogio, (uint64_t)CAMERA_OCIOSA_MS * 1000);
 }
 
-// O PROXIMO QUADRO PRONTO em s_buf[*i]: o adiantado, se houver, ou um pedido
-// agora. No video, ja deixa o seguinte pedido no outro buffer. Sob a trava.
+// THE NEXT READY FRAME in s_buf[*i]: the one ahead, if any, or one requested
+// now. In video, it already leaves the following one requested in the other buffer. Under the lock.
 static bool pegar_quadro(const tamanho_t& t, int* i)
 {
   if (!ligar() || !buffers(t)) { return false; }
-  // Os frames de aquecimento: pedidos e descartados ate o pipeline assentar.
+  // The warm-up frames: requested and discarded until the pipeline settles.
   do {
     int k = s_adiantado;
     s_adiantado = -1;
@@ -180,8 +180,8 @@ static bool pegar_quadro(const tamanho_t& t, int* i)
   return true;
 }
 
-// UM QUADRO: o proximo frame no tamanho 't', comprimido e respondido. A
-// tarefa do servidor fica aqui o que falta do frame, o JPEG e o envio.
+// ONE FRAME: the next frame at size 't', compressed and sent in reply. The
+// server task waits here for what remains of the frame, the JPEG and the send.
 static esp_err_t responder_quadro(httpd_req_t* req, const tamanho_t& t, const char* nome)
 {
   travar();
@@ -203,7 +203,7 @@ static esp_err_t responder_quadro(httpd_req_t* req, const tamanho_t& t, const ch
   rearmar();
   if (!n) {
     destravar();
-    ESP_LOGW(TAG, "quadro %dx%d falhou (%s)", t.l, t.a, !ok ? "a camera nao entregou" : "jpeg");
+    ESP_LOGW(TAG, "frame %dx%d failed (%s)", t.l, t.a, !ok ? "the camera didn't deliver" : "jpeg");
     httpd_resp_set_status(req, "503 Service Unavailable");
     httpd_resp_set_hdr(req, "Retry-After", "1");
     return httpd_resp_sendstr(req, "the camera did not deliver a frame");
@@ -221,7 +221,7 @@ static esp_err_t responder_quadro(httpd_req_t* req, const tamanho_t& t, const ch
   s_medida.espera += t1 - t0; s_medida.jpeg += t2 - t1; s_medida.envio += t3 - t2; s_medida.bytes += n;
   if (++s_medida.n >= QUADROS_MEDIDA) {
     const uint32_t q = s_medida.n;
-    ESP_LOGI(TAG, "%lu quadros %dx%d: espera %lld ms, jpeg %lld ms, envio %lld ms, %llu KB cada (%llu KB/s na rede)",
+    ESP_LOGI(TAG, "%lu frames %dx%d: wait %lld ms, jpeg %lld ms, send %lld ms, %llu KB each (%llu KB/s on the network)",
              (unsigned long)q, t.l, t.a, s_medida.espera / q / 1000, s_medida.jpeg / q / 1000, s_medida.envio / q / 1000,
              s_medida.bytes / q / 1024, s_medida.envio ? s_medida.bytes * 1000000 / s_medida.envio / 1024 : 0);
     s_medida = { };
@@ -234,7 +234,7 @@ static esp_err_t pagina(httpd_req_t* req)
 {
   httpd_resp_set_type(req, "text/html; charset=utf-8");
   httpd_resp_set_hdr(req, "Cache-Control", "no-store");
-  return httpd_resp_send(req, PAGINA_INICIO, PAGINA_FIM - PAGINA_INICIO - 1);   // TEXT poe um '\0' no fim
+  return httpd_resp_send(req, PAGINA_INICIO, PAGINA_FIM - PAGINA_INICIO - 1);   // TEXT puts a '\0' at the end
 }
 
 static esp_err_t quadro(httpd_req_t* req)
@@ -265,6 +265,6 @@ bool tab5_camera_web_ligar(void)
 {
   if (!s_trava) { s_trava = xSemaphoreCreateMutex(); }
   if (!s_trava) { return false; }
-  ESP_LOGI(TAG, "camera no navegador: /camera/");
+  ESP_LOGI(TAG, "camera in the browser: /camera/");
   return tab5_web_abrir("Camera", "camera", ROTAS, sizeof(ROTAS) / sizeof(ROTAS[0]));
 }

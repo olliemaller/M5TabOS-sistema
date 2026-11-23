@@ -1,22 +1,22 @@
-// HAL DE FRAME - a camada mais baixa da nova base de tela (docs/COMPOSITOR.md,
-// etapa 1). Duas pecas de hardware que a base antiga nunca usou.
+// FRAME HAL - the lowest layer of the new display foundation (docs/COMPOSITOR.md,
+// stage 1). Two pieces of hardware the old foundation never used.
 //
-// (A prioridade da tela no barramento AXI NAO mora aqui: e do
-// hal/tab5_barramento, ligada no boot. Uma copia dela viveu aqui por algumas
-// horas e brigou com a original.)
+// (The display's priority on the AXI bus does NOT live here: it belongs to
+// hal/tab5_barramento, set at boot. A copy of it lived here for a few
+// hours and fought with the original.)
 //
-// 1. O FIM DO FRAME. O driver so troca de pagina quando o DMA do painel
-//    reinicia (mipi_dsi_dma_trans_done_cb le cur_fb_index nesse instante), e
-//    avisa por on_frame_buf_complete. Esperar esse aviso depois de pedir a
-//    troca e o que garante que a pagina que saiu nao esta mais sendo lida -
-//    so entao da para escrever nela sem rasgar a imagem.
+// 1. END OF FRAME. The driver only switches page when the panel DMA
+//    restarts (mipi_dsi_dma_trans_done_cb reads cur_fb_index at that moment),
+//    and signals it via on_frame_buf_complete. Waiting for that signal after
+//    requesting the switch is what guarantees the outgoing page is no longer
+//    being read - only then can it be written without tearing the image.
 //
-// 2. COPIA POR HARDWARE (DMA2D puro, esp_async_fbcpy; o PPA so de reserva).
-//    Copia um retangulo de uma pagina para a outra sem a CPU, em linha
-//    corrida - 3x mais rapido que o motor SRM do PPA (medido: 'tela banco').
-//    E como as areas mudadas de um frame sao levadas para a outra pagina.
+// 2. HARDWARE COPY (pure DMA2D, esp_async_fbcpy; the PPA only as a fallback).
+//    Copies a rectangle from one page to the other without the CPU, as a
+//    linear run - 3x faster than the PPA's SRM engine (measured: 'tela banco').
+//    This is how a frame's changed areas are carried over to the other page.
 //
-// E um contador de UNDERRUN, porque sem medida "melhorou" e so opiniao.
+// And an UNDERRUN counter, because without a measurement "it got better" is just opinion.
 
 #pragma once
 
@@ -25,91 +25,92 @@
 #include "esp_lcd_types.h"
 #include "freertos/FreeRTOS.h"
 
-// Retangulo em coordenadas FISICAS do framebuffer (retrato, 720x1280).
+// Rectangle in PHYSICAL framebuffer coordinates (portrait, 720x1280).
 typedef struct {
   int16_t x, y, l, a;
 } tab5_ret_t;
 
-// Liga as tres pecas ao painel atual. Idempotente por handle: o repouso
-// destroi e recria o painel, e a proxima chamada registra de novo.
+// Attaches the three pieces to the current panel. Idempotent per handle: idle
+// destroys and recreates the panel, and the next call registers again.
 bool tab5_quadro_iniciar(esp_lcd_panel_handle_t painel);
 
-// Esquece o painel. Chamar ao destruir o painel (repouso).
+// Forgets the panel. Call when destroying the panel (idle).
 void tab5_quadro_encerrar(void);
 
-// Descarta um aviso de fim de frame que tenha chegado antes. Chamar LOGO
-// DEPOIS de pedir a troca - ver o porque em tab5_quadro.cpp.
+// Discards an end-of-frame signal that arrived earlier. Call RIGHT
+// AFTER requesting the switch - see why in tab5_quadro.cpp.
 void tab5_quadro_armar_espera(void);
 
-// Espera o painel comecar a varrer a pagina nova. false = estourou o prazo.
+// Waits for the panel to start scanning the new page. false = timed out.
 bool tab5_quadro_esperar_troca(uint32_t prazo_ms);
 
-// Copia o retangulo 'r' de 'origem' para o MESMO lugar de 'destino' (imagens
-// 720x1280 RGB565: as paginas do painel e a tela virtual), por DMA2D.
-// Bloqueia ate terminar.
+// Copies rectangle 'r' from 'origem' to the SAME place in 'destino' (720x1280
+// RGB565 images: the panel pages and the virtual screen), via DMA2D.
+// Blocks until finished.
 bool tab5_quadro_copiar(void* destino, const void* origem, const tab5_ret_t& r);
 
-// O mesmo, com ORIGEM em outro lugar: o retangulo 'r' do destino recebe o
-// retangulo do mesmo tamanho que comeca em (ox, oy) na origem. E a rolagem
-// pelo DMA: a pagina da frente, deslocada, vira a de tras. Origem e destino
-// NAO podem ser o mesmo buffer (o DMA nao trata sobreposicao).
+// The same, with the SOURCE elsewhere: rectangle 'r' of the destination gets the
+// same-sized rectangle starting at (ox, oy) in the source. This is scrolling
+// via DMA: the front page, shifted, becomes the back one. Source and destination
+// must NOT be the same buffer (the DMA does not handle overlap).
 bool tab5_quadro_copiar_de(void* destino, const tab5_ret_t& r, const void* origem, int ox, int oy);
 
-// Diagnostico.
-uint32_t tab5_quadro_underruns(void);   // avisos de underrun desde o boot
-uint32_t tab5_quadro_quadros(void);     // frames varridos pelo painel
+// Diagnostics.
+uint32_t tab5_quadro_underruns(void);   // underrun notices since boot
+uint32_t tab5_quadro_quadros(void);     // frames scanned by the panel
 
-// Frames que ATRASARAM (intervalo entre fins de frame 50% acima do periodo
-// normal) desde o boot. pior_us = o maior intervalo desde a ultima chamada
-// (e zera); periodo_us = o periodo normal medido.
+// Frames that were LATE (interval between ends of frame 50% above the normal
+// period) since boot. pior_us = the largest interval since the last call
+// (and resets it); periodo_us = the measured normal period.
 uint32_t tab5_quadro_atrasos(uint32_t* pior_us, uint32_t* periodo_us);
 
-// Quando (uptime, us) o painel terminou de varrer o ultimo frame. Com o
-// periodo acima, da a FASE da varredura: quem anima pode se alinhar a ela
-// (tela de bloqueio). 0 = painel ainda nao varreu nada.
+// When (uptime, us) the panel finished scanning the last frame. With the
+// period above, this gives the scan PHASE: whoever animates can align to it
+// (lock screen). 0 = panel has not scanned anything yet.
 int64_t tab5_quadro_ultimo_fim_us(void);
 
-// O ultimo atraso: em que core a ISR do painel roda, e que tarefa estava
-// rodando em cada core quando ela finalmente foi atendida (t0/t1: 16 bytes).
-// Devolve um contador que sobe a cada atraso registrado.
+// The last delay: which core the panel ISR runs on, and which task was
+// running on each core when it was finally serviced (t0/t1: 16 bytes).
+// Returns a counter that goes up with each recorded delay.
 uint32_t tab5_quadro_atraso_quem(int* nucleo_isr, char* t0, char* t1);
-int64_t  tab5_quadro_atraso_quando(void);   // uptime (us) do ultimo atraso
-// Onde o core estava (mepc) quando a ISR atrasada entrou - ver o .cpp.
+int64_t  tab5_quadro_atraso_quando(void);   // uptime (us) of the last delay
+// Where the core was (mepc) when the late ISR entered - see the .cpp.
 uint32_t tab5_quadro_atraso_pc(void);
-// Lista no console todas as interrupcoes alocadas (core, nivel, fonte).
+// Lists all allocated interrupts on the console (core, level, source).
 void     tab5_quadro_listar_irqs(void);
-// PROVA (console 'tela atrasar'): segura o core 'nucleo' por 'ms' (1-100),
-// 'vezes' vezes com 1 s entre elas; critica = portENTER_CRITICAL, senao
-// interrupcoes desligadas. Bloqueia ate terminar. false = argumento invalido.
+// TEST (console 'tela atrasar'): holds core 'nucleo' for 'ms' (1-100),
+// 'vezes' times with 1 s between them; critica = portENTER_CRITICAL, otherwise
+// interrupts disabled. Blocks until finished. false = invalid argument.
 bool     tab5_quadro_prova_atraso(int ms, bool critica, int nucleo, int vezes);
 
-// JANELA SEGURA PARA SECAO CRITICA LONGA. Entre dois frames o
-// DMA do painel tem ~0,5 ms para ser religado pela ISR - e uma secao critica
-// (interrupcoes desligadas no core) que caia nessa folga perde um frame
-// inteiro. Foi a causa do "FRAME ATRASADO" com os dois cores em IDLE: a
-// foto das tarefas do monitor (uxTaskGetSystemState, ~0,8 ms com a CPU a 360)
-// rodava 1x/s em fase fixa e de tempos em tempos caia bem na folga - todos os
-// atrasos tinham a mesma fracao de segundo (x,728 s).
+// SAFE WINDOW FOR A LONG CRITICAL SECTION. Between two frames the
+// panel DMA has ~0.5 ms to be restarted by the ISR - and a critical section
+// (interrupts disabled on the core) that lands in that gap loses a whole
+// frame. It was the cause of the "FRAME ATRASADO" with both cores IDLE: the
+// monitor's task snapshot (uxTaskGetSystemState, ~0.8 ms with the CPU at 360)
+// ran 1x/s at a fixed phase and every so often landed right in the gap - all
+// the delays had the same fraction of a second (x.728 s).
 //
-// Esta funcao volta logo DEPOIS de um fim de frame (a ISR ja religou o DMA):
-// dali ha ~14 ms ate a proxima folga. Quem vai ficar em secao critica por
-// mais de ~100 us chama isto antes. Sem painel (repouso), volta no prazo.
+// This function returns just AFTER an end of frame (the ISR has already
+// restarted the DMA): from there it is ~14 ms to the next gap. Anyone about to
+// sit in a critical section for more than ~100 us calls this first. Without a
+// panel (idle), it returns at the timeout.
 bool tab5_quadro_esperar_fim(uint32_t prazo_ms);
 
-// Erros do DSI host lidos a cada frame: devolve quantos frames tiveram
-// algum bit desde o boot; st0/st1 = OU dos bits desde a ultima chamada (e zera).
+// DSI host errors read every frame: returns how many frames have had
+// some bit set since boot; st0/st1 = OR of the bits since the last call (and resets).
 uint32_t tab5_quadro_erros_dsi(uint32_t* st0, uint32_t* st1);
 
-// PREENCHIMENTO POR HARDWARE (PPA, operacao FILL): pinta o retangulo 'r' de
-// 'destino' (720x1280 RGB565) com 'cor' (RGB565 como fica na memoria), sem a
-// CPU. Bloqueia ate terminar. false = indisponivel ou recusado - quem chamou
-// pinta pela CPU. Na primeira vez confere o pixel escrito; se a cor nao
-// bater (ordem de bytes), desliga sozinho e avisa no log.
+// HARDWARE FILL (PPA, FILL operation): paints rectangle 'r' of
+// 'destino' (720x1280 RGB565) with 'cor' (RGB565 as laid out in memory), without
+// the CPU. Blocks until finished. false = unavailable or refused - the caller
+// paints with the CPU. The first time it checks the written pixel; if the colour
+// does not match (byte order), it disables itself and logs a warning.
 bool tab5_quadro_preencher(void* destino, const tab5_ret_t& r, uint16_t cor);
 
-// BANCO DE PROVA DA COPIA. Copia o mesmo retangulo entre dois buffers
-// temporarios na PSRAM (alocados e devolvidos aqui) por cada motor
-// disponivel - PPA (SRM), DMA2D puro, GDMA AXI e CPU - com o painel varrendo
-// como sempre, e imprime ms e MB/s de cada um. E a medida que escolhe o motor
-// da copia entre paginas. Chamar do console; leva ~1 s.
+// COPY TEST BENCH. Copies the same rectangle between two temporary
+// buffers in PSRAM (allocated and freed here) with each available
+// engine - PPA (SRM), pure DMA2D, AXI GDMA and CPU - with the panel scanning
+// as usual, and prints ms and MB/s for each. It is the measurement that picks
+// the engine for page-to-page copies. Call from the console; takes ~1 s.
 void tab5_quadro_banco(void);

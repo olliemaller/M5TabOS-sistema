@@ -10,13 +10,13 @@
 
 static const char* TAG = "pool";
 
-// CLASSES DE VAGA. O consumo real medido (menor pilha livre em uso de verdade)
-// manda aqui: servicos de serial e apps cabem em 4 KB; o Mesh pede 6 KB, e
-// com o C6L no Grove fica com a vaga 0 o tempo todo. Por isso a ULTIMA vaga
-// tambem e de 6 KB: o comando do Terminal (os do console) roda nela. Medido
-// em 27/10: das cinco de 4 KB, so uma era usada de verdade.
-// O total e ~28 KB e substitui o que esses mesmos usos pediam ao heap,
-// no pior caso, como blocos separados.
+// SLOT CLASSES. The real measured consumption (lowest free stack in actual use)
+// rules here: serial services and apps fit in 4 KB; Mesh asks for 6 KB, and
+// with the C6L on Grove it holds slot 0 all the time. That is why the LAST slot
+// is also 6 KB: the Terminal command (the console's ones) runs in it. Measured
+// on 27/10: of the five 4 KB ones, only one was really used.
+// The total is ~28 KB and replaces what these same uses asked of the heap,
+// in the worst case, as separate blocks.
 #define VAGA_G  6144
 #define VAGA_M  4096
 
@@ -50,7 +50,7 @@ static vaga_t s_v[POOL_N];
 static bool   s_pronto = false;
 static std::atomic<uint32_t> s_dinamicas{0};
 
-// Menor pilha livre por nome de execucao.
+// Lowest free stack by run name.
 #define PILHAS_N 24
 static pool_pilha_t s_pilhas[PILHAS_N];
 static int          s_pilhas_n = 0;
@@ -73,22 +73,22 @@ static void anotar_pilha(const char* nome, uint32_t livre)
   taskEXIT_CRITICAL(&s_mux);
 }
 
-// Repinta com o padrao 0xA5 a parte LIVRE da pilha, para que o high water mark
-// da proxima execucao meca so a dela.
+// Repaints the FREE part of the stack with the 0xA5 pattern, so that the high water mark
+// of the next run measures only its own.
 //
-// ONDE COMECA A PILHA: NAO e o inicio do buffer (v->pilha). No P4 o IDF guarda
-// no pe do buffer a area de contexto dos coprocessadores (FPU e PIE) da tarefa,
-// e so depois dela comeca a pilha que o FreeRTOS conhece (pxStack). Nos
-// primeiros 32 bytes de pxStack, alinhados a 32, fica o vigia de fim de pilha
-// (FREERTOS_WATCHPOINT_END_OF_STACK): qualquer escrita ali derruba o sistema
-// com "Breakpoint" - de proposito, e o que pega estouro de pilha na hora.
-// Repintar a partir de "buffer + 128" apagava o contexto do FPU/PIE e batia no
-// vigia (Guru Meditation ao fechar a Camera). Por isso o inicio vem do proprio
-// FreeRTOS, e pula-se o vigia e o canario com folga.
+// WHERE THE STACK STARTS: it is NOT the start of the buffer (v->pilha). On the P4 the IDF keeps
+// at the foot of the buffer the task's coprocessor context area (FPU and PIE),
+// and only after it does the stack FreeRTOS knows about (pxStack) start. In the
+// first 32 bytes of pxStack, aligned to 32, sits the end-of-stack watchpoint
+// (FREERTOS_WATCHPOINT_END_OF_STACK): any write there brings the system down
+// with "Breakpoint" - on purpose, it is what catches a stack overflow immediately.
+// Repainting from "buffer + 128" erased the FPU/PIE context and hit the
+// watchpoint (Guru Meditation when closing the Camera). That is why the start comes from
+// FreeRTOS itself, and the watchpoint and canary are skipped with room to spare.
 static void __attribute__((noinline)) repintar(void)
 {
   const uintptr_t ini_pilha = (uintptr_t)pxTaskGetStackStart(nullptr);
-  uint8_t* base = (uint8_t*)(((ini_pilha + 31u) & ~(uintptr_t)31u) + 64u);   // vigia (32 B) + canario, com folga
+  uint8_t* base = (uint8_t*)(((ini_pilha + 31u) & ~(uintptr_t)31u) + 64u);   // watchpoint (32 B) + canary, with room to spare
   uint8_t* topo = (uint8_t*)__builtin_frame_address(0) - 512;
   if (topo > base) { memset(base, 0xA5, (size_t)(topo - base)); }
 }
@@ -97,11 +97,11 @@ static void vTaskVaga(void* a)
 {
   vaga_t* v = (vaga_t*)a;
   for (;;) {
-    // xTaskAbortDelay pode acordar aqui sem trabalho: volta a dormir.
+    // xTaskAbortDelay may wake here with no work: go back to sleep.
     if (xSemaphoreTake(v->acordar, portMAX_DELAY) != pdTRUE) { continue; }
     pool_corpo_t fn = v->fn;
     if (!fn) { continue; }
-    ulTaskNotifyTake(pdTRUE, 0);   // aviso que sobrou da execucao anterior
+    ulTaskNotifyTake(pdTRUE, 0);   // notice left over from the previous run
 
     fn(v->arg);
 
@@ -133,11 +133,11 @@ void pool_iniciar(void)
     fixos += v->bytes + (uint32_t)sizeof(StaticTask_t) + (uint32_t)sizeof(StaticSemaphore_t);
   }
   s_pronto = true;
-  ESP_LOGI(TAG, "%d tarefas fixas, %lu B reservados (pilhas e TCBs estaticos)",
+  ESP_LOGI(TAG, "%d fixed tasks, %lu B reserved (static stacks and TCBs)",
            POOL_N, (unsigned long)fixos);
 }
 
-// Execucao em tarefa comum, quando nao ha vaga.
+// Run in an ordinary task, when there is no slot.
 typedef struct { pool_corpo_t fn; void* arg; } dinamica_t;
 static void vTaskDinamica(void* a)
 {
@@ -155,9 +155,9 @@ bool pool_criar(pool_id_t* id, pool_corpo_t fn, void* arg, const char* nome,
   if (!fn) { return false; }
   if (!s_pronto) { pool_iniciar(); }
 
-  // A menor vaga livre que serve: o Mesh nao toma a de 6 KB quando cabe em 4.
-  // A ordem e 1..N-1 e depois a 0: as de 4 KB primeiro, e as de 6 KB (a
-  // ultima e a 0) so quando as menores acabaram ou nao servem.
+  // The smallest free slot that fits: Mesh does not take the 6 KB one when it fits in 4.
+  // The order is 1..N-1 and then 0: the 4 KB ones first, and the 6 KB ones (the
+  // last and 0) only when the smaller ones have run out or do not fit.
   vaga_t* esc = nullptr;
   for (int k = 1; k <= POOL_N && !esc; ++k) {
     vaga_t* v = &s_v[k % POOL_N];
@@ -179,10 +179,10 @@ bool pool_criar(pool_id_t* id, pool_corpo_t fn, void* arg, const char* nome,
   }
 
   s_dinamicas.fetch_add(1);
-  // Pedido maior que a maior vaga (ex. o Terminal, 8 KB) e escolha de quem
-  // pediu, nao falta de vaga: so aviso quando as vagas que serviriam acabaram.
+  // A request larger than the largest slot (e.g. the Terminal, 8 KB) is the requester's
+  // choice, not a lack of slots: only warn when the slots that would fit have run out.
   if (pilha <= VAGA_G) {
-    ESP_LOGW(TAG, "sem vaga para '%s' (%lu B) - tarefa comum", nome ? nome : "?", (unsigned long)pilha);
+    ESP_LOGW(TAG, "no slot for '%s' (%lu B) - ordinary task", nome ? nome : "?", (unsigned long)pilha);
   }
   dinamica_t* d = (dinamica_t*)malloc(sizeof(dinamica_t));
   if (!d) { return false; }

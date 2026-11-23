@@ -1,189 +1,189 @@
-// Teclado virtual do SISTEMA.
+// The SYSTEM on-screen keyboard.
 //
-// Um componente so para todo app que precisa de texto: a conversa (Mesh,
-// ESP-NOW), a senha do Wi-Fi, o PIN do Bluetooth. O app nao desenha tecla,
-// nao trata dedo e nao trava a navegacao - ele so:
+// A single component for every app that needs text: the conversation (Mesh,
+// ESP-NOW), the Wi-Fi password, the Bluetooth PIN. The app does not draw keys,
+// does not handle fingers and does not lock navigation - it only:
 //
 //   static tecvirt_t s_kb;
-//   abrir:      tecvirt_abrir(&s_kb, TECVIRT_SENHA); (o TIPO do campo; trava o INICIO)
-//   fechar:     tecvirt_fechar(&s_kb);               (tambem no ao_fechar do app)
-//   desenhar:   tecvirt_posicionar(&s_kb, a);        (a area, em TELA, em cuja base ele abre)
-//               tecvirt_pintar(&s_kb, d, completo);  (TODA passada: e barato quando nada mudou)
-//   nivel:      n = tecvirt_nivel(&s_kb, acoes, 8);  (no ao_tocar_nivel; aplica as acoes)
-//   clique:     a = tecvirt_clique(&s_kb, xs, ys);   (no ao_tocar, se tecvirt_contem)
+//   open:       tecvirt_abrir(&s_kb, TECVIRT_SENHA); (the field TYPE; locks INICIO/home)
+//   close:      tecvirt_fechar(&s_kb);               (also in the app's ao_fechar)
+//   draw:       tecvirt_posicionar(&s_kb, a);        (the area, in SCREEN coords, at whose base it opens)
+//               tecvirt_pintar(&s_kb, d, completo);  (EVERY pass: cheap when nothing changed)
+//   level:      n = tecvirt_nivel(&s_kb, acoes, 8);  (in ao_tocar_nivel; apply the actions)
+//   click:      a = tecvirt_clique(&s_kb, xs, ys);   (in ao_tocar, if tecvirt_contem)
 //
-// Nao substitui o fisico do ExtPort1: com os dois disponiveis o fisico ganha,
-// por ser mais rapido e nao roubar tela. COM O FISICO ENCAIXADO o virtual
-// aberto fica INVISIVEL: segue "aberto" para o app (o campo continua em
-// edicao e a tecla fisica chega pelo ao_teclar), mas altura 0, nao pinta, nao
-// responde ao dedo e nao trava a navegacao. Encaixar ou tirar com ele aberto
-// troca na proxima pintura, com redesenho completo do app.
+// It does not replace the physical one on ExtPort1: with both available the physical
+// one wins, being faster and not taking screen space. WITH THE PHYSICAL ONE DOCKED the open
+// virtual keyboard becomes INVISIBLE: it stays "open" for the app (the field is still being
+// edited and the physical key arrives via ao_teclar), but height 0, it does not paint, does not
+// respond to the finger and does not lock navigation. Docking or removing it while open
+// switches on the next paint, with a full redraw of the app.
 
 #pragma once
 #include "app.h"
 
-// O TIPO DO CAMPO - o app diz O QUE o campo e, uma vez, ao abrir (como o
-// inputType do Android e o keyboardType/returnKeyType do iPhone); o teclado
-// tira dai todo o resto. Uma tabela so (PERFIL, no .cpp) - nenhum app liga
-// maiuscula, acento ou rotulo por conta propria, e dois campos do mesmo tipo
-// se comportam igual em qualquer app.
+// THE FIELD TYPE - the app says WHAT the field is, once, on opening (like
+// Android's inputType and the iPhone's keyboardType/returnKeyType); the keyboard
+// derives everything else from that. A single table (PERFIL, in the .cpp) - no app turns on
+// capitals, accents or labels by itself, and two fields of the same type
+// behave the same in any app.
 //
-//   tipo        tecla verde   maiuscula   ". " no    acentos no   emoji   aceita
-//                             automatica  espaco 2x  toque longo
-//   TEXTO       OK            -           -          sim          -       tudo (nome de arquivo, titulo)
-//   ASCII       OK            -           -          -            -       so ASCII (servidor, usuario, SSID, nome do no)
-//   SENHA       OK            -           -          -            -       so ASCII
-//   NUMERO      OK            -           -          -            -       so digitos (PIN, porta)
-//   BUSCA       BUSCAR        -           -          sim          -       tudo
-//   PARAGRAFO   nova linha    frase       sim        sim          sim     tudo (Notas, conversa)
-//   CODIGO      nova linha    -           -          sim          -       tudo (o editor de Berry)
-//   COMANDO     nova linha    -           -          sim          -       tudo (Terminal, SSH: Enter roda)
+//   type        green key     automatic   ". " on    accents on   emoji   accepts
+//                             capitals    space x2   long press
+//   TEXTO       OK            -           -          yes          -       everything (file name, title)
+//   ASCII       OK            -           -          -            -       ASCII only (server, user, SSID, node name)
+//   SENHA       OK            -           -          -            -       ASCII only
+//   NUMERO      OK            -           -          -            -       digits only (PIN, port)
+//   BUSCA       SEARCH        -           -          yes          -       everything
+//   PARAGRAFO   new line      sentence    yes        yes          yes     everything (Notes, conversation)
+//   CODIGO      new line      -           -          yes          -       everything (the Berry editor)
+//   COMANDO     new line      -           -          yes          -       everything (Terminal, SSH: Enter runs)
 //
-// "frase" = maiuscula no comeco do texto, depois de ". ", "! ", "? " e de
-// linha nova; o app conta o texto e o cursor (tecvirt_contexto).
-// O que o campo nao aceita o teclado nem entrega (a variante acentuada nao
-// aparece; a pagina de emoji some).
+// "sentence" = capital at the start of the text, after ". ", "! ", "? " and after a
+// new line; the app reports the text and the cursor (tecvirt_contexto).
+// What the field does not accept the keyboard does not even deliver (the accented
+// variant does not appear; the emoji page disappears).
 enum {
   TECVIRT_TEXTO = 0, TECVIRT_ASCII, TECVIRT_SENHA, TECVIRT_NUMERO, TECVIRT_BUSCA,
   TECVIRT_PARAGRAFO, TECVIRT_CODIGO, TECVIRT_COMANDO, TECVIRT_TIPOS
 };
 
-// 4 fileiras de caracteres (a ultima com shift e apagar nas pontas) + a de comando.
+// 4 rows of characters (the last with shift and delete at the ends) + the command row.
 #define TECVIRT_FILAS    4
 
-// Altura que ele ocupa na area 'a' (a mesma passada a tecvirt_posicionar):
-// as fileiras e os vaos. DEPENDE DA ORIENTACAO - em pe as teclas sao mais
-// altas, porque la falta largura e sobra altura (ver o .cpp). Quem reserva
-// espaco para o teclado pergunta aqui, nunca guarda um numero.
+// Height it takes up in area 'a' (the same one passed to tecvirt_posicionar):
+// the rows and the gaps. DEPENDS ON ORIENTATION - in portrait the keys are
+// taller, because there width is short and height is plentiful (see the .cpp). Whoever reserves
+// space for the keyboard asks here, and never stores a number.
 //
-// SEM faixa morta no rodape: enquanto ele esta aberto a navegacao fica
-// travada e a faixa dela passa a ser do app (sistema_travar_navegacao), entao
-// o teclado encosta na barra de baixo e um dedo que passa da fileira de
-// comando ainda vale nela.
+// NO dead strip at the bottom: while it is open navigation is
+// locked and its strip belongs to the app (sistema_travar_navegacao), so
+// the keyboard sits right on the bottom bar and a finger that overshoots the command
+// row still counts on it.
 int tecvirt_altura(const area_t& a);
 
-// O que uma tecla faz (tecvirt_nivel/tecvirt_clique devolvem isto):
-//   >0  o CODEPOINT Unicode digitado, JA com o shift aplicado. ASCII na
-//       maioria; a segunda pagina de simbolos tem os acentos do portugues
-//       (a fonte do sistema os tem) e a pagina de emoji, codepoints acima
-//       de 0xFFFF (4 bytes em UTF-8) - quem guarda texto converte com
-//       tecvirt_utf8, ou usa tecvirt_editar, que ja faz isso. Campo so ASCII
-//       (senha, PIN) recusa emoji pelo tecvirt_editar(so_ascii).
-//   -2  apagar    -3  enviar    -4  nova linha    -5  fechar o teclado
-// Shift e troca de pagina sao do proprio teclado: trocam os rotulos e nunca
-// chegam ao app.
+// What a key does (tecvirt_nivel/tecvirt_clique return this):
+//   >0  the Unicode CODEPOINT typed, WITH shift ALREADY applied. ASCII mostly;
+//       the second symbols page has the Portuguese accents
+//       (the system font has them) and the emoji page, codepoints above
+//       0xFFFF (4 bytes in UTF-8) - whoever stores text converts with
+//       tecvirt_utf8, or uses tecvirt_editar, which already does it. An ASCII-only field
+//       (password, PIN) rejects emoji via tecvirt_editar(so_ascii).
+//   -2  delete    -3  send    -4  new line    -5  close the keyboard
+// Shift and page switching belong to the keyboard itself: they change the labels and never
+// reach the app.
 #define TECVIRT_APAGAR  (-2)
 #define TECVIRT_ENVIAR  (-3)
-#define TECVIRT_LINHA   (-4)   // a tecla verde dos tipos de varias linhas (PARAGRAFO, CODIGO, COMANDO)
+#define TECVIRT_LINHA   (-4)   // the green key of the multi-line types (PARAGRAFO, CODIGO, COMANDO)
 #define TECVIRT_FECHAR  (-5)
 
-// Identificador estavel de tecla: caracteres = fileira*16 + coluna; especiais = 64 + indice.
+// Stable key identifier: characters = row*16 + column; specials = 64 + index.
 #define TECVIRT_NENHUMA (-1)
 
-// Shift como em celular: um toque vale para UMA letra; dois toques seguidos
-// travam (caps lock); um toque com ele travado solta.
+// Shift as on a phone: one tap counts for ONE letter; two taps in a row
+// lock it (caps lock); a tap while locked releases it.
 #define TECVIRT_SHIFT_NAO    0
 #define TECVIRT_SHIFT_UMA    1
 #define TECVIRT_SHIFT_TRAVA  2
 
 typedef struct {
-  area_t   a;                     // area em TELA em cuja base ele abre (tecvirt_posicionar)
+  area_t   a;                     // area in SCREEN coords at whose base it opens (tecvirt_posicionar)
   bool     aberto;
-  bool     trava;                 // segura a trava da navegacao agora (aberto e visivel)
-  bool     frase;                 // maiuscula automatica no inicio de frase (tecvirt_frase)
+  bool     trava;                 // holds the navigation lock right now (open and visible)
+  bool     frase;                 // automatic capital at the start of a sentence (tecvirt_frase)
   uint8_t  shift;                 // TECVIRT_SHIFT_*
-  uint8_t  pagina;                // 0 = letras, 1 e 2 = simbolos, 3 = emoji
-  uint32_t shift_ms;              // quando o shift foi tocado (o segundo toque trava)
-  bool     sujo;                  // proxima pintura refaz tudo (abriu, mudou de lugar)
-  bool     rotulos;               // shift/pagina trocou: refaz as teclas, sem limpar o fundo
-  int16_t  tecla_sob, tecla_pinta;   // acesa sob o dedo / a que esta pintada acesa
+  uint8_t  pagina;                // 0 = letters, 1 and 2 = symbols, 3 = emoji
+  uint32_t shift_ms;              // when shift was tapped (the second tap locks it)
+  bool     sujo;                  // next paint redoes everything (opened, moved)
+  bool     rotulos;               // shift/page changed: redo the keys, without clearing the background
+  int16_t  tecla_sob, tecla_pinta;   // lit under the finger / the one currently painted lit
   int16_t  ultima_tecla;
   uint32_t tecla_ms;
-  uint32_t amostra;               // contador de chamadas a tecvirt_nivel (relogio do eco)
-  uint8_t  livre;                 // amostras sem dedo desde que abriu (ver o .cpp)
-  // Um por dedo (id do controlador; -1 = livre). 'tecla' = a que esta sob o
-  // dedo agora; 'firme' = a que ele digita ao subir (troca so depois de
-  // TECLA_FIRME amostras seguidas na nova: 'cand'/'cand_n'). 'eco' =
-  // reaparicao do dedo que acabou de soltar (o GT911 perde um dedo por uma
-  // amostra): nao digita de novo. 'repetiu' = o APAGAR segurado ja apagou
-  // sozinho (a soltura nao apaga de novo).
+  uint32_t amostra;               // count of calls to tecvirt_nivel (the echo clock)
+  uint8_t  livre;                 // samples without a finger since it opened (see the .cpp)
+  // One per finger (controller id; -1 = free). 'tecla' = the one under the
+  // finger now; 'firme' = the one it types on lifting (changes only after
+  // TECLA_FIRME consecutive samples on the new one: 'cand'/'cand_n'). 'eco' =
+  // reappearance of the finger that has just lifted (the GT911 loses a finger for one
+  // sample): does not type again. 'repetiu' = the held DELETE has already deleted
+  // by itself (the release does not delete again).
   struct { int8_t id; bool eco, repetiu; uint8_t cand_n; int16_t tecla, firme, cand, x, y; uint32_t desde, rep_ms; } dedos[SISTEMA_TOQUES_MAX];
-  struct { int16_t tecla, x, y; uint32_t amostra, ms; } solta;   // a ultima soltura que digitou
-  // Medidas que dependem da largura (fonte de cada tecla especial), feitas
-  // uma vez por largura e nao a cada tecla pintada.
+  struct { int16_t tecla, x, y; uint32_t amostra, ms; } solta;   // the last release that typed
+  // Measurements that depend on the width (the font of each special key), done
+  // once per width and not on every key painted.
   int      med_larg;
   uint8_t  px_esp[8];
   uint8_t  tipo;                  // TECVIRT_TEXTO... (tecvirt_abrir / tecvirt_tipo)
-  // TOQUE LONGO NUMA LETRA: as variantes acentuadas numa faixa por cima,
-  // escolhidas escorregando o dedo (como no Android e no iPhone).
-  int8_t   pop_dedo;              // o indice em 'dedos' que abriu (-1 = fechada)
-  int16_t  pop_tecla;             // a tecla de onde ela saiu
-  uint8_t  pop_n, pop_sel;        // quantas variantes; a escolhida agora
-  int32_t  pop_cp[6];             // as variantes (com o shift aplicado)
-  int16_t  pop_x, pop_y, pop_l;   // a faixa (TELA): x, y e largura de cada celula
-  int16_t  pop_dedo_x;            // onde o dedo estava quando ela abriu
-  bool     pop_mexeu;             // o dedo ja escorregou (antes disso vale a 1a variante)
-  bool     pop_pintar;            // a faixa mudou: repintar
-  bool     pop_limpar;            // a faixa fechou: limpar o lugar dela e repintar as teclas
-  // ESPACO DUPLO = ". " (PARAGRAFO): a ultima acao e quando saiu, e os dois
-  // caracteres antes do cursor (o app conta pelo tecvirt_contexto - sem ele,
-  // nao ha ponto automatico: o teclado nao adivinha o texto).
+  // LONG PRESS ON A LETTER: the accented variants in a strip above,
+  // chosen by sliding the finger (as on Android and the iPhone).
+  int8_t   pop_dedo;              // the index in 'dedos' that opened it (-1 = closed)
+  int16_t  pop_tecla;             // the key it came from
+  uint8_t  pop_n, pop_sel;        // how many variants; the one chosen now
+  int32_t  pop_cp[6];             // the variants (with shift applied)
+  int16_t  pop_x, pop_y, pop_l;   // the strip (SCREEN): x, y and width of each cell
+  int16_t  pop_dedo_x;            // where the finger was when it opened
+  bool     pop_mexeu;             // the finger has already slid (before that the 1st variant counts)
+  bool     pop_pintar;            // the strip changed: repaint
+  bool     pop_limpar;            // the strip closed: clear its place and repaint the keys
+  // DOUBLE SPACE = ". " (PARAGRAFO): the last action and when it came out, and the two
+  // characters before the cursor (the app reports them via tecvirt_contexto - without it,
+  // there is no automatic full stop: the keyboard does not guess the text).
   int32_t  ult_acao;
   uint32_t ult_ms;
-  char     antes[2];              // [0] logo antes do cursor, [1] o anterior
+  char     antes[2];              // [0] just before the cursor, [1] the one before that
   bool     tem_contexto;
 } tecvirt_t;
 
-// Abre com o TIPO do campo (tabela acima). Abrir de novo, ja aberto, so troca o tipo.
+// Opens with the field TYPE (table above). Opening again while already open only changes the type.
 void tecvirt_abrir(tecvirt_t* t, uint8_t tipo = TECVIRT_TEXTO);
-// Troca o tipo com o teclado aberto (o mesmo teclado passa do campo do SSID
-// para o da senha): rotulos e regras mudam na hora.
+// Changes the type with the keyboard open (the same keyboard moves from the SSID field
+// to the password one): labels and rules change at once.
 void tecvirt_tipo(tecvirt_t* t, uint8_t tipo);
 void tecvirt_fechar(tecvirt_t* t);
 static inline bool tecvirt_aberto(const tecvirt_t* t) { return t->aberto; }
 
-// A area (coordenadas de TELA) em cuja BASE ele abre, na largura dela. Mudou,
-// a proxima pintura refaz tudo.
+// The area (SCREEN coordinates) at whose BASE it opens, at its width. If it changed,
+// the next paint redoes everything.
 void tecvirt_posicionar(tecvirt_t* t, const area_t& a);
 
-// O ponto (TELA) cai na faixa do teclado aberto?
+// Does the point (SCREEN) fall in the open keyboard's strip?
 bool tecvirt_contem(const tecvirt_t* t, int xs, int ys);
 
-// Chamar em TODA passada de desenho do app. 'completo' = o app limpou a area
-// (o teclado refaz tudo); sem ele, so o que mudou: a tecla que acendeu e a que
-// apagou, ou os rotulos depois do shift. Nada mudou, nao desenha nada.
+// Call on EVERY drawing pass of the app. 'completo' = the app cleared the area
+// (the keyboard redoes everything); without it, only what changed: the key that lit and the one that
+// went out, or the labels after shift. If nothing changed, it draws nothing.
 void tecvirt_pintar(tecvirt_t* t, lgfx::LovyanGFX& d, bool completo);
 
-// No ao_tocar_nivel do app, com o teclado aberto: le os dedos (sistema_toques),
-// acende a tecla que o ultimo vai digitar, e devolve em 'acoes' as teclas confirmadas nesta
-// amostra (na ordem em que os dedos soltaram). Pede o redesenho sozinho.
-// SEGURAR UMA LETRA (~450 ms) abre as variantes acentuadas dela ("a" -> á à
-// â ã ä); escorregar escolhe e soltar digita. Segurar o ponto da as
-// pontuacoes (! ? , ; : ...). Tudo dentro do teclado: o app nao muda nada.
+// In the app's ao_tocar_nivel, with the keyboard open: reads the fingers (sistema_toques),
+// lights the key the last one will type, and returns in 'acoes' the keys confirmed in this
+// sample (in the order the fingers lifted). Requests the redraw by itself.
+// HOLDING A LETTER (~450 ms) opens its accented variants ("a" -> á à
+// â ã ä); sliding chooses and lifting types. Holding the full stop gives the
+// punctuation (! ? , ; : ...). All inside the keyboard: the app changes nothing.
 int tecvirt_nivel(tecvirt_t* t, int* acoes, int max);
 
-// No ao_tocar, ponto em TELA dentro do teclado: rede para o toque rapido demais
-// para o nivel ter visto. Devolve a acao, ou 0 (nada a fazer).
+// In ao_tocar, a SCREEN point inside the keyboard: a safety net for a touch too quick
+// for the level handler to have seen. Returns the action, or 0 (nothing to do).
 int tecvirt_clique(tecvirt_t* t, int xs, int ys);
 
-// O TEXTO E O CURSOR do campo, contados pelo app sempre que um dos dois muda
-// (e logo depois de abrir) - nos tipos de texto corrido (PARAGRAFO): no
-// comeco do texto, depois de ". ", "! ", "? " ou de uma linha nova o shift
-// arma para UMA letra (caps lock nao e mexido), e o ESPACO DUPLO depois de
-// letra ou numero vira ". ". Nos outros tipos, nao faz nada.
+// THE FIELD'S TEXT AND CURSOR, reported by the app whenever either changes
+// (and right after opening) - in the running-text types (PARAGRAFO): at the
+// start of the text, after ". ", "! ", "? " or a new line the shift
+// arms for ONE letter (caps lock is not touched), and a DOUBLE SPACE after a
+// letter or number becomes ". ". In the other types, it does nothing.
 void tecvirt_contexto(tecvirt_t* t, const char* texto, int cursor);
 
-// ONDE FICA A TECLA que digita 'acao' agora (o caractere na pagina e no
-// shift atuais, ou TECVIRT_APAGAR/ENVIAR/FECHAR, ' ', ',', '.'): o centro, em
-// coordenadas de TELA. false = nao ha essa tecla na pagina atual. Para os
-// testes (testes/teclado e o 'tocar' do console), nao para o app.
+// WHERE THE KEY IS that types 'acao' right now (the character on the current page and
+// shift, or TECVIRT_APAGAR/ENVIAR/FECHAR, ' ', ',', '.'): the centre, in
+// SCREEN coordinates. false = there is no such key on the current page. For the
+// tests (testes/teclado and the console's 'tocar'), not for the app.
 bool tecvirt_centro(const tecvirt_t* t, int acao, int* xs, int* ys);
 
-// Codepoint -> UTF-8 em 'out' (ate 4 bytes, sem zero no fim). Devolve os bytes.
+// Codepoint -> UTF-8 in 'out' (up to 4 bytes, no trailing zero). Returns the byte count.
 int tecvirt_utf8(int cp, char out[4]);
 
-// EDICAO SIMPLES, para campo sem cursor (senha, nome): caractere entra no fim,
-// APAGAR tira o ultimo caractere inteiro (UTF-8). O que o TIPO nao aceita o
-// teclado ja nao entrega. 'cap' = tamanho do buffer (com o zero). Devolve true
-// se a acao era de edicao (caractere ou apagar) - as outras ficam com o app.
+// SIMPLE EDITING, for a field without a cursor (password, name): a character goes at the end,
+// DELETE removes the last whole character (UTF-8). What the TYPE does not accept the
+// keyboard no longer delivers. 'cap' = buffer size (including the zero). Returns true
+// if the action was an edit (character or delete) - the others are left to the app.
 bool tecvirt_editar(char* buf, size_t cap, int acao);

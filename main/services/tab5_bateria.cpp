@@ -20,32 +20,32 @@
 
 static const char* TAG = "bateria";
 
-// ---- os limites, tirados dos registros ----------------------------------------
-// Nas 4 descargas ate o fim (out/2026), o estimador chegou a 0% com o pacote
-// a ~7,00 V sob 80-100 mA - tensao "aberta" (V - I*R) de ~7,02 V, 3,51 V por
-// celula - e ainda sobravam 7 a 14 min ate o brownout (6,57 V).
-static const float PISO_COM_PCT_V  = 7.10f;  // 0% so vale com a tensao aberta abaixo disto (3,55 V/celula)
-static const float PISO_SOZINHO_V  = 6.90f;  // abaixo disto desliga mesmo que a % discorde (estimador perdido)
-static const float PISO_DURO_V     = 6.75f;  // a tensao lida, sem corrigir: o brownout esta a minutos
-static const int   CONFIRMAR_S     = 30;     // segundos seguidos no critico antes de desligar
-static const float DESCARGA_MA     = -5.0f;  // abaixo disto esta na bateria (acima: tomada)
-static const float CARGA_MA        = 20.0f;  // acima disto esta carregando
-static const float CABO_MA         = -8.0f;  // acima disto ha cabo (carregando ou cheia na tomada)
-static const int64_t GRAVAR_MAX_US = 8000000;  // espera do cartao antes de desligar de qualquer jeito
+// ---- the limits, taken from the logs ----------------------------------------
+// In the 4 discharges to the end (Oct 2026), the estimator reached 0% with the pack
+// at ~7.00 V under 80-100 mA - an "open" voltage (V - I*R) of ~7.02 V, 3.51 V per
+// cell - and there were still 7 to 14 min left until brownout (6.57 V).
+static const float PISO_COM_PCT_V  = 7.10f;  // 0% only counts with the open voltage below this (3.55 V/cell)
+static const float PISO_SOZINHO_V  = 6.90f;  // below this it shuts down even if the % disagrees (estimator lost)
+static const float PISO_DURO_V     = 6.75f;  // the voltage as read, uncorrected: brownout is minutes away
+static const int   CONFIRMAR_S     = 30;     // consecutive seconds in critical before shutting down
+static const float DESCARGA_MA     = -5.0f;  // below this it is on battery (above: mains)
+static const float CARGA_MA        = 20.0f;  // above this it is charging
+static const float CABO_MA         = -8.0f;  // above this there is a cable (charging or full on mains)
+static const int64_t GRAVAR_MAX_US = 8000000;  // wait for the SD card before shutting down regardless
 
 static int  s_notif   = -1;
-static int  s_nivel   = 0;      // aviso publicado: 0 nenhum, 20, 10 ou 5
-static int  s_critico = 0;      // contador de "critico", em segundos (o piso duro conta mais)
+static int  s_nivel   = 0;      // notice published: 0 none, 20, 10 or 5
+static int  s_critico = 0;      // "critical" counter, in seconds (the hard floor counts more)
 static bool s_desligando = false;
 static int64_t s_desligar_us = 0;
 static std::atomic<bool> s_gravou{false};
-static bool s_semeou = false;   // a decisao do boot ja foi tomada
+static bool s_semeou = false;   // the boot decision has already been made
 
-// A CARGA NA NVS. A RTC cobre o reinicio sem perder energia; desligado (pela
-// guarda, pelo botao) so a NVS lembra. No boot COM O CABO a curva le muito
-// alto (46% de verdade, 98% na curva, medido): ai o valor guardado vale mais.
-// Desligado o aparelho quase nao gasta, e se carregou desligado o guardado so
-// erra para menos - o fim de carga leva a 100% do mesmo jeito.
+// THE CHARGE IN NVS. RTC covers a restart without losing power; powered off (by the
+// guard, by the button) only NVS remembers. At boot WITH THE CABLE the curve reads far
+// too high (46% in reality, 98% on the curve, measured): then the stored value is worth more.
+// Switched off the device uses almost nothing, and if it charged while off the stored value only
+// errs low - the end of charge takes it to 100% anyway.
 static void guardar_soc(bool agora)
 {
   float soc;
@@ -59,14 +59,14 @@ static void guardar_soc(bool agora)
 static void decidir_boot(const tab5_medida_t& m)
 {
   s_semeou = true;
-  if (!tab5_power_soc_da_curva_no_boot()) { return; }   // continuou da RTC: ja esta certo
+  if (!tab5_power_soc_da_curva_no_boot()) { return; }   // carried on from RTC: already correct
   const int g = ajustes_bateria_soc();
-  if (m.mA <= CARGA_MA || g == AJUSTES_SOC_NENHUM) { return; }   // em descanso a curva e boa
+  if (m.mA <= CARGA_MA || g == AJUSTES_SOC_NENHUM) { return; }   // at rest the curve is good
   float curva;
   tab5_power_soc_debug(nullptr, &curva, nullptr, nullptr);
   const float s = ((float)g < curva) ? (float)g : curva;
   if (tab5_power_soc_semear(s, "guardado (boot carregando)")) {
-    ESP_LOGW(TAG, "boot carregando: curva diria %.0f%%, parte do guardado %d%%", curva, g);
+    ESP_LOGW(TAG, "booted while charging: curve would say %.0f%%, starting from stored %d%%", curva, g);
   }
 }
 
@@ -83,13 +83,13 @@ static void publicar(int nivel, int pct)
   if (nivel == 5) { snprintf(r, sizeof(r), "%d%% - desliga em 0%%", pct); }
   else            { snprintf(r, sizeof(r), tr("%d%% - ligue na tomada"), pct); }
   notif_publicar(s_notif, 1, nivel == 20 ? NOTIF_ATENCAO : NOTIF_URGENTE, r);
-  ESP_LOGW(TAG, "aviso: %s", r);
+  ESP_LOGW(TAG, "notice: %s", r);
 }
 
-// No worker: gravar bloqueia, e a interface nao pode esperar o cartao.
+// On the worker: writing blocks, and the UI can't wait for the SD card.
 static void gravar_tudo(void*)
 {
-  ajustes_gravar_agora();   // a ultima carga (guardar_soc) ainda esta no prazo da NVS
+  ajustes_gravar_agora();   // the last charge (guardar_soc) is still within the NVS deadline
   tab5_log_descarregar_logo();
   tab5_sd_gravar_pendentes();
   s_gravou = true;
@@ -100,14 +100,14 @@ static void comecar_desligamento(const tab5_medida_t& m, float aberto)
   s_desligando  = true;
   s_desligar_us = esp_timer_get_time();
   guardar_soc(true);
-  ESP_LOGW(TAG, "bateria vazia (%.3f V, aberta %.3f V, %.0f mA, %d%%): desligando",
+  ESP_LOGW(TAG, "battery empty (%.3f V, open %.3f V, %.0f mA, %d%%): shutting down",
            m.volts, aberto, m.mA, m.pct);
   char linha[96];
   snprintf(linha, sizeof(linha), "%lld,%.3f,%.1f,%d\n",
            (long long)(esp_timer_get_time() / 1000000), m.volts, m.mA, m.pct);
   tab5_sd_anexar("Sistema", "desligou_bateria.csv", linha, "uptime_s,volts,mA,pct\n", true);
 
-  // Com a tela acesa, diz por que apagou. Em repouso o painel ja esta desligado.
+  // With the screen on, say why it went off. When idle the panel is already off.
   if (!tab5_power_em_repouso()) {
     M5.Display.fillScreen(TFT_BLACK);
     M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
@@ -122,21 +122,21 @@ static void comecar_desligamento(const tab5_medida_t& m, float aberto)
 void tab5_bateria_vigiar(void)
 {
   const tab5_medida_t m = tab5_power_ultima();
-  if (m.volts < 1.0f) { return; }   // sem leitura
+  if (m.volts < 1.0f) { return; }   // no reading
 
-  // CABO PRESENTE = NAO DORMIR. Com o chip em sono leve o USB nao responde a
-  // enumeracao: ligar o cabo com a tela apagada deixava o Mac sem porta serial
-  // (e sem gravacao) ate alguem tocar a tela (2026-10-17). O sinal nao pode ser
-  // o do USB (o SOF que o pendrive usa so e visto acordado): e a corrente da
-  // bateria. Na bateria o repouso puxa >= ~20 mA; com qualquer cabo ela fica
-  // positiva (carregando) ou perto de zero (cheia). A leitura vem a cada 5 s
-  // em repouso: o pior caso e o Mac tentar de novo uma vez.
+  // CABLE PRESENT = DON'T SLEEP. With the chip in light sleep USB doesn't respond to
+  // enumeration: plugging in the cable with the screen off left the Mac without a serial port
+  // (and without flashing) until someone touched the screen (2026-10-17). The signal can't be
+  // USB's (the SOF the USB drive uses is only seen while awake): it is the battery
+  // current. On battery, idle draws >= ~20 mA; with any cable it goes
+  // positive (charging) or near zero (full). The reading comes every 5 s
+  // when idle: the worst case is the Mac retrying once.
   const bool cabo = m.mA > CABO_MA;
   sistema_recurso(RECURSO_ENERGIA_EXTERNA, "cabo", cabo);
-  // O cabo CHEGOU enquanto o chip dormia: o Mac pode ter desistido da porta.
-  // Um segundo acordado (SOF chegando, se for computador) e o console se
-  // reanuncia se ninguem o enxergou.
-  static bool    s_cabo_antes = true;      // boot com cabo: ja enumerou acordado
+  // The cable ARRIVED while the chip was asleep: the Mac may have given up on the port.
+  // One second awake (SOF arriving, if it is a computer) and the console
+  // re-announces itself if nobody saw it.
+  static bool    s_cabo_antes = true;      // boot with cable: already enumerated while awake
   static bool    s_dormia = false;
   static int64_t s_cabo_us = 0;
   if (cabo && !s_cabo_antes) { s_cabo_us = esp_timer_get_time(); s_dormia = tab5_power_sono_leve_ligado() || tab5_power_em_repouso(); }
@@ -153,17 +153,17 @@ void tab5_bateria_vigiar(void)
     if (s_gravou || esp_timer_get_time() - s_desligar_us > GRAVAR_MAX_US) {
       ESP_LOGW(TAG, "powerOff");
       M5.Power.powerOff();
-      // Voltou: algo segurou a energia (a tomada entrou no meio). Recomeca.
+      // It came back: something held the power (mains was plugged in midway). Start over.
       s_desligando = false; s_gravou = false; s_critico = 0;
     }
     return;
   }
 
-  // Na tomada: nenhum aviso, nenhum desligamento.
+  // On mains: no notice, no shutdown.
   if (m.mA > CARGA_MA) { publicar(0, m.pct); s_critico = 0; return; }
   if (m.mA > DESCARGA_MA) { s_critico = 0; return; }
 
-  // Os avisos seguem a % mostrada; so descem (a % nao sobe fora da carga).
+  // The notices follow the displayed %; they only go down (the % doesn't rise outside charging).
   const int nivel = (m.pct < 0) ? s_nivel : (m.pct <= 5) ? 5 : (m.pct <= 10) ? 10 : (m.pct <= 20) ? 20 : 0;
   if (nivel != 0 && (s_nivel == 0 || nivel < s_nivel)) { publicar(nivel, m.pct); }
 

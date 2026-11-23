@@ -10,8 +10,8 @@
 
 #define FORMATO "nota_%04lu.txt"
 
-// As duas primeiras linhas com texto (o titulo e a previa), sem espaco nas
-// pontas, cortadas num caractere inteiro. Le so o comeco do arquivo.
+// The first two lines with text (the title and the preview), without spaces at the
+// ends, cut on a whole character. Reads only the start of the file.
 static void ler_titulo(const char* arquivo, char titulo[NOTA_TITULO_MAX], char previa[NOTA_TITULO_MAX])
 {
   titulo[0] = previa[0] = 0;
@@ -43,7 +43,7 @@ int notas_listar(nota_t* out, int max, char prox[NOTA_ARQ_MAX])
   tab5_arq_item_t* it = (tab5_arq_item_t*)heap_caps_calloc(max, sizeof(tab5_arq_item_t), MALLOC_CAP_SPIRAM);
   if (!it) { return -1; }
   const int n = tab5_arq_listar(pasta, it, max, nullptr, TAB5_ARQ_ORDEM_DATA, ".txt");
-  // A pasta ainda nao existe (nenhuma nota): com o cartao ai, a lista e vazia.
+  // The folder doesn't exist yet (no notes): with the SD card present, the list is empty.
   const int r = n >= 0 ? n : (tab5_volume_disponivel(pasta) ? 0 : -1);
   unsigned long maior = 0;
   for (int i = 0; i < n; ++i) {
@@ -65,7 +65,7 @@ bool notas_ler(const char* arquivo, char* buf, int cap)
   if (!f) { return false; }
   size_t n = fread(buf, 1, cap - 1, f);
   fclose(f);
-  n = tab5_utf8_corte(buf, (int)n);   // arquivo maior: corta num caractere
+  n = tab5_utf8_corte(buf, (int)n);   // larger file: cut on a whole character
   buf[n] = 0;
   return true;
 }
@@ -76,7 +76,7 @@ bool notas_gravar(const char* arquivo, const char* texto)
   return tab5_sd_substituir(NOTAS_APP, arquivo, texto, strlen(texto));
 }
 
-// A copia do texto que o trabalho solto grava e libera.
+// The copy of the text that the detached job writes and frees.
 typedef struct { char arq[NOTA_ARQ_MAX]; char txt[]; } copia_t;
 
 static void trab_gravar_copia(void* a)

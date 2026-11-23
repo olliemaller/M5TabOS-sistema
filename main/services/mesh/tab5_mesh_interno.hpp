@@ -1,32 +1,32 @@
-// O que os arquivos do servico Mesh compartilham: as constantes e os tipos
-// usados por mais de um deles, o estado (declarado aqui, definido em
-// tab5_mesh.cpp ou no arquivo indicado) e as funcoes internas que cruzam
-// arquivos. So para eles: nenhum app inclui este header - app fala com o
-// servico por tab5_mesh.hpp.
+// What the Mesh service files share: the constants and types used by more
+// than one of them, the state (declared here, defined in tab5_mesh.cpp or in
+// the file indicated) and the internal functions that cross files. For them
+// only: no app includes this header - apps talk to the service through
+// tab5_mesh.hpp.
 //
-// O servico foi partido por assunto (so mudou de arquivo, nada de logica):
-//   tab5_mesh.cpp             estado, envios em voo e desfecho, tarefa, envio, fila de envio, API do servico
-//   mesh/tab5_mesh_hora.cpp       carimbo corrigido, que horas sao, hora ao vivo
-//   mesh/tab5_mesh_nos.cpp        tabela de nos, favoritos, busca, cache de nomes, NodeDB no cartao
-//   mesh/tab5_mesh_conversas.cpp  conversas e historico no cartao, apagadas, gravacao, ordem da coluna
-//   mesh/tab5_mesh_canais.cpp     canais do no
-//   mesh/tab5_mesh_receber.cpp    interpretacao das mensagens do radio
-//   mesh/tab5_mesh_gps.cpp        posicao do GPS para a malha
+// The service was split by subject (it only moved between files, no logic changed):
+//   tab5_mesh.cpp             state, in-flight sends and outcome, task, sending, send queue, service API
+//   mesh/tab5_mesh_hora.cpp       corrected timestamp, what time it is, live time
+//   mesh/tab5_mesh_nos.cpp        node table, favourites, search, name cache, NodeDB on the SD card
+//   mesh/tab5_mesh_conversas.cpp  conversations and history on the SD card, deleted ones, writing, column order
+//   mesh/tab5_mesh_canais.cpp     the node's channels
+//   mesh/tab5_mesh_receber.cpp    interpreting messages from the radio
+//   mesh/tab5_mesh_gps.cpp        GPS position for the mesh
 #pragma once
 
 #include "tab5_mesh.hpp"
 
 // ---------------------------------------------------------------------------
-// Constantes e tipos usados por mais de um arquivo
+// Constants and types used by more than one file
 // ---------------------------------------------------------------------------
-// NVS do proprio servico: o que o radio contou (nosso numero, canais,
-// favoritos), separado das preferencias da pessoa (ajustes).
+// The service's own NVS: what the radio told us (our number, channels,
+// favourites), kept apart from the person's preferences (settings).
 #define MESH_NVS "mesh"
 #define MESH_PASTA "Meshtastic"
 #define MESH_ARQ_ENVIOS "envios.txt"
-// O piso de 2020 e para nao aceitar carimbo de radio que ainda nao sincronizou
-// (ele manda 0, ou um numero pequeno de uptime) e ancorar a referencia no ano
-// de 1970 - o que faria todo no aparecer visto ha 56 anos.
+// The 2020 floor is so we don't accept a timestamp from a radio that hasn't synced yet
+// (it sends 0, or a small uptime number) and anchor the reference in the year
+// 1970 - which would make every node appear as seen 56 years ago.
 #define EPOCH_MINIMO 1577836800u          // 2020-01-01
 #define MESH_MAX_FAVS  32
 // Data (dentro do MeshPacket): 1=portnum 2=payload 6=request_id 9=bitfield
@@ -37,7 +37,7 @@
 #define PORT_TELEMETRIA 67
 
 // ---------------------------------------------------------------------------
-// Estado usado por mais de um arquivo (cada um definido no arquivo indicado)
+// State used by more than one file (each defined in the file indicated)
 // ---------------------------------------------------------------------------
 // tab5_mesh.cpp:
 extern bool s_servico_ativo;
@@ -78,7 +78,7 @@ extern bool s_nomes_lidos;
 extern uint32_t s_nodedb_ver_salva;
 
 // ---------------------------------------------------------------------------
-// Funcoes internas que cruzam arquivos (cada uma definida no arquivo indicado)
+// Internal functions that cross files (each defined in the file indicated)
 // ---------------------------------------------------------------------------
 // tab5_mesh.cpp:
 void anotar_envio(uint32_t id, uint32_t para);

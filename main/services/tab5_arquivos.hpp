@@ -1,55 +1,55 @@
-// ARQUIVOS - o motor de arquivos do sistema: listar, copiar, mover, apagar.
+// ARQUIVOS (FILES) - the system's file engine: list, copy, move, delete.
 //
-// POR QUE EXISTE. Cada app que precisava de arquivo fazia o proprio opendir
-// (Camera, Azimutal, Trilha, Exemplo, Arquivos), e copiar nao existia em
-// lugar nenhum - quem espetava um pendrive com musicas nao tinha como passa-
-// las para o cartao. Aqui fica o motor, uma vez; o app Arquivos (e o Berry)
-// so mostram e pedem. Regra da casa: servico no sistema, app so interface.
+// WHY IT EXISTS. Each app that needed files did its own opendir
+// (Camera, Azimutal, Trilha, Exemplo, Arquivos), and copying didn't exist
+// anywhere - someone who plugged in a USB flash drive full of music had no way to move
+// it onto the SD card. The engine lives here, once; the Arquivos app (and Berry)
+// only display and request. House rule: services in the system, apps are just UI.
 //
-// TUDO POR CAMINHO ABSOLUTO, em qualquer disco (services/tab5_volumes):
-// "/sdcard/Música/Rock", "/usb/Fotos/x.jpg". O servico segura o disco
-// (tab5_volume_montar) enquanto mexe nele - quem chama nao monta nada.
+// EVERYTHING BY ABSOLUTE PATH, on any disk (services/tab5_volumes):
+// "/sdcard/Música/Rock", "/usb/Fotos/x.jpg". The service holds the disk
+// (tab5_volume_montar) while working on it - the caller mounts nothing.
 //
-// O QUE APARECE E O QUE SE MEXE (o mesmo para todo app):
-//   - ESCONDIDO: nome que comeca com '.' (a .Lixeira, as pastas que o Mac
-//     deixa), "System Volume Information" e "$RECYCLE.BIN" do Windows, e os
-//     arquivos com senha do sistema (wifi.txt, wifi_no.txt em apps/).
-//     Escondido nao aparece, nao se le e nao se copia.
-//   - SO LEITURA: /sdcard/apps/ (os dados dos apps e do sistema) - menos
-//     /sdcard/apps/Berry/, onde moram os apps Berry (copiar um .be para la
-//     instala). Le-se e copia-se PARA FORA; nao se apaga, renomeia ou cola.
-//   - O resto do cartao e o pendrive inteiro: livres.
+// WHAT SHOWS AND WHAT CAN BE TOUCHED (the same for every app):
+//   - HIDDEN: names starting with '.' (the .Lixeira, the folders the Mac
+//     leaves), Windows' "System Volume Information" and "$RECYCLE.BIN", and the
+//     system's password files (wifi.txt, wifi_no.txt in apps/).
+//     Hidden doesn't show, can't be read and isn't copied.
+//   - READ ONLY: /sdcard/apps/ (app and system data) - except
+//     /sdcard/apps/Berry/, where the Berry apps live (copying a .be there
+//     installs it). It can be read and copied OUT; not deleted, renamed or pasted into.
+//   - The rest of the SD card and the whole USB flash drive: unrestricted.
 //
-// APAGAR NAO SOME: vai para a lixeira do proprio disco (<raiz>/.Lixeira),
-// que e esvaziada como acao separada (tab5_arq_esvaziar_lixeira).
+// DELETING DOESN'T VANISH: it goes to the disk's own recycle bin (<root>/.Lixeira),
+// which is emptied as a separate action (tab5_arq_esvaziar_lixeira).
 //
-// COPIAR E MOVER sao TRABALHO DE FUNDO: uma vaga do pool, prioridade baixa
-// (abaixo do tocador - musica tocando do cartao continua), blocos de 64 KB
-// com read()/write() POSIX (o stdio e ~10x mais lento no FAT). O trabalho
-// segue com o app fechado e com a tela apagada (os 5V do pendrive nao caem:
-// ele segura o disco), mostra o progresso na barra e avisa no fim. Pendrive
-// arrancado ou cartao emprestado ao computador viram erro limpo; o arquivo
-// pela metade e apagado. Um trabalho por vez.
+// COPY AND MOVE are a BACKGROUND JOB: a pool slot, low priority
+// (below the player - music playing from the SD card carries on), 64 KB blocks
+// with POSIX read()/write() (stdio is ~10x slower on FAT). The job
+// carries on with the app closed and the screen off (the USB drive's 5V doesn't drop:
+// it holds the disk), shows progress in the bar and notifies at the end. A USB drive
+// yanked out or an SD card lent to the computer become a clean error; the half-written
+// file is deleted. One job at a time.
 //
-// QUEM CHAMA: as funcoes que mexem no disco bloqueiam (montar o cartao,
-// FAT) - do worker (sistema_trabalho), nunca da tarefa de interface. As de
-// estado (tab5_arq_trabalho, a area de transferencia) sao seguras de
-// qualquer tarefa.
+// CALLERS: the functions that touch the disk block (mounting the SD card,
+// FAT) - from the worker (sistema_trabalho), never from the UI task. The
+// state ones (tab5_arq_trabalho, the clipboard) are safe from
+// any task.
 #pragma once
 
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
 
-#define TAB5_ARQ_NOME_MAX     96    // nome de um item, UTF-8, com o '\0'
-#define TAB5_ARQ_CAMINHO_MAX  256   // caminho absoluto, com o '\0'
+#define TAB5_ARQ_NOME_MAX     96    // name of an item, UTF-8, including the '\0'
+#define TAB5_ARQ_CAMINHO_MAX  256   // absolute path, including the '\0'
 #define TAB5_ARQ_LIXEIRA      ".Lixeira"
 
 
 // ---------------------------------------------------------------------------
-// LISTAR
+// LISTING
 // ---------------------------------------------------------------------------
-// O tipo, pela extensao - para o icone e o "abrir com".
+// The type, from the extension - for the icon and "open with".
 typedef enum {
   TAB5_ARQ_OUTRO = 0,
   TAB5_ARQ_PASTA,
@@ -59,146 +59,146 @@ typedef enum {
   TAB5_ARQ_BERRY,      // .be
 } tab5_arq_tipo_t;
 tab5_arq_tipo_t tab5_arq_tipo(const char* nome);
-// O nome termina em 'ext' (com o ponto, ex.: ".csv"; maiuscula ou minuscula)?
+// Does the name end in 'ext' (with the dot, e.g. ".csv"; upper or lower case)?
 bool tab5_arq_extensao_e(const char* nome, const char* ext);
 
 typedef struct {
-  char            nome[TAB5_ARQ_NOME_MAX];   // como esta no disco (UTF-8)
+  char            nome[TAB5_ARQ_NOME_MAX];   // as it is on disk (UTF-8)
   tab5_arq_tipo_t tipo;
-  uint64_t        bytes;   // arquivo: tamanho; pasta: 0 (somar e caro)
-  int64_t         data;    // ultima mudanca (epoch), 0 = desconhecida
+  uint64_t        bytes;   // file: size; folder: 0 (summing is expensive)
+  int64_t         data;    // last change (epoch), 0 = unknown
 } tab5_arq_item_t;
 
 typedef enum {
   TAB5_ARQ_ORDEM_NOME = 0,      // A-Z
-  TAB5_ARQ_ORDEM_NOME_INVERSA,  // Z-A (o log de hoje primeiro: log_2026-10-21.txt)
-  TAB5_ARQ_ORDEM_DATA,          // o mais novo primeiro
+  TAB5_ARQ_ORDEM_NOME_INVERSA,  // Z-A (today's log first: log_2026-10-21.txt)
+  TAB5_ARQ_ORDEM_DATA,          // newest first
 } tab5_arq_ordem_t;
 
-// As entradas VISIVEIS de 'pasta', pastas primeiro, na ordem pedida.
-// 'filtro': extensoes aceitas, ";" entre elas (".mp3;.wav"), ou nullptr =
-// todas; pastas passam sempre. Devolve quantas copiou (ate 'max'); 'total'
-// (pode ser nullptr) recebe quantas a pasta tem - pode passar de 'max'.
-// -1 = o disco nao esta ai ou a pasta nao abriu.
+// The VISIBLE entries of 'pasta', folders first, in the requested order.
+// 'filtro': accepted extensions, ";" between them (".mp3;.wav"), or nullptr =
+// all; folders always pass. Returns how many it copied (up to 'max'); 'total'
+// (may be nullptr) receives how many the folder has - may exceed 'max'.
+// -1 = the disk isn't there or the folder didn't open.
 int tab5_arq_listar(const char* pasta, tab5_arq_item_t* out, int max, int* total,
                     tab5_arq_ordem_t ordem, const char* filtro);
 
-// PERCORRER - cada entrada visivel de 'pasta', sem tabela e sem limite (uma
-// pasta com milhares de fotos), na ordem do disco. Rapido: nao le tamanho nem
-// data (no item vem 0) - quem precisa disso usa tab5_arq_listar. 'visita'
-// devolve false para parar. Devolve quantas visitou; -1 = a pasta nao abriu.
+// WALK - each visible entry of 'pasta', with no table and no limit (a
+// folder with thousands of photos), in disk order. Fast: doesn't read size or
+// date (the item gets 0) - whoever needs that uses tab5_arq_listar. 'visita'
+// returns false to stop. Returns how many it visited; -1 = the folder didn't open.
 typedef bool (*tab5_arq_visita_t)(const tab5_arq_item_t* item, void* ctx);
 int tab5_arq_percorrer(const char* pasta, tab5_arq_visita_t visita, void* ctx);
 
-// O MAIOR NUMERO entre os nomes que seguem 'formato' (um sscanf com UM %lu:
-// "foto_%04lu.bmp"). 0 = nenhum. E o "proximo arquivo" de quem grava
-// numerado (Camera, Trilha): a numeracao vem do disco, nao de uma variavel
-// que nasce zerada a cada boot.
+// The LARGEST NUMBER among names following 'formato' (an sscanf with ONE %lu:
+// "foto_%04lu.bmp"). 0 = none. It is the "next file" for whoever writes
+// numbered files (Camera, Trilha): the numbering comes from the disk, not from a variable
+// that is born zeroed on every boot.
 uint32_t tab5_arq_maior_numero(const char* pasta, const char* formato);
 
 // ---------------------------------------------------------------------------
-// PERMISSOES (as regras do topo; nao tocam no disco)
+// PERMISSIONS (the rules at the top; they don't touch the disk)
 // ---------------------------------------------------------------------------
-bool tab5_arq_visivel(const char* caminho);      // aparece, le e copia
-bool tab5_arq_gravavel(const char* pasta);       // pode criar e colar DENTRO dela
-bool tab5_arq_mexivel(const char* caminho);      // pode apagar, renomear, recortar
-bool tab5_arq_nome_valido(const char* nome);     // nome novo aceitavel no FAT
+bool tab5_arq_visivel(const char* caminho);      // shows, can be read and copied
+bool tab5_arq_gravavel(const char* pasta);       // can create and paste INSIDE it
+bool tab5_arq_mexivel(const char* caminho);      // can delete, rename, cut
+bool tab5_arq_nome_valido(const char* nome);     // acceptable new name on FAT
 
 // ---------------------------------------------------------------------------
-// OPERACOES RAPIDAS (bloqueiam pouco - mas tocam no disco: fora da interface)
+// QUICK OPERATIONS (block briefly - but touch the disk: outside the UI)
 // ---------------------------------------------------------------------------
 typedef enum {
   TAB5_ARQ_OK = 0,
-  TAB5_ARQ_ERRO_PROTEGIDO,   // area so leitura ou escondida
-  TAB5_ARQ_ERRO_NOME,        // nome invalido
-  TAB5_ARQ_ERRO_EXISTE,      // ja ha um item com esse nome (ou ja esta ali)
-  TAB5_ARQ_ERRO_DISCO,       // o disco nao esta ai (sem cartao, emprestado, pendrive saiu)
-  TAB5_ARQ_ERRO_OCUPADO,     // ja ha um trabalho de copia rodando
-  TAB5_ARQ_ERRO_ESPACO,      // nao cabe no destino
-  TAB5_ARQ_ERRO_DENTRO,      // pasta para dentro dela mesma
-  TAB5_ARQ_ERRO_FALHOU,      // o disco recusou (ver o log)
+  TAB5_ARQ_ERRO_PROTEGIDO,   // read-only or hidden area
+  TAB5_ARQ_ERRO_NOME,        // invalid name
+  TAB5_ARQ_ERRO_EXISTE,      // there is already an item with that name (or it is already there)
+  TAB5_ARQ_ERRO_DISCO,       // the disk isn't there (no SD card, lent out, USB drive removed)
+  TAB5_ARQ_ERRO_OCUPADO,     // a copy job is already running
+  TAB5_ARQ_ERRO_ESPACO,      // doesn't fit on the destination
+  TAB5_ARQ_ERRO_DENTRO,      // folder into itself
+  TAB5_ARQ_ERRO_FALHOU,      // the disk refused (see the log)
 } tab5_arq_erro_t;
-const char* tab5_arq_erro_texto(tab5_arq_erro_t e);   // para mostrar; nunca NULL
+const char* tab5_arq_erro_texto(tab5_arq_erro_t e);   // for display; never NULL
 
 tab5_arq_erro_t tab5_arq_criar_pasta(const char* pasta, const char* nome);
 
-// ARQUIVO NOVO AOS PEDACOS - o que vem de fora (baixar da internet, receber):
-// cria '<pasta>/<nome>' (nome repetido vira "x (2).ext"), segura o disco ate
-// fechar e, se nao terminou bem (manter = false, erro ao gravar, disco saiu),
-// APAGA o pedaco: nunca fica arquivo pela metade. read/write POSIX (rapido).
+// NEW FILE IN PIECES - what comes from outside (download from the internet, receive):
+// creates '<pasta>/<nome>' (a repeated name becomes "x (2).ext"), holds the disk until
+// closed and, if it didn't finish well (manter = false, write error, disk removed),
+// DELETES the piece: there's never a half-written file. POSIX read/write (fast).
 typedef struct { int fd; char caminho[TAB5_ARQ_CAMINHO_MAX + TAB5_ARQ_NOME_MAX]; char pasta[TAB5_ARQ_CAMINHO_MAX]; } tab5_arq_novo_t;
 tab5_arq_erro_t tab5_arq_novo_abrir(tab5_arq_novo_t* a, const char* pasta, const char* nome);
 bool            tab5_arq_novo_escrever(tab5_arq_novo_t* a, const void* dados, size_t n);
 tab5_arq_erro_t tab5_arq_novo_fechar(tab5_arq_novo_t* a, bool manter);
 tab5_arq_erro_t tab5_arq_renomear(const char* caminho, const char* novo_nome);
-// Para a lixeira do disco (rapido: so muda de pasta).
+// To the disk's recycle bin (fast: just changes folder).
 tab5_arq_erro_t tab5_arq_apagar(const char* caminho);
 
 // ---------------------------------------------------------------------------
-// COPIAR, MOVER, ESVAZIAR - trabalho de fundo
+// COPY, MOVE, EMPTY - background job
 // ---------------------------------------------------------------------------
-// Confere tudo na hora (permissoes, discos, pasta dentro dela mesma, um
-// trabalho por vez) e, se aceitou, comeca em segundo plano: TAB5_ARQ_OK =
-// comecou, nao "terminou". O fim e o progresso vem em tab5_arq_trabalho() e
-// pelo AVISO_ARQUIVOS (app.h). Os caminhos sao copiados: quem chama pode
-// liberar os seus. Nome repetido no destino vira "Nome (2).mp3".
+// Checks everything immediately (permissions, disks, folder into itself, one
+// job at a time) and, if accepted, starts in the background: TAB5_ARQ_OK =
+// started, not "finished". The end and progress come in tab5_arq_trabalho() and
+// via AVISO_ARQUIVOS (app.h). The paths are copied: the caller can
+// free its own. A repeated name at the destination becomes "Nome (2).mp3".
 #define TAB5_ARQ_ITENS_MAX  64
 tab5_arq_erro_t tab5_arq_copiar(const char* const* origens, int n, const char* destino, bool mover);
 
-// Quantos itens (soltos, sem entrar em pasta) a lixeira do disco de 'raiz'
-// tem. 0 = vazia ou sem disco. Toca no disco: fora da interface.
+// How many items (loose, without going into folders) the recycle bin of 'raiz''s disk
+// has. 0 = empty or no disk. Touches the disk: outside the UI.
 int tab5_arq_lixeira_itens(const char* raiz);
 
-// Apaga DE VEZ o que esta na lixeira do disco de 'raiz' ("/sdcard", "/usb"),
-// com o indice.
+// Deletes FOR GOOD what is in the recycle bin of 'raiz''s disk ("/sdcard", "/usb"),
+// along with the index.
 tab5_arq_erro_t tab5_arq_esvaziar_lixeira(const char* raiz);
 
-// LIXEIRA POR ITEM - cada apagar guarda a origem e a hora em <raiz>/.Lixeira/.indice.
+// RECYCLE BIN PER ITEM - each delete stores the origin and time in <root>/.Lixeira/.indice.
 typedef struct {
-  char     nome[TAB5_ARQ_NOME_MAX];       // como esta na lixeira (pode ser "x (2)")
-  char     origem[TAB5_ARQ_CAMINHO_MAX];  // caminho de onde saiu; "" = desconhecida
-  uint32_t quando;                        // epoch de quando foi apagado; 0 = desconhecido
-  uint64_t bytes;                         // arquivo: tamanho; pasta: soma de tudo dentro
+  char     nome[TAB5_ARQ_NOME_MAX];       // as it is in the bin (may be "x (2)")
+  char     origem[TAB5_ARQ_CAMINHO_MAX];  // path it came from; "" = unknown
+  uint32_t quando;                        // epoch of when it was deleted; 0 = unknown
+  uint64_t bytes;                         // file: size; folder: sum of everything inside
   bool     pasta;
 } tab5_arq_lixo_t;
 
-// Lista a lixeira, do mais recente para o mais antigo (sem data no fim).
-// Devolve quantos copiou (ate 'max'); 'total_bytes' (pode ser nullptr) recebe
-// o tamanho de TUDO. Soma pastas inteiras: pode ser lento, chamar de trabalho
-// de fundo (nunca da interface).
+// Lists the recycle bin, from most recent to oldest (undated at the end).
+// Returns how many it copied (up to 'max'); 'total_bytes' (may be nullptr) receives
+// the size of EVERYTHING. Sums whole folders: may be slow, call from a background
+// job (never from the UI).
 int tab5_arq_lixeira_listar(const char* raiz, tab5_arq_lixo_t* out, int max, uint64_t* total_bytes);
 
-// Devolve um item para a origem (recria as pastas que faltam; nome ocupado vira
-// "x (2)"; origem desconhecida = raiz do disco). Rapido (so renomeia), mas toca
-// no disco: fora da interface.
+// Returns an item to its origin (recreates missing folders; an occupied name becomes
+// "x (2)"; unknown origin = the disk's root). Fast (only renames), but touches
+// the disk: outside the UI.
 tab5_arq_erro_t tab5_arq_lixeira_restaurar(const char* raiz, const char* nome);
 
-// Apaga de vez UM item (pasta inteira). Pasta grande demora: chamar de trabalho
-// de fundo. ERRO_OCUPADO = ha copia/esvaziar rodando.
+// Deletes ONE item for good (a whole folder). A big folder takes time: call from a background
+// job. ERRO_OCUPADO = a copy/empty is running.
 tab5_arq_erro_t tab5_arq_lixeira_excluir(const char* raiz, const char* nome);
 
-// Exclui de vez os itens apagados ha mais de 'dias' dias (so os que tem data).
-// Devolve quantos. Pode demorar: trabalho de fundo. 0 se o relogio esta sem hora.
+// Deletes for good the items deleted more than 'dias' days ago (only those with a date).
+// Returns how many. May take time: background job. 0 if the clock has no time.
 int tab5_arq_lixeira_limpar_antigos(const char* raiz, int dias);
 
-// Quanto a lixeira do disco de 'raiz' pode pesar antes do aviso: 8% da capacidade
-// do disco, no minimo 256 MB e no maximo 10 GB. Toca no disco: fora da interface.
+// How much the recycle bin of 'raiz''s disk may weigh before the notice: 8% of the
+// disk's capacity, at least 256 MB and at most 10 GB. Touches the disk: outside the UI.
 uint64_t tab5_arq_lixeira_limite(const char* raiz);
 
-// Manutencao da lixeira de 'raiz' (trabalho de fundo): se o ajuste "limpar sozinho"
-// esta ligado, exclui o que passou de N dias; depois confere o tamanho e publica
-// (ou tira) o aviso "Lixeira" na central de avisos. Pode demorar.
+// Maintenance of 'raiz''s recycle bin (background job): if the "clean up automatically" setting
+// is on, deletes what is older than N days; then checks the size and publishes
+// (or removes) the "Lixeira" notice in the notification centre. May take time.
 void tab5_arq_lixeira_manter(const char* raiz);
 
-// Para o trabalho em curso (o arquivo pela metade e apagado; o que ja foi
-// copiado fica).
+// Stops the current job (the half-written file is deleted; what has already been
+// copied stays).
 void tab5_arq_cancelar(void);
 
 typedef enum {
-  TAB5_ARQ_PARADO = 0,   // nunca houve trabalho (ou o fim ja foi visto)
-  TAB5_ARQ_CONTANDO,     // medindo o que vai copiar
+  TAB5_ARQ_PARADO = 0,   // there has never been a job (or its end has already been seen)
+  TAB5_ARQ_CONTANDO,     // measuring what will be copied
   TAB5_ARQ_COPIANDO,
-  TAB5_ARQ_APAGANDO,     // a origem de um mover entre discos, ou a lixeira
+  TAB5_ARQ_APAGANDO,     // the source of a move between disks, or the recycle bin
   TAB5_ARQ_FEITO,
   TAB5_ARQ_FALHOU,
   TAB5_ARQ_CANCELADO,
@@ -207,28 +207,28 @@ typedef enum {
 typedef struct {
   tab5_arq_fase_t fase;
   bool     mover;
-  int      itens, itens_feitos;      // arquivos
+  int      itens, itens_feitos;      // files
   uint64_t bytes, bytes_feitos;
-  uint32_t kbps;                     // ritmo medio
-  char     atual[TAB5_ARQ_NOME_MAX]; // o arquivo da vez
+  uint32_t kbps;                     // average rate
+  char     atual[TAB5_ARQ_NOME_MAX]; // the current file
   char     destino[TAB5_ARQ_CAMINHO_MAX];
-  char     erro[96];                 // FALHOU: o que houve
-  uint32_t versao;                   // muda a cada passo (para redesenhar)
+  char     erro[96];                 // FALHOU: what happened
+  uint32_t versao;                   // changes on every step (for redrawing)
 } tab5_arq_trabalho_t;
 void tab5_arq_trabalho(tab5_arq_trabalho_t* out);
 bool tab5_arq_ocupado(void);
-// Quem mostrou o fim ao usuario (o Arquivos ao abrir): o aviso da barra sai
-// e a fase volta a PARADO.
+// Whoever showed the end to the user (Arquivos on opening): the bar notice goes
+// and the stage returns to PARADO.
 void tab5_arq_trabalho_visto(void);
 
 // ---------------------------------------------------------------------------
-// AREA DE TRANSFERENCIA - do sistema, nao do app: sobrevive a fechar o app
+// CLIPBOARD - the system's, not the app's: survives closing the app
 // ---------------------------------------------------------------------------
-// Copiar / Recortar guardam os caminhos; colar e o tab5_arq_copiar deles.
-// Recortado e colado com sucesso, a area esvazia; copiado, continua (cola de
-// novo noutra pasta).
+// Copy / Cut store the paths; paste is tab5_arq_copiar of them.
+// Cut and pasted successfully, the clipboard empties; copied, it stays (paste
+// again into another folder).
 bool tab5_arq_area_por(const char* const* caminhos, int n, bool recortar);
-int  tab5_arq_area(bool* recortar);                    // quantos itens (0 = vazia)
+int  tab5_arq_area(bool* recortar);                    // how many items (0 = empty)
 bool tab5_arq_area_item(int i, char* out, size_t tam);
 void tab5_arq_area_limpar(void);
 tab5_arq_erro_t tab5_arq_colar(const char* destino);

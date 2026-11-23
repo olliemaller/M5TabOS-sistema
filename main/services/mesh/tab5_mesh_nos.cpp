@@ -1,9 +1,9 @@
-// Servico Mesh - os NOS: a tabela e a ordem dela, os favoritos, a busca, o cache
-// de nomes e a NodeDB do Tab5 no cartao. Partido de tab5_mesh.cpp (o servico);
-// o que as partes compartilham esta em mesh/tab5_mesh_interno.hpp.
+// Mesh service - the NODES: the table and its order, favourites, search, the name
+// cache and the Tab5's NodeDB on the SD card. Split out of tab5_mesh.cpp (the service);
+// what the parts share lives in mesh/tab5_mesh_interno.hpp.
 
 #include "app.h"   // sistema_avisar
-#include "esp_attr.h"   // EXT_RAM_BSS_ATTR - buffers grandes na PSRAM
+#include "esp_attr.h"   // EXT_RAM_BSS_ATTR - large buffers in PSRAM
 #include <string.h>
 #include "esp_log.h"
 #include "esp_random.h"
@@ -21,10 +21,10 @@
 
 static const char *TAG = "mesh";
 
-// Ha quantos segundos o no foi ouvido; -1 = nao da para saber. Duas fontes,
-// nesta ordem:
-//   1. nosso proprio avistamento - exato, nao depende de relogio nenhum;
-//   2. o last_heard do radio contra a hora emprestada dele.
+// How many seconds ago the node was heard; -1 = no way to tell. Two sources,
+// in this order:
+//   1. our own sighting - exact, depends on no clock at all;
+//   2. the radio's last_heard against the time borrowed from it.
 static int32_t idade_do_no(const mesh_no_t& no)
 {
   const uint32_t ep = tab5_mesh_epoch();
@@ -33,16 +33,16 @@ static int32_t idade_do_no(const mesh_no_t& no)
   return -1;
 }
 
-// A ORDEM DA TABELA, a mesma do cliente web: o nosso no primeiro, depois do
-// ouvido mais recentemente ao mais antigo, e os sem idade conhecida no fim.
-// Antes era a ordem das vagas do vetor - um no que acabou de falar podia
-// estar no fim da lista, e a lista "embaralhava" a cada despejo. SEM TRAVA.
+// THE TABLE ORDER, the same as the web client: our node first, then from the
+// most recently heard to the oldest, and those with no known age at the end.
+// It used to be the order of the vector's slots - a node that had just spoken could
+// be at the end of the list, and the list "shuffled" on every eviction. NO LOCK.
 static uint32_t s_prox_fixado = 0;
-static int      fav_pos(uint32_t num);   // favoritos, mais abaixo
+static int      fav_pos(uint32_t num);   // favourites, further down
 
-// LUGAR FIXO dado NA CHEGADA do dado (pacote ou NodeInfo com SNR de radio), e
-// nao quando a tela pergunta: e ele que protege o no do despejo (achar_no),
-// e o despejo acontece com a tela fechada tambem. SEM TRAVA.
+// FIXED PLACE given ON ARRIVAL of the data (packet or NodeInfo with a radio SNR), and
+// not when the screen asks: it is what protects the node from eviction (achar_no),
+// and eviction happens with the screen closed too. NO LOCK.
 void fixar_se_pelo_ar(mesh_no_t* no)
 {
   if (no && !no->fixado && no->num != s_meu_num && tab5_mesh_no_pelo_ar(no)) {
@@ -50,36 +50,36 @@ void fixar_se_pelo_ar(mesh_no_t* no)
   }
 }
 
-// ORDEM EM CACHE. Com 256 vagas, ordenar a cada tab5_mesh_no(i) - uma vez por
-// linha desenhada - viraria milhoes de comparacoes por segundo. A ordem so
-// muda quando a tabela muda (s_nos_ver) ou quando o tempo passa (a idade da
-// faixa de baixo): refeita no maximo uma vez por segundo, ou na hora se algo
-// chegou. Com a trava tomada.
+// CACHED ORDER. With 256 slots, sorting on every tab5_mesh_no(i) - once per
+// drawn row - would become millions of comparisons per second. The order only
+// changes when the table changes (s_nos_ver) or when time passes (the age of the
+// lower band): redone at most once per second, or immediately if something
+// arrived. With the lock held.
 uint32_t s_nos_ver = 0;
 EXT_RAM_BSS_ATTR static int s_ordem[MESH_MAX_NOS];
 static int      s_ordem_n = 0;
 static uint32_t s_ordem_ver = UINT32_MAX;
 static uint32_t s_ordem_ms = 0;
-static uint32_t s_ordem_geracao = 0;   // +1 a cada ordenacao: a busca refaz o filtro so entao
+static uint32_t s_ordem_geracao = 0;   // +1 on every sort: only then does the search redo the filter
 
 static int ordem_nos(void)
 {
   if (s_ordem_ver == s_nos_ver && (tab5_agora_ms() - s_ordem_ms) < 1000) { return s_ordem_n; }
-  // MUDOU, MAS ACABOU DE ORDENAR: espera 250 ms. Com trafego denso a
-  // versao muda a cada pacote, e a pagina de nos pede uma linha de cada vez -
-  // eram varias ordenacoes de 256 nos por desenho. Um quarto de segundo de
-  // atraso na ordem nao se ve; o processamento, sim.
+  // CHANGED, BUT HAS JUST SORTED: wait 250 ms. With dense traffic the
+  // version changes on every packet, and the nodes page asks for one row at a time -
+  // that was several sorts of 256 nodes per draw. A quarter-second delay
+  // in the order can't be seen; the processing can.
   if (s_ordem_ver != UINT32_MAX && (tab5_agora_ms() - s_ordem_ms) < 250) { return s_ordem_n; }
   s_ordem_ver = s_nos_ver;
   s_ordem_ms  = tab5_agora_ms();
 
-  // Tres faixas:
-  //   0 - o nosso no;
-  //   F - os FAVORITOS (estrela), na ordem em que foram marcados;
-  //   1 - os ouvidos PELO AR, FIXOS: na ordem em que apareceram com SNR pela
-  //       primeira vez - nao descem quando outro fala;
-  //   2 - o resto (MQTT, ou sem SNR), do ouvido mais recentemente ao mais
-  //       antigo. Quem ganha SNR sobe para a faixa 1 e fica.
+  // Three bands:
+  //   0 - our node;
+  //   F - the FAVOURITES (star), in the order they were marked;
+  //   1 - those heard OVER THE AIR, FIXED: in the order they first appeared with
+  //       an SNR - they don't move down when someone else speaks;
+  //   2 - the rest (MQTT, or no SNR), from most recently heard to the
+  //       oldest. Whoever gains an SNR moves up to band 1 and stays.
   EXT_RAM_BSS_ATTR static int64_t chave[MESH_MAX_NOS];
   int n = 0;
   for (int i = 0; i < MESH_MAX_NOS; ++i) {
@@ -89,7 +89,7 @@ static int ordem_nos(void)
     int64_t k;
     const int fp = fav_pos(no.num);
     if (no.num == s_meu_num) { k = -1; }
-    else if (fp >= 0)        { k = fp; }                         // favoritos, na ordem em que foram marcados
+    else if (fp >= 0)        { k = fp; }                         // favourites, in the order they were marked
     else if (no.fixado)      { k = ((int64_t)1 << 20) + no.fixado; }
     else {
       int64_t idade = idade_do_no(no);
@@ -111,17 +111,17 @@ bool tab5_mesh_no_pelo_ar(const mesh_no_t* no)
 }
 
 // ---------------------------------------------------------------------------
-// FAVORITOS - a estrela, a mesma do no e do cliente web
+// FAVOURITES - the star, the same as the node's and the web client's
 // ---------------------------------------------------------------------------
-// O Meshtastic ja tem favoritos: NodeInfo.is_favorite (campo 10) no dump, e o
-// AdminMessage set_favorite_node (39) / remove_favorite_node (40) para mudar.
-// Usando os dele, a estrela marcada aqui aparece no cliente web e na tela do
-// no, e o no protege o favorito do despejo da NodeDB dele tambem.
+// Meshtastic already has favourites: NodeInfo.is_favorite (field 10) in the dump, and
+// AdminMessage set_favorite_node (39) / remove_favorite_node (40) to change them.
+// Using its own, a star marked here shows up in the web client and on the
+// node's screen, and the node also protects the favourite from eviction from its NodeDB.
 //
-// Guardados TAMBEM aqui (NVS), na ordem em que foram marcados - e a ordem no
-// topo da tabela. Sem o radio (modo internet) a lista local vale sozinha; a
-// mudanca feita assim fica PENDENTE e vai para o no no proximo dump. Com o
-// radio, o dump e a verdade: estrela tirada no cliente web some daqui tambem.
+// ALSO kept here (NVS), in the order they were marked - that is the order at the
+// top of the table. Without the radio (internet mode) the local list stands alone; a
+// change made like that stays PENDING and goes to the node on the next dump. With the
+// radio, the dump is the truth: a star removed in the web client disappears here too.
 #define MESH_NVS_FAVS  "favs"
 uint32_t s_favs[MESH_MAX_FAVS];
 int      s_n_favs = 0;
@@ -152,7 +152,7 @@ static void salvar_favs(void)
   nvs_close(h);
 }
 
-// Posicao na lista de favoritos; -1 = nao e. SEM TRAVA.
+// Position in the favourites list; -1 = not one. NO LOCK.
 static int fav_pos(uint32_t num)
 {
   recordar_favs();
@@ -160,15 +160,15 @@ static int fav_pos(uint32_t num)
   return -1;
 }
 
-// So a lista local (e a NVS, se mudou). SEM TRAVA.
+// Only the local list (and NVS, if it changed). NO LOCK.
 static void fav_aplicar(uint32_t num, bool quer)
 {
   const int pos = fav_pos(num);
   if (quer == (pos >= 0)) { return; }
   if (quer) {
-    if (s_n_favs >= MESH_MAX_FAVS) { ESP_LOGW(TAG, "favoritos cheios (%d)", MESH_MAX_FAVS); return; }
+    if (s_n_favs >= MESH_MAX_FAVS) { ESP_LOGW(TAG, "favourites full (%d)", MESH_MAX_FAVS); return; }
     s_favs[s_n_favs++] = num;
-    achar_no(num);   // favorito fica na tabela mesmo sem ter falado nesta sessao
+    achar_no(num);   // a favourite stays in the table even without having spoken this session
   } else {
     for (int i = pos; i < s_n_favs - 1; ++i) { s_favs[i] = s_favs[i + 1]; }
     --s_n_favs;
@@ -183,23 +183,23 @@ static int fav_pendente(uint32_t num)
   return -1;
 }
 
-// O no esta do outro lado e ja terminou o dump: da para mandar admin.
+// The node is on the other end and has finished the dump: admin can be sent.
 bool radio_aceita_admin(void)
 {
   return s_servico_ativo && s_meu_num != 0 && s_config_ok_ms != 0
       && (s_via == AJUSTES_MESH_SERIAL || (s_via == AJUSTES_MESH_BLUETOOTH && mesh_ble_conectado()));
 }
 
-// ToRadio{ packet: MeshPacket{ to: nos, decoded: Data{ portnum: ADMIN(6),
-// payload: <AdminMessage> }, id } }. Sem 'from' (= 0): e o que o no
-// reconhece como admin LOCAL, de um cliente conectado - aceito sem chave de
-// sessao (AdminModule.cpp, ramo mp.from == 0, da 2.5 ate a atual).
-// Unico caminho de AdminMessage do servico: favoritos e tab5_mesh_admin.
+// ToRadio{ packet: MeshPacket{ to: us, decoded: Data{ portnum: ADMIN(6),
+// payload: <AdminMessage> }, id } }. No 'from' (= 0): that is what the node
+// recognises as LOCAL admin, from a connected client - accepted without a session
+// key (AdminModule.cpp, branch mp.from == 0, from 2.5 to the current one).
+// The service's only AdminMessage path: favourites and tab5_mesh_admin.
 #define PORT_ADMIN 6
 bool tab5_mesh_interno_admin(const uint8_t* adm, size_t n_adm)
 {
   if (!adm || n_adm == 0 || n_adm > MESH_PAYLOAD_MAX + 33) { return false; }   // Data.payload: 233
-  if (s_meu_num == 0) { return false; }   // sem o nosso numero, o 'to' iria 0 - e 0 nao e o no
+  if (s_meu_num == 0) { return false; }   // without our number, 'to' would be 0 - and 0 is not the node
   const mesh_pb_envelope_t e = { s_meu_num, -1, PORT_ADMIN, adm, n_adm, esp_random() | 1u, 0, false };
   uint8_t quadro[MESH_PAYLOAD_MAX + 88];
   const size_t n = mesh_pb_to_radio(&e, quadro, sizeof(quadro));
@@ -217,11 +217,11 @@ static bool enviar_admin_favorito(uint32_t num, bool quer)
   pb_escritor_t w = pb_escritor(adm, sizeof(adm));
   pb_w_num(&w, quer ? 39 : 40, num);
   const bool ok = tab5_mesh_interno_admin(adm, pb_tamanho(&w));
-  ESP_LOGI(TAG, "favorito %08lX -> %s no no: %s", (unsigned long)num, quer ? "marcar" : "tirar", ok ? "enviado" : "falhou");
+  ESP_LOGI(TAG, "favourite %08lX -> %s on the node: %s", (unsigned long)num, quer ? "mark" : "unmark", ok ? "sent" : "failed");
   return ok;
 }
 
-// Fim do dump: o que foi mudado sem o radio vai agora. Com a trava.
+// End of dump: what was changed without the radio goes now. With the lock.
 void enviar_favs_pendentes(void)
 {
   if (!radio_aceita_admin()) { return; }
@@ -243,7 +243,7 @@ void tab5_mesh_definir_favorito(uint32_t num, bool quer)
   travar();
   if (num != s_meu_num) {
     fav_aplicar(num, quer);
-    // Para o no: agora, se ele esta ai; senao fica pendente para o dump.
+    // To the node: now, if it is there; otherwise it stays pending for the dump.
     int k = fav_pendente(num);
     if (radio_aceita_admin() && enviar_admin_favorito(num, quer)) {
       if (k >= 0) { s_fav_pend[k] = s_fav_pend[--s_n_fav_pend]; }
@@ -256,8 +256,8 @@ void tab5_mesh_definir_favorito(uint32_t num, bool quer)
   sistema_avisar(AVISO_MESH_NOS);
 }
 
-// O que o dump disse de um no (campo 10 ausente = false, e proto3). Pendente
-// nosso vence: e uma mudanca que o no ainda nao recebeu.
+// What the dump said about a node (field 10 absent = false, it's proto3). Our
+// pending change wins: it is a change the node hasn't received yet.
 void fav_do_radio(uint32_t num, bool fav)
 {
   if (num == s_meu_num || s_via == AJUSTES_MESH_INTERNET || fav_pendente(num) >= 0) { return; }
@@ -269,10 +269,10 @@ bool tab5_mesh_no(int idx, mesh_no_t* saida)
   bool ok = false;
   travar();
   const int n = ordem_nos();
-  if (idx >= 0 && idx < n && s_nos[s_ordem[idx]].usado) {   // ordem de ate 250 ms atras
+  if (idx >= 0 && idx < n && s_nos[s_ordem[idx]].usado) {   // order from up to 250 ms ago
     *saida = s_nos[s_ordem[idx]];
-    // Campo DERIVADO, preenchido so na copia: sem isso envelheceria entre a
-    // leitura e o desenho. Sem fonte nenhuma fica -1, e a tela escreve "?".
+    // DERIVED field, filled in only on the copy: without this it would age between
+    // the read and the draw. With no source at all it stays -1, and the screen writes "?".
     saida->idade_s = idade_do_no(*saida);
     saida->favorito = fav_pos(saida->num) >= 0;
     ok = true;
@@ -282,17 +282,17 @@ bool tab5_mesh_no(int idx, mesh_no_t* saida)
 }
 
 // ---------------------------------------------------------------------------
-// BUSCA NA TABELA (ver tab5_mesh.hpp)
+// SEARCHING THE TABLE (see tab5_mesh.hpp)
 // ---------------------------------------------------------------------------
 static const char* curto_conhecido(uint32_t num);
 
-// Minusculas e sem acento, para "jose" achar "José" e "BR" achar "br". So o
-// Latin-1 de duas bytes (C3 xx), que e onde estao os acentos do portugues; o
-// resto do UTF-8 passa como veio (um emoji so acha o mesmo emoji).
+// Lower case and without accents, so "jose" finds "José" and "BR" finds "br". Only
+// the two-byte Latin-1 (C3 xx), which is where Portuguese accents live; the
+// rest of UTF-8 passes through as is (an emoji only finds the same emoji).
 static void dobrar(const char* in, char* out, size_t tam)
 {
   static const char LATIN[64 + 1] =
-    "aaaaaaaceeeeiiii"   // C3 80..8F  (A-grave .. I-trema)
+    "aaaaaaaceeeeiiii"   // C3 80..8F  (A-grave .. I-diaeresis)
     "dnooooo*ouuuuyps"   // C3 90..9F
     "aaaaaaaceeeeiiii"   // C3 A0..AF
     "dnooooo/ouuuuypy";  // C3 B0..BF
@@ -306,9 +306,9 @@ static void dobrar(const char* in, char* out, size_t tam)
   out[o] = 0;
 }
 
-// O no bate com a busca (ja dobrada)? Nome longo, curto - os da tabela ou, sem
-// eles, os do cache de nomes, que e o que a linha mostra - e o id "!a1b2c3d4"
-// (com ou sem o '!'). SEM TRAVA: chamada de dentro dela.
+// Does the node match the search (already folded)? Long name, short - the table's or,
+// without them, the name cache's, which is what the row shows - and the id "!a1b2c3d4"
+// (with or without the '!'). NO LOCK: called from inside it.
 static bool no_bate(const mesh_no_t& no, const char* busca)
 {
   char t[MESH_NOME_LONGO + 8];
@@ -323,9 +323,9 @@ static bool no_bate(const mesh_no_t& no, const char* busca)
   return strstr(t, busca) != nullptr;
 }
 
-// O filtro em cache, como a ordem: a pagina pede uma linha de cada vez, e
-// filtrar 256 nos por linha desenhada seria o mesmo desperdicio. Refeito
-// quando a busca muda ou a ordem foi refeita. Com a trava tomada.
+// The filter is cached, like the order: the page asks for one row at a time, and
+// filtering 256 nodes per drawn row would be the same waste. Redone
+// when the search changes or the order was redone. With the lock held.
 EXT_RAM_BSS_ATTR static int s_busca_ordem[MESH_MAX_NOS];
 static int      s_busca_n = 0;
 static char     s_busca_txt[MESH_BUSCA_MAX] = "";
@@ -370,60 +370,60 @@ bool tab5_mesh_no_busca(const char* busca, int idx, mesh_no_t* saida)
 }
 
 // ---------------------------------------------------------------------------
-// CACHE DE NOMES DOS NOS
+// NODE NAME CACHE
 // ---------------------------------------------------------------------------
-// COMO O MESHTASTIC IDENTIFICA UM NO. O identificador e o "num" - um uint32
-// derivado dos ultimos 4 bytes do MAC do radio. Ele NAO muda: e ele que vai no
-// campo 1 do MeshPacket e e por ele que se endereca uma mensagem direta.
+// HOW MESHTASTIC IDENTIFIES A NODE. The identifier is the "num" - a uint32
+// derived from the last 4 bytes of the radio's MAC. It does NOT change: it is what goes in
+// field 1 of the MeshPacket and what a direct message is addressed by.
 //
-// O nome longo e o curto sao ETIQUETAS que a pessoa escolhe e pode trocar
-// quando quiser. Trocar o nome NAO cria outro no - o num continua o mesmo, e
-// para o sistema e o mesmo interlocutor com rotulo novo. Um no novo de verdade
-// e um num novo, e ai e outra conversa mesmo.
+// The long and short names are LABELS the person chooses and can change
+// whenever they like. Changing the name does NOT create another node - the num stays the same, and
+// to the system it is the same contact with a new label. A truly new node
+// is a new num, and then it really is another conversation.
 //
-// Por isso o arquivo da conversa sempre foi nomeado pelo NUM (no-A1B2C3D4.txt),
-// e isso estava certo desde o inicio. O que faltava era guardar a ETIQUETA: sem
-// o C6L plugado, s_nos esta vazio e a conversa nascia chamada "A1B2C3D4".
+// That is why the conversation file has always been named by NUM (no-A1B2C3D4.txt),
+// and that was right from the start. What was missing was storing the LABEL: without
+// the C6L plugged in, s_nos is empty and the conversation was born called "A1B2C3D4".
 //
-// Este cache resolve isso. Vive em nos.txt, uma linha por avistamento, e o
-// leitor fica com a ULTIMA de cada num - assim renomear e so acrescentar uma
-// linha, sem reescrever arquivo nenhum.
+// This cache solves that. It lives in nos.txt, one line per sighting, and the
+// reader keeps the LAST one for each num - so renaming is just appending a
+// line, without rewriting any file.
 //
-// HISTORICO, NAO "AO VIVO" - de proposito DESACOPLADO de MESH_MAX_NOS (32,
-// o tamanho da tabela AO VIVO em s_nos - ver achar_no() e o despejo do mais
-// antigo). Um historico de nos que so cresce - MESH_MAX_NOS era pequeno demais para
-// isso TAMBEM (o despejo da tabela ao vivo resolve "quem esta ativo agora",
-// mas nao "quem ja vi alguma vez"). Cada entrada e so 4+24+1 bytes; 256
-// delas sao ~8KB - nada para um ESP32-P4 com PSRAM.
+// HISTORY, NOT "LIVE" - deliberately DECOUPLED from MESH_MAX_NOS (32,
+// the size of the LIVE table in s_nos - see achar_no() and eviction of the
+// oldest). A node history that only grows - MESH_MAX_NOS was too small for
+// that AS WELL (evicting from the live table solves "who is active now",
+// but not "who have I ever seen"). Each entry is only 4+24+1 bytes; 256
+// of them are ~8KB - nothing for an ESP32-P4 with PSRAM.
 //
-// SOBRE A BUSCA ANTES DE ACRESCENTAR (a duvida): sim, precisa
-// - e uma busca LINEAR, sem indice nenhum, exatamente como ja era com 32.
-// Ela so roda quando uma NodeInfo chega (nao a cada pacote - NodeInfo e
-// esporadica) e uma vez por linha ao carregar o arquivo no boot. Com 256
-// entradas isso e no maximo 256 comparacoes de inteiro - microssegundos,
-// mesmo no pior caso. Nao compensa uma estrutura mais esperta (hash, arvore)
-// para um numero deste tamanho; so compensaria na casa dos milhares.
+// ON SEARCHING BEFORE APPENDING (the question): yes, it is needed
+// - and it is a LINEAR search, with no index at all, exactly as it was with 32.
+// It only runs when a NodeInfo arrives (not on every packet - NodeInfo is
+// sporadic) and once per line when loading the file at boot. With 256
+// entries that is at most 256 integer comparisons - microseconds,
+// even in the worst case. A cleverer structure (hash, tree) doesn't pay off
+// for a number this size; it would only pay off in the thousands.
 #define MESH_ARQ_NOS "nos.txt"
-// 1024: o cache de nomes enchia com os nos da internet e, cheio, recusava
-// nome novo - inclusive o de um vizinho de radio. ~53 KB na PSRAM.
+// 1024: the name cache filled up with internet nodes and, once full, refused
+// new names - including a radio neighbour's. ~53 KB in PSRAM.
 #define MESH_MAX_CONHECIDOS 1024
 
-// CURTO E LONGO, os dois - a tabela de nos saia toda sem nome. Antes so o curto persistia aqui
-// (ver o aviso grande junto de lembrar_nome() mais abaixo).
+// SHORT AND LONG, both - the node table came out entirely nameless. Previously only the short one persisted here
+// (see the big notice next to lembrar_nome() further down).
 typedef struct { uint32_t num; char curto[MESH_NOME_CURTO]; char longo[MESH_NOME_LONGO]; bool sujo; } no_conhecido_t;
 EXT_RAM_BSS_ATTR static no_conhecido_t s_conhecidos[MESH_MAX_CONHECIDOS];
 static int s_n_conhecidos = 0;
 
-// O ARQUIVO JA FOI LIDO NESTA SESSAO. Antes a guarda era "s_n_conhecidos ==
-// 0": se o cartao nao montava na hora da leitura, a tabela ficava vazia, o
-// dump do no a enchia, e da primeira vez que o cartao voltava TODOS os nos
-// iam de novo para o fim do arquivo - que so crescia, com as mesmas linhas,
-// a cada boot assim. Agora ninguem grava antes de ler (descarregar_nomes).
+// THE FILE HAS ALREADY BEEN READ THIS SESSION. The guard used to be "s_n_conhecidos ==
+// 0": if the SD card didn't mount at read time, the table stayed empty, the
+// node's dump filled it, and the first time the card came back ALL the nodes
+// went again to the end of the file - which only grew, with the same lines,
+// on every such boot. Now nobody writes before reading (descarregar_nomes).
 bool s_nomes_lidos = false;
 
-// SEM TRAVA: chamadas de dentro dela. Nulo (nao string vazia) quando nao ha
-// cache - "sem entrada" e "entrada vazia" sao a mesma coisa aqui, os dois
-// jeitos de dizer "nada para mostrar".
+// NO LOCK: called from inside it. Null (not an empty string) when there is no
+// cache - "no entry" and "empty entry" are the same thing here, both
+// ways of saying "nothing to show".
 static const char* curto_conhecido(uint32_t num)
 {
   for (int i = 0; i < s_n_conhecidos; ++i) {
@@ -440,11 +440,11 @@ const char* longo_conhecido(uint32_t num)
   return nullptr;
 }
 
-// O QUE AS FONTES DO SISTEMA DESENHAM. As fontes suaves cobrem ASCII e o
-// Latin-1 que o portugues usa (2 bytes em UTF-8, lider 0xC2/0xC3); emoji e
-// simbolos (3-4 bytes) viram caixinha. Copia so o desenhavel, sem espacos
-// nas pontas. "?" sozinho e o placeholder do Meshtastic para "ninguem
-// escolheu um curto" - vale como vazio.
+// WHAT THE SYSTEM FONTS DRAW. The smooth fonts cover ASCII and the
+// Latin-1 that Portuguese uses (2 bytes in UTF-8, lead byte 0xC2/0xC3); emoji and
+// symbols (3-4 bytes) become a box. Copies only what is drawable, without spaces
+// at the ends. "?" on its own is Meshtastic's placeholder for "nobody
+// chose a short name" - counts as empty.
 void nome_legivel(const char* in, char* out, size_t tam)
 {
   if (!tam) { return; }
@@ -456,7 +456,7 @@ void nome_legivel(const char* in, char* out, size_t tam)
       if (o + 2 >= tam) { break; }
       out[o++] = (char)p[0]; out[o++] = (char)p[1]; p += 2; continue;
     }
-    // Sequencia que a fonte nao tem: pula ela inteira.
+    // A sequence the font doesn't have: skip all of it.
     const int n = ((*p & 0xE0) == 0xC0) ? 2 : ((*p & 0xF0) == 0xE0) ? 3 : ((*p & 0xF8) == 0xF0) ? 4 : 1;
     for (int k = 0; k < n && *p; ++k) { ++p; }
   }
@@ -476,8 +476,8 @@ bool curto_utilizavel(const char* s)
   return t[0] != 0;
 }
 
-// SEM TRAVA: chamada de dentro dela (lembrar_nome, achar_ou_criar_conversa).
-// Ao vivo primeiro (mais fresco), depois o cache do cartao.
+// NO LOCK: called from inside it (lembrar_nome, achar_ou_criar_conversa).
+// Live first (fresher), then the SD card cache.
 void nome_exibicao(uint32_t num, char* out, size_t out_tam)
 {
   const char* curto = nullptr;
@@ -503,9 +503,9 @@ void tab5_mesh_nome_exibicao(uint32_t num, char* out, size_t out_tam)
   destravar();
 }
 
-// Ver o aviso completo em tab5_mesh.hpp. Wrapper fino sobre curto_conhecido()
-// (privada deste arquivo) - existe so para expor "ha cache, sem hex" para
-// quem, diferente de tab5_mesh_nome_exibicao(), NAO quer o fallback de hex.
+// See the full notice in tab5_mesh.hpp. Thin wrapper over curto_conhecido()
+// (private to this file) - exists only to expose "cached, no hex" to
+// callers who, unlike tab5_mesh_nome_exibicao(), do NOT want the hex fallback.
 bool tab5_mesh_nome_cache(uint32_t num, char* out, size_t out_tam)
 {
   const char* cache = curto_conhecido(num);
@@ -514,7 +514,7 @@ bool tab5_mesh_nome_cache(uint32_t num, char* out, size_t out_tam)
   return true;
 }
 
-// Irma de tab5_mesh_nome_cache(), para o nome LONGO - ver o aviso grande no
+// Sibling of tab5_mesh_nome_cache(), for the LONG name - see the big notice in the
 // .hpp.
 bool tab5_mesh_nome_longo_cache(uint32_t num, char* out, size_t out_tam)
 {
@@ -524,12 +524,12 @@ bool tab5_mesh_nome_longo_cache(uint32_t num, char* out, size_t out_tam)
   return true;
 }
 
-// Grava so quando MUDA. O node_info chega a cada apresentacao e a cada
-// telemetria; anotar sempre encheria o cartao com a mesma linha.
+// Writes only when it CHANGES. node_info arrives on every introduction and every
+// telemetry; always noting it down would fill the SD card with the same line.
 //
-// 'curto'/'longo': cada um NULO independentemente quando este NodeInfo nao
-// trouxe (ou trouxe algo inutilizavel) daquele campo - so atualiza o que
-// veio, nunca apaga o outro que ja estava no cache.
+// 'curto'/'longo' (short/long): each one NULL independently when this NodeInfo didn't
+// bring (or brought something unusable in) that field - only updates what
+// came, never erases the other one already in the cache.
 void lembrar_nome(uint32_t num, const char* curto, const char* longo)
 {
   const bool tem_curto = curto && curto[0];
@@ -559,15 +559,15 @@ void lembrar_nome(uint32_t num, const char* curto, const char* longo)
   }
   if (!mudou) { return; }
 
-  // NAO GRAVA AGORA - so marca. Gravar aqui montava e desmontava o cartao uma
-  // vez POR NO, e o radio despeja a lista inteira de uma vez na apresentacao:
-  // no boot sairam oito montagens em um segundo, cada uma com o aviso do LDO
-  // do SDMMC atras. A escrita vale um lote, nao um evento.
+  // DOES NOT WRITE NOW - only marks. Writing here mounted and unmounted the SD card once
+  // PER NODE, and the radio dumps the whole list at once on introduction:
+  // at boot that came to eight mounts in one second, each followed by the SDMMC
+  // LDO notice. Writing is worth a batch, not an event.
   s_conhecidos[idx].sujo = true;
 
-  // A conversa que ja exista passa a usar o nome novo, pela MESMA regra da
-  // exibicao (curto, longo, id). O ARQUIVO dela e nomeado pelo num, entao
-  // renomear aqui nao desgruda o historico.
+  // A conversation that already exists switches to the new name, by the SAME rule as
+  // display (short, long, id). ITS FILE is named by the num, so
+  // renaming here doesn't detach the history.
   for (int i = 0; i < MESH_MAX_CONVERSAS; ++i) {
     if (s_conv[i].usada && !s_conv[i].canal && s_conv[i].no == num) {
       nome_exibicao(num, s_conv[i].nome, sizeof(s_conv[i].nome));
@@ -575,29 +575,29 @@ void lembrar_nome(uint32_t num, const char* curto, const char* longo)
   }
 }
 
-// Descarrega os nomes pendentes. UMA montagem para todos.
+// Flushes the pending names. ONE mount for all of them.
 //
-// Chamada pela tarefa do mesh, espacada: o cartao e caro de montar e nome de no
-// nao e informacao urgente - se o aparelho reiniciar antes da descarga, o
-// proximo node_info reensina.
+// Called by the mesh task, spaced out: the SD card is expensive to mount and a node name
+// is not urgent information - if the device restarts before the flush, the
+// next node_info teaches it again.
 void descarregar_nomes(void)
 {
   int pendentes = 0;
   for (int i = 0; i < s_n_conhecidos; ++i) { if (s_conhecidos[i].sujo) { ++pendentes; } }
   if (pendentes == 0) { return; }
 
-  // Sem ter lido o arquivo, nao da para saber se o nome e novo: tenta ler
-  // agora; sem cartao, os pendentes esperam a proxima volta.
+  // Without having read the file, there's no telling whether the name is new: try reading
+  // now; with no SD card, the pending ones wait for the next round.
   if (!s_nomes_lidos) { carregar_nomes(); }
   if (!s_nomes_lidos) { return; }
   pendentes = 0;
   for (int i = 0; i < s_n_conhecidos; ++i) { if (s_conhecidos[i].sujo) { ++pendentes; } }
   if (pendentes == 0) { return; }
 
-  // FORMATO GANHOU UM CAMPO: "hex,curto,longo" - era so
-  // "hex,curto". carregar_nomes() (abaixo) le os dois formatos: uma linha
-  // antiga sem o segundo virgula so deixa o longo vazio, sem quebrar nada.
-  // Pelo gravador do sistema: entregar e na hora, gravar e em lote.
+  // THE FORMAT GAINED A FIELD: "hex,short,long" - it used to be just
+  // "hex,short". carregar_nomes() (below) reads both formats: an
+  // old line without the second comma just leaves the long one empty, breaking nothing.
+  // Through the system writer: handing over is immediate, writing is batched.
   for (int i = 0; i < s_n_conhecidos; ++i) {
     if (!s_conhecidos[i].sujo) { continue; }
     char linha[96];
@@ -606,22 +606,22 @@ void descarregar_nomes(void)
     tab5_sd_anexar(MESH_PASTA, MESH_ARQ_NOS, linha);
     s_conhecidos[i].sujo = false;
   }
-  ESP_LOGI(TAG, "%d nome(s) de no gravados", pendentes);
+  ESP_LOGI(TAG, "%d node name(s) written", pendentes);
 }
 
-// Le o cache do cartao. Ultima linha de cada num vence.
+// Reads the cache from the SD card. The last line for each num wins.
 //
-// DOIS FORMATOS aceitos - ver o aviso em descarregar_nomes(): "hex,curto"
-// (antigo) e "hex,curto,longo" (atual). A quebra de linha e removida ANTES
-// de procurar a segunda virgula - ela so pode estar no fim de verdade,
-// nao importa quantas virgulas vierem antes.
+// TWO FORMATS accepted - see the notice in descarregar_nomes(): "hex,short"
+// (old) and "hex,short,long" (current). The line break is removed BEFORE
+// looking for the second comma - it can only be at the real end,
+// however many commas come before it.
 void carregar_nomes(void)
 {
   if (!tab5_sd_montar()) { return; }
   FILE* f = tab5_sd_abrir(MESH_PASTA, MESH_ARQ_NOS, "r");
-  if (!f) { s_nomes_lidos = true; tab5_sd_desmontar(); return; }   // ainda nao existe
+  if (!f) { s_nomes_lidos = true; tab5_sd_desmontar(); return; }   // doesn't exist yet
 
-  // Quem ja estava na tabela antes da leitura veio do no ao vivo.
+  // Whoever was already in the table before the read came from the live node.
   EXT_RAM_BSS_ATTR static bool ao_vivo[MESH_MAX_CONHECIDOS];
   for (int i = 0; i < MESH_MAX_CONHECIDOS; ++i) { ao_vivo[i] = (i < s_n_conhecidos); }
 
@@ -630,15 +630,15 @@ void carregar_nomes(void)
   while (fgets(linha, sizeof(linha), f)) {
     char* resto = strchr(linha, ',');
     if (!resto) { continue; }
-    *resto++ = 0;   // linha = so o hex agora
+    *resto++ = 0;   // line = just the hex now
     ++linhas;
 
     char* fim = strpbrk(resto, "\r\n");
-    if (fim) { *fim = 0; }   // resto = "curto" ou "curto,longo", sem quebra
+    if (fim) { *fim = 0; }   // resto = "curto" or "curto,longo" (short[,long]), no line break
 
     char* curto = resto;
     char* longo = strchr(resto, ',');
-    if (longo) { *longo++ = 0; }   // formato novo: separa os dois campos
+    if (longo) { *longo++ = 0; }   // new format: split the two fields
 
     if (!curto[0] && (!longo || !longo[0])) { continue; }
 
@@ -649,8 +649,8 @@ void carregar_nomes(void)
     for (int i = 0; i < s_n_conhecidos; ++i) {
       if (s_conhecidos[i].num == num) { idx = i; break; }
     }
-    // O no ao vivo ja ensinou o nome antes desta leitura: ele vence, e so
-    // precisa ir para o arquivo se for diferente da ULTIMA linha dele la.
+    // The live node already taught the name before this read: it wins, and only
+    // needs to go to the file if it differs from its LAST line there.
     if (idx >= 0 && ao_vivo[idx]) {
       s_conhecidos[idx].sujo = strcmp(s_conhecidos[idx].curto, curto) != 0
                             || strcmp(s_conhecidos[idx].longo, longo ? longo : "") != 0;
@@ -670,14 +670,14 @@ void carregar_nomes(void)
   fclose(f);
   s_nomes_lidos = true;
 
-  // COMPACTA. O arquivo e "so acrescentar" (renomear = uma linha nova), entao
-  // cresce com linhas que a leitura acima ja descartou; e arquivos gravados
-  // antes da guarda s_nomes_lidos tem o mesmo no repetido dezenas de vezes.
-  // Com sobra demais, reescreve com uma linha por no - e ja leva junto o que
-  // estava pendente.
+  // COMPACT. The file is "append only" (renaming = a new line), so it
+  // grows with lines the read above already discarded; and files written
+  // before the s_nomes_lidos guard have the same node repeated dozens of times.
+  // With too much slack, rewrite with one line per node - taking along what
+  // was pending as well.
   if (linhas > s_n_conhecidos + 32) {
-    // O arquivo novo inteiro na PSRAM e UMA troca pela porta do sistema
-    // (tab5_sd_substituir) - nunca meio arquivo.
+    // The whole new file in PSRAM and ONE swap through the system gateway
+    // (tab5_sd_substituir) - never half a file.
     const size_t por = 8 + 3 + MESH_NOME_CURTO + MESH_NOME_LONGO;
     const size_t cap = (size_t)s_n_conhecidos * por + 1;
     char* txt = (char*)heap_caps_malloc(cap, MALLOC_CAP_SPIRAM);
@@ -689,19 +689,19 @@ void carregar_nomes(void)
       }
       if (k < cap && tab5_sd_substituir(MESH_PASTA, MESH_ARQ_NOS, txt, k)) {
         for (int i = 0; i < s_n_conhecidos; ++i) { s_conhecidos[i].sujo = false; }
-        ESP_LOGI(TAG, "cartao: nos.txt compactado de %d para %d linha(s)", linhas, s_n_conhecidos);
+        ESP_LOGI(TAG, "SD card: nos.txt compacted from %d to %d line(s)", linhas, s_n_conhecidos);
       }
       heap_caps_free(txt);
     }
   }
   tab5_sd_desmontar();
-  ESP_LOGI(TAG, "cartao: %d no(s) conhecido(s)", s_n_conhecidos);
+  ESP_LOGI(TAG, "SD card: %d known node(s)", s_n_conhecidos);
 }
 
 // ---------------------------------------------------------------------------
 
-// Acha ou cria a entrada do no. A tabela e pequena e a busca linear: com 32
-// entradas isso e mais rapido que qualquer indice, e nao ha alocacao.
+// Finds or creates the node's entry. The table is small and the search linear: with 32
+// entries that is faster than any index, and there's no allocation.
 mesh_no_t* achar_no(uint32_t num)
 {
   for (int i = 0; i < MESH_MAX_NOS; ++i) {
@@ -713,94 +713,94 @@ mesh_no_t* achar_no(uint32_t num)
       s_nos[i].usado = true;
       s_nos[i].num = num;
       s_nos[i].snr = -128.0f;
-      // SALTOS COMECA DESCONHECIDO, nao 0 (nos apareciam sem nome e sem
-      // saltos). memset zera para 0, que e
-      // EXATAMENTE o valor de "vizinho direto" - um no que so foi criado por
-      // achar_no() (visto num pacote, mas ainda sem NodeInfo) mostraria "0
-      // saltos" como se fosse confirmado, quando na verdade e so "ainda nao
-      // sei". So ler_node_info() (NodeInfo, campo 9) escreve um saltos de
-      // verdade; ate la, o sentinela evita a mentira por omissao.
+      // HOPS STARTS UNKNOWN, not 0 (nodes were appearing with no name and no
+      // hops). memset zeroes to 0, which is
+      // EXACTLY the value for "direct neighbour" - a node only created by
+      // achar_no() (seen in a packet, but no NodeInfo yet) would show "0
+      // hops" as if confirmed, when really it's just "don't know
+      // yet". Only ler_node_info() (NodeInfo, field 9) writes a real hop count;
+      // until then, the sentinel avoids lying by omission.
       s_nos[i].saltos = MESH_SALTOS_DESCONHECIDO;
       ++s_nos_ver;
       return &s_nos[i];
     }
   }
 
-  // TABELA CHEIA - isto devolvia nullptr e o no NOVO era
-  // ignorado para sempre: quem enchesse as vagas primeiro (nem sempre os
-  // nos mais relevantes - so os primeiros ouvidos desde o boot) trancava a
-  // tabela, e ninguem mais entrava, nem gente conversando via MQTT que nunca
-  // tinha aparecido antes. A tabela nunca trocava nos antigos por novos.
+  // TABLE FULL - this used to return nullptr and the NEW node was
+  // ignored forever: whoever filled the slots first (not always the
+  // most relevant nodes - just the first heard since boot) locked the
+  // table, and nobody else got in, not even people chatting over MQTT who had
+  // never appeared before. The table never swapped old nodes for new ones.
   //
-  // A SAIDA: despejar alguem (criterio logo abaixo). Isso e seguro porque mesh_no_t e so um CACHE
-  // de metadados ao vivo (nome, bateria, posicao) - o historico de mensagens
-  // mora no cartao, indexado pelo NUMERO do no, e sobrevive intacto ao no
-  // sair da tabela. Se o no despejado voltar a falar, ele reaparece na
-  // proxima NodeInfo, como um no "novo" comum.
-  // QUEM SAI, em tres passadas - a primeira que achar candidato decide:
-  //   0 - os da INTERNET (via_mqtt) nao fixos: sao muitos, voltam no proximo
-  //       pacote e nao sao alcancaveis sem a internet;
-  //   1 - qualquer nao fixo;
-  //   2 - qualquer um (tabela inteira de fixos - raro com 256).
-  // O nosso nunca. Dentro da passada, o de MAIOR idade - pela idade completa
-  // (avistamento nosso OU last_heard do radio), e nao so pelo avistamento:
-  // no do dump tem avistamento 0 e era despejado primeiro mesmo tendo sido
-  // ouvido ha um minuto, enquanto o resto do dump girava numa vaga so.
+  // THE WAY OUT: evict someone (criteria just below). That is safe because mesh_no_t is only a CACHE
+  // of live metadata (name, battery, position) - the message history
+  // lives on the SD card, indexed by the node's NUMBER, and survives intact when the node
+  // leaves the table. If the evicted node speaks again, it reappears on the
+  // next NodeInfo, like any "new" node.
+  // WHO LEAVES, in three passes - the first that finds a candidate decides:
+  //   0 - the INTERNET ones (via_mqtt) that aren't fixed: there are many, they come back on the next
+  //       packet and aren't reachable without the internet;
+  //   1 - any non-fixed one;
+  //   2 - anyone (a table full of fixed ones - rare with 256).
+  // Never ours. Within a pass, the OLDEST - by full age
+  // (our sighting OR the radio's last_heard), not just by sighting:
+  // a node from the dump has sighting 0 and was evicted first even if it had been
+  // heard a minute ago, while the rest of the dump cycled through a single slot.
   int mais_velho = -1;
   int64_t maior = -1;
   for (int pass = 0; pass < 3 && mais_velho < 0; ++pass) {
     for (int i = 0; i < MESH_MAX_NOS; ++i) {
       const mesh_no_t& c = s_nos[i];
-      if (c.num == s_meu_num || fav_pos(c.num) >= 0) { continue; }   // nem o nosso nem favorito
+      if (c.num == s_meu_num || fav_pos(c.num) >= 0) { continue; }   // neither ours nor a favourite
       if (pass == 0 && (c.fixado || !c.via_mqtt)) { continue; }
       if (pass == 1 && c.fixado) { continue; }
       int64_t idade = idade_do_no(c);
-      if (idade < 0) { idade = INT64_MAX / 2; }   // nunca ouvido: o mais velho de todos
+      if (idade < 0) { idade = INT64_MAX / 2; }   // never heard: the oldest of all
       if (idade > maior) { maior = idade; mais_velho = i; }
     }
   }
   if (mais_velho < 0) { mais_velho = 0; }
-  // SEM LOG AQUI DE PROPOSITO (poluia o log). Isto e estado normal de regime (a tabela FICA cheia numa malha com
-  // mais de 32 nos, e cada despejo e esperado, nao um erro) - so a CONTAGEM
-  // fica guardada, para consultar quando precisar em vez de aparecer sozinha
-  // toda hora. Ver tab5_mesh_despejos() e o comando "mesh" no console.
+  // NO LOG HERE ON PURPOSE (it cluttered the log). This is normal steady state (the table STAYS full in a mesh with
+  // more than 32 nodes, and each eviction is expected, not an error) - only the COUNT
+  // is kept, to look up when needed instead of appearing on its own
+  // all the time. See tab5_mesh_despejos() and the "mesh" console command.
   ++s_despejos;
   ++s_nos_ver;
   memset(&s_nos[mais_velho], 0, sizeof(s_nos[mais_velho]));
   s_nos[mais_velho].usado = true;
   s_nos[mais_velho].num = num;
   s_nos[mais_velho].snr = -128.0f;
-  s_nos[mais_velho].saltos = MESH_SALTOS_DESCONHECIDO;   // ver o aviso no ramo de cima
+  s_nos[mais_velho].saltos = MESH_SALTOS_DESCONHECIDO;   // see the notice in the branch above
   return &s_nos[mais_velho];
 }
 
 // ---------------------------------------------------------------------------
-// A NODEDB DO TAB5, NO CARTAO
+// THE TAB5'S NODEDB, ON THE SD CARD
 // ---------------------------------------------------------------------------
-// O rádio guarda no maximo MAX_NUM_NODES (100 no C6L ate a 2.7, 120 na 2.8):
-// constante do firmware dele. A tabela daqui tem 256 vagas e aprende tambem
-// pelo trafego ao vivo - e, guardada no cartao, sobrevive ao reinicio: o Tab5
-// passa a conhecer mais nos do que o radio consegue lembrar.
+// The radio keeps at most MAX_NUM_NODES (100 on the C6L up to 2.7, 120 on 2.8):
+// a constant in its firmware. The table here has 256 slots and also learns
+// from live traffic - and, kept on the SD card, it survives a restart: the Tab5
+// gets to know more nodes than the radio can remember.
 //
-// Binario com cabecalho (magia, versao, tamanho do registro): se mesh_no_t
-// mudar de forma numa versao nova, o arquivo velho e ignorado em vez de lido
-// torto. Gravado a cada 10 min se a tabela mudou, e ao parar o servico.
+// Binary with a header (magic, version, record size): if mesh_no_t
+// changes shape in a new version, the old file is ignored instead of read
+// wrongly. Written every 10 min if the table changed, and when the service stops.
 //
-// Ao carregar, o que e "desta sessao" volta zerado: avistamento local, SNR e o
-// lugar fixo no topo. Um no ouvido ontem nao esta "no ar" hoje; ele volta ao
-// topo quando for ouvido de novo.
+// On load, what is "from this session" comes back zeroed: local sighting, SNR and the
+// fixed place at the top. A node heard yesterday is not "on air" today; it returns to the
+// top when it is heard again.
 #define MESH_ARQ_NODEDB "nodedb.bin"
 typedef struct { char magia[4]; uint16_t versao; uint16_t tam; uint32_t n; } nodedb_cab_t;
-// A COPIA SO EXISTE ENQUANTO GRAVA OU LE (31 KB de PSRAM): era um vetor fixo,
-// usado duas vezes por boot e de 10 em 10 minutos.
+// THE COPY ONLY EXISTS WHILE WRITING OR READING (31 KB of PSRAM): it used to be a fixed
+// array, used twice per boot and every 10 minutes.
 static mesh_no_t* nodedb_copia(void)
 {
   return (mesh_no_t*)heap_caps_malloc(sizeof(mesh_no_t) * MESH_MAX_NOS, MALLOC_CAP_SPIRAM);
 }
 uint32_t s_nodedb_ver_salva = 0;
-// A NodeDB do cartao foi lida nesta subida do servico (ou, com o cartao
-// presente, nao existia). So entao a tabela pode substitui-la - uma tabela que
-// comecou vazia por falta de cartao apagaria os nos guardados.
+// The SD card's NodeDB was read on this start of the service (or, with the card
+// present, didn't exist). Only then may the table replace it - a table that
+// started empty for lack of an SD card would erase the stored nodes.
 static bool s_nodedb_lida = false;
 
 void salvar_nodedb(void)
@@ -815,9 +815,9 @@ void salvar_nodedb(void)
   const uint32_t ver = s_nos_ver;
   destravar();
   if (n == 0 || !s_nodedb_lida) { heap_caps_free(s_nodedb_copia); return; }
-  // Cabecalho e tabela num bloco so, e UMA troca pela porta do sistema: um
-  // reinicio no meio deixa a NodeDB antiga inteira, nunca meia - e com o
-  // cartao emprestado ao computador ela vai para o diario.
+  // Header and table in a single block, and ONE swap through the system gateway: a
+  // restart midway leaves the old NodeDB whole, never half - and with the
+  // SD card lent to the computer it goes to the journal.
   const size_t tam = sizeof(nodedb_cab_t) + sizeof(mesh_no_t) * (size_t)n;
   uint8_t* bloco = (uint8_t*)heap_caps_malloc(tam, MALLOC_CAP_SPIRAM);
   if (bloco) {
@@ -826,21 +826,21 @@ void salvar_nodedb(void)
     memcpy(bloco + sizeof(cab), s_nodedb_copia, sizeof(mesh_no_t) * (size_t)n);
     if (tab5_sd_substituir(MESH_PASTA, MESH_ARQ_NODEDB, bloco, tam)) {
       s_nodedb_ver_salva = ver;
-      ESP_LOGI(TAG, "cartao: %d no(s) na NodeDB do Tab5", n);
+      ESP_LOGI(TAG, "SD card: %d node(s) in the Tab5 NodeDB", n);
     }
     heap_caps_free(bloco);
   }
   heap_caps_free(s_nodedb_copia);
 }
 
-// Com a tabela vazia (logo depois do memset do iniciar). Le o cartao SEM a
-// trava (E/S lenta) para a copia, e so a passagem para a tabela e travada - a
-// tela pode estar lendo a tabela ao mesmo tempo.
+// With the table empty (right after the memset in iniciar). Reads the SD card WITHOUT the
+// lock (slow I/O) into the copy, and only the handover to the table is locked - the
+// screen may be reading the table at the same time.
 void carregar_nodedb(void)
 {
   s_nodedb_lida = false;
   if (!tab5_sd_montar()) { return; }
-  s_nodedb_lida = true;   // com o cartao: ou le, ou o arquivo nao existe (o primeiro salvar cria)
+  s_nodedb_lida = true;   // with the SD card: either it reads, or the file doesn't exist (the first save creates it)
   FILE* f = tab5_sd_abrir(MESH_PASTA, MESH_ARQ_NODEDB, "rb");
   if (!f) { tab5_sd_desmontar(); return; }
   mesh_no_t* s_nodedb_copia = nodedb_copia();
@@ -852,7 +852,7 @@ void carregar_nodedb(void)
     const int total = (cab.n < MESH_MAX_NOS) ? (int)cab.n : MESH_MAX_NOS;
     lidos = (int)fread(s_nodedb_copia, sizeof(mesh_no_t), (size_t)total, f);
   } else {
-    ESP_LOGW(TAG, "cartao: nodedb.bin de outra versao - ignorado");
+    ESP_LOGW(TAG, "SD card: nodedb.bin from another version - ignored");
   }
   fclose(f);
   tab5_sd_desmontar();
@@ -862,7 +862,7 @@ void carregar_nodedb(void)
   for (int i = 0; i < lidos && n < MESH_MAX_NOS; ++i) {
     mesh_no_t no = s_nodedb_copia[i];
     if (no.num == 0) { continue; }
-    // Os da rede americana (removida) ficavam marcados aqui: nao voltam.
+    // Those from the American network (removed) were marked here: they don't come back.
     if (no.rede_antiga != 0) { continue; }
     no.usado = true;
     no.visto_local_ms = 0;
@@ -876,12 +876,12 @@ void carregar_nodedb(void)
   s_nodedb_ver_salva = s_nos_ver;
   destravar();
   heap_caps_free(s_nodedb_copia);
-  ESP_LOGI(TAG, "cartao: %d no(s) lembrado(s) da NodeDB do Tab5", n);
+  ESP_LOGI(TAG, "SD card: %d node(s) remembered from the Tab5 NodeDB", n);
 }
 
-// Ver o aviso completo em tab5_mesh.hpp. So LEITURA - nunca cria entrada
-// (diferente de achar_no): perguntar "qual o enlace deste no" nao pode ter o
-// efeito colateral de inventar um no na tabela.
+// See the full notice in tab5_mesh.hpp. READ ONLY - never creates an entry
+// (unlike achar_no): asking "what is this node's link" must not have the
+// side effect of inventing a node in the table.
 bool tab5_mesh_no_enlace(uint32_t num, bool* via_mqtt, uint8_t* saltos)
 {
   for (int i = 0; i < MESH_MAX_NOS; ++i) {

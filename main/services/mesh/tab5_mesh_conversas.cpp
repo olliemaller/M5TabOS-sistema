@@ -1,6 +1,6 @@
-// Servico Mesh - as CONVERSAS: o historico no cartao, as apagadas, a gravacao das
-// mensagens e a ordem da coluna. Partido de tab5_mesh.cpp (o servico); o que as
-// partes compartilham esta em mesh/tab5_mesh_interno.hpp.
+// Mesh service - the CONVERSATIONS: the history on the card, the deleted ones, saving
+// messages and the column order. Split out of tab5_mesh.cpp (the service); what the
+// parts share lives in mesh/tab5_mesh_interno.hpp.
 
 #include <string.h>
 #include "idioma.h"
@@ -19,12 +19,12 @@ static const char *TAG = "mesh";
 
 static int      visivel_de(int interno);
 
-// NAO LIDAS QUE SOBREVIVEM AO SERVICO. Parar o servico (troca de via, Wi-Fi
-// caindo no modo internet, Bluetooth caindo, C6L achado no Grove) zera
-// s_conv[] - e com ele as nao lidas. Visto ao vivo: o aviso da barra SUMIA
-// sem ninguem ter aberto o Mesh, so porque o servico subiu de novo por outra
-// via. Aqui fica a contagem de cada conversa ate ela ser LIDA de verdade;
-// achar_ou_criar_conversa() devolve o numero quando a conversa renasce.
+// UNREAD COUNTS THAT SURVIVE THE SERVICE. Stopping the service (route change, Wi-Fi
+// dropping in internet mode, Bluetooth dropping, C6L found on the Grove) clears
+// s_conv[] - and the unread counts with it. Seen live: the bar notice VANISHED
+// without anyone having opened Mesh, just because the service came up again via another
+// route. This keeps each conversation's count until it is really READ;
+// achar_ou_criar_conversa() returns the number when the conversation is reborn.
 typedef struct { bool usada; bool canal; uint8_t idx; uint32_t no; uint16_t n; } nao_lida_guardada_t;
 static nao_lida_guardada_t s_guardadas[MESH_MAX_CONVERSAS];
 
@@ -41,7 +41,7 @@ static nao_lida_guardada_t* guardada_de(bool canal, uint8_t idx, uint32_t no, bo
   return livre;
 }
 
-// Com a trava tomada (ou com o servico parado). Fotografa as conversas vivas.
+// With the lock held (or with the service stopped). Snapshots the live conversations.
 void guardar_nao_lidas(void)
 {
   for (int i = 0; i < MESH_MAX_CONVERSAS; ++i) {
@@ -60,32 +60,32 @@ bool ha_nao_lidas_guardadas(void)
   return false;
 }
 
-// Desfechos lidos do cartao, UMA VEZ por carga de historico.
+// Outcomes read from the card, ONCE per history load.
 //
-// A primeira versao chamava uma funcao "procura este id no arquivo" de DENTRO
-// do loop que le as mensagens. Com 40 mensagens na conversa isso virava 40
-// aberturas e 40 varreduras completas do envios.txt, no cartao, com dois
-// arquivos abertos ao mesmo tempo e o usuario esperando a conversa aparecer.
-// Custo O(mensagens x desfechos) para responder uma pergunta que cabe em 1KB
-// de RAM.
+// The first version called a "look up this id in the file" function from INSIDE
+// the loop that reads the messages. With 40 messages in the conversation that became 40
+// opens and 40 full scans of envios.txt, on the card, with two
+// files open at the same time and the user waiting for the conversation to appear.
+// O(messages x outcomes) cost to answer a question that fits in 1KB
+// of RAM.
 //
-// Agora o arquivo e lido uma vez para esta tabela e a consulta e em memoria.
+// Now the file is read once into this table and the lookup is in memory.
 #define MESH_DESFECHOS 64
 
 typedef struct {
   uint32_t id;
   uint8_t  estado;
   uint8_t  erro;
-  uint32_t quando;   // carimbo corrigido ("H"); 0 = o da linha da mensagem vale
+  uint32_t quando;   // corrected timestamp ("H"); 0 = the message line's own applies
 } desfecho_t;
 
-// ULTIMO VENCE. O arquivo so cresce, entao a linha mais recente de um id e a
-// verdade atual - um pacote pode ir de SEM_RESPOSTA para ENTREGUE quando um ACK
-// chega atrasado. Por isso sobrescrevemos a entrada em vez de parar na primeira.
+// LAST ONE WINS. The file only grows, so an id's most recent line is the
+// current truth - a packet can go from SEM_RESPOSTA to ENTREGUE when an ACK
+// arrives late. That is why we overwrite the entry instead of stopping at the first.
 //
-// Tabela cheia: descarta a mais ANTIGA (anel). O arquivo e cronologico, entao o
-// que sobra sao os 64 desfechos mais recentes - e o historico so mostra as
-// ultimas dezenas de mensagens de qualquer jeito.
+// Table full: discards the OLDEST (ring). The file is chronological, so
+// what remains are the 64 most recent outcomes - and the history only shows the
+// last few dozen messages anyway.
 static int carregar_desfechos(desfecho_t* tab, int max)
 {
   FILE* f = tab5_sd_abrir(MESH_PASTA, MESH_ARQ_ENVIOS, "r");
@@ -95,7 +95,7 @@ static int carregar_desfechos(desfecho_t* tab, int max)
   char linha[64];
   int voltas = 0;
   while (fgets(linha, sizeof(linha), f)) {
-    if ((++voltas % 128) == 0) { vTaskDelay(1); }   // nao segurar o core
+    if ((++voltas % 128) == 0) { vTaskDelay(1); }   // do not hog the core
     unsigned long lid = 0, lq = 0; unsigned est = 0, err = 0;
     const bool eh_hora = (sscanf(linha, "H,%8lX,%lu", &lid, &lq) == 2);
     if (!eh_hora && sscanf(linha, "E,%8lX,%u,%u", &lid, &est, &err) != 3) { continue; }
@@ -138,11 +138,11 @@ static uint8_t buscar_desfecho(const desfecho_t* tab, int n, uint32_t id, uint8_
 
 int tab5_mesh_num_msgs(void) { return s_n_msgs; }
 
-// NUNCA SATURA - ver o aviso grande junto de s_total_msgs. Existe SO para
-// quem precisa saber "chegou (ou saiu) mensagem desde a ultima vez que
-// olhei" (comparacao direta, nao pintura_mudou_*): tab5_mesh_num_msgs()
-// parece servir para isso mas nao serve, trava em MESH_MAX_MSGS (8) para
-// sempre.
+// NEVER SATURATES - see the big note next to s_total_msgs. It exists ONLY for
+// whoever needs to know "has a message arrived (or gone out) since I last
+// looked" (direct comparison, not pintura_mudou_*): tab5_mesh_num_msgs()
+// looks as if it would do for this but does not, it sticks at MESH_MAX_MSGS (8)
+// forever.
 uint32_t tab5_mesh_total_msgs(void) { return s_total_msgs; }
 
 bool tab5_mesh_msg(int i, mesh_msg_t* saida)
@@ -151,64 +151,64 @@ bool tab5_mesh_msg(int i, mesh_msg_t* saida)
   travar();
   *saida = s_msgs[i];
   destravar();
-  // Derivado na copia, igual ao idade_s dos nos: o estado muda o tempo todo e
-  // guardar na mensagem faria a copia envelhecer entre a leitura e o uso.
+  // Derived in the copy, like the nodes' idade_s: the state changes all the time and
+  // storing it in the message would make the copy go stale between reading and use.
   saida->envio = tab5_mesh_estado_envio(saida->id, &saida->erro);
   return true;
 }
 
 // ---------------------------------------------------------------------------
-// CONVERSAS APAGADAS - A FLAG QUE FALTAVA.
+// DELETED CONVERSATIONS - THE MISSING FLAG.
 // ---------------------------------------------------------------------------
-// O BUG: apagar uma conversa (tab5_mesh_esquecer_conversa) sempre so mexeu na
-// RAM, de proposito - "o cartao nao e tocado" era a regra, para o historico
-// sobreviver caso voces voltassem a se falar. So que tab5_mesh_carregar_do_
-// cartao() RELE A PASTA INTEIRA sempre que roda (abrir o app, sair do
-// repouso), e o arquivo no-XXXXXXXX.txt continuava la - entao a conversa
-// "apagada" voltava sozinha na proxima varredura. Nao era a mensagem
-// reaparecendo, era a PASTA sendo lida nova de novo sem lembrar da decisao.
+// THE BUG: deleting a conversation (tab5_mesh_esquecer_conversa) only ever touched
+// RAM, on purpose - "the card is not touched" was the rule, so the history would
+// survive in case you started talking again. But tab5_mesh_carregar_do_
+// cartao() REREADS THE WHOLE FOLDER every time it runs (opening the app, waking from
+// idle), and the no-XXXXXXXX.txt file was still there - so the "deleted"
+// conversation came back by itself on the next scan. It was not the message
+// reappearing, it was the FOLDER being read afresh again without remembering the decision.
 //
-// A CORRECAO E A FLAG QUE FOI PEDIDA: um arquivo pequeno, apagadas.txt, uma
-// linha por numero de no escondido. tab5_mesh_carregar_do_cartao() para de
-// recriar a conversa de quem esta nesta lista - o historico continua no
-// cartao (apagar so o REGISTRO, nao o passado, segue sendo a regra), so que
-// agora ele fica invisivel de proposito, nao por acidente.
+// THE FIX IS THE FLAG THAT WAS ASKED FOR: a small file, apagadas.txt, one
+// line per hidden node number. tab5_mesh_carregar_do_cartao() stops
+// recreating the conversation of anyone on this list - the history stays on the
+// card (deleting only the RECORD, not the past, is still the rule), but
+// now it is invisible on purpose, not by accident.
 //
-// UM NO SAI DA LISTA SOZINHO quando voces voltam a se falar de verdade - toque
-// deliberado em "conversar com este no" (tab5_mesh_conversa_com) ou mensagem
-// nova chegando (guardar_msg). Reler o cartao NAO conta como "voltar a se
-// falar"; so conteudo novo conta. UM CANAL sai igual - toque em "conversar com
-// este canal" (tab5_mesh_conversa_do_canal) ou mensagem nova nele.
+// A NODE LEAVES THE LIST BY ITSELF when you really start talking again - a deliberate
+// tap on "conversar com este no" (tab5_mesh_conversa_com) or a new message
+// arriving (guardar_msg). Rereading the card does NOT count as "talking
+// again"; only new content counts. A CHANNEL leaves the same way - a tap on "conversar com
+// este canal" (tab5_mesh_conversa_do_canal) or a new message on it.
 //
-// CANAL PASSOU A ENTRAR AQUI - ate entao so no direto podia ser
-// apagado ("canal nao se apaga, e devolver false e mais honesto que fingir",
-// dizia o comentario velho de tab5_mesh_esquecer_conversa). O pedido de
-// oferecer "canais disponiveis" para reabrir depois exigia justamente a
-// mesma flag que ja existia para no - so precisava aprender a guardar QUAL
-// TIPO de chave e essa, ja que indice de canal (0..7) e numero de no (sempre
-// um valor grande, derivado de MAC) nao podem se confundir no MESMO campo.
+// CHANNELS NOW COME IN HERE TOO - until then only a direct node could be
+// deleted ("canal nao se apaga, e devolver false e mais honesto que fingir",
+// said the old comment in tab5_mesh_esquecer_conversa). The request to
+// offer "available channels" to reopen later needed exactly the
+// same flag that already existed for nodes - it just had to learn to store WHICH
+// KIND of key it is, since a channel index (0..7) and a node number (always
+// a large value, derived from the MAC) must not be confused in the SAME field.
 typedef struct { bool canal; uint32_t chave; } apagado_t;
 #define MESH_ARQ_APAGADAS "apagadas.txt"
 
-#define MESH_MAX_APAGADOS 64   // conversas escondidas; nada a ver com a tabela de nos
+#define MESH_MAX_APAGADOS 64   // hidden conversations; nothing to do with the node table
 static apagado_t s_apagados[MESH_MAX_APAGADOS];
 static int       s_n_apagados = 0;
 static bool      s_apagados_carregado = false;
 
-// FORMATO DO ARQUIVO: uma linha por entrada.
-//   no direto:  "%08lX"   (como sempre foi - RETROCOMPATIVEL de proposito,
-//               nenhum arquivo apagadas.txt ja gravado precisa mudar)
-//   canal:      "K%u"     ('K' nunca e digito hexadecimal (0-9A-F), entao
-//               nunca se confunde com um numero de no legitimo lido do
-//               formato antigo)
+// FILE FORMAT: one line per entry.
+//   direct node: "%08lX"   (as it always was - BACKWARDS COMPATIBLE on purpose,
+//               no apagadas.txt file already written needs to change)
+//   channel:    "K%u"     ('K' is never a hexadecimal digit (0-9A-F), so it
+//               can never be confused with a legitimate node number read from the
+//               old format)
 static void carregar_apagados(void)
 {
-  // Sem cartao NAO conta como carregado: a lista da RAM nao pode virar o
-  // arquivo (desmarcar_apagada reescreve). Tenta de novo no proximo uso.
+  // No card does NOT count as loaded: the RAM list must not become the
+  // file (desmarcar_apagada rewrites it). Try again on next use.
   if (!tab5_sd_montar()) { return; }
-  s_apagados_carregado = true;   // com o cartao: uma leitura por sessao, mesmo se o arquivo faltar
-  // O ARQUIVO E A VERDADE: o que foi marcado antes desta leitura ja esta nele
-  // (tab5_sd_abrir aplica o diario e o pendente antes de abrir).
+  s_apagados_carregado = true;   // with the card: one read per session, even if the file is missing
+  // THE FILE IS THE TRUTH: whatever was marked before this read is already in it
+  // (tab5_sd_abrir applies the journal and the pending items before opening).
   s_n_apagados = 0;
   FILE* f = tab5_sd_abrir(MESH_PASTA, MESH_ARQ_APAGADAS, "r");
   if (!f) { tab5_sd_desmontar(); return; }
@@ -233,10 +233,10 @@ static void carregar_apagados(void)
   }
   fclose(f);
   tab5_sd_desmontar();
-  ESP_LOGI(TAG, "cartao: %d conversa(s) apagada(s) - ficam escondidas", s_n_apagados);
+  ESP_LOGI(TAG, "card: %d deleted conversation(s) - kept hidden", s_n_apagados);
 }
 
-// SEM TRAVA: chamada de dentro dela.
+// NO LOCK: called from inside it.
 bool esta_apagada(bool canal, uint32_t chave)
 {
   if (!s_apagados_carregado) { carregar_apagados(); }
@@ -246,9 +246,9 @@ bool esta_apagada(bool canal, uint32_t chave)
   return false;
 }
 
-// Marca uma conversa como apagada: RAM primeiro (vale na hora, mesmo sem
-// cartao), depois grava a linha - a linha extra no arquivo, sem reescrever
-// tudo, e o mesmo truque de nos.txt.
+// Marks a conversation as deleted: RAM first (applies at once, even without a
+// card), then writes the line - the extra line in the file, without rewriting
+// everything, is the same trick as nos.txt.
 static void marcar_apagada(bool canal, uint32_t chave)
 {
   if (!s_apagados_carregado) { carregar_apagados(); }
@@ -265,26 +265,26 @@ static void marcar_apagada(bool canal, uint32_t chave)
   tab5_sd_anexar(MESH_PASTA, MESH_ARQ_APAGADAS, linha);
 }
 
-// Tira uma conversa da lista de apagados - chamado quando voces voltam a se
-// falar de verdade (ver o comentario grande acima). Reescreve o arquivo
-// inteiro: e raro (so acontece ao reatar algo que voce tinha apagado), e a
-// lista e pequena.
+// Takes a conversation off the deleted list - called when you really start
+// talking again (see the big comment above). Rewrites the whole
+// file: it is rare (only happens when renewing something you had deleted), and the
+// list is small.
 void desmarcar_apagada(bool canal, uint32_t chave)
 {
   if (!s_apagados_carregado) { carregar_apagados(); }
-  if (!s_apagados_carregado) { return; }   // sem a lista do cartao nao se reescreve o arquivo
+  if (!s_apagados_carregado) { return; }   // without the list from the card the file is not rewritten
   int achou = -1;
   for (int i = 0; i < s_n_apagados; ++i) {
     if (s_apagados[i].canal == canal && s_apagados[i].chave == chave) { achou = i; break; }
   }
-  if (achou < 0) { return; }   // nao estava apagado - nada a fazer, nada a reescrever
+  if (achou < 0) { return; }   // it was not deleted - nothing to do, nothing to rewrite
 
   for (int i = achou; i < s_n_apagados - 1; ++i) { s_apagados[i] = s_apagados[i+1]; }
   --s_n_apagados;
 
-  // Reescreve do zero pela porta do sistema: o substituir grava antes as
-  // linhas de "apagada" que ainda estavam para entrar, e com o cartao
-  // emprestado ao computador vai para o diario.
+  // Rewrites from scratch through the system door: replace first writes the
+  // "deleted" lines that were still waiting to go in, and with the card
+  // lent to the computer it goes to the journal.
   char txt[MESH_MAX_APAGADOS * 12 + 1];
   size_t k = 0;
   for (int i = 0; i < s_n_apagados; ++i) {
@@ -295,11 +295,11 @@ void desmarcar_apagada(bool canal, uint32_t chave)
 }
 
 // ---------------------------------------------------------------------------
-// Conversas e historico no cartao
+// Conversations and history on the card
 // ---------------------------------------------------------------------------
-// Nome do arquivo de uma conversa. Curto e sem acento de proposito: e nome de
-// arquivo em FAT, e o cartao ja nos ensinou que 8.3 morde (ver o caso do
-// satelites.csv que nao abria por falta de LFN).
+// A conversation's file name. Short and without accents on purpose: it is a
+// FAT file name, and the card has already taught us that 8.3 bites (see the case of
+// satelites.csv that would not open for lack of LFN).
 static void arquivo_da_conversa(const mesh_conversa_t* c, char* out, size_t tam)
 {
   if (c->canal) { snprintf(out, tam, "canal-%u.txt", (unsigned)c->idx); }
@@ -317,15 +317,15 @@ int achar_ou_criar_conversa(bool canal, uint8_t idx, uint32_t no)
     if (s_conv[i].usada) { continue; }
     memset(&s_conv[i], 0, sizeof(s_conv[i]));
     s_conv_seq[i] = 0;
-    ++s_conv_ver;   // a ordem da coluna mudou
+    ++s_conv_ver;   // the column order changed
     s_conv[i].usada = true;
     s_conv[i].canal = canal;
     s_conv[i].idx = idx;
     s_conv[i].no  = no;
     if (const nao_lida_guardada_t* g = guardada_de(canal, idx, no, false)) { s_conv[i].nao_lidas = g->n; }
     if (canal) {
-      // Nome REAL, se o radio ja nos contou (FromRadio campo 10). O rotulo
-      // inventado abaixo e so o que resta enquanto a configuracao nao chegou.
+      // The REAL name, if the radio has already told us (FromRadio field 10). The
+      // label made up below is only what is left while the configuration has not arrived.
       if (idx < MESH_MAX_CANAIS && s_canal_nome[idx][0]) {
         snprintf(s_conv[i].nome, sizeof(s_conv[i].nome), "%s", s_canal_nome[idx]);
       } else {
@@ -333,7 +333,7 @@ int achar_ou_criar_conversa(bool canal, uint8_t idx, uint32_t no)
                  idx == 0 ? "LongFast" : "Canal %u", (unsigned)idx);
       }
     } else {
-      // Nome do no - curto, longo, e o id so em ultimo caso (nome_exibicao).
+      // Node name - short, long, and the id only as a last resort (nome_exibicao).
       nome_exibicao(no, s_conv[i].nome, sizeof(s_conv[i].nome));
     }
     return i;
@@ -342,30 +342,30 @@ int achar_ou_criar_conversa(bool canal, uint8_t idx, uint32_t no)
 }
 
 // ---------------------------------------------------------------------------
-// GRAVACAO DAS MENSAGENS
+// SAVING MESSAGES
 // ---------------------------------------------------------------------------
-// O Mesh tinha tarefa e queue PROPRIAS de gravacao ("mesh_grava",
-// apertar enviar travava a tela montando o cartao). A ideia era
-// certa e virou do SISTEMA: tab5_sd_anexar (hal/tab5_sd.hpp) copia a linha e
-// volta na hora, e a tarefa "cartao" grava em lote. A mensagem vai como
-// URGENTE: gravada em milissegundos, nao no lote de 5 s.
-// Acrescenta ao arquivo da conversa. Formato de UMA linha, com o texto POR
-// ULTIMO para que virgula dentro da mensagem nao quebre a leitura:
+// Mesh had its OWN saving task and queue ("mesh_grava";
+// pressing send froze the screen while mounting the card). The idea was
+// right and became the SYSTEM's: tab5_sd_anexar (hal/tab5_sd.hpp) copies the line and
+// returns at once, and the "cartao" task writes in batches. The message goes as
+// URGENT: written in milliseconds, not in the 5 s batch.
+// Appends to the conversation's file. ONE-line format, with the text
+// LAST so that a comma inside the message does not break reading:
 //   M,<quando>,<de>,<snr>,<rssi>,<texto>
 //
-// NAO FAZ MAIS E/S AQUI - ver o aviso grande acima, junto de laco_gravar().
-// Isto roda com s_trava preso (chamado de dentro de guardar_msg()) e as
-// vezes na tarefa de INTERFACE - tem que ser rapido incondicionalmente.
+// NO MORE I/O HERE - see the big note above, next to laco_gravar().
+// This runs with s_trava held (called from inside guardar_msg()) and
+// sometimes on the UI task - it has to be fast unconditionally.
 void gravar_msg(int ci, const mesh_msg_t* m)
 {
   if (ci < 0) { return; }
   char arquivo[32];
   arquivo_da_conversa(&s_conv[ci], arquivo, sizeof(arquivo));
-  // "M4" e nao "M3": o registro ganhou os saltos - etiqueta nova
-  // em vez de campo a mais, e o leitor sabe o que esperar antes de ler.
-  // QUEBRA DE LINHA NO TEXTO (a conversa tem linhas): o registro e de UMA
-  // linha, entao o \n do texto vai como 0x1F (separador de unidade, que
-  // ninguem digita) e volta a ser \n na leitura (tab5_mesh_historico_de).
+  // "M4" and not "M3": the record gained the hops - a new tag
+  // instead of an extra field, and the reader knows what to expect before reading.
+  // LINE BREAKS IN THE TEXT (the conversation has lines): the record is ONE
+  // line, so the text's \n goes as 0x1F (unit separator, which
+  // nobody types) and becomes \n again on reading (tab5_mesh_historico_de).
   char txt[sizeof(((mesh_msg_t*)0)->texto)];
   size_t k = 0;
   for (const char* c = m->texto; *c && k + 1 < sizeof(txt); ++c) { txt[k++] = *c == '\n' ? '\x1f' : *c == '\r' ? ' ' : *c; }
@@ -376,33 +376,33 @@ void gravar_msg(int ci, const mesh_msg_t* m)
            m->snr, (long)m->rssi, (int)m->via_mqtt, (unsigned)m->saltos,
            (unsigned long)m->id, txt);
   if (!tab5_sd_anexar(MESH_PASTA, arquivo, linha, nullptr, true)) {
-    ESP_LOGW(TAG, "gravador cheio - mensagem NAO foi salva no cartao");
+    ESP_LOGW(TAG, "writer full - message was NOT saved to the card");
   }
 }
 
-// AS CONVERSAS QUE ESTAO NO CARTAO, sem precisar do radio.
+// THE CONVERSATIONS ON THE CARD, without needing the radio.
 //
-// O historico sempre esteve gravado, mas a LISTA de conversas so existia na
-// memoria - e ela so era povoada por mensagem chegando. Sem o C6L plugado, o
-// app abria dizendo "sem conversas" com o cartao cheio delas. O arquivo estava
-// la; faltava alguem ler o indice.
+// The history was always saved, but the LIST of conversations only existed in
+// memory - and it was only populated by messages arriving. Without the C6L plugged in, the
+// app opened saying "no conversations" with the card full of them. The file was
+// there; nobody was reading the index.
 //
-// A pasta e o proprio indice: cada conversa e um arquivo, e o nome dele carrega
-// a chave (canal-3.txt, no-A1B2C3D4.txt). Nao precisa de catalogo a parte, que
-// seria mais um estado para ficar dessincronizado do que descreve.
+// The folder is the index itself: each conversation is a file, and its name carries
+// the key (canal-3.txt, no-A1B2C3D4.txt). No separate catalogue needed, which
+// would be one more state to fall out of sync with what it describes.
 //
-// Serve TAMBEM com o radio no ar: conversas antigas passam a aparecer na coluna
-// desde a abertura, em vez de so quando alguem volta a falar. Renomear e
-// seguro - o nome do canal chega depois no dump de configuracao e sobrescreve
-// o rotulo inventado, porque o arquivo e nomeado pelo INDICE e nao pelo nome.
+// It ALSO works with the radio on air: old conversations now appear in the column
+// from opening, instead of only when someone speaks again. Renaming is
+// safe - the channel name arrives later in the configuration dump and overwrites
+// the made-up label, because the file is named by INDEX and not by name.
 int tab5_mesh_carregar_do_cartao(void)
 {
-  // Sem radio, o numero vem da NVS. E o que permite ao arquivo saber quais
-  // mensagens sao suas.
+  // Without a radio, the number comes from NVS. That is what lets the file know which
+  // messages are yours.
   if (s_meu_num == 0) { s_meu_num = recordar_meu_numero(); }
 
-  // Nomes ANTES das conversas: e o cache que da nome a elas quando o radio nao
-  // esta plugado. Na ordem inversa, toda conversa nasceria chamada pelo numero.
+  // Names BEFORE conversations: it is the cache that names them when the radio is not
+  // plugged in. In reverse order, every conversation would be born named by its number.
   if (!s_nomes_lidos) { carregar_nomes(); }
 
   if (!tab5_sd_montar()) { return 0; }
@@ -422,29 +422,29 @@ int tab5_mesh_carregar_do_cartao(void)
   recordar_canais();
   while ((e = readdir(dir)) != NULL) {
     const char* n = e->d_name;
-    if (strcmp(n, MESH_ARQ_ENVIOS) == 0) { continue; }   // desfechos, nao conversa
+    if (strcmp(n, MESH_ARQ_ENVIOS) == 0) { continue; }   // outcomes, not a conversation
 
     if (strncmp(n, "canal-", 6) == 0) {
       const unsigned long idx = strtoul(n + 6, nullptr, 10);
-      // !esta_apagada(true, idx) ACRESCENTADO - faltava aqui, e
-      // era a SEGUNDA causa (independente da config do radio) de um canal
-      // apagado voltar sozinho: esta varredura roda ao abrir o app e nao
-      // sabia nada sobre "apagada", so olhava se o arquivo existia no
-      // cartao. Mesma logica que "no-" ja usava, so nunca tinha sido
-      // estendida para canal.
-      // Canal DESABILITADO no no (configuracao conhecida, ver
-      // recordar_canais): o arquivo fica no cartao, a conversa nao volta.
+      // !esta_apagada(true, idx) ADDED - it was missing here, and
+      // it was the SECOND cause (independent of the radio config) of a deleted
+      // channel coming back by itself: this scan runs when opening the app and knew
+      // nothing about "deleted", it only checked whether the file existed on the
+      // card. The same logic "no-" already used, it had just never been
+      // extended to channels.
+      // Channel DISABLED on the node (configuration known, see
+      // recordar_canais): the file stays on the card, the conversation does not come back.
       const bool desligado = s_canais_conhecidos && idx < MESH_MAX_CANAIS && !s_canal_ativo[idx];
       if (idx < MESH_MAX_CANAIS && !desligado && !esta_apagada(true, (uint8_t)idx)
        && achar_ou_criar_conversa(true, (uint8_t)idx, 0) >= 0) { ++achadas; }
     }
     else if (strncmp(n, "no-", 3) == 0) {
-      // Hexadecimal, como foi escrito. Zero nao e no - e o que o strtoul
-      // devolve quando o nome nao presta, entao serve de peneira tambem.
+      // Hexadecimal, as it was written. Zero is not a node - it is what strtoul
+      // returns when the name is no good, so it also works as a sieve.
       const uint32_t num = (uint32_t)strtoul(n + 3, nullptr, 16);
-      // Apagada de proposito: nao recriar so porque o arquivo ainda existe no
-      // cartao (ver o comentario grande em carregar_apagados, acima). O
-      // historico continua salvo - so nao volta a aparecer sozinho.
+      // Deleted on purpose: do not recreate just because the file still exists on the
+      // card (see the big comment in carregar_apagados, above). The
+      // history stays saved - it just does not reappear by itself.
       if (num != 0 && !esta_apagada(false, num) && achar_ou_criar_conversa(false, 0, num) >= 0) { ++achadas; }
     }
   }
@@ -452,24 +452,24 @@ int tab5_mesh_carregar_do_cartao(void)
   closedir(dir);
   tab5_sd_desmontar();
 
-  ESP_LOGI(TAG, "cartao: %d conversa(s) no arquivo", achadas);
+  ESP_LOGI(TAG, "card: %d conversation(s) in the file", achadas);
   return achadas;
 }
 
-// COMECAR A FALAR COM ALGUEM QUE AINDA NAO FALOU CONOSCO.
+// STARTING TO TALK TO SOMEONE WHO HAS NOT YET TALKED TO US.
 //
-// Ate aqui uma conversa direta so nascia quando a mensagem CHEGAVA
-// (achar_ou_criar_conversa no caminho de recepcao). Ou seja: dava para
-// responder, nunca para puxar assunto. Esta funcao abre o outro sentido, a
-// partir da lista de nos.
+// Until now a direct conversation was only born when a message ARRIVED
+// (achar_ou_criar_conversa on the receive path). In other words: you could
+// reply, but never start a conversation. This function opens the other direction, from
+// the node list.
 //
-// Devolve o indice VISIVEL - o mesmo que a coluna de conversas usa - e nao o
-// interno, porque quem chama e a tela e e com esse que ela sabe trabalhar. Os
-// dois divergem assim que uma conversa e liberada no meio do vetor.
+// Returns the VISIBLE index - the same one the conversation column uses - and not the
+// internal one, because the caller is the screen and that is the one it knows how to work with. The
+// two diverge as soon as a conversation is freed in the middle of the array.
 int tab5_mesh_conversa_com(uint32_t no)
 {
-  // Numero zero nao e no; e o preenchimento de quem nao sabe. E conversa com o proprio no
-  // mesmo nao existe no protocolo - o radio nao entrega a si proprio.
+  // Number zero is not a node; it is the filler of whoever does not know. And a conversation with
+  // your own node does not exist in the protocol - the radio does not deliver to itself.
   if (no == 0) { return -1; }
 
   travar();
@@ -479,17 +479,17 @@ int tab5_mesh_conversa_com(uint32_t no)
   const int visivel = (interno >= 0) ? visivel_de(interno) : -1;
   destravar();
 
-  // Toque deliberado em "conversar com este no": e a volta a se falar que
-  // desfaz um apagar anterior (ver o comentario grande acima da flag).
+  // A deliberate tap on "conversar com este no": it is talking again that
+  // undoes an earlier delete (see the big comment above the flag).
   if (interno >= 0) { desmarcar_apagada(false, no); }
   return visivel;
 }
 
-// Mesmo papel de tab5_mesh_conversa_com(), para CANAL - criado
-// junto da opcao de apagar canal, para "canais disponiveis" poder reabrir um
-// que foi escondido (ver o aviso grande da flag de apagados, e
-// tab5_mesh_num_canais_disponiveis()/tab5_mesh_canal_disponivel() no fim
-// deste arquivo).
+// Same role as tab5_mesh_conversa_com(), for a CHANNEL - created
+// alongside the option to delete a channel, so "available channels" can reopen one
+// that was hidden (see the big note on the deleted flag, and
+// tab5_mesh_num_canais_disponiveis()/tab5_mesh_canal_disponivel() at the end
+// of this file).
 int tab5_mesh_conversa_do_canal(uint8_t idx)
 {
   if (idx >= MESH_MAX_CANAIS) { return -1; }
@@ -499,24 +499,24 @@ int tab5_mesh_conversa_do_canal(uint8_t idx)
   const int visivel = (interno >= 0) ? visivel_de(interno) : -1;
   destravar();
 
-  // Toque deliberado em "conversar com este canal": desfaz um apagar
-  // anterior, mesmo raciocinio de conversa_com() para no.
+  // A deliberate tap on "conversar com este canal": undoes an earlier
+  // delete, the same reasoning as conversa_com() for a node.
   if (interno >= 0) { desmarcar_apagada(true, idx); }
   return visivel;
 }
 
 // ---------------------------------------------------------------------------
-// A ORDEM DA COLUNA
+// THE COLUMN ORDER
 // ---------------------------------------------------------------------------
-// Canais primeiro, pelo indice; depois as diretas, mais recente em cima. O
-// vetor s_conv e um conjunto de vagas, nao uma ordem: uma conversa nova
-// ocupa a primeira vaga livre, que pode ficar ANTES da conversa aberta. Com o
-// indice visivel sendo "a n-esima vaga usada", isso deslocava a conversa
-// aberta uma casa - o app passava a desenhar o historico de uma e a enviar
-// para outra. Agora a ordem e explicita e a mudanca dela e anunciada
-// (s_conv_ver), para o app reencontrar a sua pela chave.
+// Channels first, by index; then the direct ones, most recent on top. The
+// s_conv array is a set of slots, not an order: a new conversation
+// takes the first free slot, which may come BEFORE the open conversation. With the
+// visible index being "the n-th used slot", that shifted the open conversation
+// by one place - the app ended up drawing one conversation's history and sending
+// to another. Now the order is explicit and changes to it are announced
+// (s_conv_ver), so the app can find its own again by key.
 //
-// SEM TRAVA: chamadas de dentro dela. Insercao direta: sao no maximo 12.
+// NO LOCK: called from inside it. Straight insertion: there are at most 12.
 static bool vem_antes(int a, int b)
 {
   const mesh_conversa_t& x = s_conv[a];
@@ -568,26 +568,26 @@ int tab5_mesh_conversa_indice(bool canal, uint8_t idx, uint32_t no)
   return v;
 }
 
-// APAGAR UMA CONVERSA - CANAL TAMBEM.
+// DELETING A CONVERSATION - CHANNELS TOO.
 //
-// Nasceu de um efeito colateral do "tocar no no para falar com ele": bastava
-// TOCAR para a conversa existir, e ela ficava la vazia para sempre. Criar sem
-// oferecer como desfazer e um caminho so de ida.
+// It arose from a side effect of "tap the node to talk to it": just
+// TAPPING made the conversation exist, and it stayed there empty forever. Creating without
+// offering a way to undo is a one-way street.
 //
-// CANAL NAO SE APAGAVA - "devolver false e mais honesto que
-// fingir", dizia o comentario velho aqui, porque nao havia flag nenhuma que
-// impedisse o canal de voltar sozinho na proxima mensagem ou na proxima
-// config. Agora ha (a mesma "apagados" que ja servia no direto, extendida
-// para guardar tambem indice de canal - ver o aviso grande junto dela) e os
-// dois pontos que recriavam a conversa sozinhos (a varredura do cartao e o
-// parser da config, ver os avisos la) ja checam essa flag. Falta so o "voltar
-// a falar de proposito" - tab5_mesh_conversa_do_canal() cuida disso.
+// CHANNELS COULD NOT BE DELETED - "devolver false e mais honesto que
+// fingir" (returning false is more honest than pretending), said the old comment here, because there was no flag at all to
+// stop the channel coming back by itself on the next message or the next
+// config. Now there is (the same "apagados" that already worked for direct, extended
+// to store channel indices as well - see the big note next to it) and the
+// two places that recreated the conversation by themselves (the card scan and the
+// config parser, see the notes there) already check that flag. All that is left is "talking
+// again on purpose" - tab5_mesh_conversa_do_canal() takes care of that.
 //
-// O CARTAO NAO E TOCADO, de proposito. O que se apaga e o registro em memoria,
-// nao o historico. Se voces voltarem a se falar, a conversa renasce com o que
-// ja tinha sido dito - que e o que se espera de uma lista, e nao de um
-// expurgo. Uma conversa vazia, que e o caso que motivou isto, nao tem nada no
-// cartao mesmo.
+// THE CARD IS NOT TOUCHED, on purpose. What gets deleted is the in-memory record,
+// not the history. If you start talking again, the conversation is reborn with what
+// had already been said - which is what you expect from a list, not from a
+// purge. An empty conversation, which is the case that motivated this, has nothing on the
+// card anyway.
 bool tab5_mesh_esquecer_conversa(int idx)
 {
   bool ok = false, canal_apagado = false;
@@ -595,12 +595,12 @@ bool tab5_mesh_esquecer_conversa(int idx)
   travar();
   const int i = interno_de(idx);
   if (i >= 0) {
-    // As nao lidas dela saem do total sozinhas: publicar_notif() reconta.
-    // Guardado antes do memset apagar os proprios campos.
+    // Its unread ones leave the total by themselves: publicar_notif() recounts.
+    // Kept before the memset wipes the fields themselves.
     canal_apagado = s_conv[i].canal;
     chave_apagada = canal_apagado ? s_conv[i].idx : s_conv[i].no;
     if (nao_lida_guardada_t* g = guardada_de(s_conv[i].canal, s_conv[i].idx, s_conv[i].no, false)) { g->usada = false; }
-    memset(&s_conv[i], 0, sizeof(s_conv[i]));   // usada volta a false
+    memset(&s_conv[i], 0, sizeof(s_conv[i]));   // usada goes back to false
     s_conv_seq[i] = 0;
     ++s_conv_ver;
     ok = true;
@@ -608,9 +608,9 @@ bool tab5_mesh_esquecer_conversa(int idx)
   if (ok) { publicar_notif(); }
   destravar();
 
-  // Fora da trava: e I/O de cartao (fopen/fclose), nao deve segurar o mutex
-  // que o resto do servico (recepcao, envio) tambem disputa. Canal-0 e chave
-  // valida (LongFast e o canal 0), entao so no direto tem "zero = invalido".
+  // Outside the lock: it is card I/O (fopen/fclose), it must not hold the mutex
+  // that the rest of the service (receive, send) also contends for. Channel 0 is a valid
+  // key (LongFast is channel 0), so only direct has "zero = invalid".
   if (ok && (canal_apagado || chave_apagada != 0)) {
     marcar_apagada(canal_apagado, chave_apagada);
   }
@@ -633,9 +633,9 @@ bool tab5_mesh_conversa(int idx, mesh_conversa_t* saida)
   const int i = interno_de(idx);
   if (i >= 0) {
     *saida = s_conv[i];
-    // A segunda linha, derivada agora (ver mesh_conversa_t.sub): o nome
-    // longo de quem e a conversa direta, se ele disser algo que o nome da
-    // primeira linha ainda nao disse.
+    // The second line, derived now (see mesh_conversa_t.sub): the long
+    // name of whoever the direct conversation is with, if it says something the
+    // first line's name has not said yet.
     saida->sub[0] = 0;
     if (saida->canal) {
       snprintf(saida->sub, sizeof(saida->sub), saida->idx == 0 ? tr("canal primário") : tr("canal %u"), (unsigned)saida->idx);
@@ -653,21 +653,21 @@ bool tab5_mesh_conversa(int idx, mesh_conversa_t* saida)
   return ok;
 }
 
-// Um lugar so para publicar, chamado de todos os pontos que mexem nos
-// contadores. Espalhar a publicacao pelos pontos de alteracao seria repetir a
-// regra de gravidade em cinco lugares - e esquecer num deles.
+// A single place to publish, called from every point that touches the
+// counters. Spreading publication across the change points would repeat the
+// severity rule in five places - and forget it in one of them.
 //
-// SEM TRAVA: quem chama ja esta dentro dela. Tomar de novo travaria o mutex
-// contra si mesmo (nao e recursivo).
+// NO LOCK: the caller is already inside it. Taking it again would lock the mutex
+// against itself (it is not recursive).
 void publicar_notif(void)
 {
-  // O TOTAL E DERIVADO, NUNCA MANTIDO A PARTE. Antes eram tres
-  // contadores mexidos por aritmetica em quatro lugares (+1 ao chegar, -N ao
-  // ler/apagar, zerar ao abrir o app) - e zerar o total ao abrir o app SEM
-  // zerar as conversas os descolava: dali em diante, ler uma conversa antiga
-  // subtraia mais do que o total tinha, o piso em zero engolia a diferenca e
-  // uma mensagem NOVA de outra conversa sumia da barra. Somando as conversas
-  // aqui, a barra e as bolinhas de cada conversa sao a mesma verdade.
+  // THE TOTAL IS DERIVED, NEVER KEPT SEPARATELY. Before there were three
+  // counters adjusted by arithmetic in four places (+1 on arrival, -N on
+  // read/delete, reset on opening the app) - and resetting the total on opening the app WITHOUT
+  // resetting the conversations put them out of step: from then on, reading an old conversation
+  // subtracted more than the total had, the floor at zero swallowed the difference and
+  // a NEW message from another conversation vanished from the bar. Adding up the conversations
+  // here, the bar and each conversation's dots are the same truth.
   s_nao_lidas = 0;
   s_nao_lidas_dir = 0;
   for (int i = 0; i < MESH_MAX_CONVERSAS; ++i) {
@@ -681,14 +681,14 @@ void publicar_notif(void)
     snprintf(resumo, sizeof(resumo), "%d direta%s", s_nao_lidas_dir,
              s_nao_lidas_dir > 1 ? "s" : "");
   } else {
-    // QUAL CANAL, e nao so "quantas mensagens" - "1 no canal" nao dizia nada
-    // quando ha mais de um canal na lista (LongFast, BR...). Sabendo o NOME
-    // do unico canal com novidade, a barra de status ja diz onde olhar sem
-    // precisar abrir o app so para descobrir.
+    // WHICH CHANNEL, and not just "how many messages" - "1 on the channel" said nothing
+    // when there is more than one channel in the list (LongFast, BR...). Knowing the NAME
+    // of the only channel with news, the status bar already says where to look without
+    // needing to open the app just to find out.
     //
-    // CHAMADA SEMPRE COM O MUTEX JA TOMADO pelo chamador (ver os quatro
-    // pontos que chamam publicar_notif) - por isso le s_conv[] direto, sem
-    // travar() de novo (destravaria duas vezes o mesmo lugar - deadlock).
+    // ALWAYS CALLED WITH THE MUTEX ALREADY TAKEN by the caller (see the four
+    // places that call publicar_notif) - that is why it reads s_conv[] directly, without
+    // travar() again (it would unlock the same place twice - deadlock).
     const char* nome_unico = nullptr;
     int canais_com_novidade = 0;
     for (int i = 0; i < MESH_MAX_CONVERSAS; ++i) {
@@ -702,13 +702,13 @@ void publicar_notif(void)
     } else if (canais_com_novidade > 1) {
       snprintf(resumo, sizeof(resumo), "%d em %d canais", s_nao_lidas, canais_com_novidade);
     } else {
-      // Rede de seguranca: s_nao_lidas>0 sem nenhum canal marcado nao deveria
-      // acontecer, mas sem isto a barra ficaria muda em vez de generica.
+      // Safety net: s_nao_lidas>0 with no channel marked should not
+      // happen, but without this the bar would go silent instead of generic.
       snprintf(resumo, sizeof(resumo), tr("%d no canal"), s_nao_lidas);
     }
   }
-  // Direta e ATENCAO: e endereçada a voce. Trafego de canal e INFO - vale
-  // saber, nao exige nada.
+  // Direct is ATENCAO: it is addressed to you. Channel traffic is INFO - worth
+  // knowing, requires nothing.
   notif_publicar(s_notif, s_nao_lidas,
                  s_nao_lidas_dir > 0 ? NOTIF_ATENCAO : NOTIF_INFO, resumo);
 }
@@ -717,19 +717,19 @@ void tab5_mesh_marcar_conversa_lida(int idx)
 {
   travar();
   const int i = interno_de(idx);
-  // O total e as diretas saem sozinhos: publicar_notif() reconta.
+  // The total and the direct ones come out by themselves: publicar_notif() recounts.
   if (i >= 0) {
     s_conv[i].nao_lidas = 0;
-    // Lida de verdade: a guardada some junto, para nao voltar no proximo reinicio.
+    // Really read: the stored one goes too, so it does not come back on the next restart.
     if (nao_lida_guardada_t* g = guardada_de(s_conv[i].canal, s_conv[i].idx, s_conv[i].no, false)) { g->usada = false; }
   }
   publicar_notif();
   destravar();
 }
 
-// Le as ULTIMAS 'max' mensagens do arquivo. Le o arquivo inteiro mantendo uma
-// janela circular em vez de tentar posicionar no fim: linha tem tamanho
-// variavel, entao nao ha como saltar direto - e o arquivo e pequeno.
+// Reads the LAST 'max' messages from the file. Reads the whole file keeping a
+// circular window instead of trying to seek to the end: lines are variable
+// length, so there is no way to jump straight there - and the file is small.
 int tab5_mesh_historico(int conversa, mesh_msg_t* saida, int max)
 {
   mesh_conversa_t c;
@@ -746,16 +746,16 @@ int tab5_mesh_historico_de(bool canal, uint8_t idx, uint32_t no, mesh_msg_t* sai
   char nome[32];
   arquivo_da_conversa(&c, nome, sizeof(nome));
 
-  // Volta a usar o servico: quem sabe distinguir "ainda nao existe" de "deu
-  // errado" e o tab5_sd, nao cada app. Conversa sem historico devolve 0
-  // mensagens sem alarme no log.
+  // Uses the service again: what knows how to tell "does not exist yet" from "went
+  // wrong" is tab5_sd, not each app. A conversation with no history returns 0
+  // messages with no alarm in the log.
   FILE* f = tab5_sd_abrir(MESH_PASTA, nome, "r");
   if (!f) { tab5_sd_desmontar(); return 0; }
-  // SO O FIM DO ARQUIVO. Daqui so saem as 'max' ultimas mensagens, e uma linha
-  // tem no maximo sizeof(linha) bytes: as ultimas max * sizeof(linha) bytes
-  // bastam. Antes lia o arquivo INTEIRO a cada abertura - o LongFast, com o
-  // trafego do MQTT, juntava megabytes e a conversa demorava segundos para
-  // abrir. Buffer de 16 KB na PSRAM: o padrao do stdio le aos pedacinhos.
+  // ONLY THE END OF THE FILE. Only the last 'max' messages come out of here, and a line
+  // is at most sizeof(linha) bytes: the last max * sizeof(linha) bytes
+  // are enough. Before, it read the WHOLE file on every opening - LongFast, with
+  // MQTT traffic, piled up megabytes and the conversation took seconds to
+  // open. 16 KB buffer in PSRAM: stdio's default reads in tiny pieces.
   char* vbuf = (char*)heap_caps_malloc(16 * 1024, MALLOC_CAP_SPIRAM);
   if (vbuf) { setvbuf(f, vbuf, _IOFBF, 16 * 1024); }
   {
@@ -764,25 +764,25 @@ int tab5_mesh_historico_de(bool canal, uint8_t idx, uint32_t no, mesh_msg_t* sai
     if (fseek(f, 0, SEEK_END) == 0) { tam = ftell(f); }
     if (tam > cauda && fseek(f, tam - cauda, SEEK_SET) == 0) {
       int ch;
-      while ((ch = fgetc(f)) != EOF && ch != '\n') { }   // a linha cortada no meio
+      while ((ch = fgetc(f)) != EOF && ch != '\n') { }   // the line cut in the middle
     } else {
       fseek(f, 0, SEEK_SET);
     }
   }
 
-  // Desfechos carregados UMA VEZ, antes do loop. Ver o comentario da tabela.
+  // Outcomes loaded ONCE, before the loop. See the table's comment.
   static desfecho_t desf[MESH_DESFECHOS];
   const int n_desf = carregar_desfechos(desf, MESH_DESFECHOS);
 
   int n = 0, primeiro = 0, voltas = 0;
-  // TEM QUE CABER O PREFIXO (~60 bytes: "M4,quando,de,snr,rssi,vmqtt,saltos,
-  // id,") MAIS O TEXTO INTEIRO (ate MESH_TEXTO-1=237 bytes, ver o aviso la)
-  // MAIS a quebra de linha - senao esta funcao vira o MESMO tipo de
-  // truncamento que a leitura ao vivo tinha (MESH_TEXTO pequeno demais),
-  // so que ao reler do cartao em vez de ao receber.
+  // IT MUST FIT THE PREFIX (~60 bytes: "M4,quando,de,snr,rssi,vmqtt,saltos,
+  // id,") PLUS THE WHOLE TEXT (up to MESH_TEXTO-1=237 bytes, see the note there)
+  // PLUS the line break - otherwise this function becomes the SAME kind of
+  // truncation the live read had (MESH_TEXTO too small),
+  // only when rereading from the card instead of on receipt.
   char linha[MESH_TEXTO + 80];
   while (fgets(linha, sizeof(linha), f)) {
-    if ((++voltas % 128) == 0) { vTaskDelay(1); }   // nao segurar o core
+    if ((++voltas % 128) == 0) { vTaskDelay(1); }   // do not hog the core
     const bool fmt_m4 = (strncmp(linha, "M4,", 3) == 0);
     const bool fmt_m3 = !fmt_m4 && (strncmp(linha, "M3,", 3) == 0);
     const bool fmt_m2 = !fmt_m4 && !fmt_m3 && (strncmp(linha, "M2,", 3) == 0);
@@ -792,28 +792,28 @@ int tab5_mesh_historico_de(bool canal, uint8_t idx, uint32_t no, mesh_msg_t* sai
     unsigned long quando = 0, de = 0, id = 0; float snr = 0; long rssi = 0;
     int vmqtt = 0;
     unsigned saltos = MESH_SALTOS_DESCONHECIDO;
-    // %n devolve onde o texto comeca: tudo dali ate o fim da linha e a mensagem,
-    // inclusive virgulas.
+    // %n returns where the text starts: everything from there to the end of the line is the message,
+    // commas included.
     int pos = 0;
     if (fmt_m4) {
       if (sscanf(linha, "M4,%lu,%8lX,%f,%ld,%d,%u,%8lX,%n",
                  &quando, &de, &snr, &rssi, &vmqtt, &saltos, &id, &pos) < 7) { continue; }
     } else if (fmt_m3) {
-      // M3 tem via_mqtt mas nao saltos (campo chegou logo depois, mesma leva
-      // ) - fica MESH_SALTOS_DESCONHECIDO, o sentinela de
-      // "nao da para saber", nunca um numero inventado.
+      // M3 has via_mqtt but not hops (the field arrived just after, in the same batch
+      // ) - it stays MESH_SALTOS_DESCONHECIDO, the sentinel for
+      // "cannot be known", never a made-up number.
       if (sscanf(linha, "M3,%lu,%8lX,%f,%ld,%d,%8lX,%n",
                  &quando, &de, &snr, &rssi, &vmqtt, &id, &pos) < 6) { continue; }
     } else if (fmt_m2) {
-      // M2 nao tem via_mqtt nem saltos - via_mqtt fica false, que e a
-      // suposicao mais segura: mensagem antiga muito provavelmente veio pelo
-      // radio mesmo, e um valor errado aqui so troca um icone, nunca perde
-      // texto nem confunde entrega.
+      // M2 has neither via_mqtt nor hops - via_mqtt stays false, which is the
+      // safest assumption: an old message very probably came over the
+      // radio, and a wrong value here only swaps an icon, never loses
+      // text or confuses delivery.
       if (sscanf(linha, "M2,%lu,%8lX,%f,%ld,%8lX,%n",
                  &quando, &de, &snr, &rssi, &id, &pos) < 5) { continue; }
     } else {
-      // Formato antigo, sem id. A mensagem aparece igual; so nao ha marca de
-      // entrega - e nao ha mesmo, porque o estado morreu no reinicio.
+      // Old format, no id. The message appears the same; there is just no delivery
+      // mark - and there really is none, because the state died with the restart.
       if (sscanf(linha, "M,%lu,%8lX,%f,%ld,%n",
                  &quando, &de, &snr, &rssi, &pos) < 4) { continue; }
     }
@@ -821,16 +821,16 @@ int tab5_mesh_historico_de(bool canal, uint8_t idx, uint32_t no, mesh_msg_t* sai
     m.via_mqtt = (vmqtt != 0);
     m.saltos = (uint8_t)saltos;
     m.id = (uint32_t)id;
-    // ANEL PRIMEIRO, CARTAO DEPOIS. O anel tem o estado ao vivo, inclusive o
-    // ENVIANDO que nunca vai para o cartao; o cartao tem os desfechos de todos
-    // os envios que ja sairam do anel ou de antes do ultimo reinicio.
+    // RING FIRST, CARD AFTER. The ring has the live state, including the
+    // ENVIANDO that never goes to the card; the card has the outcomes of all
+    // the sends that have already left the ring or are from before the last restart.
     m.envio = tab5_mesh_estado_envio(m.id, &m.erro);
     if (m.envio == MESH_ENVIO_NA) { m.envio = buscar_desfecho(desf, n_desf, m.id, &m.erro); }
     const uint32_t corrigido = buscar_carimbo(desf, n_desf, m.id);
     if (corrigido) { m.quando = corrigido; }
     snprintf(m.texto, sizeof(m.texto), "%s", linha + pos);
     m.texto[strcspn(m.texto, "\r\n")] = 0;
-    for (char* c = m.texto; *c; ++c) { if (*c == '\x1f') { *c = '\n'; } }   // a quebra de linha (ver gravar_msg)
+    for (char* c = m.texto; *c; ++c) { if (*c == '\x1f') { *c = '\n'; } }   // the line break (see gravar_msg)
 
     saida[(primeiro + n) % max] = m;
     if (n < max) { ++n; } else { primeiro = (primeiro + 1) % max; }
@@ -839,11 +839,11 @@ int tab5_mesh_historico_de(bool canal, uint8_t idx, uint32_t no, mesh_msg_t* sai
   heap_caps_free(vbuf);
   tab5_sd_desmontar();
 
-  // Desenrola a janela para a ordem cronologica.
+  // Unrolls the window into chronological order.
   if (primeiro != 0 && n == max) {
     mesh_msg_t tmp[1];
     for (int i = 0; i < n; ++i) {
-      // rotacao simples: barata para dezenas de itens
+      // simple rotation: cheap for dozens of items
       tmp[0] = saida[0];
       for (int k = 0; k < n - 1; ++k) { saida[k] = saida[k+1]; }
       saida[n-1] = tmp[0];

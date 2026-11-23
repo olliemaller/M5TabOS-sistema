@@ -1,5 +1,5 @@
-// Declaracoes comuns aos arquivos do console (main/console.cpp e main/console/*.cpp).
-// So para eles: nenhum app inclui este header - app fala com o console por
+// Declarations shared by the console files (main/console.cpp and main/console/*.cpp).
+// For them only: no app includes this header - apps talk to the console through
 // console.hpp.
 #pragma once
 
@@ -13,21 +13,21 @@
 #include "tab5_sd.hpp"   // com_cartao
 
 // ---------------------------------------------------------------------------
-// Comuns (definidos em console.cpp)
+// Shared (defined in console.cpp)
 // ---------------------------------------------------------------------------
-void ceder(int i);                                   // cede a CPU nas listagens longas
-console_sessao_t* sessao(void);                      // a sessao da tarefa que pergunta
-void resolver(const char* c, char* out, size_t n);   // caminho relativo a pasta atual
+void ceder(int i);                                   // yields the CPU during long listings
+console_sessao_t* sessao(void);                      // the session of the task asking
+void resolver(const char* c, char* out, size_t n);   // path relative to the current folder
 const char* caminho_sd(const char* c, char* buf, size_t n);
-bool nome_de_app(const char* nome, const char* s);   // "Musica" casa com "musica"
-void mostrar_uso(const char* nome);                  // a linha de uso do comando
+bool nome_de_app(const char* nome, const char* s);   // "Musica" matches "musica"
+void mostrar_uso(const char* nome);                  // the command's usage line
 void juntar(char* out, size_t n, int argc, char** argv, int de);
 inline bool eh(const char* a, const char* b) { return strcasecmp(a, b) == 0; }
 
-// Monta o cartao, roda o que voce passar, desmonta - sempre, inclusive quando
-// o comando falha. Escrito como funcao porque cada comando esquecer o
-// desmontar seria um vazamento de contagem: o cartao ficaria montado para
-// sempre e o app que o usa nunca conseguiria desmontar de verdade.
+// Mounts the SD card, runs whatever you pass, unmounts - always, including when
+// the command fails. Written as a function because each command forgetting to
+// unmount would be a count leak: the card would stay mounted for
+// ever and the app using it could never really unmount.
 template <typename F>
 inline int com_cartao(F&& corpo)
 {
@@ -42,14 +42,14 @@ inline int com_cartao(F&& corpo)
 }
 
 // ---------------------------------------------------------------------------
-// Usado por mais de um arquivo
+// Used by more than one file
 // ---------------------------------------------------------------------------
 void listar_pasta(const char* pasta, const char* filtro);   // console_cartao.cpp
 
 // ---------------------------------------------------------------------------
-// Comandos (console_<grupo>.cpp) - a tabela COMANDOS em console.cpp os chama
+// Commands (console_<group>.cpp) - the COMANDOS table in console.cpp calls them
 // ---------------------------------------------------------------------------
-// SISTEMA
+// SYSTEM
 void c_estado(int, char**);
 void c_tarefas(int argc, char** argv);
 void c_mem(int argc, char** argv);
@@ -75,7 +75,7 @@ void c_atalho_arquivos(int argc, char** argv);
 void c_clear(int, char**);
 void c_echo(int argc, char** argv);
 
-// TELA
+// SCREEN
 void c_tela(int argc, char** argv);
 void c_brilho(int argc, char** argv);
 void c_piscada(int argc, char** argv);
@@ -85,7 +85,7 @@ void c_abrir(int argc, char** argv);
 void c_ordem(int argc, char** argv);
 void c_ui(int, char**);
 
-// CARTAO
+// SD CARD
 void c_arquivos(int argc, char** argv);
 void cmd_cartao(void);
 int  cmd_lista(int argc, char** argv);
@@ -94,7 +94,7 @@ int  cmd_despejar(int argc, char** argv);
 int  cmd_apagar(int argc, char** argv);
 void cmd_receber(int argc, char** argv);
 
-// REDE
+// NETWORK
 void c_wifi(int argc, char** argv);
 void c_redes(int, char**);
 void c_ble(int argc, char** argv);
@@ -118,12 +118,12 @@ void c_mesh(int argc, char** argv);
 void c_nos(int, char**);
 void c_enviar(int argc, char** argv);
 
-// BANCADA
+// BENCH
 void c_grove(int argc, char** argv);
 int  cmd_i2c(int argc, char** argv);
 void cmd_camera(int argc, char** argv);
 void cmd_foto(void);
 
-// TESTES
+// TESTS
 void cmd_concorrencia(int argc, char** argv);
 void cmd_simulacao(int argc, char** argv);

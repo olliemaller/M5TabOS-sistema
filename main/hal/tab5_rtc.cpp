@@ -5,35 +5,35 @@
 
 static const char* TAG = "rtc";
 
-// RX8130: endereco I2C e registrador de flags (datasheet RX8130CE).
+// RX8130: I2C address and flags register (RX8130CE datasheet).
 #define RX8130_ENDERECO   0x32
 #define RX8130_REG_FLAGS  0x1D
-#define RX8130_FLAG_VLF   0x02   // oscilador parou / faltou energia: hora invalida
+#define RX8130_FLAG_VLF   0x02   // oscillator stopped / power lost: time invalid
 #define I2C_FREQ_HZ       400000
 
-// Os flags do 0x1D sao "escreva 0 para limpar" (escrever 1 e ignorado). Esta
-// mascara tem 0 so no VLF: limpa ele e nao encosta em TF/AF (alarme/timer),
-// que um ler-e-escrever poderia apagar sem querer.
+// The flags at 0x1D are "write 0 to clear" (writing 1 is ignored). This
+// mask has 0 only at VLF: clears it and leaves TF/AF (alarm/timer) alone,
+// which a read-modify-write could wipe by accident.
 #define RX8130_LIMPA_VLF  0xFD
 
-// Tolerancia da conferencia da gravacao: o RTC tem resolucao de 1 s e a
-// escrita/leitura pode cruzar a virada do segundo.
+// Tolerance for verifying the write: the RTC has 1 s resolution and the
+// write/read may straddle the second rollover.
 #define TOLERANCIA_S      2
 
-// Faixa de datas aceita: 2025-01-01 a 2040-01-01 (UTC).
+// Accepted date range: 2025-01-01 to 2040-01-01 (UTC).
 #define EPOCH_PISO        1735689600
 #define EPOCH_TETO        2208988800
 
 bool tab5_rtc_plausivel(time_t e)
 {
-  // O teto existe porque o RX8130 aceita qualquer ano ate 2099 e uma fonte
-  // errada (ex. Mesh) ja gravou o ano 2049. Rever o teto em ~2035.
+  // The ceiling exists because the RX8130 accepts any year up to 2099 and a bad
+  // source (e.g. Mesh) has already written the year 2049. Revisit the ceiling in ~2035.
   return e >= (time_t)EPOCH_PISO && e < (time_t)EPOCH_TETO;
 }
 
-// Formula de Howard Hinnant (days_from_civil, dominio publico): dias UTC desde
-// 1970-01-01, correta em qualquer ano. Substitui timegm() - a libc deste IDF
-// nao a declara em <ctime> sem uma macro de extensao.
+// Howard Hinnant's formula (days_from_civil, public domain): UTC days since
+// 1970-01-01, correct for any year. Replaces timegm() - this IDF's libc
+// does not declare it in <ctime> without an extension macro.
 time_t tab5_rtc_utc_para_epoch(const struct tm* t)
 {
   int y = t->tm_year + 1900;
@@ -52,13 +52,13 @@ int tab5_rtc_flags(void)
 {
   if (!M5.Rtc.isEnabled()) { return -1; }
   uint8_t flags = 0;
-  // readRegister (bool) em vez de readRegister8, que devolve 0 na falha e
-  // nao deixa distinguir "sem flags" de "leitura falhou".
+  // readRegister (bool) instead of readRegister8, which returns 0 on failure and
+  // can't tell "no flags" from "read failed".
   if (!M5.In_I2C.readRegister(RX8130_ENDERECO, RX8130_REG_FLAGS, &flags, 1, I2C_FREQ_HZ)) { return -1; }
   return flags;
 }
 
-// Le o calendario do chip e converte para epoch UTC, sem olhar flags nem faixa.
+// Reads the chip calendar and converts to UTC epoch, without checking flags or range.
 static bool ler_calendario(time_t* epoch_utc)
 {
   if (!M5.Rtc.isEnabled()) { return false; }
@@ -91,35 +91,35 @@ bool tab5_rtc_definir(time_t epoch_utc)
 {
   if (!M5.Rtc.isEnabled()) { return false; }
   if (!tab5_rtc_plausivel(epoch_utc)) {
-    ESP_LOGW(TAG, "hora %lld fora da faixa plausivel - nao gravada", (long long)epoch_utc);
+    ESP_LOGW(TAG, "time %lld outside the plausible range - not written", (long long)epoch_utc);
     return false;
   }
 
   struct tm t = { };
   gmtime_r(&epoch_utc, &t);
 
-  // RTC_Class::setDateTime(const tm*) devolve void: a falha so aparece lendo
-  // de volta, mais abaixo.
+  // RTC_Class::setDateTime(const tm*) returns void: a failure only shows up by
+  // reading back, further down.
   M5.Rtc.setDateTime(&t);
 
-  // O RELOGIO DO SISTEMA TAMBEM, na mesma chamada - ver o aviso no .hpp. Vale
-  // mesmo que a gravacao do RTC falhe.
+  // THE SYSTEM CLOCK TOO, in the same call - see the note in the .hpp. Applies
+  // even if the RTC write fails.
   struct timeval tv = { };
   tv.tv_sec  = epoch_utc;
   tv.tv_usec = 0;
   settimeofday(&tv, nullptr);
 
-  // Confere o que ficou no chip.
+  // Check what ended up in the chip.
   time_t lido = 0;
   if (!ler_calendario(&lido) || lido < epoch_utc - TOLERANCIA_S || lido > epoch_utc + TOLERANCIA_S) {
-    ESP_LOGW(TAG, "RTC nao guardou a hora gravada (lido %lld, esperado %lld)",
+    ESP_LOGW(TAG, "RTC did not keep the written time (read %lld, expected %lld)",
              (long long)lido, (long long)epoch_utc);
     return false;
   }
 
-  // Hora gravada e conferida: o aviso de "hora invalida" do chip deixa de valer.
+  // Time written and verified: the chip's "time invalid" flag no longer applies.
   if (!M5.In_I2C.writeRegister8(RX8130_ENDERECO, RX8130_REG_FLAGS, RX8130_LIMPA_VLF, I2C_FREQ_HZ)) {
-    ESP_LOGW(TAG, "nao consegui limpar o VLF do RTC");
+    ESP_LOGW(TAG, "could not clear the RTC's VLF");
   }
   return true;
 }

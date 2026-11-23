@@ -1,23 +1,23 @@
-// APP VIDEO - toca os videos do cartao: .mp4 (H.264, o do celular, com o som
-// de dentro) e .avi (MJPEG, com o som do .mp3 de mesmo nome ao lado).
+// VIDEO APP - plays the videos on the SD card: .mp4 (H.264, the phone one, with its own
+// sound) and .avi (MJPEG, with the sound from the .mp3 of the same name alongside).
 //
-// Este app e SO A INTERFACE. Quem le o arquivo, decodifica (H.264 pela CPU,
-// JPEG por hardware), escala o quadro (PPA) e toca o som e o servico do sistema
-// (services/tab5_video): o app lista, pede para abrir, mostra o quadro que o
-// servico entrega e leva os botoes. Para criar os arquivos no Mac:
+// This app is ONLY THE INTERFACE. What reads the file, decodes (H.264 on the CPU,
+// JPEG in hardware), scales the frame (PPA) and plays the sound is the system service
+// (services/tab5_video): the app lists, asks to open, shows the frame the
+// service delivers and handles the buttons. To create the files on the Mac:
 // ferramentas/video_para_tab5.sh.
 //
-// DUAS TELAS (a que vale e a do servico: tem video aberto ou nao):
-//   LISTA   - os videos da pasta Videos do cartao (listados pelo worker).
-//   TOCANDO - o quadro no alto, embaixo a barra de progresso (toque = ir
-//             para), o tempo, Pausar/Tocar e Lista.
+// TWO SCREENS (the one that applies is the service's: a video is open or not):
+//   LIST    - the videos in the SD card's Videos folder (listed by the worker).
+//   PLAYING - the frame at the top, below it the progress bar (tap = seek
+//             to), the time, Pausar/Tocar (pause/play) and Lista (list).
 //
-// O RITMO E O DO VIDEO. Cada quadro novo, pausa, fim ou erro chega como
-// AVISO_VIDEO e redesenha o app na hora: nenhum relogio por cima (como na
-// Camera). O quadro vai do PPA direto para a superficie de DMA do app
-// (sistema_superficie); aqui so se avisa o compositor.
+// THE PACE IS THE VIDEO'S. Each new frame, pause, end or error arrives as
+// AVISO_VIDEO and redraws the app at once: no clock on top (as in the
+// Camera). The frame goes from the PPA straight to the app's DMA surface
+// (sistema_superficie); here we only notify the compositor.
 //
-// O app e ORI_FIXO_EM_PE: a superficie de DMA so existe com a tela em retrato.
+// The app is ORI_FIXO_EM_PE: the DMA surface only exists with the screen in portrait.
 
 #include "app.h"
 #include "idioma.h"
@@ -38,25 +38,25 @@
 
 static const char* TAG = "app.video";
 
-static const uint16_t ROXO  = 0xFB5F;   // rgb(255,106,255) - so o ICONE do app (fica como esta; a tela usa o tema)
+static const uint16_t ROXO  = 0xFB5F;   // rgb(255,106,255) - only the app ICON (stays as is; the screen uses the theme)
 
-#define PASTA_VIDEOS "/sdcard/Videos"   // onde o app procura (criada se nao existir)
-#define LIN_MAX   200                   // videos na lista
-#define LIN_A     112                   // altura de uma linha da lista
-#define TOPO_A    104                   // o titulo da lista
+#define PASTA_VIDEOS "/sdcard/Videos"   // where the app looks (created if it does not exist)
+#define LIN_MAX   200                   // videos in the list
+#define LIN_A     112                   // height of a list row
+#define TOPO_A    104                   // the list title
 #define MARGEM    24
 
 // ---------------------------------------------------------------------------
-// A LISTA - montada pelo worker, num vetor que a interface NAO esta lendo; so
-// no ao_aviso a interface troca para ele (kernel/trabalho.hpp).
+// THE LIST - built by the worker, in an array the UI is NOT reading; only
+// in ao_aviso does the UI switch to it (kernel/trabalho.hpp).
 // ---------------------------------------------------------------------------
 typedef struct {
   char     nome[TAB5_ARQ_NOME_MAX];
   uint64_t bytes;
 } linha_t;
 EXT_RAM_BSS_ATTR static linha_t s_a[LIN_MAX], s_b[LIN_MAX];
-static linha_t* s_lin = s_a;            // a que a interface desenha
-static linha_t* s_tras = s_b;           // a que o worker monta
+static linha_t* s_lin = s_a;            // the one the UI draws
+static linha_t* s_tras = s_b;           // the one the worker builds
 static int  s_n = 0;
 static bool s_sem_cartao = false;
 static bool s_carregando = false;
@@ -65,15 +65,15 @@ static std::atomic<bool> s_sem_cartao_tras{false};
 static std::atomic<bool> s_pronto{false};
 static lista_t s_lista;
 
-// O QUE O APP SABE DO SERVICO (para perceber as mudancas de tela).
-static bool s_player = false;           // mostrando o player (ha video aberto)
-static int  s_ql = 0, s_qa = 0;         // o tamanho do quadro com que a tela foi montada
-static bool s_acordado = false;         // pedimos a tela acesa
+// WHAT THE APP KNOWS ABOUT THE SERVICE (to notice screen changes).
+static bool s_player = false;           // showing the player (a video is open)
+static int  s_ql = 0, s_qa = 0;         // the frame size the screen was built with
+static bool s_acordado = false;         // we asked for the screen to stay on
 static pintura_t s_p;
-static int  s_sig = -1;                 // o que os controles mostravam
+static int  s_sig = -1;                 // what the controls were showing
 
 // ---------------------------------------------------------------------------
-// LISTAR (no worker)
+// LISTING (on the worker)
 // ---------------------------------------------------------------------------
 static void trab_listar(void*)
 {
@@ -83,7 +83,7 @@ static void trab_listar(void*)
   if (it) {
     int total = 0;
     int k = tab5_arq_listar(PASTA_VIDEOS, it, LIN_MAX, &total, TAB5_ARQ_ORDEM_NOME, TAB5_VIDEO_EXTENSOES);
-    if (k < 0) {   // ainda nao ha a pasta: cria (o cartao pode estar la)
+    if (k < 0) {   // the folder does not exist yet: create it (the SD card may be there)
       tab5_arq_criar_pasta("/sdcard", "Videos");
       k = tab5_arq_listar(PASTA_VIDEOS, it, LIN_MAX, &total, TAB5_ARQ_ORDEM_NOME, TAB5_VIDEO_EXTENSOES);
     }
@@ -109,7 +109,7 @@ static void carregar(void)
 }
 
 // ---------------------------------------------------------------------------
-// O TEMPO
+// THE TIME
 // ---------------------------------------------------------------------------
 static void tempo_txt(uint32_t ms, char* out, size_t n)
 {
@@ -119,26 +119,26 @@ static void tempo_txt(uint32_t ms, char* out, size_t n)
 }
 
 // ---------------------------------------------------------------------------
-// A GEOMETRIA DO PLAYER - em coordenadas RELATIVAS a area (as do ao_tocar);
-// o desenho soma a.x e a.y (coordenadas de tela).
+// THE PLAYER GEOMETRY - in coordinates RELATIVE to the area (those of ao_tocar);
+// the drawing adds a.x and a.y (screen coordinates).
 // ---------------------------------------------------------------------------
 #define BARRA_X  MARGEM
 #define BARRA_A  16
 #define BOTAO_A  96
-#define CONTROLES_A 330          // altura reservada para os controles
+#define CONTROLES_A 330          // height reserved for the controls
 
 typedef struct {
-  int vy, vh;                    // o retangulo do video (y multiplo de 8 NA TELA, altura multiplo de 8)
-  int by;                        // y da barra de progresso
-  int bl;                        // largura da barra
-  int bty;                       // y dos botoes
-  int bl1;                       // largura de cada botao
+  int vy, vh;                    // the video rectangle (y a multiple of 8 ON SCREEN, height a multiple of 8)
+  int by;                        // y of the progress bar
+  int bl;                        // width of the bar
+  int bty;                       // y of the buttons
+  int bl1;                       // width of each button
 } geo_t;
 
 static geo_t geometria(const area_t& a, int ql, int qa)
 {
   geo_t g;
-  g.vy = ((a.y + 7) & ~7) - a.y;   // a superficie pede y multiplo de 8
+  g.vy = ((a.y + 7) & ~7) - a.y;   // the surface requires y to be a multiple of 8
   int vh = 0;
   if (ql > 0 && qa > 0) {
     const int disp = (a.altura - g.vy - CONTROLES_A) & ~7;
@@ -158,7 +158,7 @@ static geo_t geometria(const area_t& a, int ql, int qa)
 }
 
 // ---------------------------------------------------------------------------
-// DESENHO
+// DRAWING
 // ---------------------------------------------------------------------------
 static int linha_altura(int, void*) { return LIN_A; }
 
@@ -208,7 +208,7 @@ static void desenhar_lista(lgfx::LovyanGFX& d, const area_t& a, bool completa)
   }
 }
 
-// Tela de quem ainda abre ou deu erro: so o texto e o botao Lista.
+// Screen for one still opening or that errored: just the text and the Lista button.
 static void desenhar_aviso(lgfx::LovyanGFX& d, const area_t& a, const tab5_video_estado_t& e, bool completa)
 {
   if (!completa) { return; }
@@ -228,7 +228,7 @@ static void desenhar_player(lgfx::LovyanGFX& d, const area_t& a, const tab5_vide
   if (e.erro || e.l == 0) { desenhar_aviso(d, a, e, completa); return; }
   const geo_t g = geometria(a, e.l, e.a);
 
-  // ---- o quadro: do PPA para a superficie; aqui so se avisa o compositor ----
+  // ---- the frame: from the PPA to the surface; here we only notify the compositor ----
   const area_t ret = { a.x, a.y + g.vy, a.largura, g.vh };
   superficie_t sup;
   if (!sistema_superficie(ret, &sup)) {
@@ -238,12 +238,12 @@ static void desenhar_player(lgfx::LovyanGFX& d, const area_t& a, const tab5_vide
     }
     return;
   }
-  // Passada completa: a area foi limpa, o quadro que ja saiu tem que voltar.
+  // Full pass: the area was cleared, the frame already shown has to come back.
   if (tab5_video_pintar(sup.buf, sup.bytes, sup.pic_l, sup.pic_a, sup.x, sup.y, ret.largura, ret.altura, !completa)) {
     sistema_superficie_mudou(ret);
   }
 
-  // ---- os controles: so quando o que mostram mudou ----
+  // ---- the controls: only when what they show changed ----
   const int barra_px = e.dur_ms ? (int)((uint64_t)e.pos_ms * (uint64_t)g.bl / e.dur_ms) : 0;
   const int sig = (int)((e.pos_ms / 1000) * 4 + (e.tocando ? 2 : 0) + (e.fim ? 1 : 0)) ^ (barra_px << 20);
   if (!pintura_mudou_i(&s_p, &s_sig, sig)) { return; }
@@ -251,16 +251,16 @@ static void desenhar_player(lgfx::LovyanGFX& d, const area_t& a, const tab5_vide
   const int y0 = a.y + g.vy + g.vh;
   d.fillRect(a.x, y0, a.largura, a.altura - g.vy - g.vh, TEMA_FUNDO);
 
-  // o nome
+  // the name
   tab5_escrever(d, e.nome, a.x + MARGEM, y0 + 8, 26, true, TEMA_TEXTO, TEMA_FUNDO, top_left, a.largura - 2 * MARGEM);
 
-  // a barra de progresso
+  // the progress bar
   const int bx = a.x + BARRA_X, by = a.y + g.by;
-  d.fillRoundRect(bx, by, g.bl, BARRA_A, BARRA_A / 2, TEMA_SUPERFICIE_ALTA);   // trilho
+  d.fillRoundRect(bx, by, g.bl, BARRA_A, BARRA_A / 2, TEMA_SUPERFICIE_ALTA);   // track
   if (barra_px > 0) { d.fillRoundRect(bx, by, barra_px < BARRA_A ? BARRA_A : barra_px, BARRA_A, BARRA_A / 2, TEMA_DESTAQUE); }
   d.fillCircle(bx + (barra_px < BARRA_A / 2 ? BARRA_A / 2 : barra_px), by + BARRA_A / 2, 14, TEMA_TEXTO);
 
-  // o tempo: posicao a esquerda, duracao a direita, e (pequeno) o que o servico mede
+  // the time: position on the left, duration on the right, and (small) what the service measures
   char t1[16], t2[16], diag[64];
   tempo_txt(e.pos_ms, t1, sizeof(t1));
   tempo_txt(e.dur_ms, t2, sizeof(t2));
@@ -270,7 +270,7 @@ static void desenhar_player(lgfx::LovyanGFX& d, const area_t& a, const tab5_vide
            e.com_som ? "" : tr("  (sem som)"));
   tab5_escrever(d, diag, bx + g.bl / 2, by + 36, 20, false, TEMA_TEXTO_2, TEMA_FUNDO, top_center);
 
-  // os botoes
+  // the buttons
   const char* txt = e.fim ? tr("De novo") : (e.tocando ? tr("Pausar") : tr("Tocar"));
   tab5_botao(d, a.x + MARGEM, a.y + g.bty, g.bl1, BOTAO_A, txt, TEMA_DESTAQUE, TEMA_SOBRE_DESTAQUE, TAB5_BOTAO_TEXTO_GRANDE);
   tab5_botao(d, a.x + 2 * MARGEM + g.bl1, a.y + g.bty, g.bl1, BOTAO_A, tr("Lista"), TEMA_SUPERFICIE_ALTA, TEMA_TEXTO, TAB5_BOTAO_TEXTO_GRANDE);
@@ -287,7 +287,7 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
 }
 
 // ---------------------------------------------------------------------------
-// AVISOS - o servico mudou ou o worker terminou
+// NOTICES - the service changed or the worker finished
 // ---------------------------------------------------------------------------
 static void ao_aviso(uint32_t av)
 {
@@ -302,8 +302,8 @@ static void ao_aviso(uint32_t av)
   if (av & AVISO_VIDEO) {
     tab5_video_estado_t e;
     tab5_video_estado(&e);
-    // A TELA TROCOU (abriu ou fechou um video) ou o video mostrou o tamanho do
-    // quadro: monta de novo, com a area limpa.
+    // THE SCREEN SWITCHED (a video opened or closed) or the video revealed the frame
+    // size: rebuild, with the area cleared.
     if (e.aberto != s_player || e.l != s_ql || e.a != s_qa) {
       const bool voltou = s_player && !e.aberto;
       s_player = e.aberto;
@@ -313,7 +313,7 @@ static void ao_aviso(uint32_t av)
       if (voltou) { carregar(); }
       sistema_pedir_redesenho_completo();
     }
-    // A tela fica acesa enquanto toca: sem toque, o repouso apagaria o filme.
+    // The screen stays on while playing: without touch, idle would blank the film.
     const bool toca = e.aberto && e.tocando;
     if (toca != s_acordado) {
       s_acordado = toca;
@@ -324,19 +324,19 @@ static void ao_aviso(uint32_t av)
 }
 
 // ---------------------------------------------------------------------------
-// TOQUE - x e y RELATIVOS a area
+// TOUCH - x and y RELATIVE to the area
 // ---------------------------------------------------------------------------
 static void abrir_video(const linha_t& l)
 {
   char caminho[sizeof(PASTA_VIDEOS) + TAB5_ARQ_NOME_MAX + 2];
   snprintf(caminho, sizeof(caminho), "%s/%s", PASTA_VIDEOS, l.nome);
-  if (!tab5_video_abrir(caminho)) { ESP_LOGW(TAG, "nao abriu %s", caminho); }
-  // A tela troca no AVISO_VIDEO que o servico publica.
+  if (!tab5_video_abrir(caminho)) { ESP_LOGW(TAG, "did not open %s", caminho); }
+  // The screen switches on the AVISO_VIDEO the service publishes.
 }
 
 static void voltar_para_lista(void)
 {
-  tab5_video_fechar();   // para o som e solta o disco; o aviso volta para a lista
+  tab5_video_fechar();   // stops the sound and releases the disk; the notice goes back to the list
 }
 
 static void ao_tocar_nivel(int x, int y, bool pressionado)
@@ -355,13 +355,13 @@ static void ao_tocar(int x, int y)
   tab5_video_estado_t e;
   tab5_video_estado(&e);
   const area_t a = sistema_area();
-  if (e.erro || e.l == 0) {   // so ha o botao Lista
+  if (e.erro || e.l == 0) {   // there is only the Lista button
     if (tab5_dentro(x, y, MARGEM, 340, a.largura - 2 * MARGEM, BOTAO_A)) { voltar_para_lista(); }
     return;
   }
   const geo_t g = geometria(a, e.l, e.a);
-  if (tab5_dentro(x, y, 0, g.vy, a.largura, g.vh)) { tab5_video_pausar_tocar(); return; }   // toque no video
-  if (y >= g.by - 36 && y < g.by + BARRA_A + 36 && e.dur_ms) {                                 // na barra: ir para
+  if (tab5_dentro(x, y, 0, g.vy, a.largura, g.vh)) { tab5_video_pausar_tocar(); return; }   // tap on the video
+  if (y >= g.by - 36 && y < g.by + BARRA_A + 36 && e.dur_ms) {                                 // on the bar: seek
     int px = x - BARRA_X;
     if (px < 0) { px = 0; }
     if (px > g.bl) { px = g.bl; }
@@ -373,12 +373,12 @@ static void ao_tocar(int x, int y)
 }
 
 // ---------------------------------------------------------------------------
-// ABRIR E FECHAR
+// OPEN AND CLOSE
 // ---------------------------------------------------------------------------
 static bool ao_abrir(void)
 {
   tab5_video_estado_t e;
-  tab5_video_estado(&e);   // aberto pelo Arquivos: o app ja nasce no player
+  tab5_video_estado(&e);   // opened from Arquivos (Files): the app starts in the player
   s_player = e.aberto;
   s_ql = e.l;
   s_qa = e.a;
@@ -388,19 +388,19 @@ static bool ao_abrir(void)
   s_sem_cartao = false;
   lista_definir(&s_lista, ROLAGEM_INICIO, 0, linha_altura, linha_desenhar, nullptr);
   if (!s_player) { carregar(); }
-  else { ao_aviso(AVISO_VIDEO); }   // liga a tela acesa se ja toca
+  else { ao_aviso(AVISO_VIDEO); }   // turns on keep-screen-on if it is already playing
   return true;
 }
 
 static void ao_fechar(void)
 {
-  tab5_video_fechar();   // fechar o app para o filme e o som
+  tab5_video_fechar();   // closing the app stops the film and the sound
   if (s_acordado) { sistema_manter_acordado(SISTEMA_ACORDADO_APP, false); s_acordado = false; }
   s_player = false;
 }
 
 // ---------------------------------------------------------------------------
-// ICONE DA TELA INICIAL - um quadrado de cinema com o triangulo de tocar.
+// HOME SCREEN ICON - a cinema square with the play triangle.
 // ---------------------------------------------------------------------------
 static void icone_video(lgfx::LovyanGFX& d, int x, int y, int lado)
 {
@@ -415,18 +415,18 @@ static void icone_video(lgfx::LovyanGFX& d, int x, int y, int lado)
 extern const app_t APP_VIDEO = {
   .nome  = "Vídeo",
   .cor   = ROXO,
-  .perfil = { .alto_falante = true },   // o som do filme (nao da para pedir depois do boot: ver ajustes.h)
+  .perfil = { .alto_falante = true },   // the film's sound (cannot be requested after boot: see ajustes.h)
   .usa_sd = true,
-  .exige_sd = false,                    // um vídeo aberto do pendrive tambem toca
-  .orientacao = ORI_FIXO_EM_PE,         // o quadro e DMA na tela em rotacao 0
+  .exige_sd = false,                    // a video opened from the flash drive also plays
+  .orientacao = ORI_FIXO_EM_PE,         // the frame is DMA to the screen at rotation 0
   .ao_abrir  = ao_abrir,
   .ao_fechar = ao_fechar,
   .desenhar  = desenhar,
   .ao_tocar  = ao_tocar,
   .ao_tocar_nivel = ao_tocar_nivel,
-  .periodo_ms = 0,                      // o relogio e o dos quadros (AVISO_VIDEO)
+  .periodo_ms = 0,                      // the clock is the frames' (AVISO_VIDEO)
   .avisos    = AVISO_TRABALHO | AVISO_VIDEO,
   .ao_aviso  = ao_aviso,
   .icone     = icone_video,
-  .fundo_tema = true,                   // o sistema limpa a area com o fundo do tema
+  .fundo_tema = true,                   // the system clears the area with the theme background
 };

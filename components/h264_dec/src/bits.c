@@ -30,10 +30,11 @@ bool bits_init(bits_t *b, uint8_t *buf, uint32_t cap, const uint8_t *nal, size_t
 
 void bits_refill(bits_t *b) {
     if (b->exhausted) return;
-    /* M5tabOS: ja passou do que foi carregado (bits_ue marca assim um codigo
-       impossivel). Recarregar descontaria o excesso e apagaria a marca - o
-       resto da fatia viraria lixo sem ninguem saber. Fica marcado: buffer
-       vazio e a posicao alem dele, o que bits_overrun() acusa. */
+    /* M5tabOS: already past what was loaded (bits_ue marks an impossible code
+       this way). Reloading would discount the excess and erase the mark - the
+       rest of the slice would turn into garbage without anyone knowing. It
+       stays marked: empty buffer and the position beyond it, which
+       bits_overrun() reports. */
     if (b->pos > b->len * 8) {
         b->exhausted = true;
         b->len = 0;

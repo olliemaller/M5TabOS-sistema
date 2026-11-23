@@ -1,4 +1,4 @@
-// SSH (cliente) - ver tab5_ssh.hpp.
+// SSH (client) - see tab5_ssh.hpp.
 #include "tab5_ssh.hpp"
 #include "idioma.h"
 
@@ -27,7 +27,7 @@ extern "C" {
 }
 
 // ---------------------------------------------------------------------------
-// MEMORIA: tudo do libssh2 na PSRAM ('abstract' e o contexto da sessao).
+// MEMORY: everything from libssh2 in PSRAM ('abstract' is the session context).
 // ---------------------------------------------------------------------------
 static LIBSSH2_ALLOC_FUNC(alocar)     { (void)abstract; return heap_caps_malloc(count, MALLOC_CAP_SPIRAM); }
 static LIBSSH2_FREE_FUNC(soltar)      { (void)abstract; heap_caps_free(ptr); }
@@ -51,14 +51,14 @@ static void dizer(const tab5_ssh_t* s, const char* fmt, ...)
 static bool pare(const tab5_ssh_t* s) { return s->parar && s->parar(); }
 
 // ---------------------------------------------------------------------------
-// SERVIDORES CONHECIDOS: uma linha "host:porta SHA256:..." por servidor, na
-// pasta do SSH no cartao, pelas portas do tab5_sd.
+// KNOWN SERVERS: one line "host:porta SHA256:..." per server, in the
+// SSH folder on the card, through the tab5_sd gates.
 // ---------------------------------------------------------------------------
 #define KH_APP "SSH"
 #define KH_ARQ "known_hosts"
 #define KH_MAX 4096
 
-// O conteudo inteiro (PSRAM, termina em '\0'), ou nullptr se nao ha arquivo.
+// The whole content (PSRAM, ends in '\0'), or nullptr if there is no file.
 static char* kh_ler(void)
 {
   if (!tab5_sd_montar()) { return nullptr; }
@@ -73,7 +73,7 @@ static char* kh_ler(void)
   return b;
 }
 
-// 1 = conhecido e bate; 0 = servidor novo; -1 = MUDOU ('antes' recebe a guardada).
+// 1 = known and matches; 0 = new server; -1 = CHANGED ('antes' receives the stored one).
 static int kh_conferir(const char* chave, const char* fp, char* antes, size_t n)
 {
   char* b = kh_ler();
@@ -130,7 +130,7 @@ bool tab5_ssh_esquecer(const char* host, int porta)
   return achou;
 }
 
-// Uma linha de quem usa, esperando ate 'ms' (de 200 em 200, ouvindo o Ctrl+C).
+// A line from the user, waiting up to 'ms' (in steps of 200, listening for Ctrl+C).
 static bool pedir(const tab5_ssh_t* s, const char* pergunta, char* out, size_t n, bool oculto, uint32_t ms)
 {
   if (!s->ler_linha) { return false; }
@@ -142,8 +142,8 @@ static bool pedir(const tab5_ssh_t* s, const char* pergunta, char* out, size_t n
   return false;
 }
 
-// "keyboard-interactive": o servidor manda as perguntas; a unica que sabemos
-// responder e a senha (que e o que quase todo servidor pergunta assim).
+// "keyboard-interactive": the server sends the questions; the only one we know
+// how to answer is the password (which is what nearly every server asks this way).
 static LIBSSH2_USERAUTH_KBDINT_RESPONSE_FUNC(kbd)
 {
   (void)name; (void)name_len; (void)instruction; (void)instruction_len; (void)prompts;
@@ -156,7 +156,7 @@ static LIBSSH2_USERAUTH_KBDINT_RESPONSE_FUNC(kbd)
   }
 }
 
-// Espera o socket ter o que ler (ou poder escrever), ate ms.
+// Waits for the socket to have something to read (or be writable), up to ms.
 static void esperar_socket(LIBSSH2_SESSION* ses, int sock, int ms)
 {
   fd_set fd;
@@ -180,7 +180,7 @@ static bool escrever_tudo(LIBSSH2_SESSION* ses, LIBSSH2_CHANNEL* ch, int sock, c
   return true;
 }
 
-// O libssh2 se inicia uma vez (o comando e a sessao usam o mesmo).
+// libssh2 initialises once (the command and the session use the same one).
 static bool garantir_libssh2(void)
 {
   static bool iniciado = false;
@@ -188,8 +188,8 @@ static bool garantir_libssh2(void)
   return iniciado;
 }
 
-// A impressao digital da chave do servidor, no formato do OpenSSH
-// ("SHA256:..."). false = o libssh2 nao deu a chave.
+// The server key's fingerprint, in OpenSSH format
+// ("SHA256:..."). false = libssh2 did not give the key.
 static bool impressao_de(LIBSSH2_SESSION* ses, char* fp, size_t n)
 {
   const unsigned char* h = (const unsigned char*)libssh2_hostkey_hash(ses, LIBSSH2_HOSTKEY_HASH_SHA256);
@@ -218,7 +218,7 @@ int tab5_ssh_rodar(const tab5_ssh_t* s, char* erro, size_t erro_n)
              sock == -1 ? "" : strerror(-sock));
     return -1;
   }
-  // Prazo das leituras do socket: um servidor que some nao segura o comando.
+  // Socket read timeout: a server that vanishes does not hold up the command.
   struct timeval tv = { 15, 0 };
   setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
@@ -238,8 +238,8 @@ int tab5_ssh_rodar(const tab5_ssh_t* s, char* erro, size_t erro_n)
     goto fim;
   }
   {
-    // A IMPRESSAO DIGITAL da chave do servidor, no formato do OpenSSH: quem
-    // conecta pela primeira vez confere com a do proprio servidor
+    // THE FINGERPRINT of the server key, in OpenSSH format: whoever
+    // connects for the first time checks it against the server's own
     // (ssh-keygen -lf /etc/ssh/ssh_host_*_key.pub).
     char fp[64];
     if (impressao_de(ses, fp, sizeof(fp))) {
@@ -262,7 +262,7 @@ int tab5_ssh_rodar(const tab5_ssh_t* s, char* erro, size_t erro_n)
     }
   }
 
-  // AUTENTICACAO: so a senha (por "password" ou "keyboard-interactive").
+  // AUTHENTICATION: password only (via "password" or "keyboard-interactive").
   {
     const char* metodos = libssh2_userauth_list(ses, s->usuario, (unsigned int)strlen(s->usuario));
     if (!metodos && !libssh2_userauth_authenticated(ses)) {
@@ -296,7 +296,7 @@ int tab5_ssh_rodar(const tab5_ssh_t* s, char* erro, size_t erro_n)
   ch = libssh2_channel_open_session(ses);
   if (!ch) { snprintf(erro, erro_n, "o servidor recusou o canal"); goto fim; }
   if (shell) {
-    // "dumb": o outro lado nao manda cor nem desenha tela - linha a linha.
+    // "dumb": the other side sends no colour and draws no screen - line by line.
     if (libssh2_channel_request_pty(ch, "dumb") != 0 || libssh2_channel_shell(ch) != 0) {
       snprintf(erro, erro_n, tr("o servidor nao abriu o shell"));
       goto fim;
@@ -307,7 +307,7 @@ int tab5_ssh_rodar(const tab5_ssh_t* s, char* erro, size_t erro_n)
     goto fim;
   }
 
-  // O LACO: o que chega (saida e erro do outro lado) e, no shell, o que se digita.
+  // THE LOOP: what arrives (stdout and stderr from the other side) and, in the shell, what is typed.
   libssh2_session_set_blocking(ses, 0);
   {
     char* b = (char*)heap_caps_malloc(1024, MALLOC_CAP_SPIRAM);
@@ -348,21 +348,21 @@ fim:
 }
 
 // ===========================================================================
-// A SESSAO INTERATIVA - ver tab5_ssh.hpp
+// THE INTERACTIVE SESSION - see tab5_ssh.hpp
 // ===========================================================================
 static const char* TAG_S = "ssh_sessao";
 
-#define ENTRADA_TAM  2048   // teclas esperando a tarefa da sessao
+#define ENTRADA_TAM  2048   // keys waiting for the session task
 #define ASSIN_MAX    4
-#define PERGUNTA_MS  120000 // quanto se espera a senha ou o "aceitar"
+#define PERGUNTA_MS  120000 // how long to wait for the password or "accept"
 
-// Estado, tela (o vterm) e assinantes: sob s_trava. A tarefa da sessao e a
-// unica que fala com o servidor; os outros so pedem.
+// State, screen (the vterm) and subscribers: under s_trava. The session task is the
+// only one that talks to the server; the others only ask.
 static SemaphoreHandle_t      s_trava_s = nullptr;
 static tab5_ssh_sessao_info_t s_info;
 static StreamBufferHandle_t   s_entrada = nullptr;
 static std::atomic<bool>      s_sair{false};
-static std::atomic<int>       s_aceitou{-1};      // CONFIRMAR: -1 esperando, 0 nao, 1 sim
+static std::atomic<int>       s_aceitou{-1};      // CONFIRMAR: -1 waiting, 0 no, 1 yes
 static char                   s_senha_dada[128];
 static std::atomic<bool>      s_tem_senha{false};
 static bool                   s_quer_tamanho = false;
@@ -375,9 +375,9 @@ static struct { tab5_ssh_saida_t fn; void* ctx; } s_assin[ASSIN_MAX];
 static void trava_s(void)   { xSemaphoreTake(s_trava_s, portMAX_DELAY); }
 static void solta_s(void)   { xSemaphoreGive(s_trava_s); }
 
-// Avisa os assinantes FORA da trava (o navegador manda pelo servidor web, que
-// pode estar ocupado: segurar a trava aqui travaria quem escreve).
-// d = nullptr: "o estado (ou o tamanho) mudou - leia tab5_ssh_sessao_info".
+// Notifies subscribers OUTSIDE the lock (the browser sends via the web server, which
+// may be busy: holding the lock here would block whoever is writing).
+// d = nullptr: "the state (or size) changed - read tab5_ssh_sessao_info".
 static void avisar_assinantes(const char* d, size_t n)
 {
   decltype(s_assin) copia;
@@ -394,12 +394,12 @@ static void mudar(tab5_ssh_estado_t e, const char* msg)
   if (msg) { snprintf(s_info.msg, sizeof(s_info.msg), "%s", msg); }
   ++s_info.versao;
   solta_s();
-  ESP_LOGI(TAG_S, "estado %d%s%s", (int)e, msg && msg[0] ? ": " : "", msg ? msg : "");
+  ESP_LOGI(TAG_S, "state %d%s%s", (int)e, msg && msg[0] ? ": " : "", msg ? msg : "");
   sistema_avisar(AVISO_SSH);
   avisar_assinantes(nullptr, 0);
 }
 
-// O vterm aloca na PSRAM (a tela de 200x60 sao uns 400 KB de celulas).
+// vterm allocates in PSRAM (a 200x60 screen is about 400 KB of cells).
 static void* vt_alocar(size_t n, void*) { return heap_caps_calloc(1, n, MALLOC_CAP_SPIRAM); }
 static void  vt_soltar(void* p, void*)  { heap_caps_free(p); }
 static VTermAllocatorFunctions VT_ALOCADOR = { vt_alocar, vt_soltar };
@@ -412,14 +412,14 @@ static int vt_prop(VTermProp prop, VTermValue* v, void*)
 static const VTermScreenCallbacks VT_TELA = { nullptr, nullptr, nullptr, vt_prop, nullptr, nullptr,
                                               nullptr, nullptr, nullptr };
 
-// O que o proprio emulador responde ao servidor (perguntas como "que terminal
-// e voce?"): vai pela mesma fila das teclas. Chamado com a trava pega.
+// What the emulator itself answers to the server (questions like "what terminal
+// are you?"): goes through the same queue as the keys. Called with the lock held.
 static void vt_saida(const char* d, size_t n, void*)
 {
   if (s_entrada) { xStreamBufferSend(s_entrada, d, n, 0); }
 }
 
-// Espera uma resposta de quem usa (senha ou aceitar), ouvindo o "fechar".
+// Waits for an answer from the user (password or accept), listening for "close".
 static bool esperar_resposta(bool senha)
 {
   for (uint32_t t = 0; t < PERGUNTA_MS && !s_sair.load(); t += 100) {
@@ -462,7 +462,7 @@ static void corpo_sessao(void*)
   libssh2_session_set_timeout(ses, 15000);
   if (libssh2_session_handshake(ses, sock) != 0) { snprintf(erro, sizeof(erro), tr("o aperto de mao falhou")); goto fim; }
 
-  // O SERVIDOR E QUEM DIZ SER? Mesmo known_hosts do comando ssh.
+  // IS THE SERVER WHO IT CLAIMS TO BE? Same known_hosts as the ssh command.
   {
     char fp[64], chave[96], antes[64] = "";
     if (!impressao_de(ses, fp, sizeof(fp))) { snprintf(erro, sizeof(erro), tr("o servidor nao mostrou a chave")); goto fim; }
@@ -483,7 +483,7 @@ static void corpo_sessao(void*)
     }
   }
 
-  // A SENHA (por "password" ou "keyboard-interactive"), ate 3 tentativas.
+  // THE PASSWORD (via "password" or "keyboard-interactive"), up to 3 attempts.
   {
     const char* metodos = libssh2_userauth_list(ses, usuario, (unsigned int)strlen(usuario));
     const bool por_senha = metodos && strstr(metodos, "password");
@@ -506,7 +506,7 @@ static void corpo_sessao(void*)
     if (!libssh2_userauth_authenticated(ses)) { snprintf(erro, sizeof(erro), tr("nao autenticou")); goto fim; }
   }
 
-  // O TERMINAL DE VERDADE: xterm-256color no tamanho de quem abriu.
+  // THE REAL TERMINAL: xterm-256color at the size of whoever opened it.
   ch = libssh2_channel_open_session(ses);
   if (!ch || libssh2_channel_request_pty_ex(ch, "xterm-256color", 14, nullptr, 0, cols, lin, 0, 0) != 0
       || libssh2_channel_shell(ch) != 0) {
@@ -533,8 +533,8 @@ static void corpo_sessao(void*)
   if (!buf) { snprintf(erro, sizeof(erro), tr("sem memoria")); goto fim; }
   mudar(TAB5_SSH_ABERTA, "");
 
-  // O LACO: sem bloquear - o que chega vai a tela e aos assinantes; o que
-  // foi digitado (a fila) vai ao servidor; o tamanho pedido vira o do PTY.
+  // THE LOOP: non-blocking - what arrives goes to the screen and the subscribers; what
+  // was typed (the queue) goes to the server; the requested size becomes the PTY's.
   libssh2_session_set_blocking(ses, 0);
   while (!s_sair.load()) {
     bool fez = false;
@@ -656,7 +656,7 @@ void tab5_ssh_sessao_senha(const char* senha)
 void tab5_ssh_sessao_escrever(const void* d, size_t n)
 {
   if (!s_trava_s || !n) { return; }
-  trava_s();   // a fila e de um escritor so: o app e o navegador revezam aqui
+  trava_s();   // the queue has a single writer: the app and the browser take turns here
   if (s_info.estado == TAB5_SSH_ABERTA) { xStreamBufferSend(s_entrada, d, n, 0); }
   solta_s();
 }
@@ -702,7 +702,7 @@ void tab5_ssh_sessao_desassinar(int id)
   solta_s();
 }
 
-// SGR de uma cor do vterm: padrao, paleta (16 e 256) ou RGB.
+// SGR for a vterm colour: default, palette (16 and 256) or RGB.
 static int sgr_cor(char* o, size_t n, const VTermColor* c, bool fundo)
 {
   if (fundo ? VTERM_COLOR_IS_DEFAULT_BG(c) : VTERM_COLOR_IS_DEFAULT_FG(c)) { return snprintf(o, n, ";%d", fundo ? 49 : 39); }
@@ -784,7 +784,7 @@ bool tab5_ssh_sessao_celulas(int linha, tab5_ssh_celula_t* out, int max)
     const bool fg_pad = VTERM_COLOR_IS_DEFAULT_FG(&fg), bg_pad = VTERM_COLOR_IS_DEFAULT_BG(&bg);
     vterm_screen_convert_color_to_rgb(s_vs, &fg);
     vterm_screen_convert_color_to_rgb(s_vs, &bg);
-    o.fg = fg_pad ? (uint16_t)0xD69A : rgb565(fg.rgb.red, fg.rgb.green, fg.rgb.blue);   // padrao: cinza claro
+    o.fg = fg_pad ? (uint16_t)0xD69A : rgb565(fg.rgb.red, fg.rgb.green, fg.rgb.blue);   // default: light grey
     o.bg = bg_pad ? (uint16_t)0x0000 : rgb565(bg.rgb.red, bg.rgb.green, bg.rgb.blue);
     if (cel.attrs.reverse) { const uint16_t t = o.fg; o.fg = o.bg; o.bg = t; }
   }

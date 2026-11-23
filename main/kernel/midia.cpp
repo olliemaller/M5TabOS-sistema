@@ -1,5 +1,5 @@
-// TOCANDO AGORA - ver midia.h. Fica fora da lista de .bss na PSRAM
-// (linker.lf): tem portMUX.
+// NOW PLAYING - see midia.h. Kept out of the list of .bss in PSRAM
+// (linker.lf): it has a portMUX.
 #include "midia.h"
 #include "app.h"
 #include "internal.hpp"
@@ -11,7 +11,7 @@
 static portMUX_TYPE      s_mux = portMUX_INITIALIZER_UNLOCKED;
 static midia_info_t      s_info = { };
 static midia_controles_t s_ctl  = { };
-static uint32_t          s_versao = 1;       // palavra sozinha: lida sem trava
+static uint32_t          s_versao = 1;       // a lone word: read without a lock
 static uint32_t          s_versao_pos = 1;
 
 void midia_assumir(const char* fonte, const char* app, const midia_controles_t* c)
@@ -61,9 +61,9 @@ void midia_publicar(const char* titulo, bool tocando, uint32_t pos_ms, uint32_t 
     if (mudou) { ++s_versao_pos; }
   }
   taskEXIT_CRITICAL(&s_mux);
-  // So acorda a interface quando ha quem mostre o segundo (a central aberta).
-  // Com ela fechada, a barra confere no proprio passo (barra_mudou) - acordar
-  // a cada segundo de musica com a tela apagada seria gasto a toa.
+  // Only wakes the UI when there is something to show the seconds (the centre open).
+  // With it closed, the bar checks on its own step (barra_mudou) - waking
+  // every second of music with the screen off would be a waste.
   if (mudou && s_painel_avisos) { sistema_acordar_interface(); }
 }
 
@@ -87,8 +87,8 @@ bool midia_ler(midia_info_t* out)
 uint32_t midia_versao(void)         { return s_versao; }
 uint32_t midia_versao_posicao(void) { return s_versao_pos; }
 
-// Copia o ponteiro sob a trava e chama fora dela (o controle so marca um
-// pedido, mas nao ha motivo para rodar codigo de app numa secao critica).
+// Copies the pointer under the lock and calls outside it (the control only marks a
+// request, but there is no reason to run app code in a critical section).
 #define CHAMAR(campo, ...) do {                         \
     taskENTER_CRITICAL(&s_mux);                         \
     auto fn = s_info.ativa ? s_ctl.campo : nullptr;     \

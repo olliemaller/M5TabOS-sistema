@@ -8,9 +8,9 @@
 #include "esp_log.h"
 #include "esp_heap_caps.h"
 
-// DIAGNOSTICO (console: tela rolar cpu|dma). true = a rolagem desloca pela CPU
-// dentro da pagina de tras, como antes do DMA - para comparar os dois caminhos
-// no aparelho sem regravar.
+// DIAGNOSTICS (console: tela rolar cpu|dma). true = scrolling shifts using the CPU
+// inside the back page, as before DMA - to compare the two paths
+// on the device without reflashing.
 bool g_tela_rolar_cpu = false;
 
 static const char *TAG = "tela_virtual";
@@ -19,66 +19,66 @@ static const int FB_L = 720;
 static const int FB_A = 1280;
 
 // ---------------------------------------------------------------------------
-// A LIXEIRA
+// THE RUBBISH BIN
 // ---------------------------------------------------------------------------
-// Desenho SEM painel (repouso, troca de relogio): nao ha pagina onde escrever,
-// e o ponteiro antigo aponta para um framebuffer ja liberado. O pixel tem que
-// ir para algum lugar - vai para ca, e o log avisa uma vez. So e alocada se
-// isso acontecer de fato; com o sistema certo, nunca existe.
+// Drawing WITHOUT a panel (idle, clock change): there is no page to write to,
+// and the old pointer points at a framebuffer that has already been freed. The pixel has to
+// go somewhere - it goes here, and the log warns once. It is only allocated if
+// this actually happens; with the system working properly, it never exists.
 static void* s_lixeira = nullptr;
 
 static void* lixeira(void)
 {
   if (!s_lixeira) {
     s_lixeira = heap_caps_aligned_calloc(128, 1, (size_t)FB_L * FB_A * 2, MALLOC_CAP_SPIRAM);
-    ESP_LOGE(TAG, "desenho com o painel desligado - indo para a lixeira (%s)",
-             s_lixeira ? "1,8 MB na PSRAM" : "SEM MEMORIA");
+    ESP_LOGE(TAG, "drawing with the panel off - sending it to the rubbish bin (%s)",
+             s_lixeira ? "1.8 MB in PSRAM" : "NO MEMORY");
   }
   return s_lixeira;
 }
 
-// O PAINEL VOLTOU: a lixeira sai. Ela so existe para um desenho fora de hora
-// com o painel desligado (repouso); guardada, eram 1,8 MB de PSRAM presos ate
-// reiniciar por causa de um unico desenho perdido.
+// THE PANEL IS BACK: the bin goes. It only exists for an untimely drawing
+// with the panel off (idle); kept around, it was 1.8 MB of PSRAM tied up until
+// a restart because of a single stray drawing.
 static void soltar_lixeira(void)
 {
   if (!s_lixeira) { return; }
   heap_caps_free(s_lixeira);
   s_lixeira = nullptr;
-  ESP_LOGI(TAG, "painel de volta - lixeira solta (1,8 MB de PSRAM devolvidos)");
+  ESP_LOGI(TAG, "panel back - rubbish bin released (1.8 MB of PSRAM returned)");
 }
 
 // ---------------------------------------------------------------------------
-// O PAINEL RASTREADOR
+// THE TRACKING PANEL
 // ---------------------------------------------------------------------------
-// Um Panel_Sprite comum, que antes de cada escrita ABRE o quadro e anota o
-// retangulo tocado. Sao TODAS as portas por onde o M5GFX escreve num sprite
+// An ordinary Panel_Sprite that, before each write, OPENS the frame and records the
+// rectangle touched. These are ALL the doors through which M5GFX writes to a sprite
 // (LGFX_Sprite.hpp: setWindow+writeBlock/writePixels, drawPixel, fillRect,
-// writeImage[ARGB], copyRect). Texto, linha, circulo, imagem - tudo desce
-// para uma delas.
+// writeImage[ARGB], copyRect). Text, line, circle, image - everything comes down
+// to one of them.
 //
-// As coordenadas que chegam aqui sao LOGICAS (ja giradas pela rotacao). O
-// retangulo anotado tem que ser FISICO, porque e o que o compositor copia -
-// entao a conversao e a MESMA que o Panel_Sprite faz por dentro
-// (LGFX_Sprite.cpp, writeFillRectPreclipped), repetida aqui.
+// The coordinates arriving here are LOGICAL (already rotated). The
+// recorded rectangle has to be PHYSICAL, because that is what the compositor copies -
+// so the conversion is the SAME one Panel_Sprite does internally
+// (LGFX_Sprite.cpp, writeFillRectPreclipped), repeated here.
 struct PainelRastreado : public lgfx::Panel_Sprite
 {
-  // TROCA SO O PONTEIRO. setBuffer() refaria a rotacao e zeraria a janela de
-  // escrita - e a troca acontece no MEIO de uma escrita (entre o setWindow e
-  // o writeBlock, quando a primeira escrita da volta abre o quadro).
-  // SpriteBuffer::reset() com memoria "preallocated" nao libera nada.
+  // SWAPS ONLY THE POINTER. setBuffer() would redo the rotation and reset the
+  // write window - and the swap happens in the MIDDLE of a write (between setWindow and
+  // writeBlock, when the first write of the pass opens the frame).
+  // SpriteBuffer::reset() with "preallocated" memory frees nothing.
   void apontar(void* buf)
   {
     if (buf != _img.get()) { _img.reset(buf); }
   }
 
-  // Abre o quadro (se ainda nao estiver) e garante que o pixel vai para a
-  // pagina de tras dele. Chamado ANTES de toda escrita.
+  // Opens the frame (if not already open) and ensures the pixel goes to its
+  // back page. Called BEFORE every write.
   void abrir(void)
   {
     void* tras = comp_abrir();
     apontar(tras ? tras : lixeira());
-    if (tras && s_lixeira) { soltar_lixeira(); }   // ja apontando para a pagina, nao para ela
+    if (tras && s_lixeira) { soltar_lixeira(); }   // already pointing at the page, not at the bin
   }
 
   tab5_ret_t fisico(int x, int y, int w, int h) const
@@ -92,23 +92,23 @@ struct PainelRastreado : public lgfx::Panel_Sprite
     return { (int16_t)x, (int16_t)y, (int16_t)w, (int16_t)h };
   }
 
-  // 'opaco': a escrita cobre o retangulo inteiro com cor solida (fillRect) -
-  // o que a pagina de tras tinha de atrasado ali nao precisa vir da frente.
+  // 'opaco': the write covers the whole rectangle with a solid colour (fillRect) -
+  // whatever the back page had out of date there need not come from the front.
   void anotar(int x, int y, int w, int h, bool opaco = false)
   {
     if (w <= 0 || h <= 0) { return; }
     abrir();
     const tab5_ret_t f = fisico(x, y, w, h);
-    // Atalho: o mesmo retangulo de novo (texto sao dezenas de fillRect
-    // pequenos dentro de um mesmo glifo) nao precisa ir ate a lista.
-    // Vale so dentro da MESMA rodada: depois que o compositor consumiu a
-    // lista, o mesmo retangulo tocado de novo e mudanca nova.
+    // Shortcut: the same rectangle again (text is dozens of small fillRects
+    // within one glyph) does not need to go to the list.
+    // Only valid within the SAME round: once the compositor has consumed the
+    // list, the same rectangle touched again is a new change.
     const uint32_t rodada = comp_rodada();
     if (rodada == _ult_rodada
      && f.x >= _ult_x && f.y >= _ult_y && f.x + f.l <= _ult_x + _ult_l && f.y + f.a <= _ult_y + _ult_a) { return; }
-    // A pagina de tras ainda pode estar sem o que o quadro anterior mudou
-    // aqui (sincronia preguicosa): vem da frente ANTES do pixel. O atalho
-    // acima pode pular isto - o retangulo maior que o contem ja foi preparado.
+    // The back page may still be missing what the previous frame changed
+    // here (lazy sync): it comes from the front BEFORE the pixel. The shortcut
+    // above may skip this - the larger rectangle containing it has already been prepared.
     if (opaco) { comp_cobrir(f); } else { comp_preparar(f); }
     comp_invalidar(f);
     _ult_x = f.x; _ult_y = f.y; _ult_l = f.l; _ult_a = f.a; _ult_rodada = rodada;
@@ -135,15 +135,15 @@ struct PainelRastreado : public lgfx::Panel_Sprite
     anotar(x, y, 1, 1);
     Panel_Sprite::drawPixelPreclipped(x, y, cor);
   }
-  // RETANGULO GRANDE VAI PARA O PPA. A limpeza da area util (1,6 MB) custava
-  // 20-25 ms de CPU em toda abertura de app; o motor de preenchimento so
-  // escreve, sem a CPU. Retangulo pequeno (texto, bordas) fica na CPU: ai a
-  // ida e volta ao PPA custa mais que pintar.
-  static constexpr uint32_t PREENCHER_PPA_MIN = 16384;   // px (ex.: 720x23)
+  // A LARGE RECTANGLE GOES TO THE PPA. Clearing the usable area (1.6 MB) cost
+  // 20-25 ms of CPU on every app opening; the fill engine just
+  // writes, without the CPU. A small rectangle (text, borders) stays on the CPU: there the
+  // round trip to the PPA costs more than painting.
+  static constexpr uint32_t PREENCHER_PPA_MIN = 16384;   // px (e.g. 720x23)
 
   void writeFillRectPreclipped(uint_fast16_t x, uint_fast16_t y, uint_fast16_t w, uint_fast16_t h, uint32_t cor) override
   {
-    anotar(x, y, w, h, true);   // cor solida no retangulo inteiro
+    anotar(x, y, w, h, true);   // solid colour over the whole rectangle
     if ((uint32_t)w * h >= PREENCHER_PPA_MIN && _write_bits == 16
      && tab5_quadro_preencher(_img.get(), fisico(x, y, w, h), (uint16_t)cor)) { return; }
     Panel_Sprite::writeFillRectPreclipped(x, y, w, h, cor);
@@ -159,16 +159,16 @@ struct PainelRastreado : public lgfx::Panel_Sprite
     Panel_Sprite::writeImageARGB(x, y, w, h, p);
   }
 
-  // A ROLAGEM PELO DMA. Deslocar o conteudo de uma janela era um memmove da
-  // CPU dentro da mesma imagem (~1,6 MB por passo de arraste). Agora a pagina
-  // da FRENTE - que tem exatamente o que esta na tela - e copiada, deslocada,
-  // para a de tras: buffers diferentes, sem sobreposicao, e o DMA2D faz o
-  // trabalho ~1,8x mais rapido que a CPU, que fica livre.
+  // SCROLLING VIA DMA. Shifting a window's content used to be a CPU memmove
+  // within the same image (~1.6 MB per drag step). Now the FRONT
+  // page - which has exactly what is on screen - is copied, shifted,
+  // to the back one: different buffers, no overlap, and DMA2D does the
+  // work ~1.8x faster than the CPU, which is left free.
   //
-  // A condicao: a ORIGEM nao pode ter sido desenhada neste quadro (a frente
-  // nao tem esse desenho); se tiver, cai no copyRect da CPU, que le a de
-  // tras. E o que a sincronia tinha pendente dentro do destino nunca e
-  // copiado: o DMA escreve por cima (comp_copiar_da_frente).
+  // The condition: the SOURCE must not have been drawn in this frame (the front
+  // does not have that drawing); if it has, it falls back to the CPU copyRect, which reads the
+  // back one. And whatever the sync had pending inside the destination is never
+  // copied: the DMA writes over it (comp_copiar_da_frente).
   void copyRect(uint_fast16_t dx, uint_fast16_t dy, uint_fast16_t w, uint_fast16_t h, uint_fast16_t sx, uint_fast16_t sy) override
   {
     if (w == 0 || h == 0) { return; }
@@ -179,31 +179,31 @@ struct PainelRastreado : public lgfx::Panel_Sprite
       anotar(dx, dy, w, h);
       return;
     }
-    comp_preparar(src);          // a CPU vai LER a origem na pagina de tras
+    comp_preparar(src);          // the CPU is going to READ the source on the back page
     anotar(dx, dy, w, h);
     Panel_Sprite::copyRect(dx, dy, w, h, sx, sy);
   }
 
-  // LEITURA tambem precisa da pagina de tras em dia (texto suave sem fundo,
-  // e quem mais ler pixel de volta).
+  // READING also needs the back page up to date (smooth text without background,
+  // and anyone else who reads pixels back).
   void readRect(uint_fast16_t x, uint_fast16_t y, uint_fast16_t w, uint_fast16_t h, void* dst, lgfx::pixelcopy_t* p) override
   {
     if (w && h) { comp_preparar(fisico(x, y, w, h)); }
     Panel_Sprite::readRect(x, y, w, h, dst, p);
   }
 
-  // MISTURA UMA MASCARA (texto suave transparente) DIRETO NA PAGINA DE TRAS.
-  // O retangulo ja vem recortado (coordenadas de desenho). So os pixels de
-  // tinta sao lidos e escritos; a conta e a do M5GFX (VLWfont::drawChar,
-  // "alpha blend mode"), com o fundo expandido de RGB565 como ele expande.
-  // false = formato que nao e o da pagina (fica com o caminho comum).
+  // BLENDS A MASK (smooth transparent text) STRAIGHT ONTO THE BACK PAGE.
+  // The rectangle arrives already clipped (drawing coordinates). Only the ink
+  // pixels are read and written; the maths is M5GFX's (VLWfont::drawChar,
+  // "alpha blend mode"), with the background expanded from RGB565 the way it expands it.
+  // false = a format that is not the page's (stays on the ordinary path).
   bool misturar(int x, int y, int w, int h, const uint8_t* m, int passo, uint32_t cor888)
   {
     if (w <= 0 || h <= 0) { return true; }
     if (_write_bits != 16) { return false; }
-    anotar(x, y, w, h);            // abre o quadro e poe a pagina de tras em dia ali
-    // Endereco de (x, y) e quanto ele anda por coluna e por linha - com a
-    // rotacao, a mesma conta do drawPixelPreclipped do Panel_Sprite.
+    anotar(x, y, w, h);            // opens the frame and brings the back page up to date there
+    // Address of (x, y) and how far it moves per column and per row - with
+    // rotation, the same maths as Panel_Sprite's drawPixelPreclipped.
     auto indice = [this](int px, int py) -> int32_t {
       const uint_fast8_t r = _rotation;
       if (r) {
@@ -236,16 +236,16 @@ struct PainelRastreado : public lgfx::Panel_Sprite
     return true;
   }
 
-  // COLA UMA IMAGEM RGB565 (uma camada) DIRETO NA PAGINA DE TRAS: linha a
-  // linha por memcpy quando a tela nao esta girada, pixel a pixel quando
-  // esta. O pushImage do M5GFX passava cada pixel por uma rotina de copia
-  // generica (~70 ns/pixel: uma faixa de 720x200 levava 11 ms).
-  // 'passo' = pixels por linha da origem. O retangulo ja vem recortado.
+  // PASTES AN RGB565 IMAGE (one layer) STRAIGHT ONTO THE BACK PAGE: row by
+  // row with memcpy when the screen is not rotated, pixel by pixel when
+  // it is. M5GFX's pushImage passed each pixel through a generic copy
+  // routine (~70 ns/pixel: a 720x200 band took 11 ms).
+  // 'passo' = pixels per row of the source. The rectangle arrives already clipped.
   bool colar(int x, int y, int w, int h, const uint16_t* src, int passo)
   {
     if (w <= 0 || h <= 0) { return true; }
     if (_write_bits != 16) { return false; }
-    anotar(x, y, w, h, true);      // coberto inteiro: nada vem da frente antes
+    anotar(x, y, w, h, true);      // fully covered: nothing comes from the front first
     auto indice = [this](int px, int py) -> int32_t {
       const uint_fast8_t r = _rotation;
       if (r) {
@@ -269,8 +269,8 @@ struct PainelRastreado : public lgfx::Panel_Sprite
   }
 
 private:
-  // A janela inteira, uma vez por setWindow - writeBlock/writePixels podem vir
-  // em varias chamadas para a mesma janela.
+  // The whole window, once per setWindow - writeBlock/writePixels may come
+  // in several calls for the same window.
   void marcar_janela(void)
   {
     if (_jan_marcada) { return; }
@@ -282,7 +282,7 @@ private:
   uint32_t _ult_rodada = 0;
 };
 
-// O objeto de desenho: um LovyanGFX comum cujo painel e o rastreador.
+// The drawing object: an ordinary LovyanGFX whose panel is the tracker.
 class TelaVirtual : public lgfx::LovyanGFX
 {
 public:
@@ -290,14 +290,14 @@ public:
 
   TelaVirtual(void) { _panel = &painel; }
 
-  // O tamanho e o formato vem da pagina do painel; o ponteiro em si muda a
-  // cada quadro (PainelRastreado::apontar).
+  // The size and format come from the panel page; the pointer itself changes
+  // every frame (PainelRastreado::apontar).
   bool criar(void* pagina)
   {
-    // O MESMO formato do framebuffer (Panel_DSI forca rgb565_nonswapped).
+    // The SAME format as the framebuffer (Panel_DSI forces rgb565_nonswapped).
     setColorDepth(lgfx::color_depth_t::rgb565_nonswapped);
     painel.setBuffer(pagina, FB_L, FB_A, &_write_conv);
-    setRotation(0);   // tambem arma o recorte do tamanho da tela
+    setRotation(0);   // also sets up the clip to the screen size
     return true;
   }
 };
@@ -308,19 +308,19 @@ bool tela_virtual_iniciar(void)
 {
   if (s_tv) { return true; }
   if (!tab5_tela_iniciar()) {
-    ESP_LOGE(TAG, "painel sem paginas - seguindo com desenho direto no M5.Display");
+    ESP_LOGE(TAG, "panel without pages - carrying on drawing directly on M5.Display");
     return false;
   }
   s_tv = new TelaVirtual();
-  // Comeca apontando para a FRENTE: so leitura ate a primeira escrita, que
-  // abre o quadro e troca para a de tras.
+  // Starts out pointing at the FRONT: read-only until the first write, which
+  // opens the frame and switches to the back one.
   s_tv->criar(tab5_tela_pagina(false));
-  // O desenho de emoji e um hook POR OBJETO de tela (setEmojiCallback): o
-  // do display fisico nao vale aqui. Sem copiar, todo texto desenhado pelo
-  // compositor perdia os emojis.
+  // Emoji drawing is a PER-OBJECT screen hook (setEmojiCallback): the
+  // physical display's does not apply here. Without copying it, all text drawn by the
+  // compositor lost its emoji.
   s_tv->setEmojiCallback(M5.Display.getEmojiCallback());
   tab5_tela_definir_alvo(s_tv);
-  ESP_LOGI(TAG, "desenho direto na pagina escondida, sem copia intermediaria");
+  ESP_LOGI(TAG, "drawing directly on the hidden page, with no intermediate copy");
   return true;
 }
 
@@ -362,8 +362,8 @@ bool tela_virtual_colar_faixa(const uint16_t* faixa, int y0, int alt)
 {
   if (!s_tv || s_tv->getRotation() != 0) { return false; }
   if (!comp_copiar_faixa(faixa, y0, alt)) { return false; }
-  // A copia abriu o quadro: o rastreador passa a apontar para a pagina de
-  // tras ja agora (o mesmo de sistema_superficie_mudou).
+  // The copy opened the frame: the tracker now points at the back
+  // page straight away (the same as in sistema_superficie_mudou).
   s_tv->painel.abrir();
   return true;
 }
@@ -374,13 +374,13 @@ void tela_virtual_invalidar_tudo(void)
 }
 
 // ---------------------------------------------------------------------------
-// SUPERFICIE DE DMA (kernel/app.h)
+// DMA SURFACE (kernel/app.h)
 // ---------------------------------------------------------------------------
-// Uma imagem 720x1280 PROPRIA, alocada no primeiro pedido e devolvida quando o
-// app fecha: o DMA do app (o PPA da camera) escreve nela no ritmo dele, e a
-// cada desenhar() a area mudada vai para a pagina de tras por DMA2D
-// (sistema_superficie_mudou). Antes era a propria tela virtual - que existia
-// sempre, para todos; agora so quem usa paga, e so enquanto usa.
+// A 720x1280 image of ITS OWN, allocated on first request and returned when the
+// app closes: the app's DMA (the camera's PPA) writes into it at its own pace, and on
+// every desenhar() the changed area goes to the back page via DMA2D
+// (sistema_superficie_mudou). Before, it was the virtual screen itself - which always
+// existed, for everyone; now only those who use it pay, and only while they use it.
 static void* s_superficie = nullptr;
 
 bool sistema_superficie(const area_t& r, superficie_t* sup)
@@ -388,20 +388,20 @@ bool sistema_superficie(const area_t& r, superficie_t* sup)
   if (!s_tv || !sup || s_tv->getRotation() != 0) { return false; }
   if (r.x < 0 || r.y < 0 || r.largura <= 0 || r.altura <= 0
    || r.x + r.largura > FB_L || r.y + r.altura > FB_A) { return false; }
-  // LARGURA INTEIRA E LINHAS ALINHADAS. O PPA de quem escreve INVALIDA o
-  // cache das linhas de destino inteiras (ppa_srm.c, "out_ext_window"),
-  // arredondadas para a linha de cache de 128 B. Uma linha tem 1440 B; 8
-  // linhas = 11520 B = 90 x 128: com bordas em multiplos de 8, nenhuma linha
-  // de cache fica dividida com um vizinho.
+  // FULL WIDTH AND ALIGNED ROWS. The writer's PPA INVALIDATES the
+  // cache of whole destination rows (ppa_srm.c, "out_ext_window"),
+  // rounded to the 128 B cache line. A row is 1440 B; 8
+  // rows = 11520 B = 90 x 128: with edges at multiples of 8, no cache
+  // line is shared with a neighbour.
   if (r.x != 0 || r.largura != FB_L || (r.y % 8) != 0 || (r.altura % 8) != 0) {
-    ESP_LOGE(TAG, "superficie %dx%d em (%d,%d) recusada: precisa largura inteira e y/altura multiplos de 8",
+    ESP_LOGE(TAG, "surface %dx%d at (%d,%d) refused: needs full width and y/height multiples of 8",
              r.largura, r.altura, r.x, r.y);
     return false;
   }
   if (!s_superficie) {
     s_superficie = heap_caps_aligned_calloc(128, 1, (size_t)FB_L * FB_A * 2, MALLOC_CAP_SPIRAM);
     if (!s_superficie) {
-      ESP_LOGE(TAG, "sem PSRAM para a superficie de DMA (1,8 MB)");
+      ESP_LOGE(TAG, "no PSRAM for the DMA surface (1.8 MB)");
       return false;
     }
   }
@@ -419,8 +419,8 @@ void sistema_superficie_mudou(const area_t& r)
   if (!s_superficie) { return; }
   const tab5_ret_t f = { (int16_t)r.x, (int16_t)r.y, (int16_t)r.largura, (int16_t)r.altura };
   comp_copiar_imagem(s_superficie, f);
-  // A copia abriu o quadro: o rastreador passa a apontar para a pagina de
-  // tras ja agora, e nao so na proxima escrita.
+  // The copy opened the frame: the tracker now points at the back
+  // page straight away, not only on the next write.
   if (s_tv) { s_tv->painel.abrir(); }
 }
 
@@ -429,5 +429,5 @@ void tela_virtual_soltar_superficie(void)
   if (!s_superficie) { return; }
   heap_caps_free(s_superficie);
   s_superficie = nullptr;
-  ESP_LOGI(TAG, "tela intermediaria liberada (1,8 MB de PSRAM devolvidos)");
+  ESP_LOGI(TAG, "intermediate screen released (1.8 MB of PSRAM returned)");
 }

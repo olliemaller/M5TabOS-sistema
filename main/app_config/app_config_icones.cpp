@@ -1,7 +1,7 @@
-// APP: Ajustes - os icones: o quadrado colorido de cada linha da lista (Wi-Fi,
-// Bluetooth, ESP-NOW, Mesh, Tela, Teclado, Grove, USB, ...) e o icone do app na
-// tela inicial (as engrenagens que engrenam). Partido de app_config.cpp (o app);
-// o que as partes compartilham esta em app_config_interno.hpp.
+// APP: Ajustes (Settings) - the icons: the coloured square on each list row
+// (Wi-Fi, Bluetooth, ESP-NOW, Mesh, Screen, Keyboard, Grove, USB, ...) and the
+// app's icon on the home screen (the meshing gears). Split from app_config.cpp
+// (the app); what the parts share is in app_config_interno.hpp.
 
 #include "math.h"
 #include "app.h"
@@ -9,10 +9,10 @@
 #include "tab5_tema.hpp"
 
 // ---------------------------------------------------------------------------
-// ICONES DA LISTA - quadrado colorido com um desenho simples, como qualquer
-// tela de ajustes de celular. A cor vem do tema (TEMA_APP_*), o desenho e
-// sempre branco e o canto tem o raio da maquete (14 px em 48).
-// Tudo em fracao do lado (l).
+// LIST ICONS - a coloured square with a simple drawing, like any phone
+// settings screen. The colour comes from the theme (TEMA_APP_*), the drawing
+// is always white and the corner has the mock-up's radius (14 px in 48).
+// Everything as a fraction of the side (l).
 // ---------------------------------------------------------------------------
 static void fundo_icone(lgfx::LovyanGFX& d, int x, int y, int l, uint16_t cor)
 {
@@ -108,8 +108,8 @@ void ic_grove(lgfx::LovyanGFX& d, int x, int y, int l)
   d.fillRect(cx - l / 20, y + l * 65 / 100, l / 10, l / 6, TEMA_SOBRE_DESTAQUE);
 }
 
-// O simbolo do USB: haste, triangulo na ponta, e os dois ramos (bola e
-// quadrado) - o mesmo desenho gravado no plugue.
+// The USB symbol: shaft, triangle at the tip, and the two branches (circle and
+// square) - the same drawing moulded on the plug.
 void ic_usb(lgfx::LovyanGFX& d, int x, int y, int l)
 {
   fundo_icone(d, x, y, l, TEMA_APP_CIANO);
@@ -127,7 +127,7 @@ void ic_usb(lgfx::LovyanGFX& d, int x, int y, int l)
   d.fillRect(cx + l / 5 - l / 20, ry2 - l / 10, l / 10, l / 10, TEMA_SOBRE_DESTAQUE);
 }
 
-// Um monitor (o PC) com o sinal da rede.
+// A monitor (the PC) with the network signal.
 void ic_pc(lgfx::LovyanGFX& d, int x, int y, int l)
 {
   fundo_icone(d, x, y, l, TEMA_APP_AZUL);
@@ -136,7 +136,7 @@ void ic_pc(lgfx::LovyanGFX& d, int x, int y, int l)
   d.fillRect(mx + l / 24, my + l / 24, mw - l / 12, mh - l / 12, TEMA_APP_AZUL);
   d.fillRect(x + l / 2 - l / 24, my + mh, l / 12, l / 10, TEMA_SOBRE_DESTAQUE);
   d.fillRect(x + l / 2 - l / 6, my + mh + l / 10, l / 3, l / 24 + 1, TEMA_SOBRE_DESTAQUE);
-  for (int k = 1; k <= 3; ++k) {   // as ondas do Wi-Fi dentro da tela
+  for (int k = 1; k <= 3; ++k) {   // the Wi-Fi waves inside the screen
     d.drawArc(x + l / 2, my + mh - l / 14, k * l / 14, k * l / 14 - 2, 225, 315, TEMA_SOBRE_DESTAQUE);
   }
 }
@@ -150,7 +150,7 @@ void ic_sobre(lgfx::LovyanGFX& d, int x, int y, int l)
 }
 
 // ---------------------------------------------------------------------------
-// LINHA DE ESTADO DE CADA PAGINA (o subtitulo na lista)
+// STATUS LINE OF EACH PAGE (the subtitle in the list)
 // ---------------------------------------------------------------------------
 void ic_nuvem(lgfx::LovyanGFX& d, int x, int y, int l)
 {
@@ -173,7 +173,7 @@ void ic_hora(lgfx::LovyanGFX& d, int x, int y, int l)
 
 void ic_idioma(lgfx::LovyanGFX& d, int x, int y, int l)
 {
-  // Um globo: o contorno, o equador e dois meridianos.
+  // A globe: the outline, the equator and two meridians.
   fundo_icone(d, x, y, l, TEMA_APP_AMARELO);
   const int cx = x + l / 2, cy = y + l / 2, r = l * 32 / 100, e = l / 18;
   d.fillArc(cx, cy, r, r - e, 0, 360, TEMA_SOBRE_DESTAQUE);
@@ -189,29 +189,31 @@ void ic_energia(lgfx::LovyanGFX& d, int x, int y, int l)
 }
 
 // ---------------------------------------------------------------------------
-// ICONE DA TELA INICIAL
+// HOME SCREEN ICON
 // ---------------------------------------------------------------------------
-// Primitivas e fracao do lado, como a marca do Mesh: sai limpo em qualquer
-// tamanho, nao gasta flash e nao serrilha. A letra grande que estava aqui era
-// a fonte embutida ampliada 6x - cada pixel dela virava um quadrado de 6.
+// Primitives and fractions of the side, like the Mesh logo: it comes out clean
+// at any size, uses no flash and has no jagged edges. The big letter that was
+// here was the built-in font scaled 6x - each of its pixels became a 6x6 square.
 
-// ENGRENAGENS QUE ENGRENAM DE VERDADE (terceira versao).
+// GEARS THAT REALLY MESH (third version).
 //
-// A anterior tinha a composicao certa - grande, e duas menores ao
-// lado, como na referencia do icone de ajustes classico - mas as tres se
-// SOBREPUNHAM: a distancia entre centros era bem menor que a soma dos raios, e
-// viravam um borrao so. Agora e engrenagem de verdade:
-//   - MESMO PASSO de dente nas tres (PASSO, % do lado): so assim o dente de
-//     uma cabe no vao da outra; o raio de cada uma sai do numero de dentes;
-//   - distancia entre centros = soma dos raios primitivos (onde os dentes se
-//     encontram);
-//   - FASE calculada: a grande aponta um dente para a media, a media poe um
-//     VAO ali; para a pequena, a fase compensa onde o dente da grande caiu.
-// Dente TRAPEZIOIDAL (mais largo na raiz que na ponta), baixo e largo - o
-// dente fino e comprido da primeira prova lia como sol, nao engrenagem.
-// Prototipado em imagem antes (a mesma conta), conferido tambem a 96 px.
-static const float ENG_PASSO = 10.5f;   // passo circular, % do lado
-static const float ENG_DENTE = 6.0f;    // altura do dente, % do lado
+// The previous one had the right composition - a large gear and two smaller
+// ones beside it, as in the reference classic settings icon - but all three
+// OVERLAPPED: the distance between centres was well below the sum of the
+// radii, and they turned into a single blur. Now they are real gears:
+//   - SAME tooth PITCH on all three (PASSO, % of the side): only then does one
+//     gear's tooth fit into the other's gap; each radius follows from the
+//     number of teeth;
+//   - distance between centres = sum of the pitch radii (where the teeth
+//     meet);
+//   - CALCULATED PHASE: the large one points a tooth at the medium one, the
+//     medium one puts a GAP there; for the small one, the phase compensates
+//     for where the large one's tooth landed.
+// TRAPEZOIDAL tooth (wider at the root than at the tip), short and wide - the
+// thin, long tooth of the first attempt read as a sun, not a gear.
+// Prototyped as an image first (the same maths), also checked at 96 px.
+static const float ENG_PASSO = 10.5f;   // circular pitch, % of the side
+static const float ENG_DENTE = 6.0f;    // tooth height, % of the side
 
 static float eng_raio(int n) { return (float)n * ENG_PASSO / (2.0f * (float)M_PI); }
 
@@ -219,17 +221,17 @@ static void desenhar_engrenagem(lgfx::LovyanGFX& d, int x0, int y0, int lado,
                                 float cx, float cy, int n, float fase_graus,
                                 uint16_t escuro, uint16_t fundo)
 {
-  const float k  = (float)lado / 100.0f;   // % do lado -> pixels
+  const float k  = (float)lado / 100.0f;   // % of the side -> pixels
   const float rp = eng_raio(n);
-  const float rr = rp - ENG_DENTE / 2.0f;  // raiz
-  const float rt = rp + ENG_DENTE / 2.0f;  // ponta
+  const float rr = rp - ENG_DENTE / 2.0f;  // root
+  const float rt = rp + ENG_DENTE / 2.0f;  // tip
   auto px = [&](float v) { return x0 + (int)lroundf(v * k); };
   auto py = [&](float v) { return y0 + (int)lroundf(v * k); };
 
   d.fillCircle(px(cx), py(cy), (int)lroundf(rr * k), escuro);
   const float passo = 360.0f / (float)n;
-  const float hb = passo * 0.36f * (float)M_PI / 180.0f;   // meia largura na raiz
-  const float ht = passo * 0.22f * (float)M_PI / 180.0f;   // meia largura na ponta
+  const float hb = passo * 0.36f * (float)M_PI / 180.0f;   // half width at the root
+  const float ht = passo * 0.22f * (float)M_PI / 180.0f;   // half width at the tip
   for (int i = 0; i < n; ++i) {
     const float a = (fase_graus + (float)i * passo) * (float)M_PI / 180.0f;
     const int x1 = px(cx + rr * cosf(a - hb)), y1 = py(cy + rr * sinf(a - hb));
@@ -239,7 +241,7 @@ static void desenhar_engrenagem(lgfx::LovyanGFX& d, int x0, int y0, int lado,
     d.fillTriangle(x1, y1, x2, y2, x3, y3, escuro);
     d.fillTriangle(x1, y1, x3, y3, x4, y4, escuro);
   }
-  // Furo do meio, na cor do fundo.
+  // Centre hole, in the background colour.
   d.fillCircle(px(cx), py(cy), (int)lroundf(rr * 0.40f * k), fundo);
 }
 
@@ -249,9 +251,9 @@ void icone_config(lgfx::LovyanGFX& d, int x, int y, int lado)
   const uint16_t escuro = TEMA_FUNDO;
   d.fillRoundRect(x, y, lado, lado, lado / 6, fundo);
 
-  // Grande embaixo a esquerda; a media engrena nela para cima-direita (-40
-  // graus), a pequena para baixo-direita (+20). Folgas conferidas: nenhuma
-  // encosta na borda arredondada, e media e pequena nao se tocam.
+  // Large one bottom left; the medium one meshes with it up-right (-40
+  // degrees), the small one down-right (+20). Clearances checked: none
+  // touches the rounded edge, and the medium and small ones do not touch.
   const int   nG = 14, nM = 9, nP = 6;
   const float gx = 40.0f, gy = 58.0f;
   const float t1 = -40.0f, t2 = 20.0f;
@@ -261,10 +263,10 @@ void icone_config(lgfx::LovyanGFX& d, int x, int y, int lado)
   const float mx = gx + (rG + rM) * cosf(t1 * r2g), my = gy + (rG + rM) * sinf(t1 * r2g);
   const float sx = gx + (rG + rP) * cosf(t2 * r2g), sy = gy + (rG + rP) * sinf(t2 * r2g);
 
-  const float fG = t1;                              // dente da grande apontando para a media
-  const float fM = t1 + 180.0f + 180.0f / nM;       // vao da media no mesmo ponto
+  const float fG = t1;                              // large gear's tooth pointing at the medium one
+  const float fM = t1 + 180.0f + 180.0f / nM;       // medium gear's gap at the same point
   const float pG = 360.0f / nG;
-  const float dlt = t2 - (fG + roundf((t2 - fG) / pG) * pG);   // onde o dente da grande caiu
+  const float dlt = t2 - (fG + roundf((t2 - fG) / pG) * pG);   // where the large gear's tooth landed
   const float fP = (t2 + 180.0f - dlt * rG / rP) + 180.0f / nP;
 
   desenhar_engrenagem(d, x, y, lado, gx, gy, nG, fG, escuro, fundo);

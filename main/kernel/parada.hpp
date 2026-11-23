@@ -1,45 +1,45 @@
-// PARADA COOPERATIVA DE UMA TAREFA DE SERVICO.
+// COOPERATIVE STOP OF A SERVICE TASK.
 //
 // -------------------------------------------------------------------------
-// POR QUE ISTO EXISTE
+// WHY THIS EXISTS
 // -------------------------------------------------------------------------
-// Tres servicos (GPS, Mesh, enlace Bluetooth do Mesh) param a propria tarefa
-// do mesmo jeito - e cada um escrevia o mecanismo de novo: uma bandeira
-// "pediram para parar", outra "a tarefa saiu", e quem pede ESPERA
-// PERGUNTANDO a cada 10 ms (for ... vTaskDelay(10)). Tres copias com
-// diferencas que ninguem escolheu: no GPS as bandeiras nem eram volatile
-// (lidas de uma tarefa, escritas de outra), e o fim de cada espera atrasava
-// ate 10 ms depois de a tarefa ja ter saido.
+// Three services (GPS, Mesh, Mesh Bluetooth link) stop their own task
+// the same way - and each wrote the mechanism again: one flag
+// "asked to stop", another "the task exited", and whoever asks WAITS
+// BY POLLING every 10 ms (for ... vTaskDelay(10)). Three copies with
+// differences nobody chose: in GPS the flags were not even volatile
+// (read from one task, written from another), and the end of each wait lagged
+// up to 10 ms after the task had already exited.
 //
-// Aqui a tarefa DA um semaforo ao sair e quem pediu ESPERA NELE: acorda no
-// instante da saida, sem perguntar nada no meio. A regra de seguranca dos
-// tres continua a mesma, agora escrita uma vez so (parada_pedir).
-//
-// -------------------------------------------------------------------------
-// POR QUE COOPERATIVA (e nao vTaskDelete, nem xTaskAbortDelay)
-// -------------------------------------------------------------------------
-// A tarefa pega mutex e escreve no cartao; mata-la no meio deixa o mutex
-// preso para sempre (o FreeRTOS nao revoga posse). E o xTaskAbortDelay, que
-// a moldura dos apps usa (tarefa_app.h), tambem NAO serve aqui: ele tira a
-// tarefa de QUALQUER espera - inclusive de um xSemaphoreTake(mutex,
-// portMAX_DELAY) cujo retorno estes servicos nao conferem. A tarefa seguiria
-// achando que tem o mutex, e o Give seguinte, de quem nao e dono, derruba o
-// aparelho. Entao a tarefa sai SOZINHA, no ponto de saida dela, onde nao
-// segura nada; a espera de quem pediu e o tempo maximo de uma volta (o
-// prazo da leitura da UART, tipicamente).
+// Here the task GIVES a semaphore on exiting and whoever asked WAITS ON IT: wakes at the
+// instant of exit, without polling anything in between. The safety rule of the
+// three stays the same, now written only once (parada_pedir).
 //
 // -------------------------------------------------------------------------
-// USO
+// WHY COOPERATIVE (and not vTaskDelete, nor xTaskAbortDelay)
+// -------------------------------------------------------------------------
+// The task takes a mutex and writes to the card; killing it midway leaves the mutex
+// held forever (FreeRTOS does not revoke ownership). And xTaskAbortDelay, which
+// the app framework uses (tarefa_app.h), is NOT suitable here either: it takes the
+// task out of ANY wait - including an xSemaphoreTake(mutex,
+// portMAX_DELAY) whose return these services do not check. The task would carry on
+// believing it holds the mutex, and the following Give, from a non-owner, brings down the
+// device. So the task exits ON ITS OWN, at its exit point, where it does not
+// hold anything; the requester's wait is at most one turn (typically the
+// UART read timeout).
+//
+// -------------------------------------------------------------------------
+// USAGE
 // -------------------------------------------------------------------------
 //   static parada_t s_parada;
 //
-//   iniciar():  if (!parada_preparar(&s_parada)) { ...sem memoria... }
+//   iniciar():  if (!parada_preparar(&s_parada)) { ...out of memory... }
 //               if (!pool_criar(...)) { parada_desistir(&s_parada); ... }
-//   tarefa:     while (!parada_pedida(&s_parada)) { ...uma volta... }
-//               ...soltar o que so a tarefa segura...
-//               parada_confirmar(&s_parada);   // a ULTIMA coisa
+//   tarefa:     while (!parada_pedida(&s_parada)) { ...one turn... }
+//               ...release what only the task holds...
+//               parada_confirmar(&s_parada);   // the LAST thing
 //   parar():    if (!parada_pedir(&s_parada, 1000)) { return false; }
-//               ...so agora desmontar UART, filas, mutex...
+//               ...only now tear down UART, queues, mutex...
 
 #pragma once
 
@@ -47,77 +47,77 @@
 #include "freertos/semphr.h"
 
 typedef struct {
-  SemaphoreHandle_t saiu;     // dado pela tarefa ao sair; quem pediu espera nele
-  SemaphoreHandle_t acordar;  // tira a tarefa do parada_dormir (pedido ou cutucada)
-  volatile bool     pedido;   // pediram para parar - a tarefa le a cada volta
-  volatile bool     viva;     // ha uma execucao que ainda nao foi recolhida
+  SemaphoreHandle_t saiu;     // given by the task on exiting; whoever asked waits on it
+  SemaphoreHandle_t acordar;  // takes the task out of parada_dormir (request or nudge)
+  volatile bool     pedido;   // asked to stop - the task reads it on every turn
+  volatile bool     viva;     // there is a run that has not yet been collected
 } parada_t;
 
-// Antes de criar a tarefa. Os semaforos nascem uma vez e servem para sempre.
-// false = sem memoria (nao crie a tarefa).
+// Before creating the task. The semaphores are created once and serve forever.
+// false = out of memory (do not create the task).
 static inline bool parada_preparar(parada_t* p)
 {
   if (!p->saiu)    { p->saiu = xSemaphoreCreateBinary(); }
   if (!p->acordar) { p->acordar = xSemaphoreCreateBinary(); }
   if (!p->saiu || !p->acordar) { return false; }
-  xSemaphoreTake(p->saiu, 0);      // sobra de uma execucao anterior: nao conta para esta
+  xSemaphoreTake(p->saiu, 0);      // leftover from an earlier run: does not count for this one
   xSemaphoreTake(p->acordar, 0);
   p->pedido = false;
   p->viva   = true;
   return true;
 }
 
-// A tarefa nao chegou a ser criada: desfaz o preparar.
+// The task was never created: undoes the preparation.
 static inline void parada_desistir(parada_t* p) { p->viva = false; p->pedido = false; }
 
-// Na tarefa: verdadeiro quando e hora de sair.
+// In the task: true when it is time to exit.
 static inline bool parada_pedida(const parada_t* p) { return p->pedido; }
 
-// Na tarefa: a ULTIMA coisa antes de retornar. Daqui em diante quem pediu
-// pode desmontar tudo o que ela usava.
+// In the task: the LAST thing before returning. From here on whoever asked
+// may tear down everything it used.
 static inline void parada_confirmar(parada_t* p) { xSemaphoreGive(p->saiu); }
 
-// O COCHILO DA TAREFA ENTRE DUAS VOLTAS. Uma tarefa que trabalha "a cada N
-// segundos" e precisa parar rapido dormia em fatias de 100 ms so para olhar
-// o pedido - 10 despertares por segundo, a toa, a bateria pagando. Aqui ela
-// dorme o prazo INTEIRO num semaforo que o parada_pedir (ou um
-// parada_cutucar) da: acorda na hora certa ou no instante do pedido, e mais
-// nunca. Devolve true se foi acordada antes do prazo.
+// THE TASK'S NAP BETWEEN TWO TURNS. A task that works "every N
+// seconds" and needs to stop quickly used to sleep in 100 ms slices just to check
+// the request - 10 wake-ups per second, for nothing, with the battery paying. Here it
+// sleeps the WHOLE period on a semaphore that parada_pedir (or a
+// parada_cutucar) gives: wakes at the right time or the instant of the request, and never
+// otherwise. Returns true if it was woken before the deadline.
 static inline bool parada_dormir(parada_t* p, uint32_t ms)
 {
   return xSemaphoreTake(p->acordar, pdMS_TO_TICKS(ms)) == pdTRUE;
 }
 
-// Acorda a tarefa do cochilo SEM pedir para parar (ex.: a configuracao
-// mudou e a proxima volta deve vir ja, e nao no fim do prazo).
+// Wakes the task from its nap WITHOUT asking it to stop (e.g.: the configuration
+// changed and the next turn should come now, not at the end of the period).
 static inline void parada_cutucar(parada_t* p) { if (p->acordar) { xSemaphoreGive(p->acordar); } }
 
-// A tarefa existe e ainda nao confirmou saida.
+// The task exists and has not yet confirmed exit.
 static inline bool parada_rodando(const parada_t* p)
 {
   return p->viva && p->saiu && uxSemaphoreGetCount(p->saiu) == 0;
 }
 
-// Pedido feito e ainda nao recolhido (o "ainda parando" dos servicos).
+// Request made and not yet collected (the services' "still stopping").
 static inline bool parada_em_curso(const parada_t* p) { return p->viva && p->pedido; }
 
-// PEDE E ESPERA ate 'ms'. 'cutucar' (opcional) e chamado ja e a cada 100 ms
-// enquanto espera - para a tarefa que dorme numa espera PROPRIA (o enlace
-// Bluetooth espera notificacao e resposta da pilha BLE) e precisa ser
-// acordada para enxergar o pedido.
+// REQUESTS AND WAITS up to 'ms'. 'cutucar' (optional) is called immediately and every 100 ms
+// while waiting - for the task that sleeps on a wait of ITS OWN (the Bluetooth
+// link waits for a notification and a reply from the BLE stack) and needs to be
+// woken to see the request.
 //
-// true  = a tarefa saiu: e seguro desmontar o que ela usava. Tambem true se
-//         nao havia tarefa.
-// false = nao confirmou no prazo. O PEDIDO FICA DE PE e NADA deve ser
-//         desmontado: a tarefa sai quando puder, e a proxima chamada (que
-//         acha o semaforo ja dado) termina o servico. Baixar o pedido aqui
-//         abriria a corrida em que a tarefa ja leu "parar", sai, e ninguem
-//         mais recolhe - UART e mutex orfaos com o servico dizendo "de pe".
+// true  = the task exited: it is safe to tear down what it used. Also true if
+//         there was no task.
+// false = it did not confirm within the deadline. THE REQUEST STAYS STANDING and NOTHING should be
+//         torn down: the task exits when it can, and the next call (which
+//         finds the semaphore already given) finishes the job. Lowering the request here
+//         would open the race in which the task has already read "stop", exits, and nobody
+//         collects it any more - orphaned UART and mutex with the service saying "up".
 static inline bool parada_pedir(parada_t* p, uint32_t ms, void (*cutucar)(void) = nullptr)
 {
   if (!p->viva) { return true; }
   p->pedido = true;
-  parada_cutucar(p);   // quem esta no parada_dormir acorda ja e ve o pedido
+  parada_cutucar(p);   // whoever is in parada_dormir wakes now and sees the request
   const uint32_t fatia = cutucar ? 100 : ms;
   for (uint32_t esperou = 0; ; esperou += fatia) {
     if (cutucar) { cutucar(); }

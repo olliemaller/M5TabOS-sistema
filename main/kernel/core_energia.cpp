@@ -1,7 +1,7 @@
-// CORE - a energia: tela acesa por pedido, contrato de economia (trava de sono
-// leve), troca do relogio e do link do painel na tarefa de interface e o perfil
-// de hardware (o que os apps e as preferencias mantem ligado). Partido de
-// core.cpp (o motor); o que as partes compartilham esta em core_interno.hpp.
+// CORE - power: screen kept on by request, power-saving contract (light sleep
+// lock), panel clock and link changes on the UI task, and the hardware profile
+// (what apps and preferences keep switched on). Split from
+// core.cpp (the engine); what the parts share is in core_interno.hpp.
 
 #include "tab5_camera.hpp"
 #include "ajustes.h"
@@ -14,24 +14,24 @@
 #include "esp_pm.h"
 #include "core_interno.hpp"
 
-// TELA ACESA POR PEDIDO (app.h): um bit por motivo, de qualquer tarefa. A
-// interface ve a mascara a cada volta; quando ela zera, o prazo de repouso
-// conta DAQUELE instante - soltar depois de uma hora acesa nao pode apagar a
-// tela na hora.
+// SCREEN KEPT ON BY REQUEST (app.h): one bit per reason, from any task. The
+// UI looks at the mask on every turn; when it reaches zero, the idle deadline
+// counts from THAT instant - releasing after an hour on must not turn the
+// screen off immediately.
 std::atomic<uint32_t> s_acordado{0};
 volatile bool s_pedir_acordar = false;
 void sistema_manter_acordado(uint32_t motivo, bool sim)
 {
   if (sim) {
-    // Pedido novo com a tela ja apagada: impedir o PROXIMO repouso nao basta -
-    // o atual segue com o clock no piso e a pessoa sem ver nada. Acorda.
+    // A new request with the screen already off: preventing the NEXT idle is not enough -
+    // the current one carries on with the clock at the floor and the person seeing nothing. Wake.
     const uint32_t antes = s_acordado.fetch_or(motivo);
     if (!(antes & motivo) && tab5_power_em_repouso()) { s_pedir_acordar = true; sistema_acordar_interface(); }
   } else {
     s_acordado.fetch_and(~motivo);
   }
 }
-// ---- CONTRATO DE ECONOMIA (app.h) -------------------------------------------
+// ---- POWER-SAVING CONTRACT (app.h) ------------------------------------------
 economia_t sistema_economia(void) { return tab5_power_em_repouso() ? ECONOMIA_REPOUSO : ECONOMIA_ACORDADO; }
 
 static uint32_t s_seguros = 0;
@@ -40,8 +40,8 @@ static esp_pm_lock_handle_t s_trava_sono = nullptr;
 void sistema_economia_segurar(uint32_t quem, bool sim)
 {
 #if CONFIG_PM_ENABLE
-  // A trava nasce na primeira vez (de qualquer tarefa: esp_pm_lock_create e
-  // seguro); o par OR/AND atomico decide quem a pega e quem a solta.
+  // The lock is created the first time (from any task: esp_pm_lock_create is
+  // safe); the atomic OR/AND pair decides who takes it and who releases it.
   static portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
   if (!s_trava_sono) {
     esp_pm_lock_handle_t h = nullptr;
@@ -62,21 +62,21 @@ void sistema_economia_segurar(uint32_t quem, bool sim)
 }
 
 uint32_t sistema_economia_seguros(void) { return __atomic_load_n(&s_seguros, __ATOMIC_ACQUIRE); }
-// TROCA DO RELOGIO DO PAINEL SO NA TAREFA DE INTERFACE. Trocar o relogio
-// destroi e recria o painel - e as paginas junto. No modo direto a interface
-// escreve NAS PAGINAS durante toda a passada de desenho: destruir o painel de
-// outra tarefa (o console) no meio disso seria escrever em memoria liberada.
-// Quem nao e a interface deixa o pedido, acorda a interface e ESPERA NO
-// SEMAFORO que ela da ao terminar - nada de perguntar a cada 10 ms.
+// PANEL CLOCK CHANGES ONLY ON THE UI TASK. Changing the clock
+// destroys and recreates the panel - and the pages with it. In direct mode the UI
+// writes TO THE PAGES throughout the drawing pass: destroying the panel from
+// another task (the console) in the middle of that would be writing to freed memory.
+// Whoever is not the UI leaves the request, wakes the UI and WAITS ON THE
+// SEMAPHORE it gives when done - no asking every 10 ms.
 static std::atomic<int> s_relogio_pedido{0};
-static std::atomic<int> s_relogio_resposta{0};   // 1 = ok, -1 = falhou
-SemaphoreHandle_t s_relogio_feito = nullptr;   // criado com a interface (sistema_iniciar)
+static std::atomic<int> s_relogio_resposta{0};   // 1 = ok, -1 = failed
+SemaphoreHandle_t s_relogio_feito = nullptr;   // created with the UI (sistema_iniciar)
 
 bool sistema_trocar_relogio_painel(int mhz)
 {
   if (sistema_na_interface() || !s_tarefa_interface) { return tab5_power_relogio_dpi(mhz); }
   if (!s_relogio_feito) { return false; }
-  xSemaphoreTake(s_relogio_feito, 0);   // sobra de um pedido que desistiu de esperar
+  xSemaphoreTake(s_relogio_feito, 0);   // leftover from a request that gave up waiting
   s_relogio_resposta.store(0);
   s_relogio_pedido.store(mhz);
   sistema_acordar_interface();
@@ -84,7 +84,7 @@ bool sistema_trocar_relogio_painel(int mhz)
   return s_relogio_resposta.load() == 1;
 }
 
-// O mesmo pedido, para a velocidade do link DSI (teste: 'tela link').
+// The same request, for the DSI link speed (test: 'tela link').
 static std::atomic<int> s_link_pedido{0};
 
 bool sistema_trocar_link_painel(int mbps)
@@ -113,16 +113,16 @@ void atender_pedido_de_relogio(void)
 }
 
 // ---------------------------------------------------------------------------
-// Perfil de boot: a uniao do que os apps precisam que EXISTA
+// Boot profile: the union of what apps need to EXIST
 // ---------------------------------------------------------------------------
 tab5_perfil_t sistema_perfil_de_boot(void)
 {
   tab5_perfil_t u;
   u.brilho = 80;
 
-  // So as flags de FASE 1 - as que decidem se o driver chega a ser
-  // inicializado. Se UM app precisa do IMU, o IMU existe para todos; nao ha
-  // como inicializa-lo depois do M5.begin().
+  // Only the PHASE 1 flags - the ones that decide whether the driver gets
+  // initialised at all. If ONE app needs the IMU, the IMU exists for all; there is
+  // no way to initialise it after M5.begin().
   for (int i = 0; i < SISTEMA_NUM_APPS; ++i) {
     const tab5_perfil_t& p = SISTEMA_APPS[i]->perfil;
     u.imu          = u.imu          || p.imu;
@@ -133,63 +133,63 @@ tab5_perfil_t sistema_perfil_de_boot(void)
   return u;
 }
 
-// TODA preferencia salva entra no perfil AQUI, e em nenhum outro lugar.
+// EVERY saved preference enters the profile HERE, and nowhere else.
 //
-// Nasceu de um bug: o Grove ficava desligado no boot mesmo com a
-// preferencia gravada como ligada, e so acendia quando algum app era aberto -
-// porque a regra morava no caminho de abrir app e o boot nao passava por ele.
-// A tela mostrava "ON" e o hardware estava OFF, que e a pior combinacao.
+// Born from a bug: Grove stayed off at boot even with the
+// preference saved as on, and only came on when some app was opened -
+// because the rule lived on the app-opening path and boot did not go through it.
+// The screen showed "ON" and the hardware was OFF, which is the worst combination.
 //
-// Regra: o perfil do app diz o que ELE precisa; esta funcao impoe o que o
-// USUARIO pediu. O app so pode SOMAR - por isso tudo aqui e "||", nunca "=".
+// Rule: the app's profile says what IT needs; this function imposes what the
+// USER asked for. The app can only ADD - which is why everything here is "||", never "=".
 void sistema_impor_preferencias(tab5_perfil_t& p)
 {
-  p.brilho   = ajustes_brilho();                          // preferencia vence sempre
-  // "necessario" = a stack ja subiu neste boot (tab5_wifi_pilha_de_pe, HAL)
-  // OU o usuario quer WiFi ligado (ajustes_wifi, servico) - a conta mora
-  // AQUI, porque so o kernel pode ler as duas sem inverter
-  // a dependencia (ver docs/ESCREVENDO_APPS.md secao 8).
+  p.brilho   = ajustes_brilho();                          // preference always wins
+  // "necessary" = the stack already came up this boot (tab5_wifi_pilha_de_pe, HAL)
+  // OR the user wants WiFi on (ajustes_wifi, service) - the calculation lives
+  // HERE, because only the kernel can read both without inverting
+  // the dependency (see docs/ESCREVENDO_APPS.md section 8).
   p.radio    = p.radio    || tab5_wifi_pilha_de_pe() || ajustes_wifi()
-             || ajustes_bluetooth();   // o C6 e o radio do Bluetooth
+             || ajustes_bluetooth();   // the C6 is the Bluetooth radio
   p.grove_5v = p.grove_5v || ajustes_grove();
-  // O USB-A (services/tab5_usb): o pendrive tem que ter energia para ser
-  // visto quando for espetado - nao da para esperar alguem pedir.
-  // Em repouso sem ninguem usando, services/tab5_usb os corta (tab5_usb_repouso):
-  // um perfil reaplicado no meio nao pode religar.
+  // USB-A (services/tab5_usb): the flash drive must have power to be
+  // seen when it is plugged in - we cannot wait for someone to ask.
+  // When idle with nobody using it, services/tab5_usb cuts it (tab5_usb_repouso):
+  // a profile reapplied midway must not turn it back on.
   p.usb_a_5v = p.usb_a_5v || (ajustes_usb_a() && !tab5_usb_cortado());
 
-  // CAMERA VIROU SERVICO (contagem de referencia, ver o aviso
-  // grande em tab5_camera.hpp) - MESMA RAZAO do Grove acima: um app aberto
-  // AGORA nao pode decidir sozinho se desliga CAM_RST, porque quem esta
-  // usando a camera pode ser outra coisa (o comando de console 'foto', por
-  // exemplo) que nao passa pelo perfil de app nenhum. tab5_camera_ativa()
-  // OR'd aqui garante que reaplicar o perfil de QUALQUER app, a qualquer
-  // momento, nunca corta a energia de um consumidor que segue vivo.
+  // THE CAMERA BECAME A SERVICE (reference counting, see the big
+  // note in tab5_camera.hpp) - SAME REASON as Grove above: an app open
+  // NOW cannot decide on its own to turn off CAM_RST, because whatever is
+  // using the camera may be something else (the console command 'foto', for
+  // example) that goes through no app profile at all. tab5_camera_ativa()
+  // OR'd here guarantees that reapplying ANY app's profile, at any
+  // moment, never cuts power to a consumer that is still alive.
   p.camera   = p.camera   || tab5_camera_ativa();
 
-  // PARTES DE FUNDO (kernel/fundo.h): o que cada uma declarou precisar entra
-  // aqui - pelo MESMO motivo da camera acima: quem esta na tela nao pode
-  // desligar o WiFi de um envio que roda em fundo.
+  // BACKGROUND PARTS (kernel/fundo.h): what each one declared it needs goes in
+  // here - for the SAME reason as the camera above: whatever is on screen cannot
+  // turn off WiFi under an upload running in the background.
   fundo_somar_perfil(p);
 }
 
 tab5_perfil_t perfil_da_home(void)
 {
-  tab5_perfil_t p;                    // nada ligado
-  sistema_impor_preferencias(p);      // o que o usuario pediu entra aqui
+  tab5_perfil_t p;                    // nothing on
+  sistema_impor_preferencias(p);      // what the user asked for goes in here
   return p;
 }
 
-// Declarado em app.h. Monta o perfil de QUEM ESTA NA TELA agora - o app aberto
-// ou a home - e aplica. E o unico jeito de um ajuste valer imediatamente sem o
-// app mexer no hardware por fora, por cima da regra de que ele so pode somar.
-// PEDE uma re-sondagem do Grove. Nao bloqueia: o trabalho acontece no proximo
-// ciclo do loop de interface, que PARA o dono atual (Mesh ou GPS, os dois sao
-// servico agora - ver o bloco de resondagem la embaixo) antes de sondar de
-// novo. Isto recusava quando o dono era GPS, porque o
-// Azimutal lia a UART direto e uma sondagem por cima quebraria a leitura;
-// GPS virou servico com o mesmo desligamento limpo que o Mesh ja tinha, e a
-// recusa deixou de fazer sentido.
+// Declared in app.h. Builds the profile of WHAT IS ON SCREEN now - the open app
+// or home - and applies it. It is the only way for a setting to take effect immediately without the
+// app touching the hardware separately, on top of the rule that it can only add.
+// REQUESTS a Grove re-probe. Does not block: the work happens on the next
+// cycle of the UI loop, which STOPS the current owner (Mesh or GPS, both are
+// services now - see the re-probe block further down) before probing
+// again. This used to refuse when the owner was GPS, because
+// Azimutal read the UART directly and a probe on top would break the read;
+// GPS became a service with the same clean shutdown Mesh already had, and the
+// refusal stopped making sense.
 bool sistema_grove_redetectar(void)
 {
   grove_pedir_sondagem();

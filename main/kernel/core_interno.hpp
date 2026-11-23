@@ -1,17 +1,17 @@
-// O que os arquivos do core compartilham: o estado usado por mais de um deles
-// (declarado aqui, definido em core.cpp ou no arquivo indicado) e as funcoes
-// internas que cruzam arquivos. So para eles: nenhum app inclui este header.
-// Quem cruza a fronteira core <-> shell continua sendo o kernel/internal.hpp
-// (incluido por este); app fala com o sistema so por app.h.
+// What the core files share: the state used by more than one of them
+// (declared here, defined in core.cpp or in the file indicated) and the internal
+// functions that cross files. For them only: no app includes this header.
+// What crosses the core <-> shell boundary is still kernel/internal.hpp
+// (included by this one); apps talk to the system only through app.h.
 //
-// O core foi partido por assunto (so mudou de arquivo, nada de logica):
-//   core.cpp          estado do motor, ISR do toque e do teclado, despertar do sono leve, tarefa de interface, sistema_iniciar
-//   core_toque.cpp    vigia e lupa do GT911, leitura continua, dedos da amostra, bancada (simular toque/gesto/abrir)
-//   core_radios.cpp   Bluetooth, Mesh pela internet, liga/desliga de Wi-Fi, Grove e via do Mesh
-//   core_apps.cpp     abrir/fechar app, montagem do SD em tarefa propria, app recusado
-//   core_energia.cpp  tela acesa por pedido, contrato de economia, relogio do painel, perfil
-//   core_som.cpp      ociosidade do alto-falante, pinos do USB, som em fluxo, bip
-//   core_desenho.cpp  area util, passadas medidas, passada de desenho do conteudo
+// The core was split by topic (only moved between files, no logic changed):
+//   core.cpp          engine state, touch and keyboard ISRs, wake from light sleep, UI task, sistema_iniciar
+//   core_toque.cpp    GT911 watchdog and magnifier, continuous reading, sample fingers, bench (simulate touch/gesture/open)
+//   core_radios.cpp   Bluetooth, Mesh over the internet, Wi-Fi on/off, Grove and the Mesh path
+//   core_apps.cpp     open/close app, SD mount in its own task, refused app
+//   core_energia.cpp  screen kept on by request, power-saving contract, panel clock, profile
+//   core_som.cpp      speaker idling, USB pins, streamed sound, beep
+//   core_desenho.cpp  usable area, measured passes, content drawing pass
 #pragma once
 
 #include "internal.hpp"
@@ -22,14 +22,14 @@
 #include "freertos/semphr.h"
 
 // ---------------------------------------------------------------------------
-// Estado usado por mais de um arquivo (cada um definido no arquivo indicado)
+// State used by more than one file (each defined in the file indicated)
 // ---------------------------------------------------------------------------
 // core.cpp:
-extern bool s_dedo_na_tela;                 // o NOSSO estado: desceu e ainda nao subiu
-extern volatile bool s_toque_pulso;         // a ISR viu um pulso desde a ultima leitura
-extern std::atomic<uint32_t> s_pulsos;      // pulsos do GT911 desde o boot (vigia do toque)
-extern bool s_dedo_do_despertar;            // o dedo que acordou a tela (ou abriu o app) nao toca nada
-extern TaskHandle_t s_tarefa_interface;     // capturado na criacao, ver sistema_iniciar()
+extern bool s_dedo_na_tela;                 // OUR state: went down and has not come up yet
+extern volatile bool s_toque_pulso;         // the ISR saw a pulse since the last read
+extern std::atomic<uint32_t> s_pulsos;      // GT911 pulses since boot (touch watchdog)
+extern bool s_dedo_do_despertar;            // the finger that woke the screen (or opened the app) touches nothing
+extern TaskHandle_t s_tarefa_interface;     // captured at creation, see sistema_iniciar()
 extern uint32_t s_ultimo_desenho;
 
 // core_toque.cpp:
@@ -45,24 +45,24 @@ extern volatile int s_simg[4];
 extern volatile bool s_simg_pedido;
 
 // core_apps.cpp:
-extern volatile bool s_sd_montando;         // true do disparo ate a tarefa terminar
+extern volatile bool s_sd_montando;         // true from the trigger until the task finishes
 
 // core_energia.cpp:
 extern std::atomic<uint32_t> s_acordado;
 extern volatile bool s_pedir_acordar;
-extern SemaphoreHandle_t s_relogio_feito;   // criado com a interface (sistema_iniciar)
+extern SemaphoreHandle_t s_relogio_feito;   // created with the UI (sistema_iniciar)
 
 // core_som.cpp:
 extern const uint32_t SPEAKER_OCIOSO_MS;
-extern uint32_t s_speaker_ocioso_desde;     // 0 = tocando ou desligado
-extern SemaphoreHandle_t s_som_parou;       // criado em sistema_iniciar
-extern SemaphoreHandle_t s_fluxo_pronto;    // criado em sistema_iniciar
+extern uint32_t s_speaker_ocioso_desde;     // 0 = playing or off
+extern SemaphoreHandle_t s_som_parou;       // created in sistema_iniciar
+extern SemaphoreHandle_t s_fluxo_pronto;    // created in sistema_iniciar
 
 // core_desenho.cpp:
-extern uint32_t s_fase_limpar_us;           // a ultima limpeza da area (+ nav)
+extern uint32_t s_fase_limpar_us;           // the last clearing of the area (+ nav)
 
 // ---------------------------------------------------------------------------
-// Funcoes que cruzam arquivos
+// Functions that cross files
 // ---------------------------------------------------------------------------
 // core.cpp:
 uint32_t periodo_do_app(void);
@@ -95,5 +95,5 @@ area_t area_util(void);
 int limite_do_app(const area_t& a);
 void animar_na_rampa(void);
 void anotar_passada(const char* nome, uint32_t us, uint32_t barra, uint32_t limpar, uint32_t conteudo);
-// recorte_app: so o caminho de deslocamento de rolagem passa (o padrao e a area util inteira)
+// recorte_app: only the scroll-shift path passes it (the default is the whole usable area)
 void desenhar_conteudo(bool limpar_area, bool completo_para_apps, const area_t* recorte_app = nullptr);

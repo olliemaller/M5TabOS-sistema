@@ -1,12 +1,12 @@
-// Animacao do bloqueio: Estrelas: viagem pela velocidade da luz.
-// (parte do bloqueio_anim; o que e comum a todas esta no bloqueio_anim_interno.hpp).
+// Lock screen animation: Stars: a journey at light speed.
+// (part of bloqueio_anim; what is common to all of them is in bloqueio_anim_interno.hpp).
 
 #include "bloqueio_anim_interno.hpp"
 
 namespace bq_anim {
 
 // ---------------------------------------------------------------------------
-// 4. ESTRELAS - viagem pela velocidade da luz
+// 4. STARS - a journey at light speed
 // ---------------------------------------------------------------------------
 namespace {
 struct Estrela { float ca, sa, r, k; };

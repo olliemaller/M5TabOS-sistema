@@ -1,16 +1,16 @@
-// TRAVA - um mutex que ja existe antes de qualquer tarefa.
+// TRAVA (lock) - a mutex that exists before any task.
 //
 //   static Trava s_trava;
 //   s_trava.travar(); ... s_trava.destravar();
-//   { Trava::Guarda g(s_trava); ... }   // destrava sozinho no fim do bloco
+//   { Trava::Guarda g(s_trava); ... }   // unlocks by itself at the end of the block
 //
-// O mutex nasce no construtor, que roda com os construtores globais - antes
-// do app_main e de existir concorrencia. Nao ha "criar na primeira vez", nem
-// corrida nessa criacao, nem _iniciar() para lembrar de chamar. O mutex vem
-// do heap (RAM interna), como antes: so o objeto Trava pode morar na PSRAM.
+// The mutex is born in the constructor, which runs with the global constructors - before
+// app_main and before any concurrency exists. There is no "create the first time", nor
+// a race in that creation, nor an _iniciar() to remember to call. The mutex comes
+// from the heap (internal RAM), as before: only the Trava object may live in PSRAM.
 //
-// tab5_sd.cpp continua com o mutex criado no tab5_sd_iniciar() dele - a
-// escolha de la e deliberada (ver o comentario la).
+// tab5_sd.cpp keeps its mutex created in its tab5_sd_iniciar() - the
+// choice there is deliberate (see the comment there).
 #pragma once
 
 #include "freertos/FreeRTOS.h"
@@ -26,7 +26,7 @@ public:
   bool travar(TickType_t espera) { return xSemaphoreTake(m_, espera) == pdTRUE; }
   void destravar(void) { xSemaphoreGive(m_); }
 
-  // Para quem ainda passa o handle direto a xSemaphoreTake/Give.
+  // For code that still passes the handle directly to xSemaphoreTake/Give.
   operator SemaphoreHandle_t() const { return m_; }
 
   class Guarda {

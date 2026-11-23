@@ -1,4 +1,4 @@
-// O portal do navegador - ver tab5_web_portal.hpp.
+// The browser portal - see tab5_web_portal.hpp.
 #include "tab5_web_portal.hpp"
 
 #include <stdio.h>
@@ -14,10 +14,10 @@
 extern const char PORTAL_INICIO[] asm("_binary_tab5_web_portal_html_start");
 extern const char PORTAL_FIM[]    asm("_binary_tab5_web_portal_html_end");
 
-#define SISTEMA_MAX 2048   // a resposta do api/sistema (cabe com folga: 4 partes, poucos apps)
+#define SISTEMA_MAX 2048   // the api/sistema response (fits comfortably: 4 parts, few apps)
 
 // ---------------------------------------------------------------------------
-// O CATALOGO: os apps desta variante que tem pagina no PC (app_t.no_pc)
+// THE CATALOGUE: the apps of this variant that have a PC page (app_t.no_pc)
 // ---------------------------------------------------------------------------
 static const app_t* app_do_pc(const char* nome)
 {
@@ -45,16 +45,16 @@ int tab5_web_catalogo(const char** out, int max)
 }
 
 // ---------------------------------------------------------------------------
-// AS ROTAS DA RAIZ
+// THE ROOT ROUTES
 // ---------------------------------------------------------------------------
 static esp_err_t pagina(httpd_req_t* req)
 {
   httpd_resp_set_type(req, "text/html; charset=utf-8");
   httpd_resp_set_hdr(req, "Cache-Control", "no-store");
-  return httpd_resp_send(req, PORTAL_INICIO, PORTAL_FIM - PORTAL_INICIO - 1);   // TEXT poe um '\0' no fim
+  return httpd_resp_send(req, PORTAL_INICIO, PORTAL_FIM - PORTAL_INICIO - 1);   // TEXT puts a '\0' at the end
 }
 
-// A visao geral: o que a barra de status do Tab5 mostra, mais os apps.
+// The overview: what the Tab5's status bar shows, plus the apps.
 static esp_err_t sistema(httpd_req_t* req)
 {
   char* out = (char*)heap_caps_malloc(SISTEMA_MAX, MALLOC_CAP_SPIRAM);
@@ -77,7 +77,7 @@ static esp_err_t sistema(httpd_req_t* req)
                    (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL), (unsigned)heap_caps_get_total_size(MALLOC_CAP_INTERNAL),
                    (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM), (unsigned)heap_caps_get_total_size(MALLOC_CAP_SPIRAM),
                    WEB_OCIOSO_MS / 60000);
-  // Os do catalogo, abertos ou nao; e o ultimo que abriu (a pagina comeca nele).
+  // Those in the catalogue, open or not; and the last one that opened (the page starts on it).
   const char* cat[SISTEMA_APPS_MAX];
   const int nc = tab5_web_catalogo(cat, SISTEMA_APPS_MAX);
   const char* abertos[WEB_PARTES_MAX];
@@ -147,7 +147,7 @@ static esp_err_t tela(httpd_req_t* req)
 static esp_err_t desligar(httpd_req_t* req)
 {
   const esp_err_t r = tab5_web_json(req, "{\"ok\":true}");
-  tab5_web_desligar();   // a parada espera esta resposta terminar
+  tab5_web_desligar();   // the stop waits for this response to finish
   return r;
 }
 

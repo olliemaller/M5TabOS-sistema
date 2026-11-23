@@ -1,10 +1,10 @@
-/* M5tabOS: copia de default/berry_conf.h do Berry, ajustada para o Tab5.
- * As mudancas estao marcadas com "M5tabOS" ou nos valores:
+/* M5tabOS: copy of Berry's default/berry_conf.h, adjusted for the Tab5.
+ * The changes are marked with "M5tabOS" or are in the values:
  * BE_INTGER_TYPE 1, BE_USE_SINGLE_FLOAT 1, BE_USE_SHARED_LIB 0,
- * BE_USE_OS_MODULE 0, malloc na PSRAM. BE_USE_PERF_COUNTERS fica LIGADO:
- * e ele que chama o gancho de tempo (services/berry_vm.cpp) que interrompe
- * um script em laco infinito. BE_USE_INTROSPECT_MODULE 0: o toptr/fromptr
- * dele davam ao script ponteiro para qualquer endereco (ver berry/ORIGEM.txt). */
+ * BE_USE_OS_MODULE 0, malloc in PSRAM. BE_USE_PERF_COUNTERS stays ON:
+ * it is what calls the time hook (services/berry_vm.cpp) that interrupts
+ * a script stuck in an infinite loop. BE_USE_INTROSPECT_MODULE 0: its
+ * toptr/fromptr gave scripts a pointer to any address (see berry/ORIGEM.txt). */
 /********************************************************************
 ** Copyright (c) 2018-2020 Guan Wenliang
 ** This file is part of the Berry default interpreter.
@@ -96,7 +96,7 @@
  * The value is a power of 2.
  * Default: 20 - which translates to 2^20 or ~1 million instructions
  **/
-#define BE_VM_OBSERVABILITY_SAMPLING    14   /* M5tabOS: 2^13 instrucoes (ver o gancho em berry_vm.cpp) */
+#define BE_VM_OBSERVABILITY_SAMPLING    14   /* M5tabOS: 2^13 instructions (see the hook in berry_vm.cpp) */
 
 /* Macro: BE_STACK_TOTAL_MAX
  * Set the maximum total stack size.
@@ -235,7 +235,7 @@
 #define BE_USE_DEBUG_MODULE             1
 #define BE_USE_GC_MODULE                1
 #define BE_USE_SOLIDIFY_MODULE          1
-#define BE_USE_INTROSPECT_MODULE        0   /* M5tabOS: ponteiro cru e set() por fora */
+#define BE_USE_INTROSPECT_MODULE        0   /* M5tabOS: raw pointer and set() from outside */
 #define BE_USE_STRICT_MODULE            1
 
 /* Macro: BE_EXPLICIT_XXX
@@ -246,8 +246,8 @@
  **/
 #define BE_EXPLICIT_ABORT               abort
 #define BE_EXPLICIT_EXIT                exit
-/* M5tabOS: a memoria do Berry mora na PSRAM (port/be_port_m5.c) - a RAM
- * interna do P4 e a mais disputada do sistema. */
+/* M5tabOS: Berry's memory lives in PSRAM (port/be_port_m5.c) - the P4's
+ * internal RAM is the most contended memory in the system. */
 #ifndef __ASSEMBLER__
 #include <stddef.h>
 void* berry_malloc(size_t n);

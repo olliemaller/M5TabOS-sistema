@@ -1,28 +1,28 @@
-// O diario de gravacoes adiadas na flash interna - ver hal/reserva_nucleo.hpp
-// para o formato e as regras, e hal/tab5_sd.hpp para QUANDO ele e usado (o
-// cartao emprestado ao computador). Quem fala com isto e so o tab5_sd.
+// The journal of deferred writes in internal flash - see hal/reserva_nucleo.hpp
+// for the format and rules, and hal/tab5_sd.hpp for WHEN it is used (the SD
+// card lent to the computer). The only thing that talks to this is tab5_sd.
 //
-// Mora na particao "reserva" (partitions.csv): 2 MB depois do app. Fica
-// vazio quase sempre - so tem registros enquanto o cartao esta fora, e e
-// apagado assim que eles vao para o cartao. O desgaste e desprezivel: alguns
-// KB por uso do pendrive, contra ~100 mil apagamentos por setor.
+// Lives in the "reserva" partition (partitions.csv): 2 MB after the app. It is
+// empty almost always - it only holds records while the card is away, and is
+// erased as soon as they go to the card. Wear is negligible: a few KB per
+// USB flash drive session, against ~100k erase cycles per sector.
 //
-// Seguro de qualquer tarefa (uma trava por dentro).
+// Safe from any task (one lock inside).
 #pragma once
 
 #include "reserva_nucleo.hpp"
 
-// Acha a particao e varre o que ficou de antes (um reinicio no meio do
-// pendrive). Chamar uma vez no boot, antes de qualquer gravacao.
+// Finds the partition and scans whatever was left from before (a restart in
+// the middle of a flash drive session). Call once at boot, before any write.
 bool tab5_reserva_iniciar(void);
 
 bool tab5_reserva_gravar(const reserva_reg_t* reg);
 
-// Ha registros esperando para ir ao cartao.
+// There are records waiting to go to the card.
 bool tab5_reserva_pendente(void);
 
-// Aplica os pendentes em ordem (ver reserva_aplicar). Devolve quantos.
+// Applies the pending ones in order (see reserva_aplicar). Returns how many.
 int  tab5_reserva_aplicar(reserva_aplicar_fn fn, void* ctx);
 
-// Ocupacao, para a tela: bytes usados, tamanho, registros pendentes.
+// Usage, for the screen: bytes used, size, pending records.
 void tab5_reserva_uso(uint32_t* usado, uint32_t* total, uint32_t* pendentes);

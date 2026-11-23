@@ -1,20 +1,20 @@
-// AS DUAS PAGINAS DO PAINEL, e as primitivas de desenho em area.
+// THE PANEL'S TWO PAGES, and the area drawing primitives.
 //
-// O painel MIPI-DSI do Tab5 varre um framebuffer na PSRAM sem parar. O
-// driver do IDF ja aloca DOIS (num_fbs = 2 no Panel_DSI do M5GFX) e troca de
-// pagina so mudando um indice (esp_lcd_panel_dpi.c:506-524) - a troca vale no
-// proximo fim de frame.
+// The Tab5's MIPI-DSI panel scans a framebuffer in PSRAM non-stop. The
+// IDF driver already allocates TWO (num_fbs = 2 in M5GFX's Panel_DSI) and switches
+// page just by changing an index (esp_lcd_panel_dpi.c:506-524) - the switch takes effect at the
+// next end of frame.
 //
-// Quem escreve nas paginas e SO o compositor (kernel/compositor.cpp). Todo o
-// resto do sistema desenha na tela virtual (kernel/tela_virtual.cpp), que o
-// painel nunca le. Ver docs/COMPOSITOR.md.
+// The ONLY thing that writes to the pages is the compositor (kernel/compositor.cpp). All the
+// rest of the system draws on the virtual screen (kernel/tela_virtual.cpp), which the
+// panel never reads. See docs/COMPOSITOR.md.
 //
-// HISTORIA, para quem estranhar o tamanho: este modulo tinha
-// ~800 linhas de defesa contra escrever na pagina que o painel varre - faixas,
-// respiros, double buffer so para repintura completa, rolagem correndo contra
-// o feixe. A causa de fundo era a banda de PSRAM pela metade (linha de cache
-// L2 de 64B em vez de 128B) somada a desenhar na pagina visivel. As duas
-// acabaram: o compositor desenha atras, e a linha de cache e 128B.
+// HISTORY, for anyone surprised by the size: this module had
+// ~800 lines of defence against writing to the page the panel scans - bands,
+// breathing gaps, double buffering only for full repaints, scrolling racing against
+// the beam. The root cause was PSRAM bandwidth at half (L2 cache line
+// of 64B instead of 128B) combined with drawing on the visible page. Both
+// are gone: the compositor draws behind, and the cache line is 128B.
 
 #pragma once
 
@@ -24,62 +24,62 @@
 #include <M5Unified.h>
 #include "tab5_quadro.hpp"
 
-// Prepara as duas paginas. Idempotente: detecta sozinho quando o painel foi
-// recriado (o repouso destroi e remonta o DSI, e os framebuffers mudam).
+// Prepares the two pages. Idempotent: detects by itself when the panel was
+// recreated (idle destroys and rebuilds the DSI, and the framebuffers change).
 bool tab5_tela_iniciar(void);
 
-// Libera o que foi montado. Chamar ANTES de destruir o painel (repouso).
+// Frees what was set up. Call BEFORE destroying the panel (idle).
 void tab5_tela_encerrar(void);
 
-// EPOCA DAS PAGINAS: sobe sempre que as paginas deixam de valer (painel
-// encerrado) ou nascem de novo. Le-se de graca - e o que deixa o compositor
-// conferir "minha pagina ainda existe?" a cada escrita sem chamar nada.
+// PAGE EPOCH: goes up whenever the pages stop being valid (panel
+// shut down) or are born again. Free to read - it is what lets the compositor
+// check "does my page still exist?" on every write without calling anything.
 extern std::atomic<uint32_t> g_tab5_tela_epoca;
 
-// Sobe a cada painel novo. O compositor usa para saber que as paginas que ele
-// conhecia morreram (e que a tela inteira precisa ir para as novas).
+// Goes up with each new panel. The compositor uses it to know that the pages it
+// knew have died (and that the whole screen needs to go to the new ones).
 uint32_t tab5_tela_geracao(void);
 
 // ---------------------------------------------------------------------------
-// PRIMITIVAS DO COMPOSITOR - ninguem mais deve usar
+// COMPOSITOR PRIMITIVES - nobody else should use them
 // ---------------------------------------------------------------------------
-// Pagina de tras (true) ou da frente (false).
+// Back page (true) or front page (false).
 void* tab5_tela_pagina(bool tras);
 
-// Pede a troca SEM esperar. Quem chama espera com tab5_quadro_esperar_troca()
-// antes de tocar na pagina de tras de novo. [y0, y1) limita o msync do driver.
+// Requests the switch WITHOUT waiting. The caller waits with tab5_quadro_esperar_troca()
+// before touching the back page again. [y0, y1) limits the driver's msync.
 bool tab5_tela_pedir_troca(int y0, int y1);
 
 // ---------------------------------------------------------------------------
-// DESENHO EM AREA, no alvo do sistema
+// AREA DRAWING, on the system target
 // ---------------------------------------------------------------------------
-// Para onde limpar/rolar escrevem. O kernel aponta para a tela virtual no
-// boot; nullptr = M5.Display (so se a tela virtual nao puder existir).
+// Where clear/scroll write to. The kernel points it at the virtual screen at
+// boot; nullptr = M5.Display (only if the virtual screen cannot exist).
 void tab5_tela_definir_alvo(lgfx::LovyanGFX* d);
 
-// Pinta um retangulo de uma cor. Dispensa o trabalho quando a area ja esta
-// sabidamente nessa cor (ver tab5_tela_marcar_limpo) - quem escreve app pede
-// limpeza sempre, sem condicao; a decisao e tomada aqui.
+// Paints a rectangle in one colour. Skips the work when the area is already
+// known to be that colour (see tab5_tela_marcar_limpo) - app writers ask for
+// clears always, unconditionally; the decision is made here.
 void tab5_tela_limpar(int x, int y, int largura, int altura, uint16_t cor);
 
-// PARA O SISTEMA: "este retangulo acabou de ficar inteiro desta cor". Vale
-// durante UMA passada de desenho. Evita a limpeza dobrada (o sistema limpa a
-// area util e em seguida o app pede a mesma limpeza).
+// FOR THE SYSTEM: "this rectangle has just become entirely this colour". Valid
+// for ONE drawing pass. Avoids the double clear (the system clears the
+// work area and then the app asks for the same clear).
 void tab5_tela_marcar_limpo(int x, int y, int largura, int altura, uint16_t cor);
 void tab5_tela_esquecer_limpo(void);
-uint32_t tab5_tela_limpezas_evitadas(void);   // diagnostico
+uint32_t tab5_tela_limpezas_evitadas(void);   // diagnostics
 
-// Desloca o conteudo de uma area 'delta' linhas (>0 sobe, <0 desce) e pinta
-// com 'cor' a tira exposta. Reaproveitar pixel ja desenhado poupa CPU numa
-// rolagem. false = |delta| >= altura, nada a reaproveitar.
+// Shifts the content of an area by 'delta' lines (>0 up, <0 down) and paints
+// the exposed strip with 'cor'. Reusing already drawn pixels saves CPU when
+// scrolling. false = |delta| >= height, nothing to reuse.
 bool tab5_tela_rolar(int x, int y, int largura, int altura, int delta, uint16_t cor);
 
-// Diagnostico: quanto a rolagem custou a CPU desde o boot - pixels deslocados
-// pelo copyRect e o tempo gasto nisso (us). Acumulados, nunca zerados: quem
-// mede guarda uma foto e faz a diferenca.
+// Diagnostics: how much scrolling has cost the CPU since boot - pixels shifted
+// by copyRect and the time spent on it (us). Cumulative, never reset: whoever
+// measures keeps a snapshot and takes the difference.
 void tab5_tela_rolagem_custo(uint64_t* px, uint64_t* us);
 
-// OBSOLETA - nao faz nada. Era o "orcamento" de escrita para
-// respirar entre rajadas na pagina visivel. Fica so porque o app Cobra (aba do
-// jogo) ainda chama; sai quando ele deixar de chamar.
+// OBSOLETE - does nothing. It was the write "budget" for
+// breathing between bursts on the visible page. It stays only because the Cobra app (game
+// tab) still calls it; it goes when that stops calling it.
 static inline void tab5_tela_gastou(size_t) { }

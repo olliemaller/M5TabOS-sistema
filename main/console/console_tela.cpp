@@ -1,5 +1,5 @@
-// Comandos do console - TELA: medida de quadros, tela, brilho, piscada, toque, tocar, abrir, ordem, ui.
-// (Partido de console.cpp; a tabela COMANDOS e a ajuda continuam la.)
+// Console commands - TELA (SCREEN): frame measurement, tela, brilho, piscada, toque, tocar, abrir, ordem, ui.
+// (Split from console.cpp; the COMANDOS table and the help remain there.)
 
 #include "driver/ledc.h"
 #include "tab5_bmp.hpp"
@@ -16,11 +16,11 @@
 #include "console/console_interno.hpp"
 
 // ---------------------------------------------------------------------------
-// 'tela medir' / 'tela' - O CUSTO DOS QUADROS NUMA JANELA
+// 'tela medir' / 'tela' - THE COST OF THE FRAMES OVER A WINDOW
 // ---------------------------------------------------------------------------
-// O compositor so acumula (comp_estat); a janela e daqui: 'tela medir' guarda
-// a foto de agora, e 'tela' mostra a diferenca ate o instante da leitura. O
-// monitor tem a foto dele - um nao apaga a janela do outro.
+// The compositor only accumulates (comp_estat); the window is from here: 'tela medir' stores
+// the current snapshot, and 'tela' shows the difference up to the moment of reading. The
+// monitor has its own snapshot - neither clears the other's window.
 static comp_estat_t s_medir_base = {};
 static int64_t      s_medir_desde = 0;
 
@@ -39,8 +39,8 @@ static void tela_medir_mostrar(void)
   const comp_estat_t& b = s_medir_base;
   const double seg = (double)(esp_timer_get_time() - s_medir_desde) / 1e6;
   const uint32_t q = a.quadros - b.quadros;
-  // Cada pixel copiado por DMA e lido (2 B) e escrito (2 B) na PSRAM. Por
-  // isso x4. "desenhado" e o que a CPU pintou direto na pagina (so escrita).
+  // Each pixel copied by DMA is read (2 B) and written (2 B) in PSRAM. Hence
+  // x4. "drawn" is what the CPU painted directly on the page (write only).
   const double mb_d  = (double)(a.px_quadro    - b.px_quadro)    * 2.0 / 1e6;
   const double mb_s  = (double)(a.px_sinc      - b.px_sinc)      * 4.0 / 1e6;
   const double mb_rd = (double)(a.px_rolar_dma - b.px_rolar_dma) * 4.0 / 1e6;
@@ -57,8 +57,8 @@ static void tela_medir_mostrar(void)
          ms_por(a.us_desenho - b.us_desenho), ms_por(a.us_copia - b.us_copia),
          ms_por(a.us_espera - b.us_espera));
   {
-    // O desenho separado: passada COMPLETA (abrir app, home) e o resto
-    // (rolagem, um valor mudou). Problemas diferentes, remedios diferentes.
+    // The drawing split out: FULL pass (opening an app, home) and the rest
+    // (scrolling, a value changed). Different problems, different remedies.
     const uint32_t nc = a.n_desenho_completo - b.n_desenho_completo;
     const uint32_t nt = a.n_desenho - b.n_desenho;
     const uint64_t uc = a.us_desenho_completo - b.us_desenho_completo;
@@ -107,19 +107,19 @@ static void tela_medir_mostrar(void)
 }
 
 // ---------------------------------------------------------------------------
-// TELA
+// SCREEN
 // ---------------------------------------------------------------------------
 
-// DIAGNOSTICO DA PISCADA AZUL, e interruptores para comparar sem regravar.
+// BLUE FLICKER DIAGNOSTICS, and switches to compare without reflashing.
 //
-// PALAVRA RECONHECIDA OU NADA FEITO - e esta regra custou uma medicao. Uma
-// versao anterior era "se nao for 'on', desligue": qualquer segunda palavra que
-// nao casasse virava um priorizar_tela(false) SILENCIOSO, e uma medicao saiu
-// com a prioridade em "padrao" sem ninguem ter pedido. Comando de diagnostico
-// nao pode ter caminho destrutivo por omissao.
-// BANCADA: a tela como esta agora, num .bmp do cartao (apps/Console).
-// readRect devolve o RGB565 na ordem do LovyanGFX (bytes trocados); o filtro
-// desfaz na copia que vai para o arquivo.
+// RECOGNISED WORD OR NOTHING DONE - and this rule cost a measurement. An
+// earlier version was "if it is not 'on', turn off": any second word that
+// did not match became a SILENT priorizar_tela(false), and a measurement came out
+// with the priority at "default" without anyone asking for it. A diagnostic command
+// must not have a destructive path by default.
+// BENCH: the screen as it is now, into a .bmp on the SD card (apps/Console).
+// readRect returns RGB565 in LovyanGFX's order (bytes swapped); the filter
+// undoes that in the copy that goes to the file.
 static void bmp_desinverter(uint16_t* l, int n) { for (int i = 0; i < n; ++i) { l[i] = (uint16_t)((l[i] << 8) | (l[i] >> 8)); } }
 static void tela_foto(const char* nome)
 {
@@ -132,7 +132,7 @@ static void tela_foto(const char* nome)
   printf(ok ? tr("gravada: /sdcard/apps/Console/%s.bmp (%dx%d)\n") : tr("falhou ao gravar %s.bmp\n"), nome, w, h);
 }
 
-// BANCADA: clique e abrir app pela serial (ver sistema_simular_toque).
+// BENCH: tap and open an app over the serial port (see sistema_simular_toque).
 void c_tocar(int argc, char** argv)
 {
   if (argc < 3) { mostrar_uso("tocar"); return; }
@@ -140,7 +140,7 @@ void c_tocar(int argc, char** argv)
   printf(tr("toque em %s,%s\n"), argv[1], argv[2]);
 }
 
-bool nome_de_app(const char* nome, const char* s);   // mais abaixo
+bool nome_de_app(const char* nome, const char* s);   // further down
 
 void c_abrir(int argc, char** argv)
 {
@@ -149,7 +149,7 @@ void c_abrir(int argc, char** argv)
     return;
   }
   if (eh(argv[1], "home")) { sistema_simular_abrir(nullptr); printf("%s", tr("voltando para a home\n")); return; }
-  // O nome pode ter espaco ("abrir Camera Berry"): as palavras juntas de novo.
+  // The name may have a space ("abrir Camera Berry"): the words joined again.
   char nome[48] = "";
   for (int i = 1; i < argc; ++i) {
     if (i > 1) { strlcat(nome, " ", sizeof(nome)); }
@@ -165,7 +165,7 @@ void c_abrir(int argc, char** argv)
   printf(tr("nao ha app '%s' - 'abrir' lista\n"), nome);
 }
 
-// ORDEM DOS ICONES NA HOME - a mesma que segurar e arrastar muda na tela.
+// ORDER OF THE ICONS ON THE HOME SCREEN - the same order that press-and-drag changes on screen.
 static const app_t* app_por_nome(const char* nome)
 {
   for (int i = 0; i < SISTEMA_NUM_APPS; ++i) {
@@ -218,8 +218,8 @@ void c_tela(int argc, char** argv)
     if (eh(o, "banco")) { tab5_quadro_banco(); return; }
     if (eh(o, "irqs"))  { tab5_quadro_listar_irqs(); return; }
     if (eh(o, "atrasar")) {
-      // PROVA DA PISCADA: segura um core e o usuario olha a tela. Pisca =
-      // a ISR atrasada do painel e a causa; nao pisca = a causa e outra.
+      // FLICKER PROOF: holds a core and the user watches the screen. Flickers =
+      // the panel's delayed ISR is the cause; does not flicker = the cause is something else.
       if (argc < 3) {
         printf("%s", tr("uso: tela atrasar <ms> [critica] [nucleo 0|1] [vezes]\n"
                         "   (ex.: tela atrasar 10 - 5 vezes, interrupcoes desligadas no nucleo 0)\n"));
@@ -241,8 +241,8 @@ void c_tela(int argc, char** argv)
       return;
     }
     if (eh(o, "rolar")) {
-      // Rolagem pelo DMA (da pagina da frente) ou pela CPU (dentro da de
-      // tras). Rastro que some com 'cpu' esta no caminho do DMA.
+      // Scrolling by DMA (from the front page) or by the CPU (within the back
+      // one). A trail that disappears with 'cpu' is on the DMA path.
       extern bool g_tela_rolar_cpu;
       if (argc >= 3 && eh(argv[2], "cpu"))      { g_tela_rolar_cpu = true; }
       else if (argc >= 3 && eh(argv[2], "dma")) { g_tela_rolar_cpu = false; }
@@ -251,26 +251,26 @@ void c_tela(int argc, char** argv)
       return;
     }
     if (eh(o, "relogio")) {
-      // MUDA O RELOGIO DE PIXEL EM EXECUCAO. E o unico ajuste que reduz a
-      // demanda do painel em vez de disputar melhor - ver tab5_power.cpp.
+      // CHANGES THE PIXEL CLOCK AT RUN TIME. It is the only adjustment that reduces the
+      // panel's demand instead of competing better - see tab5_power.cpp.
       if (argc < 3) { printf("%s", tr("uso: tela relogio <mhz>   (ex.: tela relogio 60)\n")); return; }
       const int mhz = atoi(argv[2]);
-      const bool ok = sistema_trocar_relogio_painel(mhz);   // na tarefa de interface
-      // O painel remontado nasce com framebuffer em BRANCO (o
-      // esp_lcd_new_panel_dpi aloca com calloc) - sem o redesenho a tela
-      // ficava preta com o backlight aceso. GRAVA SO DEPOIS de aceito: se
-      // gravasse antes e o painel recusasse, o proximo boot tentaria de novo o
-      // mesmo valor ruim.
+      const bool ok = sistema_trocar_relogio_painel(mhz);   // on the UI task
+      // The rebuilt panel is born with a WHITE framebuffer (
+      // esp_lcd_new_panel_dpi allocates with calloc) - without the redraw the screen
+      // stayed black with the backlight on. SAVES ONLY AFTER it is accepted: if it
+      // saved first and the panel refused, the next boot would try the same
+      // bad value again.
       if (ok) {
         sistema_pedir_redesenho_completo();
-        ajustes_definir_relogio_painel((uint8_t)tab5_power_relogio_dpi());   // o REAL aplicado
+        ajustes_definir_relogio_painel((uint8_t)tab5_power_relogio_dpi());   // the REAL value applied
       }
       printf(ok ? tr("painel remontado a %d MHz e gravado - vale no proximo boot tambem\n")
                 : tr("nao subiu nesse relogio - voltei ao anterior (%d MHz)\n"), tab5_power_relogio_dpi());
     }
     else if (eh(o, "link")) {
-      // VELOCIDADE DO LINK DSI, so para teste: NAO grava (reiniciar volta ao
-      // do M5GFX). Para comparar a tremida nas bordas entre 1040 e 730 Mbps.
+      // DSI LINK SPEED, for testing only: does NOT save (restarting goes back to
+      // M5GFX's). To compare the edge shimmer between 1040 and 730 Mbps.
       if (argc < 3) { printf(tr("link DSI: %d Mbps por via\nuso: tela link <mbps>   (ex.: tela link 730)\n"), tab5_power_link_dsi()); return; }
       const bool ok = sistema_trocar_link_painel(atoi(argv[2]));
       if (ok) { sistema_pedir_redesenho_completo(); }
@@ -283,7 +283,7 @@ void c_tela(int argc, char** argv)
     else if (eh(o, "prioridade") && argc >= 3 && (eh(argv[2], "padrao") || eh(argv[2], "off"))) {
       tab5_barramento_priorizar_tela(false);
     }
-    // Formas antigas, mantidas: 'tela on' / 'tela off'.
+    // Old forms, kept: 'tela on' / 'tela off'.
     else if (eh(o, "on")  || eh(o, "sim")) { tab5_barramento_priorizar_tela(true); }
     else if (eh(o, "off") || eh(o, "nao")) { tab5_barramento_priorizar_tela(false); }
     else {
@@ -298,8 +298,8 @@ void c_tela(int argc, char** argv)
   printf(tr("  limpezas dispensadas      : %lu\n"),
          (unsigned long)tab5_tela_limpezas_evitadas());
   {
-    // Os detectores de hal/tab5_quadro. Sem 'pior': ler zera, e quem
-    // acompanha o pior e o monitor, que vira evento.
+    // The detectors from hal/tab5_quadro. No 'pior' (worst): reading resets it, and whoever
+    // tracks the worst is the monitor, which turns it into an event.
     uint32_t periodo_us = 0;
     const uint32_t atrasos = tab5_quadro_atrasos(nullptr, &periodo_us);
     const uint32_t erros   = tab5_quadro_erros_dsi(nullptr, nullptr);
@@ -315,9 +315,9 @@ void c_tela(int argc, char** argv)
     }
   }
 
-  // A CONTA NA TELA, e nao so no comentario do fonte. Sao estes numeros que
-  // dizem se mexer no relogio valeu: MB/s e o que o painel tira da PSRAM sem
-  // parar, e e contra esse valor que todo o resto do sistema disputa.
+  // THE SUM ON SCREEN, and not just in the source comment. These are the numbers that
+  // say whether changing the clock was worth it: MB/s is what the panel pulls from PSRAM non-
+  // stop, and that is the value everything else in the system competes against.
   const int mhz = tab5_power_relogio_dpi();
   printf(tr("  tela                      : %s%s\n"), tab5_painel_nome(),
          tab5_painel_toque_gt911() ? "" : tr(" (relogio fixo, repouso so de luz)"));
@@ -332,10 +332,10 @@ void c_tela(int argc, char** argv)
   printf("%s", tr("\n  underrun > 0 = a piscada azul. 'help tela' lista as medidas e ajustes.\n"));
 }
 
-// TESTE DO BACKLIGHT, sem gravar: achar o menor nivel que ainda acende e ver
-// se a frequencia do PWM muda o piso. Driver de LED com tempo minimo de ligado
-// nao obedece duty pequeno em frequencia alta (a 44,1 kHz o periodo e
-// 22,7 us) - abaixo de certo ponto o brilho para de cair.
+// BACKLIGHT TEST, without saving: find the lowest level that still lights and see
+// whether the PWM frequency changes the floor. An LED driver with a minimum on-time
+// does not obey a small duty at high frequency (at 44.1 kHz the period is
+// 22.7 us) - below a certain point the brightness stops falling.
 void c_brilho(int argc, char** argv)
 {
   if (argc < 2) {
@@ -347,7 +347,7 @@ void c_brilho(int argc, char** argv)
   if (b > 255) { b = 255; }
   if (argc >= 3) {
     const uint32_t hz = (uint32_t)atoi(argv[2]);
-    // Canal 7 do M5GFX no Tab5 -> timer (7 >> 1) & 3 = 3, modo lento.
+    // M5GFX channel 7 on the Tab5 -> timer (7 >> 1) & 3 = 3, low-speed mode.
     const esp_err_t e = ledc_set_freq(LEDC_LOW_SPEED_MODE, LEDC_TIMER_3, hz);
     printf(tr("PWM do backlight: %lu Hz (%s)\n"), (unsigned long)hz, esp_err_to_name(e));
   }
@@ -356,8 +356,8 @@ void c_brilho(int argc, char** argv)
          b, (float)(((b * 257 + 64) >> 7)) * 100.0f / 512.0f);
 }
 
-// Abrir um app faz varias coisas de uma vez; cada opcao faz SO UMA, anotando a
-// hora, para olhar a tela e ver qual pisca.
+// Opening an app does several things at once; each option does ONLY ONE, noting the
+// time, so you can watch the screen and see which one flickers.
 void c_piscada(int argc, char** argv)
 {
   const char* o = (argc >= 2) ? argv[1] : "";
@@ -391,9 +391,9 @@ void c_piscada(int argc, char** argv)
   }
 }
 
-// Liga/desliga o diagnostico. Nao le o painel daqui: o I2C e da tarefa de
-// interface, e duas tarefas no mesmo barramento leem registrador trocado sem
-// dar erro. Aqui so se aciona a bandeira; quem imprime e quem mede.
+// Turns the diagnostics on/off. Does not read the panel from here: I2C belongs to the UI
+// task, and two tasks on the same bus read the wrong register without
+// raising an error. Here we only set the flag; whoever measures is whoever prints.
 void c_toque(int argc, char** argv)
 {
   if (argc >= 2 && eh(argv[1], "regs")) {
@@ -414,8 +414,8 @@ void c_toque(int argc, char** argv)
                : tr("diagnostico de toque desligado\n"));
 }
 
-// Onde a interface esta AGORA - funciona com a tela congelada: o console e
-// outra tarefa. Rode duas vezes: 'voltas' parado = laco parado nesse passo.
+// Where the UI is NOW - works with the screen frozen: the console is
+// another task. Run it twice: 'voltas' unchanged = loop stuck at that step.
 void c_ui(int, char**)
 {
   sistema_diag_t d;

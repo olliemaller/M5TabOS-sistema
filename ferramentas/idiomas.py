@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
-"""IDIOMAS - o xgettext/msgmerge do M5tabOS, sem dependencia nenhuma.
+"""IDIOMAS (languages) - M5tabOS's xgettext/msgmerge, with no dependencies at all.
 
-  ferramentas/idiomas.py          junta os textos e atualiza idiomas/*.po
+  ferramentas/idiomas.py          gathers the texts and updates idiomas/*.po
   ferramentas/idiomas.py novo fr "Français"
-                                  cria idiomas/fr.po com todos os textos vazios
+                                  creates idiomas/fr.po with all texts empty
 
-O que entra: todo tr("...") e N_("...") do main/ (literais vizinhos se
-juntam, como no C) e o .nome de cada app_t (o nome desenhado e tr(app->nome)).
+What goes in: every tr("...") and N_("...") in main/ (adjacent literals are
+joined, as in C) and the .nome of each app_t (the drawn name is tr(app->nome)).
 
-idiomas/M5tabOS.pot e o modelo. Em cada .po: a traducao que ja existe fica;
-texto novo entra com msgstr vazio; texto que saiu do codigo vai para o fim
-como comentario "#~" (nao se perde a traducao se ele voltar).
+idiomas/M5tabOS.pot is the template. In each .po: existing translations stay;
+new text goes in with an empty msgstr; text that left the code goes to the end
+as a "#~" comment (the translation is not lost if it comes back).
 
-O en.po vai embutido no firmware; qualquer outro .po se copia para
-/sdcard/apps/Sistema/idiomas/ no cartao (ver main/services/idioma.h).
+en.po is embedded in the firmware; any other .po is copied to
+/sdcard/apps/Sistema/idiomas/ on the SD card (see main/services/idioma.h).
 """
 import os
 import re
@@ -30,7 +30,7 @@ NOME_APP = re.compile(r'\.nome\s*=\s*(' + LIT + r')')
 
 
 def sem_comentarios(c):
-    """Tira // e /* */ fora de string (para os exemplos dos comentarios nao contarem)."""
+    """Strips // and /* */ outside strings (so examples in comments do not count)."""
     out, i, n = [], 0, len(c)
     while i < n:
         if c[i] == '"':
@@ -52,7 +52,7 @@ def juntar(literais):
 
 
 def extrair():
-    textos = {}   # texto -> [arquivos], na ordem em que aparecem
+    textos = {}   # text -> [files], in the order they appear
     for pasta, _, arqs in sorted(os.walk(MAIN)):
         for a in sorted(arqs):
             if not a.endswith(('.cpp', '.hpp', '.h')) or a in ('fontes_suaves.cpp', 'tab5_emoji_dados.cpp'):
@@ -70,7 +70,7 @@ def extrair():
 
 
 def ler_po(cam):
-    """{msgid: msgstr} e o cabecalho, de um .po (so o que este script escreve e o Poedit gravam)."""
+    """{msgid: msgstr} and the header, from a .po (only what this script writes and Poedit saves)."""
     pares, cab, atual, campo = {}, '', None, None
     obsoletos = {}
     for linha in open(cam, encoding='utf-8'):
@@ -106,7 +106,7 @@ def ler_po(cam):
 
 
 def escrever_po(cam, cab, textos, pares, refs=False):
-    """'refs': as linhas "#: arquivo" (so no .pot - o .po vai embutido e fica menor sem elas)."""
+    """'refs': the "#: file" lines (only in the .pot - the .po is embedded and is smaller without them)."""
     out = ['msgid ""', 'msgstr ""']
     out += ['"' + c + '\\n"' for c in cab.split('\\n') if c]
     out.append('')
@@ -129,7 +129,7 @@ def main():
         if not os.path.exists(cam):
             cab = 'Language: %s\\nX-Language-Name: %s\\nContent-Type: text/plain; charset=UTF-8\\n' % (sys.argv[2], sys.argv[3])
             escrever_po(cam, cab, textos, {})
-    print('%d textos no codigo' % len(textos))
+    print('%d texts in the code' % len(textos))
     for a in sorted(os.listdir(PASTA)):
         if not a.endswith('.po'):
             continue
@@ -137,7 +137,7 @@ def main():
         cab, pares = ler_po(cam)
         escrever_po(cam, cab, textos, pares)
         feitos = sum(1 for t in textos if pares.get(t))
-        print('  %-8s %4d/%d traduzidos' % (a, feitos, len(textos)))
+        print('  %-8s %4d/%d translated' % (a, feitos, len(textos)))
 
 
 if __name__ == '__main__':

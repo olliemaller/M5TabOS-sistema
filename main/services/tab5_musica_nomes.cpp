@@ -1,16 +1,16 @@
-// TOCADOR DE MUSICA - nomes: UTF-8 e o CP437 das playlists antigas, e o titulo
-// (e o artista) tirado do nome do arquivo. Ver tab5_musica_interno.hpp.
+// MUSIC PLAYER - names: UTF-8 and the CP437 of old playlists, and the title
+// (and artist) taken from the file name. See tab5_musica_interno.hpp.
 #include "tab5_musica_interno.hpp"
 #include <cstdio>
 #include <cstring>
 
 // ---------------------------------------------------------------------------
-// NOMES: o FAT daqui fala UTF-8 (CONFIG_FATFS_API_ENCODING_UTF_8): o nome
-// que o readdir() entrega e o mesmo que a tela mostra e que o open() aceita.
-// Ate a versao anterior ele falava CP437 - e as playlists gravadas naquela
-// epoca guardam os caminhos em CP437. Por isso tab5_musica_nome_utf8() (e a
-// leitura do .m3u) ainda entendem CP437: texto que NAO e UTF-8 valido so
-// pode ter vindo de la, e e convertido.
+// NAMES: the FAT here speaks UTF-8 (CONFIG_FATFS_API_ENCODING_UTF_8): the name
+// readdir() returns is the same one the screen shows and open() accepts.
+// Up to the previous version it spoke CP437 - and playlists written back
+// then store their paths in CP437. That is why tab5_musica_nome_utf8() (and
+// the .m3u reader) still understand CP437: text that is NOT valid UTF-8 can
+// only have come from there, and is converted.
 // ---------------------------------------------------------------------------
 static const uint16_t CP437_ALTO[128] = {
   0x00C7,0x00FC,0x00E9,0x00E2,0x00E4,0x00E0,0x00E5,0x00E7,0x00EA,0x00EB,0x00E8,0x00EF,0x00EE,0x00EC,0x00C4,0x00C5,
@@ -23,7 +23,7 @@ static const uint16_t CP437_ALTO[128] = {
   0x2261,0x00B1,0x2265,0x2264,0x2320,0x2321,0x00F7,0x2248,0x00B0,0x2219,0x00B7,0x221A,0x207F,0x00B2,0x25A0,0x00A0,
 };
 
-// Acrescenta um ponto de codigo em UTF-8; false = nao coube.
+// Appends a code point in UTF-8; false = it did not fit.
 bool musica_utf8_por(char* out, size_t tam, size_t* k, uint32_t c)
 {
   char b[4]; size_t n;
@@ -37,7 +37,7 @@ bool musica_utf8_por(char* out, size_t tam, size_t* k, uint32_t c)
   return true;
 }
 
-// O texto e UTF-8 valido? (ASCII puro tambem e.)
+// Is the text valid UTF-8? (Pure ASCII is too.)
 bool musica_utf8_valido(const char* s)
 {
   for (const uint8_t* p = (const uint8_t*)s; *p; ) {
@@ -54,7 +54,7 @@ void tab5_musica_nome_utf8(const char* nome, char* out, size_t out_tam)
 {
   if (!out_tam) { return; }
   if (musica_utf8_valido(nome)) {
-    // Corta sem partir uma letra no meio.
+    // Cut without splitting a character in the middle.
     size_t n = strlen(nome);
     if (n >= out_tam) {
       n = out_tam - 1;
@@ -64,7 +64,7 @@ void tab5_musica_nome_utf8(const char* nome, char* out, size_t out_tam)
     out[n] = '\0';
     return;
   }
-  size_t k = 0;   // CP437 (playlist antiga)
+  size_t k = 0;   // CP437 (old playlist)
   for (const uint8_t* p = (const uint8_t*)nome; *p; ++p) {
     const uint32_t c = (*p < 0x80) ? *p : CP437_ALTO[*p - 0x80];
     if (!musica_utf8_por(out, out_tam, &k, c)) { break; }
@@ -83,7 +83,7 @@ static void tirar_parenteses(char* t)
     if (!fundo) { r[k++] = *p; }
   }
   r[k] = '\0';
-  // Espacos repetidos e nas pontas (e o " - " que ficou pendurado no fim).
+  // Repeated spaces and spaces at the ends (and the " - " left dangling at the end).
   char* a = r;
   while (*a == ' ') { ++a; }
   size_t n = strlen(a);
@@ -97,9 +97,9 @@ static void tirar_parenteses(char* t)
   *w = '\0';
 }
 
-// O titulo (e o artista, se o nome trouxer) a partir do nome do arquivo:
-// "Artista - Titulo (Video).mp3" -> "Titulo" e "Artista". Sem " - ", o nome
-// todo e o titulo. '_' vira espaco (nome baixado sem espacos).
+// The title (and the artist, if the name has one) from the file name:
+// "Artista - Titulo (Video).mp3" -> "Titulo" and "Artista". Without " - ",
+// the whole name is the title. '_' becomes a space (name downloaded without spaces).
 void tab5_musica_titulo_do_arquivo(const char* nome, char* titulo, size_t tt, char* artista, size_t ta)
 {
   char t[TAB5_MUSICA_NOME_MAX];

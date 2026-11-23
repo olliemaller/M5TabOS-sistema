@@ -1,451 +1,451 @@
-// Servico Meshtastic - o enlace com o M5 Unit C6L pelo Grove.
+// Meshtastic service - the link to the M5 Unit C6L over Grove.
 //
-// SERVICO, nao aplicativo. A tarefa fica de pe enquanto o Grove estiver
-// entregue ao Meshtastic, independente de qual app esta na tela. E o que
-// permite notificar mensagem nova sem o app aberto - se o enlace morresse junto
-// com a janela, so haveria mensagem enquanto voce estivesse olhando.
+// A SERVICE, not an app. The task stays up while the Grove port is
+// given over to Meshtastic, regardless of which app is on screen. That is what
+// allows notifying a new message without the app open - if the link died with
+// the window, there would only be messages while you were looking.
 //
-// Mesmo desenho de tab5_wifi e tab5_teclado: aqui mora o estado, o app le.
+// Same design as tab5_wifi and tab5_teclado: the state lives here, the app reads it.
 //
 // -------------------------------------------------------------------------
-// O PROTOCOLO, EM DUAS LINHAS
+// THE PROTOCOL, IN TWO LINES
 // -------------------------------------------------------------------------
-// O Meshtastic em modo PROTO manda protobuf enquadrado:
+// Meshtastic in PROTO mode sends framed protobuf:
 //
-//   94 C3 <tam_hi> <tam_lo> <protobuf de FromRadio>
+//   94 C3 <len_hi> <len_lo> <FromRadio protobuf>
 //
-// Verificado na bancada: 20 frames seguidos decodificados, e o
-// numero do no lido aqui bateu com o que a CLI leu pelo USB (4044735316).
+// Verified on the bench: 20 consecutive frames decoded, and the
+// node number read here matched what the CLI read over USB (4044735316).
 //
-// NAO usamos os .proto oficiais do Meshtastic. Sao dezenas de arquivos e um
-// gerador para ler meia duzia de campos. Protobuf e simples o bastante para
-// andar a mao: cada campo e <tag varint><valor>, e a tag traz numero e tipo.
-// Mesmo caminho do NMEA e do teclado, que deram certo.
+// We do NOT use Meshtastic's official .proto files. They are dozens of files and a
+// generator to read half a dozen fields. Protobuf is simple enough to
+// walk by hand: each field is <tag varint><value>, and the tag carries number and type.
+// Same path as NMEA and the keyboard, which worked out.
 
 #pragma once
 
 #include <stdint.h>
 #include <stdbool.h>
-#include <stddef.h>   // size_t - usado em tab5_mesh_nome_exibicao()
+#include <stddef.h>   // size_t - used in tab5_mesh_nome_exibicao()
 
-// NOS AO VIVO. Eram 32 - o mesmo teto apertado de um no pequeno. Com o MQTT
-// ligado no C6L (downlink), cada no da internet que fala vira entrada aqui,
-// e 32 vagas giravam em segundos: um no de RADIO quieto (apresentacao de 3 em
-// 3 h, telemetria de 30 em 30 min) era despejado antes de aparecer na tela,
-// mesmo com os pacotes dele passando pelo C6L. 256 na PSRAM sao ~30 KB.
+// LIVE NODES. It was 32 - the same tight ceiling as a small node. With MQTT
+// on at the C6L (downlink), every internet node that speaks becomes an entry here,
+// and 32 slots churned in seconds: a quiet RADIO node (announcing every 3
+// h, telemetry every 30 min) was evicted before appearing on screen,
+// even with its packets passing through the C6L. 256 in PSRAM is ~30 KB.
 #define MESH_MAX_NOS     256
 #define MESH_MAX_MSGS      8
 #define MESH_NOME_LONGO   40
 #define MESH_NOME_CURTO    6
 
-// Buffer de TEXTO RECEBIDO: 238 cabe qualquer payload valido com folga e o
-// terminador. O teto do protocolo e menor - ver MESH_PAYLOAD_MAX.
+// RECEIVED TEXT buffer: 238 fits any valid payload with room to spare plus the
+// terminator. The protocol ceiling is smaller - see MESH_PAYLOAD_MAX.
 #define MESH_TEXTO       238
 
-// TETO DE ENVIO: Data.payload tem max_size 233 no mesh.pb.h do firmware
-// (meshtastic_Constants_DATA_PAYLOAD_LEN). Um ToRadio com payload maior falha
-// na decodificacao nanopb DENTRO do no e e descartado sem resposta nenhuma -
-// nem queueStatus, nem Routing: a mensagem so vira "sem resposta" 60 s depois.
-// Por isso o corte acontece ANTES de sair, na fronteira de um caractere UTF-8,
-// e a barra de escrita ja nao aceita mais que isto (conversa_t.limite).
+// SEND CEILING: Data.payload has max_size 233 in the firmware's mesh.pb.h
+// (meshtastic_Constants_DATA_PAYLOAD_LEN). A ToRadio with a bigger payload fails
+// nanopb decoding INSIDE the node and is discarded with no response at all -
+// no queueStatus, no Routing: the message only becomes "no response" 60 s later.
+// That is why the cut happens BEFORE it goes out, on a UTF-8 character boundary,
+// and the compose bar no longer accepts more than this (conversa_t.limite).
 //
-// E O TETO DO PROTOBUF NAO E O DO AR. O firmware ainda acrescenta, no Data
-// codificado, o 'bitfield' (2 bytes) e o cabecalho de 16; o pacote inteiro
-// nao passa de 255 (MAX_LORA_PAYLOAD_LEN). Texto de canal cabe ate ~232; a
-// mensagem DIRETA cifrada com chave publica (PKI) leva mais 12 e cabe ate
-// ~220. Acima disso o no responde TOO_LARGE (Router.cpp, perhapsEncode). Os
-// clientes oficiais param em 200 - e o mesmo teto aqui, com folga para os
-// campos que versoes novas acrescentarem.
+// AND THE PROTOBUF CEILING IS NOT THE ON-AIR ONE. The firmware still adds, to the
+// encoded Data, the 'bitfield' (2 bytes) and the 16-byte header; the whole packet
+// cannot exceed 255 (MAX_LORA_PAYLOAD_LEN). Channel text fits up to ~232; a
+// DIRECT message encrypted with a public key (PKI) takes 12 more and fits up to
+// ~220. Above that the node answers TOO_LARGE (Router.cpp, perhapsEncode). The
+// official clients stop at 200 - and that is the ceiling here too, with room for the
+// fields newer versions may add.
 #define MESH_PAYLOAD_MAX 200
 
-// Hora valida: tab5_hora_valida() / tab5_hora_epoch() (services/tab5_hora.hpp).
+// Valid time: tab5_hora_valida() / tab5_hora_epoch() (services/tab5_hora.hpp).
 
-// Sentinela de mesh_msg_t::saltos - "nao da para saber", nunca "zero saltos".
+// Sentinel for mesh_msg_t::saltos - "cannot tell", never "zero hops".
 #define MESH_SALTOS_DESCONHECIDO 255
 
 typedef struct {
-  uint32_t num;                        // identificador do no na malha
+  uint32_t num;                        // the node's identifier on the mesh
   char     longo[MESH_NOME_LONGO];     // "Meshtastic c354"
   char     curto[MESH_NOME_CURTO];     // "capc"
-  float    snr;                        // qualidade do ultimo pacote dele
-  uint32_t visto_em;                   // last_heard, hora UTC do radio
+  float    snr;                        // quality of its last packet
+  uint32_t visto_em;                   // last_heard, the radio's UTC time
 
-  // Uptime NOSSO do ultimo pacote que ouvimos dele; 0 = nao ouvimos nenhum
-  // desde que ligamos. Existe porque o last_heard acima e a hora do RADIO, e
-  // nos nem sempre sabemos que horas sao - ver tab5_mesh_epoch().
+  // OUR uptime at the last packet we heard from it; 0 = we have heard none
+  // since we started. It exists because last_heard above is the RADIO's time, and
+  // we do not always know what time it is - see tab5_mesh_epoch().
   uint32_t visto_local_ms;
 
-  // Ha quantos segundos o no foi ouvido pela ultima vez; -1 = nao da para
-  // saber. NAO e guardado na tabela: e calculado no tab5_mesh_no(), no momento
-  // da copia, justamente para nao envelhecer entre a leitura e o desenho.
+  // How many seconds since the node was last heard; -1 = cannot
+  // tell. NOT stored in the table: it is computed in tab5_mesh_no(), at the moment
+  // of copying, precisely so it does not age between reading and drawing.
   int32_t  idade_s;
 
-  // IDENTIDADE DE HARDWARE, que e o que nao muda.
+  // HARDWARE IDENTITY, which is what does not change.
   //
-  // 'longo' e 'curto' sao ETIQUETAS: quem renomeia o no no celular troca as
-  // duas, e elas nao servem para dizer com que aparelho voce esta falando. O
-  // que serve e isto:
+  // 'longo' and 'curto' are LABELS: whoever renames the node on the phone changes
+  // both, and they are no use for telling which device you are talking to. What
+  // is useful is this:
   //
-  //   id      - "!a1b2c3d4", o identificador que o Meshtastic usa em todo lugar
-  //             (log, mapa, aplicativo). E derivado do MAC e nao muda.
-  //   mac     - os 6 bytes, quando o no os manda. Campo marcado como obsoleto
-  //             no protobuf, entao firmware novo costuma omitir - por isso
-  //             'tem_mac' existe, para nao desenhar 00:00:00:00:00:00 como se
-  //             fosse um endereco de verdade.
-  //   hw      - HardwareModel: qual placa e (Heltec, T-Beam, Unit C6L...).
-  char     id[16];                     // "!a1b2c3d4"; vazio = nao veio
+  //   id      - "!a1b2c3d4", the identifier Meshtastic uses everywhere
+  //             (log, map, app). It is derived from the MAC and does not change.
+  //   mac     - the 6 bytes, when the node sends them. Field marked obsolete
+  //             in the protobuf, so newer firmware tends to omit it - hence
+  //             'tem_mac' exists, so as not to draw 00:00:00:00:00:00 as if
+  //             it were a real address.
+  //   hw      - HardwareModel: which board it is (Heltec, T-Beam, Unit C6L...).
+  char     id[16];                     // "!a1b2c3d4"; empty = did not come
   uint8_t  mac[6];
   bool     tem_mac;
-  uint8_t  hw;                         // HardwareModel; 0 = desconhecido
+  uint8_t  hw;                         // HardwareModel; 0 = unknown
 
-  uint8_t  bateria;                    // 0-100; 101 = na tomada
+  uint8_t  bateria;                    // 0-100; 101 = on mains power
   float    tensao;
-  uint8_t  saltos;                     // hops_away: 0 = vizinho direto
+  uint8_t  saltos;                     // hops_away: 0 = direct neighbour
 
-  // O no chegou pela INTERNET (MQTT), nao pelo radio. Muda o sentido de tudo
-  // que se ve dele: o SNR nao e da nossa antena, os saltos nao sao de RF, e
-  // nao da para alcanca-lo se a internet cair.
+  // The node came over the INTERNET (MQTT), not over the radio. That changes the meaning of everything
+  // we see about it: the SNR is not from our antenna, the hops are not RF, and
+  // it cannot be reached if the internet goes down.
   bool     via_mqtt;
-  int32_t  lat_i, lon_i;               // graus x 1e7 (0 = sem posicao)
+  int32_t  lat_i, lon_i;               // degrees x 1e7 (0 = no position)
   bool     tem_pos;
   bool     usado;
-  // Era a rede (1 = a americana, removida). Fica o byte, no vao do
-  // alinhamento: o nodedb.bin antigo continua valendo, e quem veio com 1 ali
-  // nao e carregado. Sempre zero nos nos novos.
+  // It was the network (1 = the American one, removed). The byte stays, in the
+  // alignment gap: the old nodedb.bin still works, and anything with 1 there
+  // is not loaded. Always zero on new nodes.
   uint8_t  rede_antiga;
 
-  // LUGAR FIXO NO TOPO DA TABELA: a ordem em que o no foi ouvido pelo ar (com
-  // SNR) pela primeira vez; 0 = ainda nao. Dado uma vez, nao muda - o no nao
-  // desce quando outro fala depois. Ver ordem_nos() no .cpp.
+  // FIXED PLACE AT THE TOP OF THE TABLE: the order in which the node was first heard over the air (with
+  // SNR); 0 = not yet. Given once, it does not change - the node does not
+  // drop when another speaks afterwards. See ordem_nos() in the .cpp.
   uint32_t fixado;
 
-  // Estrela - derivado na copia (tab5_mesh_no), a lista mora no servico.
+  // Star - derived when copying (tab5_mesh_no), the list lives in the service.
   bool     favorito;
 } mesh_no_t;
 
 // ---------------------------------------------------------------------------
-// CONFIRMACAO DE ENTREGA
+// DELIVERY CONFIRMATION
 // ---------------------------------------------------------------------------
-// O Meshtastic confirma de verdade. Ao enviar com want_ack, o radio devolve um
-// pacote na porta ROUTING (5) trazendo request_id = o id do NOSSO pacote e um
-// Routing.error_reason: zero e ACK, qualquer outro valor e a razao da falha.
+// Meshtastic really does confirm. When sending with want_ack, the radio returns a
+// packet on the ROUTING port (5) carrying request_id = the id of OUR packet and a
+// Routing.error_reason: zero is ACK, any other value is the reason for failure.
 //
-// UMA DISTINCAO QUE IMPORTA:
-//   - Mensagem DIRETA: o ACK vem do DESTINATARIO. "Chegou nele."
-//   - Mensagem de CANAL (difusao): o ACK e IMPLICITO - o radio ouviu o proprio
-//     pacote sendo repetido por um vizinho. Quer dizer "entrou na malha", nao
-//     "alguem leu". Nao ha como saber quem recebeu uma difusao, e nenhum
-//     cliente Meshtastic sabe.
+// A DISTINCTION THAT MATTERS:
+//   - DIRECT message: the ACK comes from the RECIPIENT. "It reached them."
+//   - CHANNEL message (broadcast): the ACK is IMPLICIT - the radio heard its own
+//     packet being repeated by a neighbour. It means "it entered the mesh", not
+//     "someone read it". There is no way to know who received a broadcast, and no
+//     Meshtastic client knows.
 typedef enum {
-  MESH_ENVIO_NA = 0,     // recebida, ou nossa mas de antes do ultimo reinicio
-  MESH_ENVIANDO,         // esperando o radio confirmar
+  MESH_ENVIO_NA = 0,     // received, or ours but from before the last restart
+  MESH_ENVIANDO,         // waiting for the radio to confirm
   MESH_ENTREGUE,         // ACK
-  MESH_FALHOU,           // NAK com motivo, ou o radio recusou enfileirar
-  MESH_SEM_RESPOSTA,     // esgotou o prazo sem o radio dizer nada
-  // MENSAGEM DIRETA OUVIDA PELA MALHA, SEM CONFIRMACAO DO DESTINO. O no gera
-  // um ACK IMPLICITO (Routing vindo do proprio no, erro 0) quando ouve um
-  // vizinho repetir o pacote. Na difusao isso e o melhor que existe e vale
-  // ENTREGUE; na direta e so meio caminho - ENTREGUE fica reservado ao ACK
-  // vindo do PROPRIO destinatario. Numero novo no FIM do enum: o envios.txt
-  // guarda o valor, e os antigos continuam significando o mesmo.
+  MESH_FALHOU,           // NAK with a reason, or the radio refused to queue it
+  MESH_SEM_RESPOSTA,     // the timeout ran out without the radio saying anything
+  // DIRECT MESSAGE HEARD BY THE MESH, WITHOUT CONFIRMATION FROM THE DESTINATION. The node generates
+  // an IMPLICIT ACK (Routing from the node itself, error 0) when it hears a
+  // neighbour repeat the packet. For a broadcast that is the best there is and counts as
+  // ENTREGUE; for a direct one it is only halfway - ENTREGUE is reserved for the ACK
+  // from the RECIPIENT ITSELF. New number at the END of the enum: envios.txt
+  // stores the value, and the old ones keep meaning the same.
   MESH_OUVIDO,
 } mesh_envio_t;
 
-// Codigo nosso, fora da faixa do Routing.Error do Meshtastic: o radio recusou
-// pôr o pacote na queue (QueueStatus com res != 0).
+// Our own code, outside Meshtastic's Routing.Error range: the radio refused
+// to put the packet in the queue (QueueStatus with res != 0).
 #define MESH_ERRO_FILA 200
 
-// Nome do motivo, para a tela. Devolve "?" para codigo que nao conhecemos - a
-// lista do Meshtastic cresce a cada versao e inventar nome seria pior.
+// Name of the reason, for the screen. Returns "?" for a code we do not know - the
+// Meshtastic list grows with every version and making up a name would be worse.
 const char* mesh_erro_nome(uint8_t erro);
 
 typedef struct {
-  uint32_t de;                         // no de origem
-  uint32_t para;                       // 0xFFFFFFFF = canal; nosso num = direta
-  uint8_t  canal;                      // indice do canal (0 = o primario)
-  bool     direta;                     // conveniencia: para == nosso numero
+  uint32_t de;                         // source node
+  uint32_t para;                       // 0xFFFFFFFF = channel; our num = direct
+  uint8_t  canal;                      // channel index (0 = the primary)
+  bool     direta;                     // convenience: para == our number
   char     texto[MESH_TEXTO];
-  uint32_t quando;                     // rx_time do radio
+  uint32_t quando;                     // the radio's rx_time
   float    snr;
   int32_t  rssi;
 
-  // O PACOTE CHEGOU PELA INTERNET (ponte MQTT de algum no), NAO PELO RADIO.
-  // Campo 13 do MeshPacketpara distinguir "ouvi isso
-  // no ar" de "isso me chegou pela nuvem". Quando true, snr/rssi ainda vem
-  // preenchido pelo radio (e o do ULTIMO salto local que entregou a ponte),
-  // mas nao descreve o link fim-a-fim da mensagem - so o pedaco por RF que
-  // trouxe ela ate quem tinha a ponte.
+  // THE PACKET ARRIVED OVER THE INTERNET (some node's MQTT bridge), NOT OVER THE RADIO.
+  // MeshPacket field 13, to tell apart "I heard this
+  // on air" from "this reached me via the cloud". When true, snr/rssi are still
+  // filled in by the radio (it is the LAST local hop that delivered the bridge),
+  // but do not describe the message's end-to-end link - only the RF leg that
+  // brought it to whoever had the bridge.
   bool     via_mqtt;
 
-  // QUANTOS SALTOS DE RADIO esta mensagem especifica levou ate chegar aqui
-  // (so faz sentido para LoRa; via MQTT nao ha saltos). Calculado de
-  // hop_start - hop_limit (campos 14 e 9 do MeshPacket, os DOIS lidos do
-  // MESMO pacote): hop_start e o teto que o remetente armou, hop_limit e o
-  // que sobrou quando o pacote chegou aqui - a diferenca e quantos
-  // repetidores ele passou.
+  // HOW MANY RADIO HOPS this specific message took to get here
+  // (only meaningful for LoRa; via MQTT there are no hops). Computed from
+  // hop_start - hop_limit (MeshPacket fields 14 and 9, BOTH read from the
+  // SAME packet): hop_start is the ceiling the sender set, hop_limit is what
+  // was left when the packet arrived here - the difference is how many
+  // repeaters it passed through.
   //
-  // 255 = NAO DA PARA SABER (firmware antigo nao manda hop_start, ou a
-  // mensagem e via_mqtt e a pergunta nem faz sentido do lado da internet) -
-  // mesmo espirito do sentinela de SNR (-128): nao inventar um numero que
-  // nao existe.
+  // 255 = CANNOT TELL (old firmware does not send hop_start, or the
+  // message is via_mqtt and the question makes no sense on the internet side) -
+  // same spirit as the SNR sentinel (-128): do not make up a number that
+  // does not exist.
   uint8_t  saltos;
 
-  // Id do pacote na malha. E o que liga a mensagem gravada no cartao ao ACK
-  // que chega depois. 0 quando nao e nossa.
+  // The packet id on the mesh. It is what links the message stored on the card to the ACK
+  // that arrives later. 0 when it is not ours.
   uint32_t id;
 
-  // Campos DERIVADOS, preenchidos na copia a partir do id - nao ficam no
-  // cartao. O estado vive so em RAM: gravar "enviando" num arquivo e acordar
-  // com ele no dia seguinte seria mentira.
+  // DERIVED fields, filled in when copying from the id - not kept on the
+  // card. The state lives only in RAM: writing "enviando" (sending) to a file and waking
+  // up with it the next day would be a lie.
   uint8_t  envio;                      // mesh_envio_t
-  uint8_t  erro;                       // motivo, quando envio == MESH_FALHOU
+  uint8_t  erro;                       // reason, when envio == MESH_FALHOU
 } mesh_msg_t;
 
-// Cria a tarefa do servico. NAO liga o trilho do Grove - quem faz isso e o
-// perfil de energia, via ajuste do usuario (ver sistema_impor_preferencias).
+// Creates the service task. Does NOT turn on the Grove rail - that is done by the
+// power profile, via the user's setting (see sistema_impor_preferencias).
 void tab5_mesh_iniciar(void);
 
-// Sobe o servico SO pela internet (MQTT), sem o no - ver
-// services/tab5_mesh_mqtt.hpp. Quem chama e o kernel, quando o Wi-Fi esta
-// conectado e o no nao esta (cabo vazio, Bluetooth desligado). Achar o no
-// depois (tab5_mesh_iniciar) derruba este modo e sobe o do radio.
+// Starts the service ONLY over the internet (MQTT), without the node - see
+// services/tab5_mesh_mqtt.hpp. The kernel calls it, when Wi-Fi is
+// connected and the node is not (empty cable, Bluetooth off). Finding the node
+// later (tab5_mesh_iniciar) tears this mode down and brings up the radio one.
 void tab5_mesh_iniciar_internet(void);
 
-// Para o servico, fecha a UART e devolve o Grove. false = nao conseguiu (a
-// tarefa nao confirmou a saida), e nesse caso NADA foi desmontado.
+// Stops the service, closes the UART and releases the Grove port. false = could not (the
+// task did not confirm its exit), and in that case NOTHING was torn down.
 bool tab5_mesh_parar(void);
 
-// Para o servico SO se ele estiver no Grove (via serial). Quem mexe no cabo
-// (sondagem, Grove esvaziou) chama esta: via Bluetooth o no nao esta no cabo e
-// a conversa segue.
+// Stops the service ONLY if it is on the Grove port (via serial). Whoever touches the cable
+// (probing, Grove emptied) calls this: via Bluetooth the node is not on the cable and
+// the conversation carries on.
 bool tab5_mesh_soltar_grove(void);
 
-// Por onde o servico fala com o no (AJUSTES_MESH_SERIAL/BLUETOOTH) e como vai
-// o enlace, em texto para a tela ("conectado a ...", "procurando ...").
+// How the service talks to the node (AJUSTES_MESH_SERIAL/BLUETOOTH) and how the
+// link is going, as text for the screen ("conectado a ...", "procurando ...").
 uint8_t     tab5_mesh_via(void);
 const char* tab5_mesh_enlace_descricao(void);
 
-// Estado do modo internet (MQTT pelo Wi-Fi) em texto para a tela: desligado,
-// em espera pelo Grove, esperando o Wi-Fi, ou o servidor e a raiz em uso.
+// Internet mode (MQTT over Wi-Fi) state as text for the screen: off,
+// waiting for the Grove, waiting for Wi-Fi, or the server and root in use.
 const char* tab5_mesh_internet_estado(void);
 
-// Estado do proxy MQTT (a internet do Tab5 emprestada ao no), curto, para a
-// linha da pagina "No": sem Wi-Fi, conectando, ou conectado com os contadores
-// (publicadas pelo no / entregues a ele).
+// MQTT proxy state (the Tab5's internet lent to the node), short, for the
+// "No" (Node) page line: no Wi-Fi, connecting, or connected with the counters
+// (published by the node / delivered to it).
 const char* tab5_mesh_proxy_estado(void);
 
-// true quando ha tarefa e UART de pe. false = so leitura: da para consultar o
-// que esta no cartao, nao da para enviar.
+// true when there is a task and the UART is up. false = read-only: you can look at
+// what is on the card, but cannot send.
 bool tab5_mesh_servico_ativo(void);
 
-// Le a PASTA do cartao e cria uma conversa para cada arquivo de historico.
-// Permite consultar o arquivo sem o radio plugado. Devolve quantas viu.
+// Reads the card's FOLDER and creates a conversation for each history file.
+// Allows browsing the file without the radio plugged in. Returns how many it saw.
 int  tab5_mesh_carregar_do_cartao(void);
 
-// O enlace esta vivo? (recebemos frame valido recentemente)
+// Is the link alive? (we received a valid frame recently)
 bool tab5_mesh_no_ar(void);
 
-// Ha quantos ms o radio nao manda frame; UINT32_MAX se nunca mandou. Para quem
-// precisa escolher o proprio prazo em vez de herdar o do no_ar() - ver a vigia
-// do Grove em kernel/core.cpp.
+// How many ms since the radio last sent a frame; UINT32_MAX if it never did. For whoever
+// needs to pick their own timeout instead of inheriting no_ar()'s - see the
+// Grove watch in kernel/core.cpp.
 uint32_t tab5_mesh_silencio_ms(void);
 
-// Nosso proprio numero de no; 0 enquanto o my_info nao chegou.
+// Our own node number; 0 until my_info arrives.
 uint32_t tab5_mesh_meu_numero(void);
 
-// Firmware do C6L, string vazia se ainda nao veio.
+// C6L firmware, empty string if it has not come yet.
 const char* tab5_mesh_firmware(void);
 
-// AVISO SONORO, par analogo de tab5_trilha_definir_beep() (services/tab5_trilha)
-// (ver o aviso la). Liga/desliga e GRAVA a preferencia
-// (ajustes_definir_beep_mesh()) e, se a fonte "Meshtastic" ja existir em
-// notificacao.h, atualiza a bandeira dela tambem - so ela, a Trilha e
-// qualquer outra fonte continuam tocando normalmente.
+// SOUND ALERT, the counterpart of tab5_trilha_definir_beep() (services/tab5_trilha)
+// (see the notice there). Turns on/off and SAVES the preference
+// (ajustes_definir_beep_mesh()) and, if the "Meshtastic" source already exists in
+// notificacao.h, updates its flag too - only it; Trilha and
+// any other source keep sounding normally.
 void tab5_mesh_definir_beep(bool tocar);
 bool tab5_mesh_beep_ligado(void);
 
-// Hora UTC estimada, em segundos de epoch; 0 enquanto nao houver referencia.
+// Estimated UTC time, in epoch seconds; 0 until there is a reference.
 //
-// O Tab5 nao tem relogio com hora certa, mas o radio tem: ele carimba
-// last_heard em cada NodeInfo e rx_time em cada pacote. Guardamos o MAIOR
-// carimbo que ja vimos junto com o nosso uptime naquele instante, e dai em
-// diante a hora anda com o nosso relogio. Basta para responder "ha quanto
-// tempo", que e o unico uso.
+// The Tab5 has no clock with the correct time, but the radio does: it stamps
+// last_heard on every NodeInfo and rx_time on every packet. We keep the HIGHEST
+// stamp we have seen together with our uptime at that instant, and from then
+// on the time advances with our clock. Enough to answer "how long
+// ago", which is the only use.
 uint32_t tab5_mesh_epoch(void);
 
-// Hora do relogio do no lida em trafego AO VIVO (ver o .cpp); 0 sem nenhuma
-// na ultima hora. E a que tab5_hora usa para acertar o relogio - a de cima,
-// ancorada no last_heard, pode estar horas atrasada.
+// The node's clock time read from LIVE traffic (see the .cpp); 0 with none
+// in the last hour. It is what tab5_hora uses to set the clock - the one above,
+// anchored on last_heard, may be hours behind.
 uint32_t tab5_mesh_hora_viva(void);
 
-// Nome PRONTO PARA MOSTRAR de um no, na mesma regra em todo lugar (coluna de
-// conversas, rotulo do remetente no canal):
-//   1. o nome CURTO, se for legivel;
-//   2. senao o nome LONGO legivel;
-//   3. so entao o id "!a1b2c3d4".
-// "Legivel" = sobra texto depois de tirar o que as fontes do sistema nao
-// desenham (emoji e simbolos de 3-4 bytes em UTF-8; acentos ficam) e o "?"
-// que o Meshtastic poe quando ninguem escolheu o curto. O id e o ultimo
-// recurso: ele identifica, mas ninguem reconhece um amigo por oito digitos
-// em hexa. Vale com o no fora do ar, pelo cache do cartao (nos.txt).
+// A node's name READY FOR DISPLAY, by the same rule everywhere (conversation
+// column, sender label in the channel):
+//   1. the SHORT name, if legible;
+//   2. otherwise the legible LONG name;
+//   3. only then the id "!a1b2c3d4".
+// "Legible" = text remains after removing what the system fonts do not
+// draw (emoji and 3-4 byte UTF-8 symbols; accents stay) and the "?"
+// Meshtastic puts when nobody chose a short name. The id is the last
+// resort: it identifies, but nobody recognises a friend by eight hex
+// digits. Works with the node offline, via the card cache (nos.txt).
 void tab5_mesh_nome_exibicao(uint32_t num, char* out, size_t out_tam);
 
-// SO o cache persistente (nos.txt) - sem o fallback de hex que
-// tab5_mesh_nome_exibicao() tem. Devolve false (out intocado) quando nao ha
-// nome conhecido daquele numero.
+// ONLY the persistent cache (nos.txt) - without the hex fallback that
+// tab5_mesh_nome_exibicao() has. Returns false (out untouched) when there is no
+// known name for that number.
 //
-// Para colunas ESTREITAS onde repetir o ID em hexa seria redundante (ver
-// montar_linha() em app_mesh.cpp: a tabela de nos ja tem uma coluna ID
-// propria que mostra o hex quando falta nome - mostra-lo de novo na coluna
-// de nome curto nao acrescenta informacao nenhuma, so ocupa espaco que um
-// nome de verdade usaria melhor).
+// For NARROW columns where repeating the hex ID would be redundant (see
+// montar_linha() in app_mesh.cpp: the nodes table already has its own ID
+// column that shows the hex when the name is missing - showing it again in the
+// short-name column adds no information, it just takes space that a
+// real name would use better).
 bool tab5_mesh_nome_cache(uint32_t num, char* out, size_t out_tam);
 
-// MESMA IDEIA de tab5_mesh_nome_cache(), so que para o nome LONGO. Antes
-// so o curto entrava no cache (ver o aviso acima) porque
-// so tab5_mesh_nome_exibicao() (que nunca usa o longo) o consultava - mas a
-// tabela de nos (montar_linha() em app_mesh.cpp) sempre mostrou o longo, e
-// SO da entrada AO VIVO (a NodeInfo desta sessao). NodeInfo e rara (ver o
-// aviso em ler_node_info()); a maioria dos nos e aprendida por telemetria/
-// posicao/texto, sem nome nenhum ainda - por isso "sempre sem nome". Agora
-// o longo tambem persiste. Devolve false (out intocado) quando nao ha.
+// SAME IDEA as tab5_mesh_nome_cache(), but for the LONG name. Before,
+// only the short one went into the cache (see the notice above) because
+// only tab5_mesh_nome_exibicao() (which never uses the long one) consulted it - but the
+// nodes table (montar_linha() in app_mesh.cpp) always showed the long one, and
+// ONLY from the LIVE entry (this session's NodeInfo). NodeInfo is rare (see the
+// notice in ler_node_info()); most nodes are learnt from telemetry/
+// position/text, with no name yet - hence "always nameless". Now
+// the long one persists too. Returns false (out untouched) when there is none.
 bool tab5_mesh_nome_longo_cache(uint32_t num, char* out, size_t out_tam);
 
-// Ultimo enlace CONHECIDO do no (via_mqtt/hops_away), vindo da NodeInfo dele -
-// nao de um pacote especifico. Serve de FALLBACK para uma mensagem cujo
-// proprio pacote nao trouxe hop_start (firmware do remetente as vezes nao
-// manda) - "de quem" fala uma aproximacao razoavel de "como", quando o "como"
-// exato nao veio nesta mensagem.: "a pagina dos nos
-// sempre tem, na conversa nao aparece - da pra usar a mesma informacao?".
-// Devolve false se o no nao estiver na tabela ao vivo agora (nunca se
-// apresentou, ou foi despejado por inatividade - ver achar_no).
+// The node's last KNOWN link (via_mqtt/hops_away), from its NodeInfo -
+// not from a specific packet. Serves as a FALLBACK for a message whose
+// own packet did not bring hop_start (the sender's firmware sometimes does not
+// send it) - "from whom" gives a reasonable approximation of "how", when the exact
+// "how" did not come in this message: "the nodes page
+// always has it, the conversation does not show it - can we use the same information?".
+// Returns false if the node is not in the live table now (never
+// announced itself, or was evicted for inactivity - see achar_no).
 bool tab5_mesh_no_enlace(uint32_t num, bool* via_mqtt, uint8_t* saltos);
 
-// ---- nos ------------------------------------------------------------------
-// O no foi ouvido PELO AR (radio): tem SNR medido e nao chegou pela ponte
-// MQTT (la o SNR e o do gateway, nao o da nossa antena). A tabela os fixa no
-// topo, logo abaixo do nosso.
+// ---- nodes -----------------------------------------------------------------
+// The node was heard OVER THE AIR (radio): it has a measured SNR and did not come via the
+// MQTT bridge (there the SNR is the gateway's, not our antenna's). The table pins them at the
+// top, just below ours.
 bool tab5_mesh_no_pelo_ar(const mesh_no_t* no);
 
-// FAVORITOS (estrela). Os mesmos do no Meshtastic: marcar aqui manda o
-// AdminMessage set/remove_favorite_node ao radio (ou deixa pendente ate o
-// proximo dump, sem ele), e o is_favorite do dump atualiza a lista daqui. Na
-// tabela ficam no topo, logo abaixo do nosso, na ordem em que foram marcados,
-// e nunca sao despejados.
+// FAVOURITES (star). The same as the Meshtastic node's: marking here sends the
+// AdminMessage set/remove_favorite_node to the radio (or leaves it pending until the
+// next dump, without it), and the dump's is_favorite updates the list here. In the
+// table they sit at the top, just below ours, in the order they were marked,
+// and are never evicted.
 bool tab5_mesh_favorito(uint32_t num);
 void tab5_mesh_definir_favorito(uint32_t num, bool favorito);
 
 int  tab5_mesh_num_nos(void);
-// Copia o no de indice i, na ordem da tabela (o nosso, os ouvidos pelo ar,
-// o resto; em cada faixa o ouvido mais recentemente primeiro). Devolve false
-// se i for invalido. Copia em vez de
-// devolver ponteiro de proposito: a tarefa do servico reescreve a tabela a
-// qualquer momento, e um ponteiro entregue a tela envelheceria no meio do
-// desenho.
+// Copies the node at index i, in table order (ours, those heard over the air,
+// the rest; within each band the most recently heard first). Returns false
+// if i is invalid. Copies instead of
+// returning a pointer on purpose: the service task rewrites the table at
+// any moment, and a pointer handed to the screen would go stale in the middle of
+// drawing.
 bool tab5_mesh_no(int i, mesh_no_t* saida);
 
-// A MESMA TABELA, SO OS NOS QUE BATEM COM A BUSCA, na mesma ordem - e o que a
-// caixa de pesquisa da pagina de nos mostra. Bate quem tem o texto no nome
-// longo, no curto (os ao vivo ou, sem eles, os do cache de nomes) ou no id
-// "!a1b2c3d4"; sem diferenca de maiusculas nem de acento. Busca vazia (ou
-// nula) = todos.
+// THE SAME TABLE, ONLY THE NODES MATCHING THE SEARCH, in the same order - it is what the
+// nodes page's search box shows. A match is any node with the text in its long
+// name, short name (the live ones or, without them, those in the name cache) or in the id
+// "!a1b2c3d4"; ignoring case and accents. An empty (or
+// null) search = all.
 #define MESH_BUSCA_MAX 40
 int  tab5_mesh_num_nos_busca(const char* busca);
-// O GROVE POR DENTRO (console 'mesh grove' / 'mesh rastro on|off'): bytes e
-// quadros nos dois sentidos, lixo fora de quadro e os erros da UART.
+// THE GROVE INTERNALS (console 'mesh grove' / 'mesh rastro on|off'): bytes and
+// frames in both directions, junk outside frames and UART errors.
 void tab5_mesh_grove_diag(char* out, size_t tam);
 void tab5_mesh_rastro(bool ligado);
 bool tab5_mesh_no_busca(const char* busca, int i, mesh_no_t* saida);
 
-// Quantas vezes a tabela de nos (MESH_MAX_NOS - ver achar_no) esteve
-// cheia e precisou despejar o mais antigo para abrir espaco a um no novo,
-// desde o boot. Nao e erro nem log automatico (poluiria o log) - so um numero para consultar sob demanda, no
-// comando "mesh" do console, quando quiser saber se a malha tem mais de 32
-// nos de verdade.
+// How many times the nodes table (MESH_MAX_NOS - see achar_no) was
+// full and had to evict the oldest to make room for a new node,
+// since boot. Not an error nor an automatic log (it would pollute the log) - just a number to check on demand, in
+// the console's "mesh" command, when you want to know if the mesh has more than 32
+// real nodes.
 uint32_t tab5_mesh_despejos(void);
 
-// ---- mensagens ------------------------------------------------------------
+// ---- messages -------------------------------------------------------------
 int  tab5_mesh_num_msgs(void);
-bool tab5_mesh_msg(int i, mesh_msg_t* saida);   // 0 = mais recente
+bool tab5_mesh_msg(int i, mesh_msg_t* saida);   // 0 = most recent
 
-// NAO USE tab5_mesh_num_msgs() PARA DETECTAR "chegou mensagem nova" - ele
-// devolve o tamanho do anel de 8 posicoes (MESH_MAX_MSGS) e PARA DE MUDAR
-// assim que 8 mensagens (de qualquer conversa) ja passaram por ele, ficando
-// parado para sempre dali em diante (o app Mesh comparava este numero e
-// mensagem nova so aparecia ao trocar de tela). tab5_mesh_total_msgs() e o contador que NUNCA satura -
-// use este para "mudou desde a ultima vez que olhei".
-// Muda tambem quando um carimbo do historico e corrigido (salto do relogio):
-// para quem rele, "o historico mudou" e o que importa.
+// DO NOT USE tab5_mesh_num_msgs() TO DETECT "a new message arrived" - it
+// returns the size of the 8-slot ring (MESH_MAX_MSGS) and STOPS CHANGING
+// as soon as 8 messages (from any conversation) have passed through it, staying
+// stuck forever from then on (the Mesh app compared this number and
+// a new message only appeared on switching screens). tab5_mesh_total_msgs() is the counter that NEVER saturates -
+// use that for "changed since I last looked".
+// It also changes when a history timestamp is corrected (clock jump):
+// for whoever rereads, "the history changed" is what matters.
 uint32_t tab5_mesh_total_msgs(void);
 
-// Mensagens que chegaram e ainda nao foram vistas: a SOMA das conversas
-// (mesh_conversa_t.nao_lidas). Abrir uma conversa a marca como lida
-// (tab5_mesh_marcar_conversa_lida); abrir o app nao zera as outras.
+// Messages that arrived and have not been seen yet: the SUM over conversations
+// (mesh_conversa_t.nao_lidas). Opening a conversation marks it read
+// (tab5_mesh_marcar_conversa_lida); opening the app does not clear the others.
 int  tab5_mesh_nao_lidas(void);
-// Nao lidas apenas das mensagens DIRETAS. Merecem destaque proprio: uma
-// mensagem endereçada a voce nao e a mesma coisa que trafego do canal.
+// Unread DIRECT messages only. They deserve their own highlight: a
+// message addressed to you is not the same thing as channel traffic.
 int  tab5_mesh_nao_lidas_diretas(void);
 
 // ---------------------------------------------------------------------------
-// CONVERSAS
+// CONVERSATIONS
 // ---------------------------------------------------------------------------
-// Uma conversa e um CANAL (LongFast e os outros) ou um NO (mensagem direta).
-// Elas aparecem sozinhas conforme a mensagem chega - nao ha lista fixa.
+// A conversation is a CHANNEL (LongFast and the others) or a NODE (direct message).
+// They appear by themselves as messages arrive - there is no fixed list.
 //
-// O historico mora no cartao, um arquivo por conversa, em
-// /sdcard/apps/Meshtastic/. Motivo: a RAM guarda so as ultimas para a tela
-// desenhar rapido, mas conversa que some no reinicio nao serve para nada.
+// The history lives on the card, one file per conversation, in
+// /sdcard/apps/Meshtastic/. Reason: RAM keeps only the latest for the screen
+// to draw quickly, but a conversation that vanishes on restart is no use.
 #define MESH_MAX_CONVERSAS 12
-#define MESH_MAX_CANAIS     8   // canais de um no Meshtastic (0 = o primario)
+#define MESH_MAX_CANAIS     8   // channels of a Meshtastic node (0 = the primary)
 #define MESH_NOME_CONVERSA 24
 
 typedef struct {
-  bool     canal;                       // true = canal; false = mensagem direta
-  uint8_t  idx;                         // indice do canal, se canal
-  uint32_t no;                          // numero do no, se direta
+  bool     canal;                       // true = channel; false = direct message
+  uint8_t  idx;                         // channel index, if a channel
+  uint32_t no;                          // node number, if direct
   char     nome[MESH_NOME_CONVERSA];    // "LongFast", "capc"...
-  // SEGUNDA LINHA, derivada na copia (nao guardada): o nome longo do no na
-  // conversa direta, "canal N" no canal. E o que deixa a coluna dizer QUEM e
-  // sem cair no id em hexa.
+  // SECOND LINE, derived when copying (not stored): the node's long name in the
+  // direct conversation, "canal N" (channel N) for a channel. It is what lets the column say WHO it is
+  // without falling back to the hex id.
   char     sub[MESH_NOME_LONGO];
   int      nao_lidas;
   uint32_t ultima_em;
   bool     usada;
 } mesh_conversa_t;
 
-// Abre (ou cria) a conversa direta com um no e devolve o indice VISIVEL dela,
-// ou -1 se o numero nao servir. E o que permite comecar a falar com alguem a
-// partir da lista de nos, sem esperar que a pessoa fale primeiro.
+// Opens (or creates) the direct conversation with a node and returns its VISIBLE index,
+// or -1 if the number is no good. It is what allows starting to talk to someone
+// from the nodes list, without waiting for the person to speak first.
 int  tab5_mesh_conversa_com(uint32_t no);
 
-// Mesmo papel de tab5_mesh_conversa_com(), para CANAL - criado
-// junto da opcao de apagar canal, para "canais disponiveis" (mais abaixo)
-// poder reabrir um que foi escondido.
+// Same role as tab5_mesh_conversa_com(), for a CHANNEL - created
+// together with the option to delete a channel, so that "available channels" (further down)
+// can reopen one that was hidden.
 int  tab5_mesh_conversa_do_canal(uint8_t idx);
 
-// Apaga a conversa de indice VISIVEL - canal OU direta (ate
-// entao recusava canal: "eles voltam sozinhos, fingir que apagou seria
-// mentira" - deixou de ser verdade quando canal passou a entrar na mesma
-// flag de apagados que ja existia para no). Nao mexe no historico do cartao
-// nos dois casos - so o registro em memoria some da lista.
+// Deletes the conversation at VISIBLE index - channel OR direct (until
+// then it refused channels: "they come back by themselves, pretending to delete would be
+// a lie" - that stopped being true when channels started using the same
+// deleted flag that already existed for nodes). Does not touch the card history
+// in either case - only the in-memory record disappears from the list.
 bool tab5_mesh_esquecer_conversa(int i);
 
-// OS CANAIS DO NO - todos os ATIVOS na ultima configuracao conhecida (do
-// radio ao vivo, ou a guardada na NVS quando ele nao esta). Responde "em que
-// canal da para falar" independente de a conversa estar na coluna: um canal
-// apagado da coluna continua aqui, e tocar nele o traz de volta. Sem
-// configuracao conhecida nenhuma, o primario (LongFast) aparece assim mesmo.
-// 'visivel' = ja ha conversa dele na coluna.
+// THE NODE'S CHANNELS - all those ACTIVE in the last known configuration (from the
+// live radio, or the one stored in NVS when it is not there). Answers "which
+// channel can I talk on" regardless of whether the conversation is in the column: a channel
+// deleted from the column is still here, and tapping it brings it back. With no
+// known configuration at all, the primary (LongFast) appears anyway.
+// 'visivel' = there is already a conversation for it in the column.
 int  tab5_mesh_num_canais(void);
 bool tab5_mesh_canal(int i, uint8_t* idx, char* nome, size_t tam, bool* visivel);
 
-// A ORDEM DA COLUNA: canais primeiro (pelo indice), depois as diretas, da
-// conversa mais recente para a mais antiga. Indice VISIVEL e posicao nesta
-// ordem - e ela muda (conversa nova, apagada, direta que recebeu mensagem).
-// Quem guarda um indice (a conversa aberta no app) compara esta versao e,
-// quando ela muda, reencontra a sua pela CHAVE com tab5_mesh_conversa_indice.
-// Sem isso, uma conversa nova numa vaga anterior deslocava os indices e o
-// app passava a mostrar e escrever na conversa VIZINHA.
+// THE COLUMN ORDER: channels first (by index), then the direct ones, from the
+// most recent conversation to the oldest. VISIBLE index is the position in this
+// order - and it changes (new conversation, deleted, direct one that received a message).
+// Whoever keeps an index (the conversation open in the app) compares this version and,
+// when it changes, finds theirs again by KEY with tab5_mesh_conversa_indice.
+// Without this, a new conversation in an earlier slot shifted the indices and the
+// app started showing and writing in the NEIGHBOURING conversation.
 uint32_t tab5_mesh_conversas_versao(void);
 int      tab5_mesh_conversa_indice(bool canal, uint8_t idx, uint32_t no);
 
@@ -453,30 +453,30 @@ int  tab5_mesh_num_conversas(void);
 bool tab5_mesh_conversa(int i, mesh_conversa_t* saida);
 void tab5_mesh_marcar_conversa_lida(int i);
 
-// Le do cartao as ultimas mensagens de uma conversa, da mais antiga para a mais
-// nova (que e a ordem em que a tela desenha). Devolve quantas leu.
+// Reads a conversation's last messages from the card, oldest to
+// newest (which is the order the screen draws). Returns how many it read.
 int  tab5_mesh_historico(int conversa, mesh_msg_t* saida, int max);
-// O mesmo, pela CHAVE (canal + indice, ou numero do no) - o arquivo e nomeado
-// por ela. E o que o worker do app usa: entre o pedido e a leitura a ordem da
-// coluna pode mudar, a chave nao.
+// The same, by KEY (channel + index, or node number) - the file is named
+// after it. It is what the app's worker uses: between the request and the read the column
+// order may change, the key does not.
 int  tab5_mesh_historico_de(bool canal, uint8_t idx, uint32_t no, mesh_msg_t* saida, int max);
 
-// Envia texto. para = 0xFFFFFFFF difunde no canal 'canal'; qualquer outro valor
-// e mensagem direta para aquele no. Devolve false se o enlace estiver mudo.
+// Sends text. para = 0xFFFFFFFF broadcasts on channel 'canal'; any other value
+// is a direct message to that node. Returns false if the link is silent.
 bool tab5_mesh_enviar(uint32_t para, uint8_t canal, const char* texto);
 
-// Estado de entrega de um pacote NOSSO, pelo id. Devolve MESH_ENVIO_NA quando
-// o id nao esta mais na tabela - so guardamos os ultimos envios, e nada
-// sobrevive ao reinicio. Nao saber e um estado legitimo: melhor nao desenhar
-// marca nenhuma do que desenhar uma errada.
+// Delivery state of one of OUR packets, by id. Returns MESH_ENVIO_NA when
+// the id is no longer in the table - we only keep the latest sends, and nothing
+// survives a restart. Not knowing is a legitimate state: better to draw no
+// mark at all than to draw a wrong one.
 uint8_t tab5_mesh_estado_envio(uint32_t id, uint8_t* erro);
 
-// Muda a cada vez que algum estado de envio muda. A tela compara com o valor
-// que ela viu por ultimo e so repinta quando ha novidade - sem isso o ACK
-// chegaria e o balao ficaria com a marca velha ate o proximo toque.
+// Changes every time some send state changes. The screen compares it with the value
+// it saw last and only repaints when there is something new - without this the ACK
+// would arrive and the bubble would keep the old mark until the next touch.
 uint32_t tab5_mesh_envios_versao(void);
 
-// ---- saude da malha (LocalStats / telemetria do proprio no) ----------------
+// ---- mesh health (LocalStats / the node's own telemetry) -------------------
 typedef struct {
   float    uso_canal;      // channel_utilization, %
   float    airtime_tx;     // air_util_tx, %
@@ -484,38 +484,38 @@ typedef struct {
   int32_t  piso_ruido;     // noise_floor, dBm
   uint16_t nos_online;
   uint16_t nos_total;
-  // Contadores de pacote do LocalStats (so o nosso no os conta; 'tem_local'
-  // diz se vieram).
+  // LocalStats packet counters (only our node counts them; 'tem_local'
+  // says whether they came).
   uint32_t pkt_tx, pkt_rx, pkt_ruins, pkt_repetidos;
-  // DE ONDE VEIO. Sem LocalStats (modo internet, ou o no ainda nao mandou) os
-  // numeros acima sao zero - e zero e um valor plausivel, entao a tela precisa
-  // saber que e "nao veio" para escrever "-" em vez de mentir "0 %".
-  bool     tem_local;      // LocalStats do nosso no chegou
-  bool     tem_metricas;   // DeviceMetrics do nosso no chegou (uptime, uso)
+  // WHERE IT CAME FROM. Without LocalStats (internet mode, or the node has not sent it yet) the
+  // numbers above are zero - and zero is a plausible value, so the screen needs
+  // to know it is "did not come" to write "-" instead of lying "0 %".
+  bool     tem_local;      // our node's LocalStats arrived
+  bool     tem_metricas;   // our node's DeviceMetrics arrived (uptime, usage)
 } mesh_saude_t;
 
 void tab5_mesh_saude(mesh_saude_t* saida);
 
-// Nome legivel do HardwareModel (campo 'hw' do no). Tabela COMPLETA, gerada
-// do enum oficial do Meshtastic por gerar_hw.py (ver tab5_mesh_hw_dados.cpp).
-// Devolve nullptr para o que a lista oficial ainda nao tem (ela cresce a cada
-// versao do firmware) - quem chama decide como mostrar o numero cru; inventar
-// um nome aqui seria pior que admitir a ignorancia.
+// Readable name of the HardwareModel (the node's 'hw' field). COMPLETE table, generated
+// from Meshtastic's official enum by gerar_hw.py (see tab5_mesh_hw_dados.cpp).
+// Returns nullptr for what the official list does not have yet (it grows with every
+// firmware version) - the caller decides how to show the raw number; making up
+// a name here would be worse than admitting ignorance.
 const char* mesh_hw_nome(uint8_t hw);
 
-// A tabela em si, 256 posicoes indexadas pelo proprio codigo - a maioria
-// nullptr. Exposta para quem quiser ler direto (mesh_hw_nome ja cobre o caso
-// comum); gerada, nao editar a mao.
+// The table itself, 256 slots indexed by the code itself - mostly
+// nullptr. Exposed for anyone who wants to read it directly (mesh_hw_nome already covers the
+// common case); generated, do not edit by hand.
 extern const char* const TAB5_MESH_HW_NOMES[256];
 
-// Diagnostico: quantos frames, pacotes e variantes de telemetria passaram.
-// Serve para distinguir "nao chega" de "chega e o filtro descarta".
+// Diagnostics: how many frames, packets and telemetry variants went through.
+// Helps tell "does not arrive" from "arrives and the filter discards it".
 void tab5_mesh_contadores(uint32_t* quadros, uint32_t* pacotes, uint32_t* telemetria,
                           uint32_t* localstats, uint32_t* texto, uint32_t* nodeinfo,
                           int* ultima_variante);
 
-// Quantas vezes um Routing chegou DEPOIS do pacote ja estar confirmado
-// (segunda resposta, ignorada para o ESTADO mas nao para este numero). Um
-// termometro de qualidade de rota: sobe quando "alguem ouviu" vem facil mas a
-// confirmacao forte do radio nao vem - a malha funciona, so que no limite.
+// How many times a Routing arrived AFTER the packet was already confirmed
+// (a second answer, ignored for the STATE but not for this number). A
+// route-quality thermometer: it rises when "someone heard it" comes easily but the
+// radio's strong confirmation does not - the mesh works, but at the limit.
 uint32_t tab5_mesh_routing_extra(void);

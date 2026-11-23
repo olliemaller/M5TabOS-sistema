@@ -1,7 +1,7 @@
-// CORE - os apps: abrir e abrir pelo nome, fechar, a montagem do cartao SD em
-// tarefa propria, o app recusado (cartao emprestado ao computador) e a
-// conclusao da abertura. Partido de core.cpp (o motor); o que as partes
-// compartilham esta em core_interno.hpp.
+// CORE - the apps: open and open by name, close, mounting the SD card in its
+// own task, the refused app (card lent to the computer) and completing the
+// opening. Split from core.cpp (the engine); what the parts share is in
+// core_interno.hpp.
 
 #include "tab5_sd.hpp"
 #include "rolagem.hpp"
@@ -33,27 +33,27 @@ bool sistema_app_exige_sd(void)
   return a && a != s_app_recusado && a->exige_sd;
 }
 
-// Se o cartao foi REALMENTE montado para este app. Sem isto, um app que pediu
-// SD mas cuja montagem falhou ainda assim chamava desmontar() ao fechar -
-// decrementando uma contagem que nunca foi incrementada. Se o registro de
-// energia estivesse com o cartao montado naquele instante, o contador caia a
-// zero e o cartao era DESMONTADO POR BAIXO DELE.
+// Whether the card was REALLY mounted for this app. Without this, an app that asked for
+// SD but whose mount failed still called desmontar() on close -
+// decrementing a count that was never incremented. If the power
+// log had the card mounted at that instant, the counter dropped to
+// zero and the card was UNMOUNTED FROM UNDER IT.
 static bool s_app_montou_sd = false;
 
-// App cuja montagem de cartao SD esta rodando em tarefa de fundo (ver
-// vTaskMontarSDApp mais abaixo). NULL quando nao ha abertura pendente. A
-// abertura de verdade - chamar ao_abrir() e liberar a tela para o app - so
-// acontece quando esta bandeira volta a NULL.
-const app_t* s_app_carregando = nullptr;   // extern em internal.hpp - shell.cpp le em tratar_toque
-const app_t* s_app_recusado   = nullptr;   // idem - ver recusar_app()
-volatile bool s_sd_montando  = false;  // true do disparo ate a tarefa terminar
-static bool          s_sd_montou_ok = false;  // resultado da ultima montagem de fundo
+// App whose SD card mount is running in a background task (see
+// vTaskMontarSDApp further down). NULL when there is no pending opening. The
+// real opening - calling ao_abrir() and releasing the screen to the app - only
+// happens when this flag goes back to NULL.
+const app_t* s_app_carregando = nullptr;   // extern in internal.hpp - shell.cpp reads it in tratar_toque
+const app_t* s_app_recusado   = nullptr;   // likewise - see recusar_app()
+volatile bool s_sd_montando  = false;  // true from the trigger until the task finishes
+static bool          s_sd_montou_ok = false;  // result of the last background mount
 
-// O app em primeiro plano segura uma referencia do cartao (app_t.usa_sd), ou
-// esta abrindo e montando. Quem e dono da referencia e o kernel: o pendrive
-// pergunta aqui para recusar na hora, com o motivo certo. A leitura vem de
-// outra tarefa e nao e atomica - so serve para escolher a mensagem; quem
-// decide de verdade e a contagem do tab5_sd_emprestar.
+// The foreground app holds a card reference (app_t.usa_sd), or
+// is opening and mounting. The kernel owns the reference: the flash drive mode
+// asks here to refuse immediately, with the right reason. The read comes from
+// another task and is not atomic - it only serves to pick the message; what
+// really decides is the tab5_sd_emprestar count.
 bool sistema_app_segura_sd(void)
 {
   if (s_app_carregando || s_sd_montando) { return true; }
@@ -61,22 +61,22 @@ bool sistema_app_segura_sd(void)
   return a && a != s_app_recusado && s_app_montou_sd;
 }
 // ---------------------------------------------------------------------------
-// Ciclo de vida dos apps
+// App life cycle
 // ---------------------------------------------------------------------------
-// Declarada aqui e definida mais abaixo (ver o bloco "MONTAGEM (E DESMONTAGEM)
-// DE SD EM TAREFA PROPRIA"): fechar_app() precisa dela antes de abrir_app()
-// ser lido, e a definicao mora perto da irma vTaskMontarSDApp por clareza.
+// Declared here and defined further down (see the block "MONTAGEM (E DESMONTAGEM)
+// DE SD EM TAREFA PROPRIA" - SD mounting in its own task): fechar_app() needs it before abrir_app()
+// is read, and the definition lives next to its sibling vTaskMontarSDApp for clarity.
 static void vTaskDesmontarSDApp(void*);
 
-// NAO 'static' - declarada em kernel/internal.hpp, chamada por
-// kernel/shell.cpp (tratar_toque, ao fechar o app pelo botao INICIO).
+// NOT 'static' - declared in kernel/internal.hpp, called by
+// kernel/shell.cpp (tratar_toque, when closing the app via the INICIO (home) button).
 void fechar_app(void)
 {
   if (!s_app) { return; }
-  ESP_LOGI(TAG, "fechando '%s'", s_app->nome);
+  ESP_LOGI(TAG, "closing '%s'", s_app->nome);
 
-  // RECUSADO: o app nunca abriu (nem ao_abrir, nem perfil, nem cartao) - so
-  // a tela de motivo do sistema sai.
+  // REFUSED: the app never opened (not ao_abrir, not profile, not card) - only
+  // the system's reason screen goes away.
   if (s_app == s_app_recusado) {
     s_app_recusado = nullptr;
     s_app = nullptr;
@@ -87,39 +87,39 @@ void fechar_app(void)
 
   const bool devolver_sd = s_app_montou_sd;
 
-  // O TRABALHO DO APP TERMINA ANTES DO ao_fechar(): a queue e descartada e o
-  // que estiver executando e esperado - so entao o app pode liberar os
-  // buffers em que o worker escreve (kernel/trabalho.hpp).
-  // FECHAR E TELA PARADA: tudo daqui ate o fim roda na tarefa de interface.
-  // Passou de 150 ms, o log diz quem segurou - o trabalho ou o ao_fechar().
+  // THE APP'S WORK FINISHES BEFORE ao_fechar(): the queue is discarded and
+  // whatever is executing is waited for - only then may the app free the
+  // buffers the worker writes to (kernel/trabalho.hpp).
+  // CLOSING IS A STALLED SCREEN: everything from here to the end runs on the UI task.
+  // Past 150 ms, the log says who held it - the work or ao_fechar().
   const int64_t t0 = esp_timer_get_time();
   trabalho_encerrar_do_app();
   const int64_t t1 = esp_timer_get_time();
   if (s_app->ao_fechar) { s_app->ao_fechar(); }
-  tela_virtual_soltar_superficie();   // a camera ja parou no ao_fechar()
+  tela_virtual_soltar_superficie();   // the camera already stopped in ao_fechar()
   const int64_t t2 = esp_timer_get_time();
   if (t2 - t0 > 150000) {
-    ESP_LOGW(TAG, "fechar '%s' segurou a interface %lld ms (trabalho %lld, ao_fechar %lld)",
+    ESP_LOGW(TAG, "closing '%s' held the UI %lld ms (work %lld, ao_fechar %lld)",
              s_app->nome, (t2 - t0) / 1000, (t1 - t0) / 1000, (t2 - t1) / 1000);
   }
-  s_nav_travada     = false;  // rede de seguranca: app esquecido nao prende ninguem
-  sistema_manter_acordado(SISTEMA_ACORDADO_APP, false);   // idem: o pedido era do app
+  s_nav_travada     = false;  // safety net: a forgetful app does not trap anyone
+  sistema_manter_acordado(SISTEMA_ACORDADO_APP, false);   // likewise: the request was the app's
   rolagem_zerar(&s_rol);
   s_app = nullptr;
 
-  // A home e sempre em pe. Restaurar aqui, e nao no proximo abrir, para que a
-  // tela inicial nunca apareca deitada por um frame. Vale tambem para o app
-  // que seguia o IMU e abriu em pe mas fechou deitado.
+  // Home is always portrait. Restore here, and not on the next open, so the
+  // home screen never appears landscape for a frame. Also applies to the app
+  // that followed the IMU and opened portrait but closed landscape.
   orientacao_ao_fechar();
 
-  // Desmonta DEPOIS do ao_fechar(): o app pode querer fechar arquivos ali.
-  // So devolve se ESTE app tiver de fato tomado.
+  // Unmount AFTER ao_fechar(): the app may want to close files there.
+  // Only give it back if THIS app actually took it.
   //
-  // EM TAREFA DE FUNDO, fire-and-forget: nada daqui em diante espera a
-  // desmontagem terminar, e o mutex + contagem de referencia dentro de
-  // tab5_sd.cpp (ver trava()/destrava()/s_refs) ja protegem contra a corrida
-  // obvia - abrir outro app com SD antes desta tarefa rodar so incrementa a
-  // referencia sobre o cartao que ainda esta montado, em vez de montar de novo.
+  // IN A BACKGROUND TASK, fire-and-forget: nothing from here on waits for the
+  // unmount to finish, and the mutex + reference count inside
+  // tab5_sd.cpp (see trava()/destrava()/s_refs) already protect against the obvious
+  // race - opening another app with SD before this task runs only increments the
+  // reference on the card that is still mounted, instead of mounting again.
   if (devolver_sd) {
     pool_criar(nullptr, vTaskDesmontarSDApp, nullptr, "sd_desmonta", 4096, 1);
     s_app_montou_sd = false;
@@ -131,35 +131,35 @@ void fechar_app(void)
 }
 
 // ---------------------------------------------------------------------------
-// MONTAGEM (E DESMONTAGEM) DE SD EM TAREFA PROPRIA
+// SD MOUNTING (AND UNMOUNTING) IN ITS OWN TASK
 // ---------------------------------------------------------------------------
-// Tab5_sd_montar()/desmontar() rodavam DIRETO na tarefa de
-// interface, dentro de abrir_app()/fechar_app() - a MESMA tarefa que chama
-// M5.update() e processa toque. montar_de_verdade() (tab5_sd.cpp) liga o LDO
-// da IO do cartao, negocia o host SDMMC e monta o FAT: nada catastrofico como
-// os ~10s do Grove, mas a mesma classe de erro - hardware de verdade demorando
-// dezenas a centenas de ms dentro da tarefa que precisa continuar lendo o
-// dedo. Um cartao lento para responder bastava para o mesmo sintoma do Grove
-// aparecer em escala menor.
+// Tab5_sd_montar()/desmontar() used to run DIRECTLY on the UI
+// task, inside abrir_app()/fechar_app() - the SAME task that calls
+// M5.update() and processes touch. montar_de_verdade() (tab5_sd.cpp) turns on the
+// card IO LDO, negotiates the SDMMC host and mounts FAT: nothing catastrophic like
+// Grove's ~10s, but the same class of error - real hardware taking
+// tens to hundreds of ms inside the task that needs to keep reading the
+// finger. A card slow to respond was enough for the same symptom as Grove
+// to appear on a smaller scale.
 //
-// A DESMONTAGEM e simples: fecha o app, some da tela, ninguem mais espera por
-// ela. Vai para uma tarefa solta (fire-and-forget) sem coordenacao nenhuma - o
-// mutex e a contagem de referencia dentro de tab5_sd.cpp (ver trava()/
-// destrava()/s_refs) ja garantem que montar() e desmontar() concorrentes de
-// tarefas diferentes nao se atropelam, entao nao ha corrida a resolver aqui.
+// UNMOUNTING is simple: the app closes, leaves the screen, nobody waits for
+// it any more. It goes to a loose task (fire-and-forget) with no coordination at all - the
+// mutex and reference count inside tab5_sd.cpp (see trava()/
+// destrava()/s_refs) already guarantee that concurrent montar() and desmontar() from
+// different tasks do not trample each other, so there is no race to resolve here.
 //
-// A MONTAGEM e mais delicada: ao_abrir() de apps como Arquivos e Mesh presume
-// que o cartao ja esta pronto (listam pasta, leem historico) na primeira
-// chamada. Nao da para simplesmente disparar e seguir chamando ao_abrir()
-// como se nada tivesse mudado - a abertura do app precisa esperar o resultado
-// da montagem antes de chamar ao_abrir(). Por isso abrir_app() trava a tela no
-// app (s_app = app, tela mostra "abrindo...") mas SO libera o app de verdade -
-// chamando ao_abrir() - quando a tarefa de fundo termina. Ver
-// concluir_abertura_do_sd() e a checagem no loop da interface.
+// MOUNTING is more delicate: ao_abrir() of apps such as Files and Mesh assumes
+// the card is already ready (they list a folder, read history) on the first
+// call. We cannot just fire it off and carry on calling ao_abrir()
+// as if nothing had changed - the app opening has to wait for the result
+// of the mount before calling ao_abrir(). That is why abrir_app() locks the screen on the
+// app (s_app = app, screen shows "abrindo..." (opening...)) but ONLY releases the app for real -
+// calling ao_abrir() - when the background task finishes. See
+// concluir_abertura_do_sd() and the check in the UI loop.
 static void vTaskMontarSDApp(void*)
 {
   s_sd_montou_ok = tab5_sd_montar();
-  s_sd_montando  = false;   // POR ULTIMO - so agora o loop pode concluir a abertura
+  s_sd_montando  = false;   // LAST - only now may the loop complete the opening
 }
 
 static void vTaskDesmontarSDApp(void*)
@@ -168,131 +168,131 @@ static void vTaskDesmontarSDApp(void*)
 }
 
 // ---------------------------------------------------------------------------
-// APP RECUSADO PELO SISTEMA
+// APP REFUSED BY THE SYSTEM
 // ---------------------------------------------------------------------------
-// Um app que EXIGE o cartao (app_t.exige_sd: Arquivos, Camera) nao abre com
-// ele emprestado ao computador (modo pendrive) - e a regra e do sistema, nao
-// de cada app. No lugar do app aparece uma tela do sistema dizendo por que;
-// INICIO volta normalmente. Se o cartao voltar com ela na tela, o app abre
-// sozinho (loop da interface).
+// An app that REQUIRES the card (app_t.exige_sd: Files, Camera) does not open with
+// it lent to the computer (flash drive mode) - the rule is the system's, not
+// each app's. In place of the app a system screen appears saying why;
+// INICIO (home) goes back normally. If the card comes back with it on screen, the app opens
+// by itself (UI loop).
 //
-// s_app aponta para o app (a barra mostra o nome, INICIO funciona), mas
-// nenhuma funcao dele e chamada - app_vivo() e falso.
+// s_app points to the app (the bar shows the name, INICIO works), but
+// none of its functions are called - app_vivo() is false.
 static void recusar_app(const app_t* app)
 {
-  ESP_LOGW(TAG, "'%s' nao abre: o cartao esta emprestado ao computador", app->nome);
+  ESP_LOGW(TAG, "'%s' does not open: the SD card is lent to the computer", app->nome);
   s_app = app;
   s_app_recusado = app;
   rolagem_zerar(&s_rol);
-  orientacao_ao_fechar();                 // a tela de motivo e em pe
-  tab5_power_aplicar(perfil_da_home());   // nada do perfil do app fica ligado
+  orientacao_ao_fechar();                 // the reason screen is portrait
+  tab5_power_aplicar(perfil_da_home());   // nothing from the app's profile stays on
   s_sujo_layout = true;
 }
 
-// Segunda metade de abrir_app() quando o app usa SD: chamada pelo loop da
-// interface assim que a montagem de fundo termina (ok ou nao). Espelha
-// exatamente o que abrir_app() fazia embutido, so que depois da espera.
+// Second half of abrir_app() when the app uses SD: called by the UI
+// loop as soon as the background mount finishes (ok or not). Mirrors
+// exactly what abrir_app() did inline, only after the wait.
 void concluir_abertura_do_sd(void)
 {
   const app_t* app = s_app_carregando;
   s_app_carregando = nullptr;
 
   s_app_montou_sd = s_sd_montou_ok;
-  // CORRIDA COM O PENDRIVE: o cartao foi emprestado entre a checagem do
-  // abrir_app() e a montagem. Mesma regra: quem exige o cartao nao abre.
+  // RACE WITH THE FLASH DRIVE MODE: the card was lent between abrir_app()'s check
+  // and the mount. Same rule: whoever requires the card does not open.
   if (!s_app_montou_sd && app->exige_sd && tab5_sd_emprestado()) {
     recusar_app(app);
     return;
   }
   if (!s_app_montou_sd) {
-    ESP_LOGW(TAG, "'%s' pediu cartao SD e ele NAO montou - abrindo assim mesmo, "
-                  "mas o app nao vai conseguir gravar", app->nome);
+    ESP_LOGW(TAG, "'%s' asked for the SD card and it did NOT mount - opening anyway, "
+                  "but the app will not be able to save", app->nome);
   }
 
   if (app->ao_abrir && !app->ao_abrir()) {
-    ESP_LOGE(TAG, "'%s' recusou abrir", app->nome);
+    ESP_LOGE(TAG, "'%s' refused to open", app->nome);
     if (s_app_montou_sd) {
       pool_criar(nullptr, vTaskDesmontarSDApp, nullptr, "sd_desmonta", 4096, 1);
       s_app_montou_sd = false;
     }
-    s_app = nullptr;      // volta para a home: a abertura falhou de verdade
+    s_app = nullptr;      // back to home: the opening really failed
     tab5_power_aplicar(perfil_da_home());
     s_sujo_layout = true;
     return;
   }
 
   registro_app_atual(app->nome);
-  s_sujo_layout = true;   // troca a tela de "abrindo..." pelo conteudo de verdade
+  s_sujo_layout = true;   // swaps the "abrindo..." screen for the real content
 }
 
-// NAO 'static' - declarada em kernel/internal.hpp, chamada por
-// kernel/shell.cpp (tratar_toque, ao tocar um icone da home).
+// NOT 'static' - declared in kernel/internal.hpp, called by
+// kernel/shell.cpp (tratar_toque, when a home icon is touched).
 bool abrir_app(const app_t* app)
 {
   if (s_app) { fechar_app(); }
-  ESP_LOGI(TAG, "abrindo '%s'", app->nome);
-  // O DEDO QUE ABRIU O APP NAO E TOQUE NELE. O app abre na soltura, mas o
-  // GT911 ainda diz "pressionado" por duas leituras, no lugar do icone: o
-  // Ajustes recebia isso como arraste na coluna da esquerda e mexia no volume.
-  // A mesma regra do dedo que acende a tela - vale ate nenhum dedo na tela.
+  ESP_LOGI(TAG, "opening '%s'", app->nome);
+  // THE FINGER THAT OPENED THE APP IS NOT A TOUCH ON IT. The app opens on release, but the
+  // GT911 still says "pressed" for two reads, where the icon was: the
+  // Settings app took that as a drag in the left column and changed the volume.
+  // The same rule as the finger that lights the screen - applies until no finger is on the screen.
   s_dedo_do_despertar = true;
 
-  // O CARTAO ESTA NO COMPUTADOR e este app nao funciona sem ele: o sistema
-  // nao abre (ver recusar_app). Antes de qualquer outra coisa - nem perfil,
-  // nem orientacao, nem montagem.
+  // THE CARD IS IN THE COMPUTER and this app does not work without it: the system
+  // does not open it (see recusar_app). Before anything else - no profile,
+  // no orientation, no mount.
   if (app->exige_sd && tab5_sd_emprestado()) {
     recusar_app(app);
     return true;
   }
 
-  // A ordem importa: liga o que o app precisa ANTES de ele iniciar.
+  // Order matters: turn on what the app needs BEFORE it starts.
   //
-  // E o BRILHO NAO VEM DO APP. O perfil do app diz que hardware ele precisa;
-  // quao clara a tela fica e preferencia de quem segura o aparelho. Copiamos o
-  // perfil e sobrescrevemos - assim o app_t continua declarando o campo (o
-  // tab5_power e autocontido e usa ele), mas quem manda e o ajuste.
-  // O MESMO VALE PARA O RADIO, e esta linha nasceu de um bug caro.
+  // And BRIGHTNESS DOES NOT COME FROM THE APP. The app's profile says what hardware it needs;
+  // how bright the screen is, is the preference of whoever holds the device. We copy the
+  // profile and overwrite - that way app_t still declares the field (the
+  // tab5_power is self-contained and uses it), but the setting is in charge.
+  // THE SAME GOES FOR THE RADIO, and this line was born from a costly bug.
   //
-  // Todo app declara radio=false (o padrao), entao abrir QUALQUER app cortava o
-  // WLAN_PWR_EN e matava o ESP32-C6 com o WiFi rodando. O log nao
-  // deixa duvida:
+  // Every app declares radio=false (the default), so opening ANY app cut
+  // WLAN_PWR_EN and killed the ESP32-C6 with WiFi running. The log leaves
+  // no doubt:
   //
   //   sistema: abrindo 'Ajustes'
   //   tab5pwr: trilho do C6 (WLAN_PWR_EN) = 0
-  //   sdmmc_send_cmd returned 0x108        <- 1ms depois
-  //   eh_sdio: Unrecoverable host sdio state  -> reinicio da placa
+  //   sdmmc_send_cmd returned 0x108        <- 1ms later
+  //   eh_sdio: Unrecoverable host sdio state  -> board restart
   //
-  // A regra geral: o perfil do app diz o que ELE precisa ligado, nunca o que os
-  // outros podem desligar. Recurso de SERVICO do sistema - brilho, radio - e
-  // decidido aqui, e o app so pode SOMAR, nunca subtrair.
-  // Os DOIS caminhos precisam da regra, e por isso ela mora tambem em
-  // perfil_da_home(): fechar um app tambem reaplica perfil, e um WiFi que
-  // sobrevive a abrir o app Ajustes mas morre ao fechar seria pior que o bug antigo -
-  // falharia so as vezes.
-  // Orientacao ANTES do perfil e de qualquer desenho: girar muda largura e
-  // altura, e tudo que for calculado a partir delas precisa ver o valor novo.
-  // Quais rotacoes existem e por que: kernel/orientacao.cpp.
+  // The general rule: the app's profile says what IT needs on, never what the
+  // others may turn off. A system SERVICE resource - brightness, radio - is
+  // decided here, and the app can only ADD, never subtract.
+  // BOTH paths need the rule, which is why it also lives in
+  // perfil_da_home(): closing an app also reapplies the profile, and a WiFi that
+  // survives opening the Settings app but dies on closing it would be worse than the old bug -
+  // it would only fail sometimes.
+  // Orientation BEFORE the profile and any drawing: rotating changes width and
+  // height, and everything calculated from them needs to see the new value.
+  // Which rotations exist and why: kernel/orientacao.cpp.
   orientacao_ao_abrir(app);
 
   tab5_perfil_t perfil = app->perfil;
   sistema_impor_preferencias(perfil);
   tab5_power_aplicar(perfil);
 
-  // Cartao montado antes do ao_abrir(), pelo mesmo motivo de sempre: o app
-  // pode querer ler configuracao ou abrir arquivo de log logo na abertura.
+  // Card mounted before ao_abrir(), for the usual reason: the app
+  // may want to read configuration or open a log file right at opening.
   //
-  // A MONTAGEM EM SI NAO RODA MAIS AQUI (ver o bloco grande acima,
-  // "MONTAGEM (E DESMONTAGEM) DE SD EM TAREFA PROPRIA"). Travamos a tela
-  // neste app agora - por isso s_app ja e atribuido nesta funcao, antes de
-  // ao_abrir() ter sido chamado - e devolvemos true: a home some, a barra de
-  // navegacao mostra "INICIO" (a checagem de app aberto so olha s_app) e
-  // desenhar_conteudo() mostra "abrindo..." enquanto s_app_carregando apontar
-  // para este app. O toque fica engolido nesse meio-tempo (ver tratar_toque,
-  // kernel/shell.cpp), por poucos frames na pratica - a mesma folga que o
-  // cartao levava para montar, so que agora fora da tarefa que le o dedo.
+  // THE MOUNT ITSELF NO LONGER RUNS HERE (see the big block above,
+  // "MONTAGEM (E DESMONTAGEM) DE SD EM TAREFA PROPRIA"). We lock the screen
+  // on this app now - which is why s_app is already assigned in this function, before
+  // ao_abrir() has been called - and return true: home goes away, the navigation
+  // bar shows "INICIO" (the open-app check only looks at s_app) and
+  // desenhar_conteudo() shows "abrindo..." while s_app_carregando points
+  // to this app. Touch is swallowed in the meantime (see tratar_toque,
+  // kernel/shell.cpp), for a few frames in practice - the same slack the
+  // card took to mount, only now outside the task that reads the finger.
   //
-  // Falhar em montar NAO impede o app de abrir - ver concluir_abertura_do_sd().
-  // Sem cartao, o Azimutal ainda desenha o mapa; ele so nao grava.
+  // Failing to mount does NOT stop the app opening - see concluir_abertura_do_sd().
+  // Without a card, Azimutal still draws the map; it just does not save.
   s_app_montou_sd = false;
   if (app->usa_sd) {
     s_app_carregando = app;
@@ -302,17 +302,17 @@ bool abrir_app(const app_t* app)
     s_app = app;
     rolagem_zerar(&s_rol);
     s_sujo_layout = true;
-    return true;   // a abertura conclui em concluir_abertura_do_sd(), no loop
+    return true;   // the opening completes in concluir_abertura_do_sd(), in the loop
   }
 
   if (app->ao_abrir && !app->ao_abrir()) {
-    ESP_LOGE(TAG, "'%s' recusou abrir", app->nome);
+    ESP_LOGE(TAG, "'%s' refused to open", app->nome);
     tab5_power_aplicar(perfil_da_home());
     return false;
   }
 
   s_app = app;
-  rolagem_zerar(&s_rol);   // todo app comeca no topo
+  rolagem_zerar(&s_rol);   // every app starts at the top
   registro_app_atual(app->nome);
   s_sujo_layout = true;
   return true;

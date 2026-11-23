@@ -51,10 +51,10 @@ typedef struct {
     void *ctx;
     uint8_t *work;
     size_t work_bytes;
-    /* M5tabOS: mais pedacos de memoria de trabalho, alem de 'work'. A SRAM do
-       P4 raramente tem um bloco livre do tamanho da arena inteira; com pedacos
-       o decodificador usa o que houver (cada pedido vai para o primeiro pedaco
-       onde cabe). Alinhados como 'work'; bytes 0 = sem pedaco. */
+    /* M5tabOS: more chunks of working memory, besides 'work'. The P4's SRAM
+       rarely has a free block the size of the whole arena; with chunks the
+       decoder uses whatever there is (each request goes to the first chunk
+       where it fits). Aligned like 'work'; 0 bytes = no chunk. */
     uint8_t *work_extra[H264_DEC_WORK_EXTRA];
     size_t work_extra_bytes[H264_DEC_WORK_EXTRA];
     uint32_t max_mbs;

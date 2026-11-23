@@ -2,7 +2,7 @@
 #include "tab5_linhas.hpp"
 #include "tab5_gps.hpp"
 #include "tab5_sd.hpp"
-#include "tab5_arquivos.hpp"   // listar pasta e do sistema
+#include "tab5_arquivos.hpp"   // listing a folder is the system's job
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -16,7 +16,7 @@ static const char* TAG = "gnss";
 #define GNSS_PASTA "Azimutal"
 
 // ---------------------------------------------------------------------------
-// GRAVAR
+// WRITING
 // ---------------------------------------------------------------------------
 static const char* nome_constelacao(GnssType t)
 {
@@ -37,25 +37,25 @@ uint32_t tab5_gnss_gravar(const SatelliteSnapshot_t* snap, uint32_t idade_max_ms
   for (uint8_t i = 0; i < snap->count; ++i) {
     if (snap->satellites[i].tem_posicao) { com_posicao++; }
   }
-  if (com_posicao == 0) { return 0; }          // nada util para registrar
+  if (com_posicao == 0) { return 0; }          // nothing useful to log
 
   const nmea_tempo_t   tempo = tab5_gps_tempo();
   const nmea_posicao_t pos   = tab5_gps_posicao();
 
-  // Sem hora do GPS nao ha em que arquivo gravar. Acontece nos primeiros
-  // segundos, ate a primeira RMC chegar - e some sozinho.
+  // Without the GPS time there's no file to write to. It happens in the first
+  // few seconds, until the first RMC arrives - and goes away by itself.
   if (!tempo.valida) {
-    ESP_LOGW(TAG, "ainda sem hora do GPS: %d satelite(s) nao registrados", com_posicao);
+    ESP_LOGW(TAG, "no GPS time yet: %d satellite(s) not logged", com_posicao);
     return 0;
   }
 
-  // SEM FIX NAO SE GRAVA. Elevacao e azimute sao RELATIVOS AO OBSERVADOR: sem
-  // fix o receptor ainda emite GSV, mas com geometria de almanaque que NAO se
-  // atualiza - 17 despejos seguidos vieram byte a byte identicos. O unico
-  // sinal confiavel e o status do proprio RMC.
+  // NO FIX, NO WRITING. Elevation and azimuth are RELATIVE TO THE OBSERVER: without
+  // a fix the receiver still emits GSV, but with almanac geometry that does NOT
+  // update - 17 dumps in a row came out byte-for-byte identical. The only
+  // reliable signal is the RMC's own status.
   if (!tempo.fix) {
-    ESP_LOGW(TAG, "SEM FIX: %d satelite(s) nao registrados "
-                  "(o receptor ouve, mas nao sabe onde esta - a geometria seria falsa)",
+    ESP_LOGW(TAG, "NO FIX: %d satellite(s) not logged "
+                  "(the receiver hears, but doesn't know where it is - the geometry would be false)",
              com_posicao);
     return 0;
   }
@@ -64,8 +64,8 @@ uint32_t tab5_gnss_gravar(const SatelliteSnapshot_t* snap, uint32_t idade_max_ms
   snprintf(arquivo, sizeof(arquivo), "satelites-%04u-%02u-%02u.csv",
            (unsigned)tempo.ano, (unsigned)tempo.mes, (unsigned)tempo.dia);
 
-  // Pelo gravador do sistema (hal/tab5_sd.hpp): entrega a linha e segue - ele
-  // monta o cartao sozinho.
+  // Through the system writer (hal/tab5_sd.hpp): hands over the line and moves on - it
+  // mounts the SD card by itself.
   char linha[96];
   if (pos.valida && pos.qualidade > 0) {
     snprintf(linha, sizeof(linha), "POS,%02u:%02u:%02u,%.6f,%.6f,%.1f,%.1f,%u,%u\n",
@@ -81,8 +81,8 @@ uint32_t tab5_gnss_gravar(const SatelliteSnapshot_t* snap, uint32_t idade_max_ms
   for (uint8_t i = 0; i < snap->count; ++i) {
     const SatelliteInfo_t* s = &snap->satellites[i];
     if (!s->tem_posicao) { continue; }
-    // POSICAO VELHA NAO E OBSERVACAO (ver pos_ms em nmea.h): se nao foi
-    // reobservada desde o ultimo despejo, nao entra.
+    // AN OLD POSITION IS NOT AN OBSERVATION (see pos_ms in nmea.h): if it hasn't been
+    // re-observed since the last dump, it doesn't go in.
     if ((agora_ms - s->pos_ms) > idade_max_ms) { velhos++; continue; }
     frescos++;
     snprintf(linha, sizeof(linha), "SAT,%02u:%02u:%02u,%s,%u,%u,%u,%u\n",
@@ -90,17 +90,17 @@ uint32_t tab5_gnss_gravar(const SatelliteSnapshot_t* snap, uint32_t idade_max_ms
              nome_constelacao(s->type), s->prn, s->elevation, s->azimuth, s->snr);
     if (tab5_sd_anexar(GNSS_PASTA, arquivo, linha)) { ++gravadas; }
   }
-  ESP_LOGI(TAG, "%s: gravados %d, descartados %d por posicao velha",
+  ESP_LOGI(TAG, "%s: %d written, %d discarded for stale position",
            arquivo, frescos, velhos);
   return gravadas;
 }
 
 // ---------------------------------------------------------------------------
-// OS DIAS
+// THE DAYS
 // ---------------------------------------------------------------------------
-// Varre a pasta do app atras dos arquivos de dia. Ordena decrescente para o
-// dia mais recente aparecer primeiro - e quase sempre o que se quer ver. O nome
-// tem a data em ISO, entao ordem alfabetica decrescente = cronologica invertida.
+// Scans the app's folder for the day files. Sorts in descending order so the
+// most recent day shows first - it is nearly always the one you want to see. The name
+// has the date in ISO, so descending alphabetical order = reverse chronological.
 static int dia_mais_novo_primeiro(const void* a, const void* b)
 {
   return strcmp((const char*)b, (const char*)a);
@@ -130,16 +130,16 @@ int tab5_gnss_listar_dias(char (*dias)[TAB5_GNSS_DIA_NOME_TAM], int max)
 }
 
 // ---------------------------------------------------------------------------
-// O DIA CARREGADO EM MEMORIA
+// THE DAY LOADED IN MEMORY
 // ---------------------------------------------------------------------------
-// Antes, TROCAR DE SATELITE relia o arquivo inteiro do cartao e reinterpretava
-// linha por linha - milhares delas - so para desenhar um subconjunto do que ja
-// tinha sido lido. Agora o arquivo e lido UMA vez por dia escolhido, para este
-// vetor.
+// Previously, CHANGING SATELLITE reread the whole file from the SD card and reparsed
+// it line by line - thousands of them - just to draw a subset of what had already
+// been read. Now the file is read ONCE per chosen day, into this
+// vector.
 //
-// Um dia cheio de gravacao (uma amostra por minuto, ~20 satelites) da umas 29
-// mil posicoes - 174KB, num aparelho com 29MB livres. E de longe o lugar mais
-// barato para essa informacao estar.
+// A full day of logging (one sample per minute, ~20 satellites) gives some 29
+// thousand positions - 174KB, on a device with 29MB free. It is by far the cheapest
+// place for this information to be.
 #define MAX_PONTOS 40000
 
 static tab5_gnss_ponto_t* s_pontos = nullptr;
@@ -148,34 +148,34 @@ static tab5_gnss_sat_t s_sats[TAB5_GNSS_SATS_MAX];
 static int  s_n_sats = 0;
 static char s_dia_carregado[TAB5_GNSS_DIA_NOME_TAM] = "";
 
-// Interpretacao a mao, no lugar do sscanf.
+// Hand-parsing, instead of sscanf.
 //
-// O formato e fixo: SAT,hh:mm:ss,CONS,prn,elev,azim,snr. O sscanf precisa
-// reinterpretar a string de formato a cada linha e o "%11[^,]" e das partes
-// mais caras dele - com milhares de linhas isso domina o tempo de carga.
-// strtoul anda no ponteiro e devolve onde parou, que e tudo de que precisamos.
+// The format is fixed: SAT,hh:mm:ss,CONS,prn,elev,azim,snr. sscanf has to
+// reparse the format string on every line and "%11[^,]" is among its
+// most expensive parts - with thousands of lines that dominates the load time.
+// strtoul walks the pointer and returns where it stopped, which is all we need.
 //
-// Devolve false na primeira coisa fora do lugar: linha truncada ou corrompida
-// e descartada inteira, sem inventar valor.
+// Returns false at the first thing out of place: a truncated or corrupted line
+// is discarded whole, without inventing a value.
 static bool interpretar_sat(char* l, unsigned* hh, unsigned* mm,
                             char** cons, unsigned* prn,
                             unsigned* elev, unsigned* azim, unsigned* snr)
 {
-  char* p = l + 4;                                  // depois de "SAT,"
+  char* p = l + 4;                                  // after "SAT,"
   *hh = strtoul(p, &p, 10); if (*p != ':') { return false; } ++p;
   *mm = strtoul(p, &p, 10); if (*p != ':') { return false; } ++p;
-  strtoul(p, &p, 10);                               // segundos: nao usamos
+  strtoul(p, &p, 10);                               // seconds: not used
   if (*p != ',') { return false; } ++p;
 
   *cons = p;
   while (*p && *p != ',') { ++p; }
   if (!*p) { return false; }
-  *p++ = 0;                                         // termina a constelacao
+  *p++ = 0;                                         // terminates the constellation
 
   *prn  = strtoul(p, &p, 10); if (*p != ',') { return false; } ++p;
   *elev = strtoul(p, &p, 10); if (*p != ',') { return false; } ++p;
   *azim = strtoul(p, &p, 10);
-  *snr = (*p == ',') ? strtoul(p + 1, &p, 10) : 0;   // arquivos antigos podem nao ter
+  *snr = (*p == ',') ? strtoul(p + 1, &p, 10) : 0;   // old files may not have it
   return true;
 }
 
@@ -187,7 +187,7 @@ bool tab5_gnss_carregar_dia(const char* arquivo)
     s_pontos = (tab5_gnss_ponto_t*)heap_caps_malloc(sizeof(tab5_gnss_ponto_t) * MAX_PONTOS,
                                                     MALLOC_CAP_SPIRAM);
     if (!s_pontos) {
-      ESP_LOGE(TAG, "sem PSRAM para o historico");
+      ESP_LOGE(TAG, "no PSRAM for the history");
       return false;
     }
   }
@@ -199,16 +199,16 @@ bool tab5_gnss_carregar_dia(const char* arquivo)
   char pasta[96], caminho[160];
   if (!tab5_sd_pasta_caminho(GNSS_PASTA, pasta, sizeof(pasta))) { return false; }
   snprintf(caminho, sizeof(caminho), "%s/%s", pasta, arquivo);
-  tab5_linhas_t* l = tab5_linhas_abrir(caminho);   // monta o cartao e grava o pendente antes
+  tab5_linhas_t* l = tab5_linhas_abrir(caminho);   // mounts the SD card and writes what is pending first
   if (!l) { return false; }
 
   const uint32_t t0 = pdTICKS_TO_MS(xTaskGetTickCount());
   char linha[96];
   int voltas = 0;
   while (s_n_pontos < MAX_PONTOS && tab5_linhas_proxima(l, linha, sizeof(linha))) {
-    // Cede a CPU periodicamente: isto pode rodar na tarefa de interface e o
-    // arquivo passa de megabytes com horas de gravacao. Segurar o core por mais
-    // de 5s faria o task watchdog reiniciar a placa.
+    // Yields the CPU periodically: this may run in the UI task and the
+    // file goes beyond megabytes with hours of logging. Holding the core for more
+    // than 5s would make the task watchdog restart the board.
     if ((++voltas % 256) == 0) { vTaskDelay(1); }
     if (strncmp(linha, "SAT,", 4) != 0) { continue; }
 
@@ -217,8 +217,8 @@ bool tab5_gnss_carregar_dia(const char* arquivo)
     if (!interpretar_sat(linha, &hh, &mm, &cons, &prn, &elev, &azim, &snr)) { continue; }
     if (elev > 90 || azim > 359) { continue; }
 
-    // Cataloga quem aparece. A busca e linear, mas sobre no MAXIMO 40 nomes -
-    // uma tabela de dispersao aqui seria mais codigo que ganho.
+    // Catalogues who appears. The search is linear, but over AT MOST 40 names -
+    // a hash table here would be more code than gain.
     int idx = -1;
     for (int k = 0; k < s_n_sats; ++k) {
       if (s_sats[k].prn == (int)prn && strcmp(s_sats[k].cons, cons) == 0) { idx = k; break; }
@@ -240,7 +240,7 @@ bool tab5_gnss_carregar_dia(const char* arquivo)
   tab5_linhas_fechar(l);
 
   snprintf(s_dia_carregado, sizeof(s_dia_carregado), "%s", arquivo);
-  ESP_LOGI(TAG, "%s: %d pontos de %d satelites em %lu ms",
+  ESP_LOGI(TAG, "%s: %d points from %d satellites in %lu ms",
            arquivo, s_n_pontos, s_n_sats,
            (unsigned long)(pdTICKS_TO_MS(xTaskGetTickCount()) - t0));
   return true;

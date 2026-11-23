@@ -1,29 +1,29 @@
-## Component Manager do IDF - equivalente ao lib_deps, mas para componentes IDF.
+## IDF Component Manager - equivalent to lib_deps, but for IDF components.
 ##
-## VERSOES TRAVADAS (==), todas - inclusive as que vem por tabela. Qualquer
-## mudanca neste arquivo faz o gerenciador recalcular TODAS as dependencias,
-## e uma faixa aberta ("^0.2.21", "*") puxa o mais novo do registro: trocar so
-## a versao do TinyUSB trouxe junto um M5Unified novo sem ninguem pedir.
-## Atualizar um componente e decisao de proposito: troque a versao dele aqui,
-## apague build/esp-idf/<componente> (ou idf.py fullclean) e teste NO TAB5.
-## O build incremental reaproveita objetos da versao anterior: o M5Unified
-## 0.2.25 "funcionou" assim, com codigo da 0.2.21 por baixo; compilado limpo
-## ele trava no boot (M5.getIOExpander(0) vazio em tab5_power_camera).
+## VERSIONS PINNED (==), all of them - including the transitive ones. Any
+## change to this file makes the manager recalculate ALL the dependencies,
+## and an open range ("^0.2.21", "*") pulls the newest from the registry: changing only
+## the TinyUSB version brought along a new M5Unified without anyone asking.
+## Updating a component is a deliberate decision: change its version here,
+## delete build/esp-idf/<component> (or idf.py fullclean) and test ON THE TAB5.
+## The incremental build reuses objects from the previous version: M5Unified
+## 0.2.25 "worked" like that, with 0.2.21 code underneath; built clean
+## it hangs at boot (M5.getIOExpander(0) empty in tab5_power_camera).
 dependencies:
   idf:
     version: ">=5.5"
   m5stack/m5unified:
     version: "==0.2.21"
-  ## O m5gfx vem pela M5Unified (que pede ">=0.2.28"); travado aqui.
+  ## m5gfx comes via M5Unified (which asks for ">=0.2.28"); pinned here.
   m5stack/m5gfx:
     version: "==0.2.32"
-  ## WiFi. No P4 nao ha radio no chip: o esp_wifi do IDF so entrega os
-  ## cabecalhos, e a implementacao real vem daqui - que por sua vez puxa o
-  ## esp_hosted, o transporte SDIO ate o ESP32-C6 ao lado.
+  ## WiFi. The P4 has no radio on chip: IDF's esp_wifi only provides the
+  ## headers, and the real implementation comes from here - which in turn pulls in
+  ## esp_hosted, the SDIO transport to the ESP32-C6 next to it.
   espressif/esp_wifi_remote:
     version: "==1.6.4"
-  ## O transporte ate o C6 e a ponte por tras do esp_wifi_remote - travados
-  ## junto: o firmware do C6 tem que falar a mesma versao do esp_hosted.
+  ## The transport to the C6 and the bridge behind esp_wifi_remote - pinned
+  ## together: the C6 firmware must speak the same esp_hosted version.
   espressif/esp_hosted:
     version: "==3.0.10"
   espressif/esp_serial_slave_link:
@@ -32,17 +32,17 @@ dependencies:
     version: "==1.1.6"
   espressif/wifi_remote_over_eppp:
     version: "==0.3.3"
-  ## CAMERA. O sensor do Tab5 (SC2356/SC202CS) fala MIPI-CSI, nao
-  ## a DVP antiga do esp32-camera classico - por isso o par certo e este, o
-  ## subsistema novo da Espressif (V4L2-like: open()/ioctl()/mmap() em
-  ## /dev/videoN) por cima do driver do sensor. esp_cam_sensor entrega o
-  ## driver do SC2356 em si (Kconfig CONFIG_CAMERA_SC202CS, ligado no
-  ## sdkconfig); esp_video entrega o pipeline (CSI + ISP) e o /dev/videoN.
+  ## CAMERA. The Tab5's sensor (SC2356/SC202CS) speaks MIPI-CSI, not
+  ## the old DVP of the classic esp32-camera - which is why the right pair is this one, the
+  ## new Espressif subsystem (V4L2-like: open()/ioctl()/mmap() on
+  ## /dev/videoN) on top of the sensor driver. esp_cam_sensor provides the
+  ## SC2356 driver itself (Kconfig CONFIG_CAMERA_SC202CS, enabled in
+  ## sdkconfig); esp_video provides the pipeline (CSI + ISP) and /dev/videoN.
   espressif/esp_cam_sensor:
     version: "==2.0.1"
   espressif/esp_video:
     version: "==2.0.1"
-  ## Por tabela, da camera/video.
+  ## Transitive, from camera/video.
   espressif/esp_sccb_intf:
     version: "==0.0.9"
   espressif/esp_ipa:
@@ -53,21 +53,21 @@ dependencies:
     version: "==2.4.2"
   espressif/cmake_utilities:
     version: "==0.5.3"
-  ## MODO PENDRIVE (services/tab5_pendrive). O TinyUSB cru, sem o
-  ## esp_tinyusb por cima: o esp_tinyusb monta o PHY do jeito padrao, e o
-  ## USB-C do Tab5 precisa do PHY full speed TROCADO com o do console (ver
-  ## tab5_pendrive.hpp). A configuracao e main/tusb_config.h.
-  ## 0.21 e nao 0.19: o driver DWC2 da 0.19, no modo DMA, so guarda UM pacote
-  ## SETUP no EP0 (a 0.21 guarda tres e reescreveu o caminho), trata as
-  ## interrupcoes de saida antes das de entrada, e o MSC rearma o proximo
-  ## comando mesmo com o endpoint de saida travado. (O sintoma que motivou a
-  ## troca - o computador "parando" depois do INQUIRY - era outro: o bip do
-  ## alto-falante desligando o pad do OTG, ver sistema_som_ceder_pinos. A 0.21
-  ## ficou: testada com leitura e escrita de dezenas de MB, hash conferido.)
+  ## FLASH-DRIVE MODE (services/tab5_pendrive). Raw TinyUSB, without
+  ## esp_tinyusb on top: esp_tinyusb sets up the PHY the standard way, and the
+  ## Tab5's USB-C needs the full-speed PHY SWAPPED with the console's (see
+  ## tab5_pendrive.hpp). The configuration is main/tusb_config.h.
+  ## 0.21 and not 0.19: 0.19's DWC2 driver, in DMA mode, only keeps ONE
+  ## SETUP packet on EP0 (0.21 keeps three and rewrote that path), handles the
+  ## OUT interrupts before the IN ones, and MSC re-arms the next
+  ## command even with the OUT endpoint stalled. (The symptom that prompted the
+  ## change - the computer "stopping" after INQUIRY - was something else: the
+  ## speaker beep switching off the OTG pad, see sistema_som_ceder_pinos. 0.21
+  ## stayed: tested reading and writing tens of MB, hash checked.)
   espressif/tinyusb:
     version: "~0.21.0"
-  ## PENDRIVE NO USB-A (services/tab5_usb). O controlador de alta velocidade,
-  ## com a USB Host Library que ja vem no IDF 5.5 (o TinyUSB da Espressif nao
-  ## faz host). Este e so o driver da classe (BOT/SCSI) + o FAT em /usb.
+  ## FLASH DRIVE ON USB-A (services/tab5_usb). The high-speed controller,
+  ## with the USB Host Library that already comes with IDF 5.5 (Espressif's TinyUSB does not
+  ## do host). This is only the class driver (BOT/SCSI) + FAT at /usb.
   espressif/usb_host_msc:
     version: "==1.3.0"

@@ -1,14 +1,14 @@
-// DIARIO DE REINICIOS DO NO MESHTASTIC.
+// MESHTASTIC NODE RESTART JOURNAL.
 //
-// O no nao conta, pelo protocolo, POR QUE reiniciou (o "reset reason" do
-// ESP32 so existe no log de console dele). O que o Tab5 consegue e anotar, na
-// hora em que percebe o reinicio, tudo o que ELE estava fazendo em volta: se
-// mexeu no 5V do Grove, se reaplicou o perfil de energia, o que tinha enviado
-// ao no por ultimo, a tensao da bateria. Com isso da para separar "o Tab5
-// causou" de "o no caiu sozinho" - dedução, nao certeza.
+// Through the protocol the node does not say WHY it restarted (the ESP32
+// "reset reason" only exists in its console log). What the Tab5 can do is
+// note, the moment it notices the restart, everything IT was doing around
+// then: whether it touched the Grove 5V, whether it reapplied the power
+// profile, what it last sent to the node, the battery voltage. That separates
+// "the Tab5 caused it" from "the node went down by itself" - deduction, not certainty.
 //
-// Como percebe: MyNodeInfo.reboot_count (fica na NVS do no) subiu desde a
-// ultima leitura. Persiste no cartao (Meshtastic/reinicios.txt), um por linha.
+// How it notices: MyNodeInfo.reboot_count (kept in the node's NVS) went up
+// since the last read. Persisted on the SD card (Meshtastic/reinicios.txt), one per line.
 #pragma once
 
 #include <stdint.h>
@@ -17,39 +17,39 @@
 #define MESH_DIARIO_MAX 40
 
 typedef enum {
-  MESH_REI_BASE = 0,      // primeira leitura do contador: ponto de partida, nao e reinicio
-  MESH_REI_SOZINHO,       // o contador subiu com o Tab5 conectado, sem pedido nosso
-  MESH_REI_PEDIDO,        // o Tab5 mandou reiniciar / gravar configuracao
-  MESH_REI_AUSENTE,       // subiu enquanto o Tab5 nao estava conectado: hora exata desconhecida
+  MESH_REI_BASE = 0,      // first read of the counter: starting point, not a restart
+  MESH_REI_SOZINHO,       // the counter went up with the Tab5 connected, without a request from us
+  MESH_REI_PEDIDO,        // the Tab5 sent a restart / write-configuration
+  MESH_REI_AUSENTE,       // went up while the Tab5 was not connected: exact time unknown
 } mesh_rei_origem_t;
 
 typedef enum { MESH_ENV_NENHUM = 0, MESH_ENV_PACOTE, MESH_ENV_CONFIG, MESH_ENV_HEARTBEAT, MESH_ENV_ADMIN } mesh_env_tipo_t;
 
 typedef struct {
-  uint32_t epoch;        // hora (UTC) do registro; 0 = o Tab5 ainda nao sabia a hora
-  uint32_t up_tab5_s;    // uptime do Tab5 no registro
-  uint32_t contador;     // MyNodeInfo.reboot_count depois do reinicio
-  uint32_t up_no_s;      // uptime do no na ultima telemetria ANTES de cair; 0 = desconhecido
+  uint32_t epoch;        // time (UTC) of the record; 0 = the Tab5 did not know the time yet
+  uint32_t up_tab5_s;    // Tab5 uptime at the record
+  uint32_t contador;     // MyNodeInfo.reboot_count after the restart
+  uint32_t up_no_s;      // node uptime in the last telemetry BEFORE it went down; 0 = unknown
   uint8_t  origem;       // mesh_rei_origem_t
-  uint8_t  envio_tipo;   // ultimo envio nosso que nao foi batimento (mesh_env_tipo_t)
-  uint16_t centivolts;   // tensao do barramento da bateria no instante (0 = sem leitura)
-  int32_t  ma;           // corrente do barramento
-  int32_t  envio_s;      // quanto tempo antes do registro foi esse envio; -1 = nunca
-  int32_t  grove_s;      // quanto antes o Tab5 mexeu no 5V do Grove; -1 = nunca
-  int32_t  perfil_s;     // quanto antes o Tab5 reaplicou o perfil de energia; -1 = nunca
+  uint8_t  envio_tipo;   // our last send that was not a heartbeat (mesh_env_tipo_t)
+  uint16_t centivolts;   // battery bus voltage at that moment (0 = no reading)
+  int32_t  ma;           // bus current
+  int32_t  envio_s;      // how long before the record that send was; -1 = never
+  int32_t  grove_s;      // how long before the Tab5 touched the Grove 5V; -1 = never
+  int32_t  perfil_s;     // how long before the Tab5 reapplied the power profile; -1 = never
 } mesh_reinicio_t;
 
-// ---- chamadas do servico (tab5_mesh.cpp) ----------------------------------
-void mesh_diario_carregar(void);                 // do cartao, na subida do servico
-void mesh_diario_nota_envio(uint8_t tipo);       // cada ToRadio que sai
-// Foto do contexto, quando o no avisa que reiniciou (FromRadio.rebooted).
+// ---- calls from the service (tab5_mesh.cpp) --------------------------------
+void mesh_diario_carregar(void);                 // from the SD card, when the service starts
+void mesh_diario_nota_envio(uint8_t tipo);       // every outgoing ToRadio
+// Snapshot of the context, when the node reports it restarted (FromRadio.rebooted).
 void mesh_diario_foto(uint32_t up_no_s);
-// MyNodeInfo chegou com 'contador'; decide se virou registro.
+// MyNodeInfo arrived with 'contador'; decides whether it becomes a record.
 void mesh_diario_contador(uint32_t contador, uint32_t up_no_s, bool conectados_antes, bool pedido_nosso);
 
-// ---- leitura / tela --------------------------------------------------------
-int      mesh_diario_ler(mesh_reinicio_t* saida, int max);   // do mais novo ao mais velho
+// ---- reading / screen ------------------------------------------------------
+int      mesh_diario_ler(mesh_reinicio_t* saida, int max);   // newest to oldest
 uint32_t mesh_diario_versao(void);
-void     mesh_diario_limpar(void);                           // apaga da RAM e do cartao
-// Frase curta com o indicio mais forte para este registro.
+void     mesh_diario_limpar(void);                           // erases from RAM and the SD card
+// Short phrase with the strongest clue for this record.
 const char* mesh_diario_veredito(const mesh_reinicio_t* r);

@@ -1,45 +1,45 @@
-// NUCLEO DO DECODIFICADOR DE GIF - so bytes e pixels, sem tela nem disco.
+// GIF DECODER CORE - only bytes and pixels, no screen or disk.
 //
-// Isolado de proposito: nao inclui LovyanGFX, ESP-IDF nem o cartao, e por isso
-// roda NO MAC (testes/gif_teste.cpp). Quem usa e services/tab5_gif.cpp, que
-// traz o arquivo para a memoria e desenha o resultado na tela.
+// Isolated on purpose: it doesn't include LovyanGFX, ESP-IDF or the SD card, and so
+// it runs ON THE MAC (testes/gif_teste.cpp). Its user is services/tab5_gif.cpp, which
+// brings the file into memory and draws the result on screen.
 //
-// Entra o arquivo GIF inteiro (GIF87a/89a) numa area de memoria; sai, quadro a
-// quadro, a "tela logica" em RGB565 (valor natural, 16 bits) ja composta com os
-// quadros anteriores. Quem aloca e o chamador (alocar/liberar): no aparelho a
-// PSRAM, no teste o malloc.
+// In goes the whole GIF file (GIF87a/89a) in a memory area; out comes, frame by
+// frame, the "logical screen" in RGB565 (natural value, 16 bits) already composited with the
+// previous frames. The caller does the allocating (alocar/liberar): on the device
+// PSRAM, in the test malloc.
 //
-// Entende: tabela de cor global e local, LZW (codigos de 2 a 12 bits), quadro
-// entrelacado, Graphic Control Extension (atraso, cor transparente e descarte
-// 0/1 = mantem, 2 = fundo, 3 = restaura o anterior) e pula as outras extensoes.
-// Arquivo estragado nunca le fora da area: cada indice e conferido.
+// Understands: global and local colour tables, LZW (codes of 2 to 12 bits), interlaced
+// frames, Graphic Control Extension (delay, transparent colour and disposal
+// 0/1 = keep, 2 = background, 3 = restore previous) and skips the other extensions.
+// A corrupt file never reads outside the area: every index is checked.
 #pragma once
 
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
 
-#define GIF_TELA_MAX 4096   // lado maximo da tela logica
+#define GIF_TELA_MAX 4096   // maximum side of the logical screen
 
 typedef struct gif_nucleo gif_nucleo_t;
 
 typedef void* (*gif_alocar_t)(size_t bytes);
 typedef void  (*gif_liberar_t)(void* p);
 
-// Le o cabecalho e prepara. 'dados' tem de continuar valido ate gif_n_fechar.
-// nullptr = nao e GIF, tela maior que GIF_TELA_MAX, sem nenhum quadro ou sem memoria.
+// Reads the header and prepares. 'dados' must stay valid until gif_n_fechar.
+// nullptr = not a GIF, screen larger than GIF_TELA_MAX, no frames at all or out of memory.
 gif_nucleo_t* gif_n_abrir(const uint8_t* dados, size_t n, gif_alocar_t alocar, gif_liberar_t liberar);
 void          gif_n_fechar(gif_nucleo_t* g);
 
 int  gif_n_largura(const gif_nucleo_t* g);
 int  gif_n_altura(const gif_nucleo_t* g);
-bool gif_n_animado(const gif_nucleo_t* g);          // o arquivo tem mais de um quadro
-int  gif_n_quadros_vistos(const gif_nucleo_t* g);   // quantos ja decodificou (conta as voltas)
+bool gif_n_animado(const gif_nucleo_t* g);          // the file has more than one frame
+int  gif_n_quadros_vistos(const gif_nucleo_t* g);   // how many it has decoded so far (counts the loops)
 
-// A tela logica (largura x altura, RGB565 natural, linha a linha de cima para baixo).
+// The logical screen (width x height, natural RGB565, row by row from top to bottom).
 const uint16_t* gif_n_tela(const gif_nucleo_t* g);
 
-// Decodifica o PROXIMO quadro por cima da tela logica. Devolve o atraso dele em
-// ms (minimo 20; sem atraso no arquivo = 100) ou -1 em erro. No fim do arquivo
-// volta ao primeiro quadro (laco).
+// Decodes the NEXT frame over the logical screen. Returns its delay in
+// ms (minimum 20; no delay in the file = 100) or -1 on error. At the end of the file
+// it goes back to the first frame (loop).
 int gif_n_proximo(gif_nucleo_t* g);

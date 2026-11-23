@@ -1,6 +1,6 @@
-// CORE - o desenho: a area util, a medida das passadas completas, a tela do
-// app recusado e a passada de desenho do conteudo (home, bloqueio, avisos ou
-// app). Partido de core.cpp (o motor); o que as partes compartilham esta em
+// CORE - drawing: the usable area, measuring full passes, the refused-app
+// screen and the content drawing pass (home, lock screen, notices or
+// app). Split from core.cpp (the engine); what the parts share is in
 // core_interno.hpp.
 
 #include "tab5_tema.hpp"
@@ -28,26 +28,26 @@ area_t area_util(void)
   return a;
 }
 
-// Publicada em app.h: e a UNICA fonte correta da geometria para os apps (e
-// para kernel/shell.cpp, que a usa pela mesma porta publica em vez da
-// area_util() privada - ver o aviso em kernel/internal.hpp). Antes os apps
-// copiavam as alturas daqui, e a copia envelhecia sozinha.
+// Published in app.h: it is the ONLY correct source of geometry for apps (and
+// for kernel/shell.cpp, which uses it through the same public door instead of the
+// private area_util() - see the note in kernel/internal.hpp). Apps used to
+// copy the heights from here, and the copy went stale on its own.
 area_t sistema_area(void) { return area_util(); }
-// limpar_area = true SO quando a tela mudou de conteudo (abriu/fechou app).
-// Nos redesenhos de dado, o conteudo e pintado por cima do anterior.
-// O app precisa saber quando o sistema limpou a area embaixo dele. Sem isso,
-// um app que pinta por diferenca (guardando o que ja desenhou) fica com a tela
-// EM BRANCO depois do repouso: ele acha que nada mudou, mas tudo foi apagado.
-// Foi o que aconteceu com o app Ajustes.
+// limpar_area = true ONLY when the screen changed content (app opened/closed).
+// On data redraws, the content is painted over the previous one.
+// The app needs to know when the system cleared the area beneath it. Without that,
+// an app that paints by difference (remembering what it already drew) is left with a
+// BLANK screen after idle: it thinks nothing changed, but everything was erased.
+// That is what happened with the Settings app.
 static bool s_area_limpa = false;
 bool sistema_area_foi_limpa(void) { return s_area_limpa; }
 float sistema_quadro_dt(void) { return ritmo_dt(); }
 
-// NAO E rolagem_limite() do modulo generico (kernel/rolagem.hpp), de
-// proposito - essa aqui consulta s_app->altura_conteudo/altura_agora,
-// que sao politica de app/nucleo, nao geometria de rolagem pura. Nome
-// diferente para nao convidar a confundir as duas.
-// A altura do conteudo do app aberto (altura_agora ganha de altura_conteudo).
+// NOT the generic module's rolagem_limite() (kernel/rolagem.hpp), on
+// purpose - this one consults s_app->altura_conteudo/altura_agora,
+// which are app/core policy, not pure scroll geometry. A different
+// name so as not to invite confusing the two.
+// The content height of the open app (altura_agora wins over altura_conteudo).
 static int altura_do_app(const area_t& a)
 {
   if (!s_app) { return 0; }
@@ -61,43 +61,43 @@ int limite_do_app(const area_t& a)
   return h - a.altura;
 }
 
-// 'limpar_area' manda FISICAMENTE apagar a area (tab5_tela_limpar + barra de
-// nav) - custa a rajada grande de PSRAM. 'completo_para_apps' e o que cada
-// app VE em pintura_completa(): TRUE diz "redesenhe sua estrutura estatica
-// inteira (titulo/ajuda/botao guardados atras de um 'if (s_tudo)'), nao so os
-// campos que mudaram de valor".
+// 'limpar_area' says to PHYSICALLY clear the area (tab5_tela_limpar + nav
+// bar) - it costs the big PSRAM burst. 'completo_para_apps' is what each
+// app SEES in pintura_completa(): TRUE says "redraw your whole static structure
+// (title/help/button kept behind an 'if (s_tudo)'), not just the
+// fields whose value changed".
 //
-// Os dois eram o MESMO parametro, porque so existiam dois
-// casos: repintura completa (os dois true - abrir/fechar app, acordar,
-// redesenho pedido) ou incremental pura (os dois false - so um dado mudou,
-// nada mexeu de posicao). O deslocamento de rolagem (tab5_tela_rolar,
-// ver o loop principal) criou um TERCEIRO caso: a posicao na tela MUDOU (os
-// pixels foram deslocados, nao apagados) mas ninguem apagou nada
-// fisicamente. Chamando com (false, true): pula a rajada de apagar (os
-// pixels que nao mudaram de valor ja estao certos, o deslocamento cuidou
-// disso) mas ainda avisa cada app que ele PRECISA redesenhar a propria
-// estrutura estatica - porque a faixa recem-exposta pelo deslocamento nunca
-// foi pintada NESTA posicao antes, e um app cujo titulo/botao so desenha
-// quando s_tudo e verdadeiro (a maioria de Ajustes faz isso) simplesmente
-// nunca preencheria aquela faixa. Foi visto ao vivo: rolar para baixo
-// parecia bom (a faixa nova exposta e fina, o vazio passava despercebido),
-// mas voltar para cima expunha de uma vez o rastro acumulado de faixas nunca
-// pintadas - "tudo sumia".
+// The two used to be the SAME parameter, because there were only two
+// cases: full repaint (both true - open/close app, wake,
+// requested redraw) or purely incremental (both false - only one value changed,
+// nothing moved position). The scroll shift (tab5_tela_rolar,
+// see the main loop) created a THIRD case: the on-screen position CHANGED (the
+// pixels were shifted, not cleared) but nobody physically cleared
+// anything. Calling with (false, true): skips the clearing burst (the
+// pixels whose value did not change are already right, the shift took care
+// of that) but still tells each app it MUST redraw its own
+// static structure - because the strip just exposed by the shift was never
+// painted AT THIS position before, and an app whose title/button only draws
+// when s_tudo is true (most of Settings does this) would simply
+// never fill that strip. It was seen live: scrolling down
+// looked fine (the newly exposed strip is thin, the gap went unnoticed),
+// but scrolling back up exposed at once the accumulated trail of never-painted
+// strips - "everything vanished".
 //
-// 'recorte_app' - so usado pelo caminho de deslocamento de
-// rolagem (ver o loop principal): limita a escrita de pixels do app a UMA
-// FAIXA da area util, em vez da area inteira. Correto porque o app e chamado
-// com a MESMA 'rolada' de sempre (nao sabe que existe recorte) e o
-// LovyanGFX descarta silenciosamente qualquer pixel fora do recorte - os
-// pixels fora da faixa ja estao certos (o deslocamento cuidou disso antes de
-// chamar aqui), entao nao ha diferenca visual em pula-los, so MUITO menos
-// bytes escritos na PSRAM. nullptr (o padrao) usa a area util inteira, igual
-// a antes desta data.
-// MEDIDA DA PASSADA COMPLETA, por fase (ver sistema_passadas_completas).
-uint32_t s_fase_limpar_us = 0;   // a ultima limpeza da area (+ nav)
+// 'recorte_app' - only used by the scroll-shift path
+// (see the main loop): limits the app's pixel writes to ONE
+// STRIP of the usable area, instead of the whole area. Correct because the app is called
+// with the SAME 'rolada' as always (it does not know a clip exists) and
+// LovyanGFX silently discards any pixel outside the clip - the
+// pixels outside the strip are already right (the shift took care of that before
+// calling here), so there is no visual difference in skipping them, just FAR fewer
+// bytes written to PSRAM. nullptr (the default) uses the whole usable area, as
+// before this date.
+// FULL PASS MEASUREMENT, by phase (see sistema_passadas_completas).
+uint32_t s_fase_limpar_us = 0;   // the last clearing of the area (+ nav)
 
 #define PASSADAS_MAX 24
-EXT_RAM_BSS_ATTR static sistema_passada_t s_passadas[PASSADAS_MAX];   // so a interface e o console leem
+EXT_RAM_BSS_ATTR static sistema_passada_t s_passadas[PASSADAS_MAX];   // only the UI and the console read it
 static int s_n_passadas = 0;
 
 void anotar_passada(const char* nome, uint32_t us, uint32_t barra, uint32_t limpar, uint32_t conteudo)
@@ -118,8 +118,8 @@ void anotar_passada(const char* nome, uint32_t us, uint32_t barra, uint32_t limp
   if (us > p->max_us) { p->max_us = us; }
 }
 
-// Leitura do console (outra tarefa) sem trava: copia de numeros de
-// diagnostico; um valor torto num instante raro nao engana ninguem.
+// Read by the console (another task) without a lock: a copy of diagnostic
+// numbers; a skewed value at a rare instant fools nobody.
 int sistema_passadas_completas(sistema_passada_t* out, int max)
 {
   const int n = s_n_passadas < max ? s_n_passadas : max;
@@ -127,7 +127,7 @@ int sistema_passadas_completas(sistema_passada_t* out, int max)
   return n;
 }
 
-// A tela do sistema no lugar de um app recusado (ver recusar_app).
+// The system screen in place of a refused app (see recusar_app).
 static void desenhar_recusa(lgfx::LovyanGFX& d, const area_t& a)
 {
   const int cx = a.x + a.largura / 2;
@@ -154,15 +154,15 @@ static void desenhar_recusa(lgfx::LovyanGFX& d, const area_t& a)
 void desenhar_conteudo(bool limpar_area, bool completo_para_apps,
                        const area_t* recorte_app)
 {
-  // A TELA VIRTUAL, nao o M5.Display (docs/COMPOSITOR.md, etapa 3a): nada aqui
-  // escreve mais na pagina que o painel varre.
+  // THE VIRTUAL SCREEN, not M5.Display (docs/COMPOSITOR.md, stage 3a): nothing here
+  // writes any more to the page the panel scans.
   auto& d = tela_virtual();
   area_t a = area_util();
 
-  // TODO quadro passa pelo ritmo (kernel/ritmo): agenda o proximo periodico e
-  // da o dt de quem anima. O dono e quem esta desenhando AGORA - trocou, o
-  // relogio recomeca.
-  static char DONO_BLOQUEIO, DONO_AVISOS, DONO_HOME;   // so os enderecos importam
+  // EVERY frame goes through the pace (kernel/ritmo): schedules the next periodic one and
+  // gives the dt to whoever animates. The owner is whoever is drawing NOW - if it changes, the
+  // clock restarts.
+  static char DONO_BLOQUEIO, DONO_AVISOS, DONO_HOME;   // only the addresses matter
   const void* dono = s_bloqueado ? (const void*)&DONO_BLOQUEIO
                    : s_painel_avisos ? (const void*)&DONO_AVISOS
                    : s_app ? (const void*)s_app : (const void*)&DONO_HOME;
@@ -170,30 +170,30 @@ void desenhar_conteudo(bool limpar_area, bool completo_para_apps,
 
   d.startWrite();
   if (limpar_area) {
-    // EM FAIXAS, nao num fillRect so. A area util e ~1,6MB de escrita na PSRAM
-    // e o painel DSI le da mesma memoria sem parar; as duas rajadas juntas
-    // secam o FIFO dele e o frame sai AZUL. Ver tab5_tela.hpp - o driver do
-    // IDF descreve o sintoma com essas palavras.
+    // IN STRIPS, not in a single fillRect. The usable area is ~1.6MB of writes to PSRAM
+    // and the DSI panel reads from the same memory non-stop; the two bursts together
+    // drain its FIFO and the frame comes out BLUE. See tab5_tela.hpp - the IDF
+    // driver describes the symptom in those words.
     //
-    // Era o que acontecia ao SAIR de um app para a home: a home e quase toda
-    // preta, e area preta grande e o preenchimento mais rapido e contiguo que
-    // existe. Abrir um app escreve o mesmo tanto, mas espalhado em dezenas de
-    // operacoes pequenas - e por isso nunca piscava na entrada.
+    // It was what happened when LEAVING an app for home: home is almost entirely
+    // black, and a big black area is the fastest, most contiguous fill there
+    // is. Opening an app writes the same amount, but spread over dozens of
+    // small operations - which is why it never flickered on the way in.
     const int64_t limpar_t0 = esp_timer_get_time();
-    // A COR DA LIMPEZA (ver sistema_cor_fundo, mais abaixo). Limpar ja na cor
-    // de fundo de quem vai desenhar faz o pedido igual dele (a home, por
-    // exemplo) cair no "ja esta limpo" abaixo - sem isso seriam DUAS rajadas
-    // grandes seguidas, exatamente o que fazia o frame sair azul.
+    // THE CLEARING COLOUR (see sistema_cor_fundo, further down). Clearing straight to the
+    // background colour of whoever is about to draw makes their identical request (home, for
+    // example) fall into the "already clear" below - without this there would be TWO big
+    // bursts in a row, exactly what made the frame come out blue.
     const uint16_t cor_limpa = sistema_cor_fundo();
     tab5_tela_limpar(a.x, a.y, a.largura, a.altura, cor_limpa);
-    // AVISA A CAMADA DE TELA. Daqui ate o fim desta passada, todo pedido de
-    // limpar nesta mesma cor dentro desta area e dispensado - e a rajada dobrada que
-    // produzia a piscada azul deixa de acontecer, para TODO app, sem que
-    // nenhum deles precise saber da regra.
+    // TELL THE SCREEN LAYER. From here to the end of this pass, every request to
+    // clear in this same colour within this area is waived - and the doubled burst that
+    // produced the blue flash no longer happens, for EVERY app, without any
+    // of them needing to know the rule.
     tab5_tela_marcar_limpo(a.x, a.y, a.largura, a.altura, cor_limpa);
     if (s_bloqueado) {
-      // Bloqueado nao ha navegacao: a faixa de baixo e apagada aqui e vira
-      // parte da tela de bloqueio (ver desenhar_bloqueio, mais abaixo).
+      // Locked there is no navigation: the bottom strip is cleared here and becomes
+      // part of the lock screen (see desenhar_bloqueio, further down).
       tab5_tela_limpar(0, d.height() - ALTURA_NAV, d.width(), ALTURA_NAV, TFT_BLACK);
     } else {
       desenhar_barra_nav(d);
@@ -201,13 +201,13 @@ void desenhar_conteudo(bool limpar_area, bool completo_para_apps,
     s_fase_limpar_us = (uint32_t)(esp_timer_get_time() - limpar_t0);
   }
   s_area_limpa = completo_para_apps;
-  // s_app E s_app_carregando (nao so um deles): os dois comecam NULL, e
-  // "nullptr == nullptr" e verdadeiro - sem o s_app aqui, a home (sem app
-  // nenhum aberto) caia nesta condicao e tentava ler s_app->nome com s_app
-  // nulo. Foi o crash do boot: Load access fault bem nesta linha.
+  // s_app AND s_app_carregando (not just one of them): both start as NULL, and
+  // "nullptr == nullptr" is true - without s_app here, home (with no app
+  // open) fell into this condition and tried to read s_app->nome with s_app
+  // null. That was the boot crash: Load access fault right on this line.
   if (s_bloqueado) {
-    // A TELA INTEIRA ABAIXO DA BARRA, inclusive a faixa da navegacao (que
-    // nao existe bloqueado): antes ela ficava preta, sobrando na base.
+    // THE WHOLE SCREEN BELOW THE BAR, including the navigation strip (which
+    // does not exist when locked): before, it stayed black, left over at the bottom.
     area_t bq = a;
     bq.altura += ALTURA_NAV;
     desenhar_bloqueio(d, bq, limpar_area);
@@ -216,11 +216,11 @@ void desenhar_conteudo(bool limpar_area, bool completo_para_apps,
   } else if (s_app && s_app == s_app_recusado) {
     desenhar_recusa(d, a);
   } else if (s_app && s_app == s_app_carregando) {
-    // MONTANDO O SD AINDA. s_app ja aponta para o app (ver abrir_app()), mas
-    // ao_abrir() dele NAO foi chamado - o app pode nao ter estado nenhum para
-    // desenhar, e chamar s_app->desenhar() aqui seria confiar em memoria que o
-    // proprio app ainda nao teve chance de preparar. Uma tela de espera simples
-    // ate concluir_abertura_do_sd() liberar o app de verdade.
+    // STILL MOUNTING THE SD. s_app already points to the app (see abrir_app()), but
+    // its ao_abrir() has NOT been called - the app may have no state at all to
+    // draw, and calling s_app->desenhar() here would be trusting memory that the
+    // app itself has not yet had a chance to prepare. A simple waiting screen
+    // until concluir_abertura_do_sd() releases the app for real.
     d.setTextDatum(middle_center);
     tab5_texto(d, 2);
     d.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
@@ -230,14 +230,14 @@ void desenhar_conteudo(bool limpar_area, bool completo_para_apps,
   } else if (s_app) {
     const int max = limite_do_app(a);
     if (s_app->desenhar && max > 0) {
-      // RECORTE PRIMEIRO. Com o conteudo deslocado, o app desenharia por cima
-      // da barra de status e da navegacao sem perceber - ele nao sabe que
-      // existe rolagem. O recorte e o que torna essa ignorancia segura.
+      // CLIP FIRST. With the content shifted, the app would draw over
+      // the status bar and the navigation without noticing - it does not know
+      // scrolling exists. The clip is what makes that ignorance safe.
       //
-      // recorte_app, quando vem preenchido, ESTREITA esse recorte para so a
-      // faixa recem-exposta (ver o aviso grande no topo da funcao) - o app
-      // continua recebendo a MESMA 'rolada' de sempre, sem saber da
-      // diferenca.
+      // recorte_app, when filled in, NARROWS that clip to just the
+      // newly exposed strip (see the big note at the top of the function) - the app
+      // keeps receiving the SAME 'rolada' as always, without knowing the
+      // difference.
       const area_t& clip = recorte_app ? *recorte_app : a;
       d.setClipRect(clip.x, clip.y, clip.largura, clip.altura);
       area_t rolada = a;
@@ -246,60 +246,60 @@ void desenhar_conteudo(bool limpar_area, bool completo_para_apps,
       s_app->desenhar(d, rolada);
       d.clearClipRect();
     } else if (s_app->desenhar) {
-      // RECORTE SEMPRE, tambem sem rolagem: o app (em C ou Berry) so pinta a
-      // propria area. Um script com a conta errada - uma figura que passa da
-      // borda, um texto comprido - pintava a barra de status e a navegacao
-      // (visto no Estresse.be, 14/11/2026). Cortado aqui, para todo app, sem
-      // que nenhum precise conferir as proprias coordenadas.
+      // ALWAYS CLIP, even without scrolling: the app (in C or Berry) only paints its
+      // own area. A script with the maths wrong - a shape that crosses the
+      // edge, a long text - painted the status bar and the navigation
+      // (seen in Estresse.be, 14/11/2026). Clipped here, for every app, without
+      // any of them needing to check its own coordinates.
       d.setClipRect(a.x, a.y, a.largura, a.altura);
       s_app->desenhar(d, a);
       d.clearClipRect();
     }
   } else if (limpar_area) {
-    // ICONE NAO MUDA. A home e estatica: oito icones e oito rotulos, sempre os
-    // mesmos. O que se mexe nela - bateria, temperatura, a linha de servicos -
-    // e desenhado por fora, com caminho proprio e comparacao antes de pintar.
+    // ICONS DO NOT CHANGE. Home is static: eight icons and eight labels, always the
+    // same. What moves on it - battery, temperature, the services line -
+    // is drawn separately, with its own path and a comparison before painting.
     //
-    // Redesenhar tudo numa passada de DADOS era repintar 578KB para chegar ao
-    // mesmo desenho. Numa transicao isso e a diferenca entre caber e nao caber
-    // na banda que sobra do painel; e a passada de dados acontece na pagina
-    // VISIVEL, sem a protecao da troca de pagina.
+    // Redrawing everything on a DATA pass was repainting 578KB to arrive at the
+    // same drawing. In a transition that is the difference between fitting and not fitting
+    // in the bandwidth the panel leaves over; and the data pass happens on the
+    // VISIBLE page, without the protection of the page swap.
     //
-    // A condicao e exatamente a certa: so ha o que redesenhar aqui quando a
-    // area foi APAGADA - e ai o desenho realmente sumiu.
+    // The condition is exactly right: there is only something to redraw here when the
+    // area was CLEARED - and then the drawing really did vanish.
     desenhar_home(d, a);
   }
   d.endWrite();
 
   s_area_limpa = false;
-  // SO LIMPA s_sujo_layout QUANDO FOI ESTA PASSADA QUE O ATENDEU
-  // (limpar_area==true, ou seja: o loop principal chamou aqui exatamente
-  // porque s_sujo_layout estava true). Esta linha zerava
-  // INCONDICIONALMENTE - e s_app->desenhar() (chamada acima, dentro da
-  // passada INCREMENTAL tambem, limpar_area==false) pode legitimamente
-  // pedir um repaint completo NO MEIO da propria passada de dados (ex.:
-  // app Camera chamando sistema_travar_navegacao(false) de dentro do
-  // desenhar() dela, ao notar que uma captura terminou). Zerar aqui sem
-  // condicao apagava esse pedido antes que o loop principal chegasse a ve-lo
-  // - a barra de navegacao nunca era redesenhada destravada, e o INICIO
-  // ficava escuro para sempre (defeito observado, "captura concluida" aparecia
-  // no log e o botao continuava escuro do mesmo jeito).
+  // ONLY CLEAR s_sujo_layout WHEN IT WAS THIS PASS THAT SERVED IT
+  // (limpar_area==true, that is: the main loop called here precisely
+  // because s_sujo_layout was true). This line used to zero it
+  // UNCONDITIONALLY - and s_app->desenhar() (called above, inside the
+  // INCREMENTAL pass too, limpar_area==false) may legitimately
+  // request a full repaint IN THE MIDDLE of its own data pass (e.g.:
+  // the Camera app calling sistema_travar_navegacao(false) from inside
+  // its desenhar(), on noticing that a capture finished). Zeroing here
+  // unconditionally erased that request before the main loop got to see it
+  // - the navigation bar was never redrawn unlocked, and INICIO (home)
+  // stayed dark forever (observed defect, "captura concluida" appeared
+  // in the log and the button stayed dark all the same).
   //
-  // NAO E SO DA CAMERA: qualquer app que chame sistema_pedir_redesenho_completo()/
-  // sistema_travar_navegacao() de dentro do proprio
-  // desenhar() cairia na mesma armadilha - o conserto e aqui, nao em cada app.
+  // NOT JUST THE CAMERA: any app that calls sistema_pedir_redesenho_completo()/
+  // sistema_travar_navegacao() from inside its own
+  // desenhar() would fall into the same trap - the fix is here, not in each app.
   if (limpar_area) { s_sujo_layout = false; }
   s_sujo_dados  = false;
   s_ultimo_desenho = tab5_agora_ms();
 
-  // A MARCA MORRE COM A PASSADA. Ela afirma "este retangulo esta desta cor
-  // AGORA"; depois que o app desenhou por cima, deixa de ser verdade. Deixa-la
-  // viva ate a proxima passada faria a limpeza seguinte ser dispensada sobre
-  // conteudo real - e o app ficaria com rastro por uma otimizacao do sistema.
+  // THE MARK DIES WITH THE PASS. It asserts "this rectangle is this colour
+  // NOW"; once the app has drawn on top, it stops being true. Leaving it
+  // alive until the next pass would make the next clearing be waived over
+  // real content - and the app would be left with a trail because of a system optimisation.
   tab5_tela_esquecer_limpo();
 }
 
-// Um quadro da tela de bloqueio durante a rampa de brilho do despertar.
+// One frame of the lock screen during the wake-up brightness ramp.
 void animar_na_rampa(void)
 {
   if (!s_bloqueado) { return; }
@@ -307,10 +307,10 @@ void animar_na_rampa(void)
   comp_apresentar();
 }
 
-// A cor de fundo da area agora (declarada em app.h). A home sem papel de
-// parede e os apps ja migrados (app_t.fundo_tema) usam o fundo do tema; o
-// resto - bloqueio, home com papel de parede, apps ainda nao migrados - segue
-// no preto, porque desenha texto com fundo TFT_BLACK.
+// The area's background colour right now (declared in app.h). Home without a
+// wallpaper and apps already migrated (app_t.fundo_tema) use the theme background; the
+// rest - lock screen, home with a wallpaper, apps not yet migrated - stays
+// on black, because they draw text with a TFT_BLACK background.
 uint16_t sistema_cor_fundo(void)
 {
   if (s_bloqueado) { return TFT_BLACK; }

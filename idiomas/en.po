@@ -6246,3 +6246,12 @@ msgstr "%d in the channel"
 
 #~ msgid "Não apagou"
 #~ msgstr "Not deleted"
+
+msgid "logo depois de um comando de admin do Tab5 - suspeito"
+msgstr "right after an admin command from the Tab5 - suspicious"
+
+msgid "logo depois do pedido de configuração do Tab5 - suspeito"
+msgstr "right after the Tab5 asked for the configuration - suspicious"
+
+msgid "logo depois de um pacote enviado pelo Tab5 - suspeito"
+msgstr "right after a packet sent by the Tab5 - suspicious"

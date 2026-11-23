@@ -65,7 +65,7 @@ static bool nal_next(nal_iter_t *it, nal_t *nal) {
     return false;
 }
 
-/* M5tabOS: o primeiro pedaco onde cabe (a arena pode vir em pedacos). */
+/* M5tabOS: the first chunk where it fits (the arena may come in chunks). */
 void *h264_work_alloc(struct h264_dec *dec, size_t bytes) {
     const size_t align = H264_DEC_WORK_ALIGNMENT;
     for (uint8_t i = 0; i < dec->n_work; i++) {
@@ -77,12 +77,12 @@ void *h264_work_alloc(struct h264_dec *dec, size_t bytes) {
     return NULL;
 }
 
-/* M5tabOS: volta a arena ao ponto depois das tabelas (antes das linhas). */
+/* M5tabOS: rewinds the arena to the point after the tables (before the rows). */
 static void work_reset_rows(h264_dec_t *dec) {
     for (uint8_t i = 0; i < dec->n_work; i++) dec->work_used[i] = dec->work_tables_end[i];
 }
 
-/* M5tabOS: uma fatia de linha (luma, croma e info dos macroblocos). */
+/* M5tabOS: one row slice (luma, chroma and macroblock info). */
 static bool alloc_slot(h264_dec_t *dec, size_t i, size_t luma_bytes, size_t chroma_bytes,
                        size_t mb_bytes) {
     uint8_t *y = h264_work_alloc(dec, luma_bytes);
@@ -98,7 +98,7 @@ static bool alloc_slot(h264_dec_t *dec, size_t i, size_t luma_bytes, size_t chro
 }
 
 static void release_frames(h264_dec_t *dec) {
-    for (uint8_t i = 0; i < MAX_POOL; i++) {   /* M5tabOS: um bloco por quadro */
+    for (uint8_t i = 0; i < MAX_POOL; i++) {   /* M5tabOS: one block per frame */
         if (dec->frame_mem[i]) dec->config.free(dec->config.ctx, dec->frame_mem[i]);
         dec->frame_mem[i] = NULL;
     }
@@ -151,9 +151,9 @@ static bool setup_rows(h264_dec_t *dec) {
     dec->win_y = dec->win_u = dec->win_v = NULL;
     dec->win_frame = NULL;
 
-    /* M5tabOS: a ordem de prioridade e a mesma do original (as linhas minimas,
-       depois a janela, depois mais linhas), mas pedido a pedido: com a arena
-       em pedacos nao da para saber de antemao quantas cabem. */
+    /* M5tabOS: the priority order is the same as the original (the minimum
+       rows, then the window, then more rows), but request by request: with
+       the arena in chunks there is no way to know in advance how many fit. */
     const size_t luma_bytes = (size_t)dec->luma_stride * (16 + LUMA_ABOVE);
     const size_t chroma_bytes = (size_t)dec->chroma_stride * (8 + CHROMA_ABOVE);
     const size_t mb_bytes = (size_t)dec->mb_stride * dec->mb_w;
@@ -174,9 +174,9 @@ static bool allocate_window(h264_dec_t *dec) {
     dec->win_cstride = dec->width / 2 + WINDOW_PAD;
     const size_t luma = (size_t)(WINDOW_ROWS + WINDOW_MIRROR) * dec->win_stride + FRAME_SLACK;
     const size_t chroma = (size_t)(WINDOW_ROWS + WINDOW_MIRROR) / 2 * dec->win_cstride + FRAME_SLACK;
-    /* M5tabOS: as linhas minimas ja foram reservadas antes (setup_rows); a
-       janela so precisa caber. Se so parte coube, o que sobrou fica perdido
-       ate a proxima ativacao - mesma coisa que o original fazia. */
+    /* M5tabOS: the minimum rows were already reserved earlier (setup_rows);
+       the window just has to fit. If only part fitted, the rest is lost
+       until the next activation - the same as the original did. */
     dec->win_y = h264_work_alloc(dec, luma);
     dec->win_u = h264_work_alloc(dec, chroma);
     dec->win_v = h264_work_alloc(dec, chroma);
@@ -303,8 +303,8 @@ static bool activate_sps(h264_dec_t *dec, uint8_t sps_id) {
     dec->dpb_size = dpb;
     dec->reorder_frames = reorder;
     dec->pool_size = (uint8_t)(dpb + 1 + held);
-    /* M5tabOS: um bloco por quadro, cada um com a folga do fim (FRAME_SLACK):
-       a PSRAM fragmentada nao tem um bloco contiguo do tamanho de todos. */
+    /* M5tabOS: one block per frame, each with the tail slack (FRAME_SLACK):
+       fragmented PSRAM has no contiguous block the size of all of them. */
     for (uint8_t i = 0; i < dec->pool_size; i++) {
         dec->frame_mem[i] = dec->config.alloc(dec->config.ctx, dec->frame_bytes + FRAME_SLACK);
         if (!dec->frame_mem[i]) {

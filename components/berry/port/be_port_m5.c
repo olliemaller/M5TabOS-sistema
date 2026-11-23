@@ -1,15 +1,16 @@
-/* M5tabOS: a memoria do Berry, na PSRAM, com ORCAMENTO.
+/* M5tabOS: Berry's memory, in PSRAM, with a BUDGET.
  *
- * O Berry faz MUITAS alocacoes pequenas (strings, listas, closures). Com o
- * malloc padrao elas cairiam na RAM interna, que e a mais disputada do
- * sistema (ver docs/ARQUITETURA.md). A PSRAM tem 32 MB e e mais lenta - para um
- * interpretador de script, a troca certa.
+ * Berry makes MANY small allocations (strings, lists, closures). With the
+ * default malloc they would land in internal RAM, the most contended memory
+ * in the system (see docs/ARQUITETURA.md). PSRAM has 32 MB and is slower - for
+ * a script interpreter, the right trade-off.
  *
- * O ORCAMENTO: todas as maquinas juntas (apps, fundos, console) nao passam de
- * BERRY_ORCAMENTO. Passou, berry_malloc devolve NULL - o Berry entao coleta o
- * lixo, tenta de novo e, sem sobra, levanta "memory_error" DENTRO do script
- * (o pcall de quem chamou recebe). Um 'while true l.push(...)' vira erro na
- * tela do app em vez de comer a PSRAM da camera, do mesh e das pilhas. */
+ * THE BUDGET: all the VMs together (apps, background apps, console) never go
+ * past BERRY_ORCAMENTO. Once it is exceeded, berry_malloc returns NULL - Berry
+ * then collects garbage, tries again and, with nothing to spare, raises
+ * "memory_error" INSIDE the script (the caller's pcall receives it). A
+ * 'while true l.push(...)' becomes an error on the app's screen instead of
+ * eating the PSRAM of the camera, the mesh and the stacks. */
 #include <stddef.h>
 #include "esp_heap_caps.h"
 #include "berry_mem.h"
@@ -20,7 +21,7 @@ static volatile size_t s_pico  = 0;
 static void somar(size_t n)
 {
   const size_t u = __atomic_add_fetch(&s_usada, n, __ATOMIC_RELAXED);
-  if (u > s_pico) { s_pico = u; }   /* so diagnostico: corrida aqui so erra o pico */
+  if (u > s_pico) { s_pico = u; }   /* diagnostics only: a race here only gets the peak wrong */
 }
 
 static int cabe(size_t n)
@@ -47,7 +48,7 @@ void* berry_realloc(void* p, size_t n)
 {
   if (!p) { return berry_malloc(n); }
   const size_t antes = heap_caps_get_allocated_size(p);
-  if (n > antes && !cabe(n - antes)) { return NULL; }   /* o bloco velho continua valendo */
+  if (n > antes && !cabe(n - antes)) { return NULL; }   /* the old block is still valid */
   void* q = heap_caps_realloc(p, n, MALLOC_CAP_SPIRAM);
   if (!q) { return NULL; }
   __atomic_sub_fetch(&s_usada, antes, __ATOMIC_RELAXED);

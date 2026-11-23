@@ -1,22 +1,22 @@
-// APP: Exemplo - um cartao para cada API do sistema.
+// APP: Exemplo (Example) - one card for each system API.
 //
-// E o mostruario e o molde: cada linha da tabela usa UMA API do sistema
-// (docs/API.md) do jeito certo, com o minimo de codigo. Para escrever um app
-// novo, copie esta pasta para main/app_<nome>/, renomeie APP_EXEMPLO para
-// APP_<NOME> e apague os cartoes que nao interessam.
+// It is the showcase and the template: each row of the table uses ONE system
+// API (docs/API.md) the right way, with the minimum of code. To write a new
+// app, copy this folder to main/app_<name>/, rename APP_EXEMPLO to
+// APP_<NAME> and delete the cards you do not need.
 //
-// O QUE ESTE ARQUIVO MOSTRA, ALEM DE CADA CARTAO:
-//   - a regra de ouro: so a tarefa de interface desenha. A tarefa do app
-//     (cartao TAREFA), o worker (TRABALHO), a parte de fundo (FUNDO) e o
-//     console (CONSOLE) so mudam DADO e pedem redesenho;
-//   - ciclo de vida: tudo o que ao_abrir() cria, ao_fechar() destroi;
-//   - a lista rolavel do sistema (kernel/lista): cada cartao so e repintado
-//     quando o valor dele muda;
-//   - comandos de console do app: 'app exemplo contar 5'.
-//   - o TEMA: toda cor de interface vem de TEMA_* (tab5_tema.hpp), pelo PAPEL
-//     (fundo, texto, destaque...) e nao pelo numero; e o app liga
-//     '.fundo_tema = true' para o sistema limpar a area com TEMA_FUNDO. Assim
-//     trocar a paleta do sistema nao exige tocar em nenhum app.
+// WHAT THIS FILE SHOWS, BESIDES EACH CARD:
+//   - the golden rule: only the UI task draws. The app's task
+//     (TAREFA card), the worker (TRABALHO), the background part (FUNDO) and the
+//     console (CONSOLE) only change DATA and request a redraw;
+//   - life cycle: everything ao_abrir() creates, ao_fechar() destroys;
+//   - the system scrollable list (kernel/lista): each card is only repainted
+//     when its value changes;
+//   - app console commands: 'app exemplo contar 5'.
+//   - the THEME: every UI colour comes from TEMA_* (tab5_tema.hpp), by ROLE
+//     (background, text, accent...) and not by number; and the app turns on
+//     '.fundo_tema = true' so the system clears the area with TEMA_FUNDO. That way
+//     changing the system palette does not require touching any app.
 
 #include "app.h"
 #include "idioma.h"
@@ -26,7 +26,7 @@
 #include "fundo.h"
 #include "notificacao.h"
 #include "tab5_ui.hpp"
-#include "tab5_tema.hpp"   // as cores por papel: use TEMA_*, nunca 0x.... nem TFT_*
+#include "tab5_tema.hpp"   // colours by role: use TEMA_*, never 0x.... nor TFT_*
 #include "tab5_sd.hpp"
 #include "tab5_hora.hpp"
 #include "tab5_imu.hpp"
@@ -38,88 +38,88 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include <atomic>
-#include "tab5_arquivos.hpp"   // listar pasta e do sistema
+#include "tab5_arquivos.hpp"   // listing a folder belongs to the system
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 // ---------------------------------------------------------------------------
-// ESTADO
+// STATE
 // ---------------------------------------------------------------------------
-// Tudo o que outra tarefa escreve e a interface le e atomico (um numero) ou
-// passa por fila. Texto vindo de outra tarefa nunca e lido "no meio".
+// Everything another task writes and the UI reads is atomic (a number) or
+// goes through a queue. Text from another task is never read "half-way".
 
 static lista_t s_lista;
 
-// TAREFA: um contador que a tarefa do app produz e entrega por fila de 1.
+// TAREFA (task): a counter the app's task produces and delivers via a queue of 1.
 static tarefa_app_t  s_tarefa = { };
 static QueueHandle_t s_fila   = nullptr;
 static uint32_t      s_tarefa_n = 0;
 
-// TOQUE e TECLADO.
+// TOQUE (touch) and TECLADO (keyboard).
 static int  s_toques = 0, s_toque_x = -1, s_toque_y = -1;
 static char s_tecla[24] = "";
 
-// TRABALHO: o worker escreve no resultado, a interface so le no ao_aviso.
-static std::atomic<int> s_trab_arquivos{-1};   // -1 = nunca rodou
+// TRABALHO (work): the worker writes the result, the UI only reads it in ao_aviso.
+static std::atomic<int> s_trab_arquivos{-1};   // -1 = never ran
 static bool s_trab_rodando = false;
 
-// CARTAO.
+// CARTAO (SD card).
 static int s_linhas_gravadas = 0;
 
-// NOTIFICACAO.
+// NOTIFICACAO (notification).
 static int  s_notif = -1;
 static bool s_notif_ativa = false;
 
-// ACORDADO.
+// ACORDADO (keep awake).
 static bool s_acordado = false;
 
-// CONSOLE: o comando 'app exemplo contar N' soma aqui (outra tarefa).
+// CONSOLE: the 'app exemplo contar N' command adds here (another task).
 static std::atomic<int> s_console_soma{0};
 
-// FUNDO: um cronometro que continua com o app fechado.
+// FUNDO (background): a stopwatch that keeps going with the app closed.
 static std::atomic<uint32_t> s_fundo_s{0};
 
 // ---------------------------------------------------------------------------
-// OS CARTOES
+// THE CARDS
 // ---------------------------------------------------------------------------
-// Cada um: titulo, a API que ele usa, como escrever o valor de agora, e um
-// botao opcional. A tabela abaixo e a tela inteira.
+// Each one: title, the API it uses, how to write the current value, and an
+// optional button. The table below is the whole screen.
 typedef struct {
   const char* titulo;
   const char* api;
   void (*valor)(char* out, size_t n);
-  const char* botao;            // nullptr = sem botao
+  const char* botao;            // nullptr = no button
   void (*ao_botao)(void);
 } cartao_t;
 
 #define VALOR_MAX 64
 
-// ---- TELA -------------------------------------------------------------------
+// ---- SCREEN -----------------------------------------------------------------
 static void v_tela(char* o, size_t n)
 {
   const area_t a = sistema_area();
   snprintf(o, n, tr("area do app: %d x %d"), a.largura, a.altura);
 }
 
-// ---- TOQUE ------------------------------------------------------------------
+// ---- TOUCH ------------------------------------------------------------------
 static void v_toque(char* o, size_t n)
 {
   if (s_toques == 0) { snprintf(o, n, tr("toque em qualquer cartao")); return; }
   snprintf(o, n, tr("%d toque(s), ultimo em %d,%d"), s_toques, s_toque_x, s_toque_y);
 }
 
-// ---- TAREFA -----------------------------------------------------------------
-// A tarefa do app NAO desenha: produz, entrega pela fila e pede redesenho.
+// ---- TASK -------------------------------------------------------------------
+// The app's task does NOT draw: it produces, delivers via the queue and requests a redraw.
 static void laco_tarefa(tarefa_app_t* t)
 {
   uint32_t n = 0;
   while (tarefa_app_ativa(t)) {
     ++n;
-    xQueueOverwrite(s_fila, &n);       // fila de 1: so o mais recente importa
+    xQueueOverwrite(s_fila, &n);       // queue of 1: only the most recent matters
     sistema_pedir_redesenho();
-    vTaskDelay(pdMS_TO_TICKS(1000));   // tarefa_app_encerrar acorda daqui
+    vTaskDelay(pdMS_TO_TICKS(1000));   // tarefa_app_encerrar wakes it from here
   }
 }
 
@@ -130,11 +130,11 @@ static void v_tarefa(char* o, size_t n)
   snprintf(o, n, tr("a tarefa contou %lu"), (unsigned long)s_tarefa_n);
 }
 
-// ---- TRABALHO (worker do sistema) -------------------------------------------
-// Roda na tarefa do worker, nunca na interface: pode ler o cartao a vontade.
-// Termina e o app recebe AVISO_TRABALHO (declarado em .avisos).
-// Listar pasta e do sistema (services/tab5_arquivos): o app nao abre
-// diretorio sozinho - so diz o que fazer com cada item.
+// ---- WORK (system worker) ---------------------------------------------------
+// Runs on the worker task, never on the UI: it may read the SD card freely.
+// When it finishes the app receives AVISO_TRABALHO (declared in .avisos).
+// Listing a folder belongs to the system (services/tab5_arquivos): the app does not
+// open a directory itself - it only says what to do with each item.
 static bool visita_contar(const tab5_arq_item_t*, void*) { return !sistema_trabalho_cancelado(); }
 
 static void trab_contar(void*)
@@ -160,9 +160,9 @@ static void b_trabalho(void)
   if (!s_trab_rodando && sistema_trabalho(trab_contar, nullptr)) { s_trab_rodando = true; }
 }
 
-// ---- CARTAO -----------------------------------------------------------------
-// tab5_sd_anexar nao espera: o sistema grava em lote, e guarda no diario se o
-// cartao estiver emprestado ao computador.
+// ---- SD CARD ----------------------------------------------------------------
+// tab5_sd_anexar does not wait: the system writes in batches, and keeps a journal if
+// the card is lent to the computer.
 static void v_cartao(char* o, size_t n)
 {
   snprintf(o, n, s_linhas_gravadas ? tr("%d linha(s) em apps/Exemplo/diario.csv")
@@ -176,7 +176,7 @@ static void b_cartao(void)
   if (tab5_sd_anexar("Exemplo", "diario.csv", linha, "epoch,n\n")) { ++s_linhas_gravadas; }
 }
 
-// ---- HORA -------------------------------------------------------------------
+// ---- TIME -------------------------------------------------------------------
 static void v_hora(char* o, size_t n)
 {
   const uint32_t e = tab5_hora_epoch();
@@ -187,8 +187,8 @@ static void v_hora(char* o, size_t n)
            t.tm_year + 1900, t.tm_hour, t.tm_min, t.tm_sec, tab5_hora_fonte());
 }
 
-// ---- ENERGIA ----------------------------------------------------------------
-// tab5_power_ultima(): a medida que a interface ja fez, sem tocar no I2C.
+// ---- POWER ------------------------------------------------------------------
+// tab5_power_ultima(): the reading the UI already took, without touching I2C.
 static void v_energia(char* o, size_t n)
 {
   const tab5_medida_t m = tab5_power_ultima();
@@ -197,7 +197,7 @@ static void v_energia(char* o, size_t n)
 }
 
 // ---- IMU --------------------------------------------------------------------
-// Exige .perfil.imu = true (o sistema so liga a IMU de quem pede).
+// Requires .perfil.imu = true (the system only turns the IMU on for those who ask).
 static void v_imu(char* o, size_t n)
 {
   tab5_imu_dados_t d;
@@ -235,8 +235,8 @@ static void v_espnow(char* o, size_t n)
 static void b_espnow(void) { tab5_espnow_enviar("ola do Exemplo"); }
 
 // ---- MESH -------------------------------------------------------------------
-// So leitura: um app de exemplo nao deve sair falando num canal publico. Para
-// enviar: tab5_mesh_enviar(0xFFFFFFFF, canal, texto) ou para um no.
+// Read only: an example app should not go chatting on a public channel. To
+// send: tab5_mesh_enviar(0xFFFFFFFF, canal, texto) or to a node.
 static void v_mesh(char* o, size_t n)
 {
   if (!tab5_mesh_servico_ativo()) { snprintf(o, n, tr("servico desligado (Ajustes > Mesh)")); return; }
@@ -244,8 +244,8 @@ static void v_mesh(char* o, size_t n)
            tab5_mesh_num_nos(), tab5_mesh_nao_lidas());
 }
 
-// ---- NOTIFICACAO ------------------------------------------------------------
-// Estado, nao evento: publicar de novo SUBSTITUI. Quantidade 0 apaga.
+// ---- NOTIFICATION -----------------------------------------------------------
+// State, not event: publishing again REPLACES. Quantity 0 clears it.
 static void v_notif(char* o, size_t n)
 {
   snprintf(o, n, s_notif_ativa ? tr("aviso na barra - toque para tirar") : tr("poe um aviso na barra de status"));
@@ -258,20 +258,20 @@ static void b_notif(void)
   else               { notif_limpar(s_notif); }
 }
 
-// ---- SOM --------------------------------------------------------------------
-// Exige .perfil.alto_falante = true. Sempre pelo sistema_beep (o codec frio
-// engoliria um tone() direto).
+// ---- SOUND ------------------------------------------------------------------
+// Requires .perfil.alto_falante = true. Always through sistema_beep (the cold codec
+// would swallow a direct tone()).
 static void v_som(char* o, size_t n) { snprintf(o, n, "sistema_beep(880 Hz, 120 ms)"); }
 static void b_som(void) { sistema_beep(880.0f, 120); }
 
-// ---- TECLADO ----------------------------------------------------------------
+// ---- KEYBOARD ---------------------------------------------------------------
 static void v_teclado(char* o, size_t n)
 {
   if (!tab5_teclado_presente()) { snprintf(o, n, tr("encaixe o teclado no ExtPort1")); return; }
   snprintf(o, n, s_tecla[0] ? tr("ultima tecla: %s") : tr("digite algo"), s_tecla);
 }
 
-// ---- ACORDADO ---------------------------------------------------------------
+// ---- KEEP AWAKE -------------------------------------------------------------
 static void v_acordado(char* o, size_t n)
 {
   snprintf(o, n, s_acordado ? tr("tela nao apaga enquanto o app estiver aberto")
@@ -281,12 +281,12 @@ static void v_acordado(char* o, size_t n)
 static void b_acordado(void)
 {
   s_acordado = !s_acordado;
-  sistema_manter_acordado(SISTEMA_ACORDADO_APP, s_acordado);   // solto sozinho ao fechar
+  sistema_manter_acordado(SISTEMA_ACORDADO_APP, s_acordado);   // released automatically on close
 }
 
-// ---- FUNDO ------------------------------------------------------------------
-// O loop roda numa tarefa do KERNEL e continua com o app fechado; enquanto
-// roda, a barra mostra uma pastilha com o resumo. Nao desenha nada.
+// ---- BACKGROUND -------------------------------------------------------------
+// The loop runs on a KERNEL task and keeps going with the app closed; while it
+// runs, the status bar shows a badge with the summary. It draws nothing.
 static void laco_fundo(fundo_t* f)
 {
   s_fundo_s = 0;
@@ -295,7 +295,7 @@ static void laco_fundo(fundo_t* f)
     char r[NOTIF_RESUMO];
     snprintf(r, sizeof(r), "%lu s", (unsigned long)s);
     fundo_estado(f, (int)s, r);
-    sistema_pedir_redesenho();         // so tem efeito com a janela aberta
+    sistema_pedir_redesenho();         // only has an effect with the window open
   }
 }
 
@@ -355,60 +355,60 @@ static const cartao_t CARTOES[] = {
 #define N_CARTOES ((int)(sizeof(CARTOES) / sizeof(CARTOES[0])))
 
 // ---------------------------------------------------------------------------
-// DESENHO
+// DRAWING
 // ---------------------------------------------------------------------------
-static const int CARTAO_A = 132;          // altura de cada cartao
+static const int CARTAO_A = 132;          // height of each card
 static const int BOTAO_L = 170, BOTAO_A = 64;
 static const int MARGEM = 16;
 
-static char s_valor[N_CARTOES][VALOR_MAX];   // o que esta na tela agora
+static char s_valor[N_CARTOES][VALOR_MAX];   // what is on screen now
 
 static int cartao_altura(int, void*) { return CARTAO_A; }
 
-// A lista reserva 12 px a direita para a barra de rolagem: a largura que o
-// cartao recebe e esta (a MESMA conta no desenho e no toque).
+// The list reserves 12 px on the right for the scroll bar: the width the
+// card gets is this (the SAME sum in drawing and in touch).
 static int largura_cartao(const area_t& a) { return a.largura - 12; }
 
-// Onde fica o botao de um cartao (x relativo a janela, y relativo ao cartao).
+// Where a card's button sits (x relative to the window, y relative to the card).
 static int botao_x(int largura) { return largura - MARGEM - BOTAO_L - 8; }
 static int botao_y(void)        { return (CARTAO_A - BOTAO_A) / 2; }
 
 static void cartao_desenhar(lgfx::LovyanGFX& d, int i, int x, int y, int largura, void*)
 {
   const cartao_t& c = CARTOES[i];
-  const lgfx::TextStyle estilo = d.getTextStyle();   // copia: devolvemos no fim
-  // (o fundo do cartao a lista ja pintou - nao limpar de novo)
-  d.drawFastHLine(x + MARGEM, y + CARTAO_A - 1, largura - 2 * MARGEM, TEMA_LINHA);   // divisoria: o papel "linha"
+  const lgfx::TextStyle estilo = d.getTextStyle();   // copy: we restore it at the end
+  // (the list has already painted the card background - do not clear again)
+  d.drawFastHLine(x + MARGEM, y + CARTAO_A - 1, largura - 2 * MARGEM, TEMA_LINHA);   // divider: the "line" role
 
   d.setTextDatum(top_left);
   tab5_fonte_corpo_negrito(d);
   tab5_texto(d, 3.0f);
-  // Texto: sempre cor + a cor do FUNDO onde ele pousa (a lista pinta TEMA_FUNDO),
-  // senao o texto novo deixa uma caixa de outra cor em volta.
+  // Text: always colour + the colour of the BACKGROUND it lands on (the list paints TEMA_FUNDO),
+  // otherwise the new text leaves a box of another colour around it.
   d.setTextColor(TEMA_TEXTO, TEMA_FUNDO);
   d.drawString(c.titulo, x + MARGEM, y + 14);
 
   tab5_fonte_corpo(d);
   tab5_texto(d, 2.2f);
-  d.setTextColor(TEMA_TEXTO_3, TEMA_FUNDO);   // dica: o nivel mais apagado
+  d.setTextColor(TEMA_TEXTO_3, TEMA_FUNDO);   // hint: the most faded level
   d.drawString(c.api, x + MARGEM, y + 52);
 
-  // O valor: cortado com "..." se nao couber antes do botao.
+  // The value: cut with "..." if it does not fit before the button.
   char v[VALOR_MAX];
   snprintf(v, sizeof(v), "%s", s_valor[i]);
   tab5_texto(d, 2.6f);
   const int lim = (c.botao ? botao_x(largura) : largura - MARGEM) - MARGEM - 8;
   tab5_cortar_com_reticencias(d, v, sizeof(v), lim);
-  d.setTextColor(TEMA_TEXTO_2, TEMA_FUNDO);   // valor de apoio: secundario
+  d.setTextColor(TEMA_TEXTO_2, TEMA_FUNDO);   // supporting value: secondary
   d.drawString(v, x + MARGEM, y + 84);
 
   if (c.botao) {
-    tab5_botao(d, x + botao_x(largura), y + botao_y(), BOTAO_L, BOTAO_A, c.botao, TEMA_DESTAQUE, TEMA_SOBRE_DESTAQUE);   // botao principal: a unica cor forte
+    tab5_botao(d, x + botao_x(largura), y + botao_y(), BOTAO_L, BOTAO_A, c.botao, TEMA_DESTAQUE, TEMA_SOBRE_DESTAQUE);   // primary button: the only strong colour
   }
   d.setTextStyle(estilo);
 }
 
-// Recalcula o valor de cada cartao e marca para repintar SO os que mudaram.
+// Recalculates each card's value and marks ONLY the ones that changed for repainting.
 static void atualizar_valores(bool todos)
 {
   for (int i = 0; i < N_CARTOES; ++i) {
@@ -425,11 +425,11 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
 {
   const bool tudo = sistema_area_foi_limpa();
   atualizar_valores(tudo);
-  lista_desenhar(&s_lista, d, a, TEMA_FUNDO, tudo);   // o mesmo fundo que .fundo_tema limpa
+  lista_desenhar(&s_lista, d, a, TEMA_FUNDO, tudo);   // the same background .fundo_tema clears
 }
 
 // ---------------------------------------------------------------------------
-// TOQUE, TECLADO, AVISOS
+// TOUCH, KEYBOARD, NOTICES
 // ---------------------------------------------------------------------------
 static void ao_tocar_nivel(int x, int y, bool pressionado)
 {
@@ -440,7 +440,7 @@ static void ao_tocar(int x, int y)
 {
   int dy = 0;
   const int i = lista_item_tocado(&s_lista, x, y, &dy);
-  if (i < 0) { return; }                        // fora da lista, ou fim de arraste
+  if (i < 0) { return; }                        // outside the list, or end of a drag
   ++s_toques; s_toque_x = x; s_toque_y = y;
   const cartao_t& c = CARTOES[i];
   const area_t a = sistema_area();
@@ -456,8 +456,8 @@ static void ao_teclar(const char* texto, uint8_t codigo, uint8_t)
   else          { snprintf(s_tecla, sizeof(s_tecla), tr("codigo %u"), (unsigned)codigo); }
 }
 
-// Os servicos avisam (AVISO_*) e o app redesenha na hora, sem perguntar a
-// cada segundo. AVISO_TRABALHO e o fim do sistema_trabalho().
+// The services notify (AVISO_*) and the app redraws at once, without polling
+// every second. AVISO_TRABALHO is the end of sistema_trabalho().
 static void ao_aviso(uint32_t avisos)
 {
   if (avisos & AVISO_TRABALHO) { s_trab_rodando = false; }
@@ -465,7 +465,7 @@ static void ao_aviso(uint32_t avisos)
 }
 
 // ---------------------------------------------------------------------------
-// CICLO DE VIDA
+// LIFE CYCLE
 // ---------------------------------------------------------------------------
 static bool ao_abrir(void)
 {
@@ -476,28 +476,28 @@ static bool ao_abrir(void)
     s_fila = nullptr;
     return false;
   }
-  s_notif = notif_registrar("Exemplo");    // idempotente: a mesma vaga a cada abertura
-  notif_associar_app(s_notif, "Exemplo");  // tocar no aviso abre este app
-  tab5_espnow_janela(true);                // receptor do ESP-NOW ligado com o app na tela
+  s_notif = notif_registrar("Exemplo");    // idempotent: the same slot on every open
+  notif_associar_app(s_notif, "Exemplo");  // tapping the notification opens this app
+  tab5_espnow_janela(true);                // ESP-NOW receiver on while the app is on screen
   lista_definir(&s_lista, ROLAGEM_INICIO, N_CARTOES, cartao_altura, cartao_desenhar, nullptr);
   return true;
 }
 
 static void ao_fechar(void)
 {
-  // A tarefa SAI antes de a fila dela ser destruida: encerrar espera.
+  // The task EXITS before its queue is destroyed: encerrar waits.
   tarefa_app_encerrar(&s_tarefa, 200);
   if (s_fila) { vQueueDelete(s_fila); s_fila = nullptr; }
   tab5_espnow_janela(false);
-  // O aviso e o fundo continuam de proposito: sobrevivem a janela.
-  s_acordado = false;                      // o sistema ja soltou o pedido
-  s_trab_rodando = false;                  // trabalho pendente foi descartado
+  // The notification and the background part continue on purpose: they outlive the window.
+  s_acordado = false;                      // the system has already released the request
+  s_trab_rodando = false;                  // pending work was discarded
 }
 
 // ---------------------------------------------------------------------------
-// CONSOLE: 'app exemplo contar [n]' e 'app exemplo zerar'
+// CONSOLE: 'app exemplo contar [n]' and 'app exemplo zerar'
 // ---------------------------------------------------------------------------
-// Rodam na tarefa do console: so mexem em dado atomico e pedem redesenho.
+// They run on the console task: they only touch atomic data and request a redraw.
 static void cmd_contar(int argc, char** argv)
 {
   const int n = argc >= 2 ? atoi(argv[1]) : 1;
@@ -526,7 +526,7 @@ static const app_comando_t COMANDOS[] = {
 };
 
 // ---------------------------------------------------------------------------
-// ICONE: quadrado tracejado com um "+" - o molde de um app.
+// ICON: dashed square with a "+" - an app template.
 // ---------------------------------------------------------------------------
 static void icone_exemplo(lgfx::LovyanGFX& d, int x, int y, int lado)
 {
@@ -544,15 +544,15 @@ static void icone_exemplo(lgfx::LovyanGFX& d, int x, int y, int lado)
   d.fillRect(x + lado / 2 - g, y + lado / 2 - L / 6, 2 * g, L / 3, traco);
 }
 
-// 'extern' e OBRIGATORIO: em C++ um const de arquivo tem ligacao interna, e o
-// apps.cpp nao enxergaria o simbolo (o erro so aparece no link).
+// 'extern' is MANDATORY: in C++ a file-scope const has internal linkage, and
+// apps.cpp would not see the symbol (the error only shows up at link time).
 extern const app_t APP_EXEMPLO = {
   .nome  = "Exemplo",
   .cor   = TFT_CYAN,
-  // So o que os cartoes usam. O resto fica desligado enquanto o app esta na
-  // tela - e o que impede o aparelho de alimentar o que ninguem usa.
+  // Only what the cards use. The rest stays off while the app is on
+  // screen - that is what stops the device powering what nobody uses.
   .perfil = { .imu = true, .alto_falante = true },
-  .usa_sd = true,               // monta o cartao antes do ao_abrir (TRABALHO le a pasta)
+  .usa_sd = true,               // mounts the card before ao_abrir (TRABALHO reads the folder)
   .orientacao = ORI_EM_PE,
   .ao_abrir  = ao_abrir,
   .ao_fechar = ao_fechar,
@@ -560,10 +560,10 @@ extern const app_t APP_EXEMPLO = {
   .ao_tocar  = ao_tocar,
   .ao_tocar_nivel = ao_tocar_nivel,
   .ao_teclar = ao_teclar,
-  .periodo_ms = 500,            // hora, energia e IMU mudam sozinhos
+  .periodo_ms = 500,            // time, power and IMU change by themselves
   .avisos = AVISO_TRABALHO | AVISO_ESPNOW | AVISO_MESH_MSG | AVISO_MESH_NOS | AVISO_GPS,
   .ao_aviso = ao_aviso,
   .icone = icone_exemplo,
   .comandos = COMANDOS,
-  .fundo_tema = true,           // o sistema limpa a area com TEMA_FUNDO (use TEMA_FUNDO nos textos)
+  .fundo_tema = true,           // the system clears the area with TEMA_FUNDO (use TEMA_FUNDO for text)
 };

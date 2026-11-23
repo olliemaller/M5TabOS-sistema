@@ -1,18 +1,18 @@
-// Animacao do bloqueio: Logo do M5tabOS quicando nas bordas e trocando de cor a cada batida.
-// (parte do bloqueio_anim; o que e comum a todas esta no bloqueio_anim_interno.hpp).
+// Lock screen animation: the M5tabOS logo bouncing off the edges and changing colour on every hit.
+// (part of bloqueio_anim; what is common to all of them is in bloqueio_anim_interno.hpp).
 
 #include "bloqueio_anim_interno.hpp"
 
 namespace bq_anim {
 
 // ---------------------------------------------------------------------------
-// 12. LOGO - o "M5tabOS" quicando nas bordas e trocando de cor a cada batida
-//     (homenagem ao descanso de tela do DVD; acertar o canto e raro)
+// 12. LOGO - "M5tabOS" bouncing off the edges and changing colour on every hit
+//     (a tribute to the DVD screensaver; hitting the corner is rare)
 // ---------------------------------------------------------------------------
 namespace {
 struct Logo { float x, y, vx, vy, ox, oy; int w, h; uint8_t cor; bool repintar; uint8_t cantos; };
 }
-static lgfx::LGFX_Sprite* s_logo = nullptr;   // o texto, pintado so quando a cor muda
+static lgfx::LGFX_Sprite* s_logo = nullptr;   // the text, painted only when the colour changes
 
 static void logo_pintar(Logo& s)
 {
@@ -63,7 +63,7 @@ void logo_passo(float dt)
   if (bateu) {
     s.cor = (uint8_t)(s.cor + 45 + irand(40));
     s.repintar = true;
-    if (bateu == 2) { ++s.cantos; }   // o canto! (fica so na memoria, de trofeu)
+    if (bateu == 2) { ++s.cantos; }   // the corner! (kept only in memory, as a trophy)
   }
   const int x0 = (int)fminf(s.ox, s.x) - 1, y0 = (int)fminf(s.oy, s.y) - 1;
   rec(x0, y0, s.w + (int)ceilf(fabsf(s.x - s.ox)) + 3, s.h + (int)ceilf(fabsf(s.y - s.oy)) + 3);
@@ -74,13 +74,13 @@ void logo_desenhar(lgfx::LovyanGFX& d)
   Logo& s = bq_estado_como<Logo>();
   if (s.repintar) { logo_pintar(s); s.repintar = false; }
   if (s_logo) {
-    s_logo->pushSprite(&d, (int)s.x, (int)s.y, (uint16_t)0);   // preto = transparente
+    s_logo->pushSprite(&d, (int)s.x, (int)s.y, (uint16_t)0);   // black = transparent
   } else {
     d.drawRoundRect((int)s.x, (int)s.y, s.w, s.h, 12, matiz(s.cor, 255));
   }
 }
 
-// Libera o texto pintado (ao sortear outra animacao ou ao sair do bloqueio).
+// Frees the painted text (when choosing another animation or leaving the lock screen).
 void logo_soltar(void)
 {
   delete s_logo;

@@ -1,5 +1,5 @@
-// TOCADOR DE MUSICA - a capa pela internet: busca no iTunes (artista + titulo)
-// e baixa a imagem. Ver tab5_musica_interno.hpp.
+// MUSIC PLAYER - cover art from the internet: searches iTunes (artist + title)
+// and downloads the image. See tab5_musica_interno.hpp.
 #include "tab5_musica_interno.hpp"
 #include "tab5_rede.hpp"
 
@@ -10,30 +10,30 @@
 
 static const char* TAG = "musica";
 
-// ---- a internet ----
-// GET pelo servico de rede (services/tab5_rede: HTTPS, redirecionamento) num
-// buffer da PSRAM de ate 'max' bytes. So 200 e inteiro: chegou ao limite =
-// truncado, descarta. Devolve o buffer (heap_caps_free) e o tamanho em 'n'.
+// ---- the internet ----
+// GET through the network service (services/tab5_rede: HTTPS, redirects) into
+// a PSRAM buffer of up to 'max' bytes. Only a 200 in full: hitting the limit =
+// truncated, discard. Returns the buffer (heap_caps_free) and the size in 'n'.
 static uint8_t* http_baixar(const char* url, size_t max, size_t* n)
 {
   tab5_rede_http_t info;
   char* b = tab5_rede_http_texto(url, max, &info, nullptr);
   if (b && (info.status != 200 || info.recebido >= (int64_t)max)) {
-    ESP_LOGW(TAG, "capa: %s respondeu %d (%lld B)", url, info.status, (long long)info.recebido);
+    ESP_LOGW(TAG, "cover: %s answered %d (%lld B)", url, info.status, (long long)info.recebido);
     heap_caps_free(b);
     b = nullptr;
   } else if (!b) {
-    ESP_LOGW(TAG, "capa: %s", info.erro);
+    ESP_LOGW(TAG, "cover: %s", info.erro);
   }
   *n = b ? (size_t)info.recebido : 0;
   return (uint8_t*)b;
 }
 
-// Para comparar nomes: so letras e numeros, minusculas, sem acento (UTF-8 de
-// 2 bytes vira a letra base quando e latina; o resto some).
+// For comparing names: only letters and digits, lower case, no accents (2-byte
+// UTF-8 becomes the base letter when it is Latin; the rest is dropped).
 static void normalizar(const char* s, char* out, size_t tam)
 {
-  static const char DOBRA[] = "aaaaaaaceeeeiiiidnooooo/ouuuuyty";   // U+00E0..U+00FF (e as maiusculas, -0x20)
+  static const char DOBRA[] = "aaaaaaaceeeeiiiidnooooo/ouuuuyty";   // U+00E0..U+00FF (and the capitals, -0x20)
   size_t k = 0;
   for (const uint8_t* p = (const uint8_t*)s; *p && k + 1 < tam; ++p) {
     uint32_t c = *p;
@@ -45,8 +45,8 @@ static void normalizar(const char* s, char* out, size_t tam)
   out[k] = '\0';
 }
 
-// O artista que a busca devolveu e o nosso? Um contem o outro, sem acento e
-// sem pontuacao ("Red Hot Chili Peppers" x "Red Hot Chili Peppers & ...").
+// Is the artist the search returned ours? One contains the other, without
+// accents or punctuation ("Red Hot Chili Peppers" x "Red Hot Chili Peppers & ...").
 static bool mesmo_artista(const char* nosso, const char* deles)
 {
   char a[64], b[64];
@@ -55,10 +55,10 @@ static bool mesmo_artista(const char* nosso, const char* deles)
   return a[0] && b[0] && (strstr(a, b) || strstr(b, a));
 }
 
-// A busca do iTunes (sem chave): artista + titulo -> a capa 600x600 do disco.
-// SO COM ARTISTA, e so se o artista que voltar for o mesmo: medido, uma
-// musica sem etiqueta ("Passeio no Tab5") recebia a capa de qualquer coisa
-// que a busca achasse com essas palavras.
+// The iTunes search (no key): artist + title -> the album's 600x600 cover.
+// ONLY WITH AN ARTIST, and only if the artist that comes back is the same: as
+// measured, a track without tags ("Passeio no Tab5") got the cover of whatever
+// the search found with those words.
 net_t musica_capa_internet(const capa_ped_t* p, uint8_t** img, size_t* n)
 {
   if (!p->artista[0]) { return NET_NAO_TEM; }
@@ -74,7 +74,7 @@ net_t musica_capa_internet(const capa_ped_t* p, uint8_t** img, size_t* n)
   if (!chave) {
     r = strstr(json, "\"resultCount\":0") ? NET_NAO_TEM : NET_FALHOU;
   } else {
-    // O artista do resultado (vem antes da arte no JSON do iTunes).
+    // The result's artist (comes before the artwork in the iTunes JSON).
     char deles[96] = "";
     const char* ar = strstr(json, "\"artistName\":\"");
     if (ar) {
@@ -83,7 +83,7 @@ net_t musica_capa_internet(const capa_ped_t* p, uint8_t** img, size_t* n)
       if (fa && (size_t)(fa - ar) < sizeof(deles)) { memcpy(deles, ar, (size_t)(fa - ar)); deles[fa - ar] = '\0'; }
     }
     if (!mesmo_artista(p->artista, deles)) {
-      ESP_LOGI(TAG, "capa: a busca devolveu outro artista (\"%s\") - sem capa", deles);
+      ESP_LOGI(TAG, "cover: the search returned another artist (\"%s\") - no cover", deles);
       heap_caps_free(json);
       return NET_NAO_TEM;
     }

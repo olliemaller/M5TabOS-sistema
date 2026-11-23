@@ -1,25 +1,25 @@
-// WI-FI COCHILA EM REPOUSO - o Wi-Fi conectado era 40% do consumo com a tela
-// apagada.
+// WI-FI DOZES WHILE IDLE - connected Wi-Fi was 40% of the consumption with the
+// screen off.
 //
-// MEDIDO ('energia ensaio', 2026-10-16): repouso 72-74 mA, 28-33 deles do Wi-Fi
-// conectado - mesmo em modem sleep maximo, porque o C6 nao pode dormir de
-// verdade com o SDIO ativo (ver o exemplo cp_light_sleep_controller.c do
-// esp_hosted). Sem Wi-Fi, 38 mA: a bateria dura quase o dobro.
+// MEASURED ('energia ensaio', 2026-10-16): idle 72-74 mA, 28-33 of it from connected
+// Wi-Fi - even in maximum modem sleep, because the C6 cannot really sleep
+// with SDIO active (see the esp_hosted example
+// cp_light_sleep_controller.c). Without Wi-Fi, 38 mA: the battery lasts almost twice as long.
 //
-// A REGRA (ajuste "economia em repouso" na pagina Wi-Fi, ligada de fabrica):
-//   - tela apagada ha COCHILO_APOS_S e nada precisando da rede -> desliga;
-//   - acender a tela religa na hora;
-//   - a cada JANELA_CADA_S religa sozinho e fica JANELA_S conectado, para
-//     o Mesh pela internet e o relogio pegarem o que houver;
-//   - "precisa da rede": alguem pediu o receptor ligado (ESP-NOW conversando,
-//     CSI, farejo) ou uma parte de fundo declarou o radio no perfil.
-// O ajuste de Wi-Fi do usuario (ajustes_wifi) nao muda: so a rede desce.
+// THE RULE ("economia em repouso" (idle saving) setting on the Wi-Fi page, on by default):
+//   - screen off for COCHILO_APOS_S and nothing needing the network -> turn off;
+//   - turning the screen on brings it back at once;
+//   - every JANELA_CADA_S it comes back on by itself and stays connected for JANELA_S,
+//     so Mesh over the internet and the clock pick up whatever there is;
+//   - "needs the network": someone asked for the receiver on (ESP-NOW chatting,
+//     CSI, sniffing) or a background part declared the radio in its profile.
+// The user's Wi-Fi setting (ajustes_wifi) does not change: only the network goes down.
 //
-// TAREFA: tab5_wifi_cochilo_vigiar() roda na tarefa de interface (ligar o
-// Wi-Fi mexe no expansor I2C), uma vez por segundo.
+// TASK: tab5_wifi_cochilo_vigiar() runs on the UI task (turning Wi-Fi on
+// touches the I2C expander), once a second.
 #pragma once
 
 #include <stddef.h>
 
 void tab5_wifi_cochilo_vigiar(void);
-void tab5_wifi_cochilo_resumo(char* out, size_t tam);   // uma linha para o console
+void tab5_wifi_cochilo_resumo(char* out, size_t tam);   // one line for the console

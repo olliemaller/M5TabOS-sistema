@@ -176,11 +176,11 @@ int main(int argc, char **argv) {
         .intra_only = getenv("H264_INTRA") != NULL,
         .threads = getenv("H264_THREADS") ? &kThreads : NULL,
     };
-    /* M5tabOS: H264_PEDACOS=1 entrega a arena em 4 pedacos (como a SRAM
-       fragmentada do Tab5), para exercitar o caminho dos pedacos. */
+    /* M5tabOS: H264_PEDACOS=1 hands over the arena in 4 chunks (like the Tab5's
+       fragmented SRAM), to exercise the chunked path. */
     if (getenv("H264_PEDACOS")) {
-        /* 4 pedacos de 1/3 da arena (a soma passa um terco do inteiro: os
-           pedidos grandes nao se dividem, e a sobra no fim de cada pedaco se perde) */
+        /* 4 chunks of 1/3 of the arena (the total exceeds the whole by a third:
+           large requests are not split, and the leftover at the end of each chunk is lost) */
         free(work);
         work = aligned_alloc(64, WORK_BYTES / 3 * 4 + 256);
         const size_t pedaco = (WORK_BYTES / 3) & ~(size_t)63;

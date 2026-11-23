@@ -1,4 +1,4 @@
-// O editor de Berry no navegador do PC - ver berry_web.hpp.
+// The Berry editor in the PC's browser - see berry_web.hpp.
 #include "berry_web.hpp"
 
 #include <stdio.h>
@@ -22,7 +22,7 @@ static esp_err_t pagina(httpd_req_t* req)
 {
   httpd_resp_set_type(req, "text/html; charset=utf-8");
   httpd_resp_set_hdr(req, "Cache-Control", "no-store");
-  return httpd_resp_send(req, PAGINA_INICIO, PAGINA_FIM - PAGINA_INICIO - 1);   // TEXT poe um '\0' no fim
+  return httpd_resp_send(req, PAGINA_INICIO, PAGINA_FIM - PAGINA_INICIO - 1);   // TEXT adds a '\0' at the end
 }
 
 static esp_err_t sem_memoria(httpd_req_t* req)
@@ -55,7 +55,7 @@ static esp_err_t lista(httpd_req_t* req)
   return r;
 }
 
-// O ?arq= de quem pede, validado. false = ja respondeu 400.
+// The requester's ?arq=, validated. false = already replied 400.
 static bool nome_do_pedido(httpd_req_t* req, char* arq, size_t n)
 {
   if (tab5_web_param(req, "arq", arq, n) && berry_script_nome_valido(arq)) { return true; }
@@ -84,7 +84,7 @@ static esp_err_t ler(httpd_req_t* req)
   return r;
 }
 
-// A resposta de verificar/rodar: ok, a linha e a mensagem do erro.
+// The reply for check/run: ok, the line and the error message.
 static esp_err_t resultado(httpd_req_t* req, bool ok, int linha, const char* erro, const char* extra)
 {
   char e[200], js[320];
@@ -93,7 +93,7 @@ static esp_err_t resultado(httpd_req_t* req, bool ok, int linha, const char* err
   return tab5_web_json(req, js);
 }
 
-// Grava (e, com 'rodar', verifica e abre) o corpo do pedido.
+// Writes (and, with 'rodar', checks and opens) the request body.
 static esp_err_t gravar_ou_rodar(httpd_req_t* req, bool rodar)
 {
   char arq[64];
@@ -103,12 +103,12 @@ static esp_err_t gravar_ou_rodar(httpd_req_t* req, bool rodar)
   esp_err_t r = ESP_OK;
   const int n = tab5_web_corpo(req, txt, BERRY_SCRIPT_MAX);
   if (n < 0) {
-    // tab5_web_corpo ja respondeu (ou a conexao caiu)
+    // tab5_web_corpo has already replied (or the connection dropped)
   } else if (!berry_script_gravar(arq, txt, n)) {
     r = resultado(req, false, 0, "not saved (SD card?)", "");
   } else if (!rodar) {
     char aut[4];
-    if (!tab5_web_param(req, "auto", aut, sizeof(aut))) { berry_apps_reler(); }   // script novo: o icone aparece
+    if (!tab5_web_param(req, "auto", aut, sizeof(aut))) { berry_apps_reler(); }   // new script: the icon appears
     r = resultado(req, true, 0, "", "");
   } else {
     char erro[160] = "";
@@ -117,12 +117,12 @@ static esp_err_t gravar_ou_rodar(httpd_req_t* req, bool rodar)
     bool aberto = false;
     if (ok) {
       berry_apps_reler();
-      // Cada abertura le o .be de novo - o que roda e o que acabou de chegar.
-      // Script novo so ganha app depois da releitura, que a tela inicial aplica.
+      // Each opening reads the .be again - what runs is what has just arrived.
+      // A new script only gets an app after the reread, which the home screen applies.
       char nome[48];
       berry_script_nome_app(txt, arq, nome, sizeof(nome));
       aberto = sistema_abrir_app(nome);
-      ESP_LOGI(TAG, "rodar %s: %s", arq, aberto ? "aberto" : "sem app ainda");
+      ESP_LOGI(TAG, "run %s: %s", arq, aberto ? "opened" : "no app yet");
     }
     r = resultado(req, ok, linha, erro, aberto ? ",\"aberto\":true" : ",\"aberto\":false");
   }
