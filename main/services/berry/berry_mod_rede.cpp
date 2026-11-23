@@ -25,6 +25,7 @@
 // o dono saiu - o buffer nunca fica orfao.
 
 #include <stdio.h>
+#include "idioma.h"
 #include <stdlib.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
@@ -88,7 +89,7 @@ static void tarefa_rede(void*)
 
     tab5_rede_http_t info = {};
     char* buf = tab5_rede_http_texto(s_p.url, s_p.max, &info, cancelado);
-    if (!buf && !info.erro[0]) { snprintf(info.erro, sizeof(info.erro), "sem memoria"); }
+    if (!buf && !info.erro[0]) { snprintf(info.erro, sizeof(info.erro), tr("sem memoria")); }
 
     char* descartar = nullptr;
     portENTER_CRITICAL(&s_trava);

@@ -3,6 +3,7 @@
 // partes compartilham esta em mesh/tab5_mesh_interno.hpp.
 
 #include <string.h>
+#include "idioma.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
@@ -637,7 +638,7 @@ bool tab5_mesh_conversa(int idx, mesh_conversa_t* saida)
     // primeira linha ainda nao disse.
     saida->sub[0] = 0;
     if (saida->canal) {
-      snprintf(saida->sub, sizeof(saida->sub), saida->idx == 0 ? "canal primário" : "canal %u", (unsigned)saida->idx);
+      snprintf(saida->sub, sizeof(saida->sub), saida->idx == 0 ? tr("canal primário") : tr("canal %u"), (unsigned)saida->idx);
     } else {
       const char* longo = nullptr;
       for (int k = 0; k < MESH_MAX_NOS; ++k) {
@@ -703,7 +704,7 @@ void publicar_notif(void)
     } else {
       // Rede de seguranca: s_nao_lidas>0 sem nenhum canal marcado nao deveria
       // acontecer, mas sem isto a barra ficaria muda em vez de generica.
-      snprintf(resumo, sizeof(resumo), "%d no canal", s_nao_lidas);
+      snprintf(resumo, sizeof(resumo), tr("%d no canal"), s_nao_lidas);
     }
   }
   // Direta e ATENCAO: e endereçada a voce. Trafego de canal e INFO - vale

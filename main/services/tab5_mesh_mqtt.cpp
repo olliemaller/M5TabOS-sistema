@@ -20,6 +20,7 @@
 #include <ctime>
 
 #include "ajustes.h"
+#include "idioma.h"
 #include "app.h"   // sistema_mesh_reiniciar
 
 static const char* TAG = "mesh_mqtt";
@@ -53,6 +54,8 @@ static Trava s_trava_cfg;
 // publica. A raiz dele e "meshdev", sem regiao: o Brasil usa a faixa ANZ, e a
 // regiao do no nao entra no topico aqui.
 #define SRV_PADRAO "platform.meshbrasil.com"
+#define SRV_MESHTASTIC "mqtt.meshtastic.org"
+static void padrao_regional(const char** srv, const char** raiz);   // below, by RAIZ_PADRAO
 #define USR_PADRAO "meshdev"
 #define PWD_PADRAO "large4cats"
 
@@ -63,7 +66,7 @@ static const mesh_mqtt_servidor_t MODELOS[] = {
   { "Mesh Brasil",             "platform.meshbrasil.com", "meshdev", "large4cats", "meshdev" },
   { "Meshtastic Brasil",       "mqtt.meshtastic.org",     "meshdev", "large4cats", "msh/BR" },
   { "Meshtastic Europa",       "mqtt.meshtastic.org",     "meshdev", "large4cats", "msh/EU_868" },
-  { "Meshtastic Austrália", "mqtt.meshtastic.org",     "meshdev", "large4cats", "msh/ANZ" },
+  { "Meshtastic Australia", "mqtt.meshtastic.org",     "meshdev", "large4cats", "msh/ANZ" },
   { "Em branco",               "",                        "",        "",           "msh" },
 };
 #define N_MODELOS ((int)(sizeof(MODELOS) / sizeof(MODELOS[0])))
@@ -77,7 +80,9 @@ bool mesh_mqtt_servidor(int i, mesh_mqtt_servidor_t* out)
   if (!out) { return false; }
   if (i == AJUSTES_MQTT_AUTOMATICO) {
     memset(out, 0, sizeof(*out));
-    snprintf(out->nome, sizeof(out->nome), "Automático");
+    const char* sv; const char* rz;
+    padrao_regional(&sv, &rz);
+    snprintf(out->nome, sizeof(out->nome), "%s (%s)", tr("Automático"), strcmp(sv, SRV_PADRAO) == 0 ? "Mesh Brasil" : rz);
     return true;
   }
   return ajustes_mqtt_ler(i - 1, out);
@@ -260,6 +265,24 @@ void mesh_mqtt_aprender_servidor(const char* endereco, const char* usuario,
 // Raiz do servidor padrao (ver SRV_PADRAO).
 #define RAIZ_PADRAO "meshdev"
 
+// AUTOMATIC BY REGION: with no server chosen and none learned from the node,
+// the internet mode used to go to Mesh Brasil from anywhere. The time zone
+// says roughly where the Tab5 is: Brazil keeps Mesh Brasil, and elsewhere the
+// public Meshtastic server with the root of that region's LoRa band.
+static void padrao_regional(const char** srv, const char** raiz)
+{
+  const int m = ajustes_fuso_min();
+  *srv = SRV_MESHTASTIC;
+  if (m == -180)                  { *srv = SRV_PADRAO; *raiz = RAIZ_PADRAO; }   // Brazil (the original default)
+  else if (m >= 570 && m <= 780)  { *raiz = "msh/ANZ"; }                        // Australia, New Zealand
+  else if (m == 480 && ajustes_fuso_zona() == 5) { *raiz = "msh/ANZ"; }         // Perth (tab5_fuso region)
+  else if (m == 540)              { *raiz = "msh/JP"; }
+  else if (m == 330)              { *raiz = "msh/IN"; }
+  else if (m >= -60 && m <= 180)  { *raiz = "msh/EU_868"; }
+  else if (m >= -600 && m <= -210) { *raiz = "msh/US"; }
+  else                            { *raiz = "msh"; }
+}
+
 // "msh/BR_902": a raiz que o no usa. O firmware poe a regiao na raiz quando a
 // regiao e escolhida; se o no mandou uma raiz, vale ela.
 static void raiz_efetiva(char* out, size_t tam)
@@ -267,7 +290,7 @@ static void raiz_efetiva(char* out, size_t tam)
   // A escolha da pessoa vence tudo (ver servidor_escolhido).
   { char sv[64], us[32], pw[32]; if (servidor_escolhido(sv, sizeof sv, us, sizeof us, pw, sizeof pw, out, tam)) { return; } }
   // Sem servidor aprendido do no vale o padrao, com a raiz dele.
-  if (!s_cfg.srv[0]) { snprintf(out, tam, "%s", RAIZ_PADRAO); return; }
+  if (!s_cfg.srv[0]) { const char* sv; const char* rz; padrao_regional(&sv, &rz); snprintf(out, tam, "%s", rz); return; }
   if (s_cfg.raiz[0]) { snprintf(out, tam, "%s", s_cfg.raiz); return; }
   const int r = s_cfg.regiao;
   if (r > 0 && r < (int)(sizeof(REGIOES) / sizeof(REGIOES[0]))) { snprintf(out, tam, "msh/%s", REGIOES[r]); }
@@ -337,7 +360,7 @@ static QueueHandle_t   s_fila = nullptr;
 static volatile bool   s_conectado = false, s_conectou_agora = false;
 static uint32_t        s_num = 0;
 static char            s_curto[8] = "", s_longo[40] = "";
-static char            s_descr[96] = "internet: parado";
+static char            s_descr[96] = "internet: stopped";
 
 // PROXY (ver o .hpp). O que o no disse da propria configuracao MQTT vem do
 // dump e mora so em RAM; a raiz e aprendida do PRIMEIRO topico que o no
@@ -758,7 +781,8 @@ static bool iniciar_cliente(bool proxy)
   // O SERVIDOR: no proxy e o do NO, exatamente - endereco vazio e o padrao do
   // firmware (mqtt.meshtastic.org, meshdev/large4cats). No modo internet,
   // vazio e o padrao deste sistema (Mesh Brasil).
-  const char* padrao = proxy ? "mqtt.meshtastic.org" : SRV_PADRAO;
+  const char* padrao = SRV_MESHTASTIC;
+  if (!proxy) { const char* rz; padrao_regional(&padrao, &rz); }
   snprintf(srv, sizeof(srv), "%s", s_cfg.srv[0] ? s_cfg.srv : padrao);
   // "host" ou "host:porta", como o app do Meshtastic grava.
   snprintf(uri, sizeof(uri), strchr(srv, ':') ? (tls ? "mqtts://%s" : "mqtt://%s") : (tls ? "mqtts://%s:8883" : "mqtt://%s:1883"), srv);
@@ -819,7 +843,7 @@ void mesh_mqtt_parar(void)
   s_proxy = false;
   s_px_raiz[0] = 0;
   if (s_fila) { xQueueReset(s_fila); }   // descida do proxy para um no que nao vai mais receber
-  snprintf(s_descr, sizeof(s_descr), "internet: parado");
+  snprintf(s_descr, sizeof(s_descr), "internet: stopped");
   ESP_LOGI(TAG, "desconectado do servidor");
 }
 
@@ -835,7 +859,7 @@ bool mesh_mqtt_conectou_agora(void)
 const char* mesh_mqtt_descricao(void)
 {
   static char d[112];
-  snprintf(d, sizeof(d), "%s%s", s_descr, !s_cli ? "" : s_conectado ? " - conectado" : " - conectando");
+  snprintf(d, sizeof(d), "%s%s", s_descr, !s_cli ? "" : s_conectado ? " - connected" : " - connecting");
   return d;
 }
 
@@ -1055,9 +1079,9 @@ void mesh_mqtt_no_resumo(char* out, size_t tam)
 {
   travar_cfg();
   garantir_cfg();
-  size_t k = (size_t)snprintf(out, tam, "MQTT do no: %s, proxy %s, tls %s, servidor \"%s\" raiz \"%s\"\n",
+  size_t k = (size_t)snprintf(out, tam, "node MQTT: %s, proxy %s, tls %s, server \"%s\" root \"%s\"\n",
                               s_no_mqtt ? "LIGADO" : "desligado", s_no_proxy ? "ligado" : "desligado",
-                              s_no_tls ? "sim" : "nao", s_cfg.srv[0] ? s_cfg.srv : "(padrao do firmware)",
+                              s_no_tls ? "sim" : "nao", s_cfg.srv[0] ? s_cfg.srv : "(firmware default)",
                               s_cfg.raiz[0] ? s_cfg.raiz : "(padrao)");
   for (int i = 0; i < MAX_CANAIS && k < tam; ++i) {
     if (!s_cfg.canais[i].papel) { continue; }
@@ -1065,10 +1089,10 @@ void mesh_mqtt_no_resumo(char* out, size_t tam)
     // que todo LongFast de fabrica usa - e a unica que a malha publica le.
     const canal_t& c = s_cfg.canais[i];
     char chave[24];
-    if (c.n_psk == 0)                        { snprintf(chave, sizeof(chave), "SEM cifra"); }
+    if (c.n_psk == 0)                        { snprintf(chave, sizeof(chave), "NO encryption"); }
     else if (c.n_psk == 1 && c.psk[0] == 1)  { snprintf(chave, sizeof(chave), "padrao"); }
     else if (c.n_psk == 1)                   { snprintf(chave, sizeof(chave), "padrao+%u (DIFERENTE)", (unsigned)(c.psk[0] - 1)); }
-    else                                     { snprintf(chave, sizeof(chave), "propria de %u bytes", (unsigned)c.n_psk); }
+    else                                     { snprintf(chave, sizeof(chave), "custom, %u bytes", (unsigned)c.n_psk); }
     k += (size_t)snprintf(out + k, tam - k, "  canal %d %-11s sobe %s  desce %s  chave %s\n", i,
                           c.nome, s_uplink[i] ? "sim" : "NAO", s_downlink[i] ? "sim" : "NAO", chave);
   }

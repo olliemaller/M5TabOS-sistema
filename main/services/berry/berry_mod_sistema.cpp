@@ -109,7 +109,7 @@ static int s_hora_de(bvm* vm)
   struct tm t;
   tab5_hora_local(e, &t);
   char buf[8];
-  snprintf(buf, sizeof(buf), "%02d:%02d", t.tm_hour, t.tm_min);
+  tab5_hora_hhmm(&t, buf, sizeof(buf));
   be_pushstring(vm, buf);
   be_return(vm);
 }

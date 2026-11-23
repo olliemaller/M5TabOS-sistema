@@ -2,6 +2,7 @@
 // berry_apps.cpp (o motor) e berry_interno.hpp.
 
 #include <stdint.h>
+#include "idioma.h"
 #include <stdio.h>
 #include <string.h>
 #include "tab5_hora.hpp"
@@ -53,14 +54,14 @@ static int e_estado(bvm* vm)
   else if (!tab5_wifi_radio_ativo()) { est = 4; }
   else                               { est = tab5_espnow_pronto() ? 3 : 2; }
   static const char* const TXT[] = {
-    "radio C6 de fabrica: ESP-NOW pede atualizacao (opcional)",
-    "ligue o Wi-Fi em Ajustes (o C6 so tem energia com ele)",
-    "ligando o ESP-NOW...", "",
-    "radio parado - ligue o Wi-Fi ou fixe um canal em Ajustes",
+    N_("radio C6 de fabrica: ESP-NOW pede atualizacao (opcional)"),
+    N_("ligue o Wi-Fi em Ajustes (o C6 so tem energia com ele)"),
+    N_("ligando o ESP-NOW..."), "",
+    N_("radio parado - ligue o Wi-Fi ou fixe um canal em Ajustes"),
   };
   mapa_novo(vm);
   m_int(vm, "codigo", est);
-  m_txt(vm, "texto", TXT[est]);
+  m_txt(vm, "texto", tr(TXT[est]));
   fim(vm);
   be_return(vm);
 }

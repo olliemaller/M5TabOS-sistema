@@ -345,6 +345,18 @@ void ajustes_definir_config_inicial(bool feita);
 int16_t ajustes_fuso_min(void);
 void    ajustes_definir_fuso_min(int16_t minutos);
 
+// TIME-ZONE REGION (services/tab5_fuso): 0 = manual, the fixed offset above;
+// any other region brings its own offset and daylight-saving rule. Picking a
+// region also stores its standard offset in ajustes_fuso_min, so code that
+// only reads the offset (the MQTT server guess, Berry's ajustes.fuso) keeps
+// a sensible value.
+// 12-HOUR CLOCK: times shown as "9:05pm" (tab5_hora_hhmm) instead of "21:05".
+bool    ajustes_relogio_12h(void);
+void    ajustes_definir_relogio_12h(bool sim);
+
+uint8_t ajustes_fuso_zona(void);
+void    ajustes_definir_fuso_zona(uint8_t zona);
+
 // SERVIDORES MQTT DO MODO INTERNET do Mesh (sem no: o Tab5 fala com a malha
 // pelo Wi-Fi). E UMA LISTA DA PESSOA, nao uma fixa no codigo: ate
 // AJUSTES_MQTT_MAX servidores, cada um com nome, endereco, usuario, senha

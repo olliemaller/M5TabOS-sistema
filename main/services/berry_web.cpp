@@ -27,7 +27,7 @@ static esp_err_t pagina(httpd_req_t* req)
 
 static esp_err_t sem_memoria(httpd_req_t* req)
 {
-  return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "sem memoria");
+  return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "out of memory");
 }
 
 static esp_err_t lista(httpd_req_t* req)
@@ -38,7 +38,7 @@ static esp_err_t lista(httpd_req_t* req)
   const int n = berry_scripts_listar(it, LISTA_MAX);
   esp_err_t r;
   if (n < 0) {
-    r = httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "sem cartao");
+    r = httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "no SD card");
   } else {
     size_t k = snprintf(js, 16, "[");
     for (int i = 0; i < n; ++i) {
@@ -59,7 +59,7 @@ static esp_err_t lista(httpd_req_t* req)
 static bool nome_do_pedido(httpd_req_t* req, char* arq, size_t n)
 {
   if (tab5_web_param(req, "arq", arq, n) && berry_script_nome_valido(arq)) { return true; }
-  httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "nome de script invalido (letras, numeros, _ - e .be no fim)");
+  httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "invalid script name (letters, digits, _ - and .be at the end)");
   return false;
 }
 
@@ -76,9 +76,9 @@ static esp_err_t ler(httpd_req_t* req)
     httpd_resp_set_hdr(req, "Cache-Control", "no-store");
     r = httpd_resp_sendstr(req, txt);
   } else if (l == BERRY_LER_GRANDE) {
-    r = httpd_resp_send_err(req, HTTPD_413_CONTENT_TOO_LARGE, "script grande demais para editar (mais de 32 KB)");
+    r = httpd_resp_send_err(req, HTTPD_413_CONTENT_TOO_LARGE, "script too big to edit (over 32 KB)");
   } else {
-    r = httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "nao abriu");
+    r = httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "could not open");
   }
   heap_caps_free(txt);
   return r;
@@ -105,7 +105,7 @@ static esp_err_t gravar_ou_rodar(httpd_req_t* req, bool rodar)
   if (n < 0) {
     // tab5_web_corpo ja respondeu (ou a conexao caiu)
   } else if (!berry_script_gravar(arq, txt, n)) {
-    r = resultado(req, false, 0, "nao salvou (cartao?)", "");
+    r = resultado(req, false, 0, "not saved (SD card?)", "");
   } else if (!rodar) {
     char aut[4];
     if (!tab5_web_param(req, "auto", aut, sizeof(aut))) { berry_apps_reler(); }   // script novo: o icone aparece

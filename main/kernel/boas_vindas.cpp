@@ -19,6 +19,7 @@
 #include "app.h"
 #include "ajustes.h"
 #include "idioma.h"
+#include "tab5_fuso.hpp"
 #include "tab5_ui.hpp"
 #include "tab5_tela.hpp"
 #include "tab5_hora.hpp"
@@ -60,13 +61,13 @@ static void passo_e_botoes(lgfx::LovyanGFX& d, const area_t& a)
 // ---- passo 2: fuso ------------------------------------------------------------
 static const int FUSO_Y = 260;
 static const int PM_L = 150;
+static const int REGIAO_Y = FUSO_Y + BTN_A + 200;   // the region row (daylight saving)
 
 static void desenhar_fuso(lgfx::LovyanGFX& d, const area_t& a)
 {
   titulo(d, a, tr("Fuso horário"), tr("A hora que a barra e os apps mostram."));
-  const int16_t m = ajustes_fuso_min();
-  char f[24];
-  snprintf(f, sizeof(f), "UTC%c%d:%02d", m < 0 ? '-' : '+', abs(m) / 60, abs(m) % 60);
+  char f[40];
+  tab5_fuso_texto((uint32_t)time(nullptr), f, sizeof(f));
   const int y = a.y + FUSO_Y;
   tab5_botao(d, a.x + M, y, PM_L, BTN_A, tr("-30 min"), TFT_ORANGE);
   tab5_botao(d, a.x + a.largura - M - PM_L, y, PM_L, BTN_A, tr("+30 min"), TFT_GREENYELLOW);
@@ -83,15 +84,22 @@ static void desenhar_fuso(lgfx::LovyanGFX& d, const area_t& a)
     struct tm t;
     tab5_hora_local(e, &t);
     char h[48];
-    snprintf(h, sizeof(h), tr("Agora: %02d:%02d"), t.tm_hour, t.tm_min);
+    char hm[8];
+    tab5_hora_hhmm(&t, hm, sizeof(hm));
+    snprintf(h, sizeof(h), tr("Agora: %s"), hm);
     d.drawString(h, a.x + a.largura / 2, y + BTN_A + 60);
   } else {
     d.drawString(tr("A hora certa chega pelo Wi-Fi, GPS ou malha."), a.x + a.largura / 2, y + BTN_A + 60);
   }
+  // Region: offset plus the daylight-saving rule (services/tab5_fuso).
+  const int yr = a.y + REGIAO_Y;
+  d.drawString(tr("Ou escolha a sua região (horário de verão automático):"), a.x + a.largura / 2, yr - 40);
+  tab5_botao(d, a.x + M, yr, PM_L, BTN_A, "<", d.color565(50, 55, 65), TFT_LIGHTGREY);
+  tab5_botao(d, a.x + a.largura - M - PM_L, yr, PM_L, BTN_A, ">", d.color565(50, 55, 65), TFT_LIGHTGREY);
+  const int z = ajustes_fuso_zona();
+  d.setTextColor(z == TAB5_FUSO_MANUAL ? TFT_LIGHTGREY : TFT_GREENYELLOW);
+  d.drawString(tab5_fuso_nome(z), a.x + a.largura / 2, yr + BTN_A / 2);
   d.setTextDatum(top_left);
-  d.drawString(tr("Brasília: UTC-3   Lisboa: UTC+0   Madri: UTC+1"), a.x + M, y + BTN_A + 130);
-  d.drawString(tr("Nova York: UTC-5   Tóquio: UTC+9"), a.x + M, y + BTN_A + 170);
-  d.drawString(tr("(sem horário de verão: ajuste na troca)"), a.x + M, y + BTN_A + 230);
 }
 
 // ---- passo 3: malha pela internet ------------------------------------------------
@@ -182,7 +190,19 @@ static void ao_tocar(int x, int y)
     int s = 0;
     if (tab5_dentro(x, y, M, yf, PM_L, BTN_A)) { s = -1; }
     if (tab5_dentro(x, y, a.largura - M - PM_L, yf, PM_L, BTN_A)) { s = +1; }
-    if (s) { ajustes_definir_fuso_min((int16_t)(ajustes_fuso_min() + s * 30)); }
+    if (s) {
+      ajustes_definir_fuso_zona(TAB5_FUSO_MANUAL);
+      ajustes_definir_fuso_min((int16_t)(ajustes_fuso_min() + s * 30));
+    }
+    int r = 0;
+    if (tab5_dentro(x, y, M, REGIAO_Y, PM_L, BTN_A)) { r = -1; }
+    if (tab5_dentro(x, y, a.largura - M - PM_L, REGIAO_Y, PM_L, BTN_A)) { r = +1; }
+    if (r) {
+      const int n = tab5_fuso_n();
+      const int z = ((int)ajustes_fuso_zona() + r + n) % n;
+      ajustes_definir_fuso_zona((uint8_t)z);
+      if (z != TAB5_FUSO_MANUAL) { ajustes_definir_fuso_min((int16_t)tab5_fuso_padrao_min(z)); }
+    }
   } else if (s_passo == 2) {
     const int n = malha_itens();
     for (int i = 0; i <= n; ++i) {

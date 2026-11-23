@@ -221,7 +221,7 @@ void tab5_grove_despejar(int baud, int ms)
   // comentario de ESPERA_BOOT_MS - foi isso que fez o C6L parecer mudo.
   vTaskDelay(pdMS_TO_TICKS(ja_ligado ? 300 : ESPERA_BOOT_MS));
 
-  if (!abrir(baud)) { printf("nao consegui abrir a UART a %d\n", baud); return; }
+  if (!abrir(baud)) { printf(tr("nao consegui abrir a UART a %d\n"), baud); return; }
 
   // Pede apresentacao SEMPRE. Para o Meshtastic e obrigatorio (ele nao fala
   // sozinho); para um GPS e inofensivo. Sem isto o despejo mente: mostra zero

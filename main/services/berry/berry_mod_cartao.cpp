@@ -3,6 +3,7 @@
 // O cartao so pelas portas de hal/tab5_sd.hpp.
 
 #include <stdio.h>
+#include "idioma.h"
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -38,7 +39,7 @@ static bool caminho(bvm* vm, char* out, size_t tam)
 {
   const char* nome = arg_txt(vm, 1);
   if (!C->app || !nome[0] || strchr(nome, '/') || strchr(nome, '\\') || strstr(nome, "..") || strlen(nome) > 48) {
-    be_raise(vm, "cartao_error", "nome de arquivo invalido (so o nome, sem pasta)");
+    be_raise(vm, "cartao_error", tr("nome de arquivo invalido (so o nome, sem pasta)"));
     return false;
   }
   if (!pasta_do_app()) { return false; }
@@ -136,12 +137,12 @@ static const char* arq_tipo_txt(tab5_arq_tipo_t t)
 // Sair dela (absoluto, "..", "\\") e erro no script.
 static bool arq_meu(bvm* vm, const char* rel, char* out, size_t tam)
 {
-  if (!C->app) { be_raise(vm, "arquivos_error", "arquivos so dentro de um app"); return false; }
+  if (!C->app) { be_raise(vm, "arquivos_error", tr("arquivos so dentro de um app")); return false; }
   if (rel[0] == '/' || strstr(rel, "..") || strchr(rel, '\\') || strlen(rel) > 160) {
-    be_raise(vm, "arquivos_error", "caminho invalido: relativo a pasta do app (\"sub/x.txt\"), sem ..");
+    be_raise(vm, "arquivos_error", tr("caminho invalido: relativo a pasta do app (\"sub/x.txt\"), sem .."));
     return false;
   }
-  if (!pasta_do_app()) { be_raise(vm, "arquivos_error", "sem cartao"); return false; }
+  if (!pasta_do_app()) { be_raise(vm, "arquivos_error", tr("sem cartao")); return false; }
   if (rel[0]) { snprintf(out, tam, "%s/%s", C->app->pasta, rel); }
   else        { snprintf(out, tam, "%s", C->app->pasta); }
   size_t n = strlen(out);
@@ -316,7 +317,7 @@ static int a_apagar(bvm* vm)
 {
   char c[TAB5_ARQ_CAMINHO_MAX];
   const char* rel = arg_txt(vm, 1);
-  if (!rel[0]) { be_raise(vm, "arquivos_error", "apagar(caminho): o que apagar?"); be_return_nil(vm); }
+  if (!rel[0]) { be_raise(vm, "arquivos_error", tr("apagar(caminho): o que apagar?")); be_return_nil(vm); }
   if (!arq_meu(vm, rel, c, sizeof(c))) { be_return_nil(vm); }
   be_pushbool(vm, tab5_arq_apagar(c) == TAB5_ARQ_OK);
   be_return(vm);

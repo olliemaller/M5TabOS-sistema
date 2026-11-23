@@ -886,7 +886,7 @@ static void desenhar_tocando(lgfx::LovyanGFX& d, const area_t& a, const tab5_mus
       char info[24];
       if (e.kbps) { snprintf(info, sizeof(info), "%u kbps", (unsigned)e.kbps); }
       else        { snprintf(info, sizeof(info), "%.1f kHz", e.hz / 1000.0); }
-      snprintf(t, sizeof(t), "%s%s%d de %d  ·  %s%s", e.album, e.album[0] ? "  ·  " : "",
+      snprintf(t, sizeof(t), tr("%s%s%d de %d  ·  %s%s"), e.album, e.album[0] ? "  ·  " : "",
                e.idx + 1, e.n, info, e.tocando ? "" : tr("  ·  pausado"));
       tab5_escrever(d, t, X + M + 16, a.y + g.sub_y, 22, false, TEMA_TEXTO_2, bg, middle_left, W - 2 * M - 32);
     }

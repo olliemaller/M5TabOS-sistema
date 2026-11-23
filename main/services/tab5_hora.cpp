@@ -1,4 +1,5 @@
 #include "tab5_hora.hpp"
+#include "tab5_fuso.hpp"
 #include "tab5_rtc.hpp"
 #include "tab5_gps.hpp"
 #include "tab5_mesh.hpp"
@@ -140,14 +141,14 @@ static bool pode_usar(nivel_t nivel)
 // para frente, a correcao ou a diferenca de fuso.
 static void descrever_ajuste(int64_t antes, int64_t delta, char* out, size_t n)
 {
-  if (antes < (int64_t)EPOCH_MINIMO) { snprintf(out, n, "o relogio ainda nao tinha hora"); return; }
-  if (delta == 0)                     { snprintf(out, n, "o relogio ja estava certo"); return; }
+  if (antes < (int64_t)EPOCH_MINIMO) { snprintf(out, n, "the clock had no time yet"); return; }
+  if (delta == 0)                     { snprintf(out, n, "the clock was already right"); return; }
   const long long a = (long long)(delta < 0 ? -delta : delta);
-  const char* lado  = (delta > 0) ? "atrasado" : "adiantado";
-  if      (a < 120)        { snprintf(out, n, "o relogio estava %lld s %s", a, lado); }
-  else if (a < 2 * 3600)   { snprintf(out, n, "o relogio estava %lld min %s", a / 60, lado); }
-  else if (a < 2 * 86400)  { snprintf(out, n, "o relogio estava %lld h %s", a / 3600, lado); }
-  else                     { snprintf(out, n, "o relogio estava %lld dias %s", a / 86400, lado); }
+  const char* lado  = (delta > 0) ? "behind" : "ahead";
+  if      (a < 120)        { snprintf(out, n, "the clock was %lld s %s", a, lado); }
+  else if (a < 2 * 3600)   { snprintf(out, n, "the clock was %lld min %s", a / 60, lado); }
+  else if (a < 2 * 86400)  { snprintf(out, n, "the clock was %lld h %s", a / 3600, lado); }
+  else                     { snprintf(out, n, "the clock was %lld days %s", a / 86400, lado); }
 }
 
 // Avisa os assinantes quando o relogio saltou. O relogio velho so e comparavel
@@ -276,11 +277,19 @@ void tab5_hora_ao_saltar(tab5_hora_salto_cb cb)
   ESP_LOGW(TAG, "assinantes de salto esgotados");
 }
 
-int tab5_hora_fuso_s(void) { return ajustes_fuso_min() * 60; }
+int tab5_hora_fuso_s(void) { return tab5_fuso_deslocamento_s((uint32_t)time(nullptr)); }
+
+void tab5_hora_hhmm(const struct tm* t, char* out, size_t n)
+{
+  if (!ajustes_relogio_12h()) { snprintf(out, n, "%02d:%02d", t->tm_hour, t->tm_min); return; }
+  const int h = t->tm_hour % 12;
+  snprintf(out, n, "%d:%02d%s", h ? h : 12, t->tm_min, t->tm_hour < 12 ? "am" : "pm");
+}
 
 void tab5_hora_local(uint32_t epoch_utc, struct tm* out)
 {
-  const time_t deslocado = (time_t)epoch_utc + TAB5_FUSO_S;
+  // The offset AT THAT MOMENT: a message from last winter shows winter time.
+  const time_t deslocado = (time_t)epoch_utc + tab5_fuso_deslocamento_s(epoch_utc);
   gmtime_r(&deslocado, out);
 }
 

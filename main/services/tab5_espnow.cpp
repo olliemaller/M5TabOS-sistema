@@ -1,4 +1,5 @@
 #include "tab5_espnow.hpp"
+#include "idioma.h"
 #include "tab5_farejo.hpp"   // repassa o PRONTO (versao e capacidades do C6)
 #include "tab5_donos.hpp"
 #include "tab5_wifi.hpp"
@@ -114,7 +115,7 @@ static void publicar_notif(void)
     // Quem mandou a ultima: os dois ultimos bytes do MAC bastam para distinguir
     // os aparelhos de uma mesa.
     const espnow_msg_t* m = &s_hist[(s_ini + s_n - 1) % ESPNOW_HIST];
-    snprintf(resumo, sizeof(resumo), "%d de %02X%02X", s_nao_lidas, m->mac[4], m->mac[5]);
+    snprintf(resumo, sizeof(resumo), tr("%d de %02X%02X"), s_nao_lidas, m->mac[4], m->mac[5]);
   } else {
     resumo[0] = 0;
   }
@@ -298,7 +299,7 @@ static bool ir_para_canal(uint8_t c)
 static void publicar_canal_solto(void)
 {
   char resumo[NOTIF_RESUMO];
-  snprintf(resumo, sizeof(resumo), "canal %u - sem WiFi", (unsigned)s_canal);
+  snprintf(resumo, sizeof(resumo), tr("canal %u - sem WiFi"), (unsigned)s_canal);
   notif_publicar(s_notif_canal, 1, NOTIF_ESTADO, resumo);
 }
 

@@ -3,6 +3,7 @@
 
 #include "driver/ledc.h"
 #include "tab5_bmp.hpp"
+#include "tab5_hora.hpp"
 #include "freertos/FreeRTOS.h"
 #include "sdkconfig.h"
 #include "ajustes.h"
@@ -199,7 +200,20 @@ void c_tela(int argc, char** argv)
 {
   if (argc >= 2) {
     const char* o = argv[1];
-    if (eh(o, "foto")) { tela_foto(argc >= 3 ? argv[2] : "tela"); return; }
+    if (eh(o, "foto")) {
+      // Without a name, a dated one ("tela-2026-11-23-1905"): a second shot no
+      // longer overwrites the first.
+      char nome[40] = "tela";
+      const uint32_t e = tab5_hora_epoch();
+      if (e) {
+        struct tm t;
+        tab5_hora_local(e, &t);
+        snprintf(nome, sizeof(nome), "tela-%04d-%02d-%02d-%02d%02d%02d", t.tm_year + 1900, t.tm_mon + 1, t.tm_mday,
+                 t.tm_hour, t.tm_min, t.tm_sec);
+      }
+      tela_foto(argc >= 3 ? argv[2] : nome);
+      return;
+    }
     if (eh(o, "medir")) { tela_medir_marcar(); return; }
     if (eh(o, "banco")) { tab5_quadro_banco(); return; }
     if (eh(o, "irqs"))  { tab5_quadro_listar_irqs(); return; }

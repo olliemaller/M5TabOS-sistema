@@ -870,7 +870,7 @@ static void desenhar_busca(lgfx::LovyanGFX& d, const area_t& a)
 
   // A contagem na direita, antes do "x": "12 de 87" com busca, "87 nós" sem.
   char cont[24];
-  if (s_busca[0]) { snprintf(cont, sizeof(cont), "%d de %d", n, total); }
+  if (s_busca[0]) { snprintf(cont, sizeof(cont), tr("%d de %d"), n, total); }
   else            { snprintf(cont, sizeof(cont), tr("%d nos"), total); }
   const int cont_l = (int)strlen(cont) * NOS_CH;
   const int fim_txt = x + k.l - BUSCA_LIMPAR_L - cont_l - 16;
@@ -1026,7 +1026,7 @@ static void desenhar_no_detalhe(lgfx::LovyanGFX& d, const area_t& a, int x0)
     idade_texto(no.idade_s, idade, sizeof(idade));
     if (no.idade_s < 0)       { snprintf(val[R_VISTO], sizeof(val[R_VISTO]), tr("não ouvido nesta sessão")); }
     else if (no.idade_s < 90) { snprintf(val[R_VISTO], sizeof(val[R_VISTO]), tr("agora")); }
-    else                      { snprintf(val[R_VISTO], sizeof(val[R_VISTO]), "há %s", idade); }
+    else                      { snprintf(val[R_VISTO], sizeof(val[R_VISTO]), tr("há %s"), idade); }
 
     if (no.tem_pos) {
       const float lat = no.lat_i / 1e7f, lon = no.lon_i / 1e7f;
@@ -1286,7 +1286,7 @@ void desenhar_malha(lgfx::LovyanGFX& d, const area_t& a, int x0)
     campos[7].rot = tr("vizinhos diretos (2 h)"); campos[7].cor = TEMA_SUCESSO;
     if (mais_recente >= 0) {
       char t[8]; idade_texto(mais_recente, t, sizeof(t));
-      snprintf(campos[8].val, sizeof(campos[8].val), "há %s", t);
+      snprintf(campos[8].val, sizeof(campos[8].val), tr("há %s"), t);
     } else {
       snprintf(campos[8].val, sizeof(campos[8].val), "-");
     }

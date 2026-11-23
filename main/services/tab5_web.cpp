@@ -266,9 +266,9 @@ static esp_err_t porteiro(httpd_req_t* req)
   char ip[TAB5_REDE_IP_TXT];
   if (!da_rede_local(req, ip, sizeof(ip))) {
     ESP_LOGW(TAG, "recusado: %s nao e da rede local", ip);
-    return recusar(req, "403 Forbidden", "so da rede local");
+    return recusar(req, "403 Forbidden", "local network only");
   }
-  if (!host_certo(req)) { return recusar(req, "403 Forbidden", "abra pelo IP do Tab5"); }
+  if (!host_certo(req)) { return recusar(req, "403 Forbidden", "open it by the Tab5's IP address"); }
   const int a = autenticado(req);
   if (a <= 0) {
     if (a < 0) {
@@ -283,7 +283,7 @@ static esp_err_t porteiro(httpd_req_t* req)
       }
     }
     httpd_resp_set_hdr(req, "WWW-Authenticate", "Basic realm=\"Tab5\", charset=\"UTF-8\"");
-    return recusar(req, "401 Unauthorized", "senha: a que esta na tela do Tab5");
+    return recusar(req, "401 Unauthorized", "password: the one shown on the Tab5 screen");
   }
   if (req->method != HTTP_GET && httpd_req_get_hdr_value_len(req, "X-Tab5") == 0) {
     return recusar(req, "403 Forbidden", "falta o cabecalho X-Tab5");
@@ -324,7 +324,7 @@ static esp_err_t porteiro(httpd_req_t* req)
       httpd_resp_set_hdr(req, "Location", "/");
       return httpd_resp_send(req, nullptr, 0);
     }
-    return recusar(req, "404 Not Found", "esse app nao esta aberto no Tab5");
+    return recusar(req, "404 Not Found", "that app is not open on the Tab5");
   }
   sistema_avisar(AVISO_WEB);
   return fn(req);

@@ -200,7 +200,7 @@ static esp_err_t console(httpd_req_t* req)
   if (!out || !esc) {
     heap_caps_free(out);
     heap_caps_free(esc);
-    httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "sem memoria");
+    httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "out of memory");
     return ESP_FAIL;
   }
   const uint32_t primeira = tab5_terminal_primeira();
@@ -242,7 +242,7 @@ static esp_err_t enviar(httpd_req_t* req)
   linha[strcspn(linha, "\r\n")] = 0;
   const bool ok = tab5_terminal_enviar(linha);
   memset(linha, 0, sizeof(linha));
-  return tab5_web_json(req, ok ? "{\"ok\":true}" : "{\"ok\":false,\"msg\":\"a fila esta cheia\"}");
+  return tab5_web_json(req, ok ? "{\"ok\":true}" : "{\"ok\":false,\"msg\":\"the queue is full\"}");
 }
 
 static esp_err_t parar(httpd_req_t* req)  { tab5_terminal_interromper(); return tab5_web_json(req, "{\"ok\":true}"); }

@@ -1,50 +1,52 @@
-# Versionamento
+# Versioning
 
-O M5tabOS segue [SemVer](https://semver.org/lang/pt-BR/): `MAIOR.MENOR.CORREÇÃO`.
-O número mora em `version.txt` e só muda pelo `ferramentas/lancar.sh`.
+M5tabOS follows [SemVer](https://semver.org/): `MAJOR.MINOR.PATCH`. The number
+lives in `version.txt` and only changes through `ferramentas/lancar.sh`.
 
-## Qual número subir
+## Which number to bump
 
-Enquanto a versão começar com **0.**, o sistema ainda está tomando forma. A
-regra é:
+While the version starts with **0.**, the system is still taking shape. The
+rule is:
 
-| O que a versão traz | Sobe | Exemplo |
+| What the version brings | Bump | Example |
 |---|---|---|
-| Só correções, sem nada novo para quem usa | CORREÇÃO (`patch`) | 0.7.0 → 0.7.1 |
-| Qualquer coisa nova: app, tela, ajuste, serviço | MENOR (`minor`) | 0.7.1 → 0.8.0 |
-| Algo que **exige regravar com `./gravar.sh`** (tabela de partições, formato da NVS, formato de arquivo no cartão que a versão antiga não lê) | MENOR (`minor`), e o CHANGELOG avisa em negrito | 0.8.0 → 0.9.0 |
-| O sistema é considerado estável e a API dos apps (`kernel/app.h`) passa a ser um compromisso | MAIOR: o **1.0.0** | 0.x → 1.0.0 |
+| Only fixes, nothing new for the user | PATCH (`patch`) | 0.7.0 → 0.7.1 |
+| Anything new: app, screen, setting, service | MINOR (`minor`) | 0.7.1 → 0.8.0 |
+| Something that **requires reflashing with `./gravar.sh`** (partition table, NVS format, a card file format the old version cannot read) | MINOR (`minor`), and the CHANGELOG says so in bold | 0.8.0 → 0.9.0 |
+| The system is considered stable and the app API (`kernel/app.h`) becomes a commitment | MAJOR: **1.0.0** | 0.x → 1.0.0 |
 
-Depois do 1.0.0, uma mudança que quebra apps já escritos, ou que exige
-regravar, passa a subir o MAIOR.
+After 1.0.0, a change that breaks existing apps, or that requires reflashing,
+bumps MAJOR.
 
-Na dúvida entre dois números, use o maior. Um número a mais não custa nada.
-Um a menos esconde uma mudança.
+When in doubt between two numbers, use the bigger one. One number too many
+costs nothing. One too few hides a change.
 
-## O dia a dia
+## Day to day
 
-1. Toda mudança que alguém vai notar ganha uma linha em `CHANGELOG.md`, na
-   seção **Não lançado**, no mesmo commit da mudança.
-2. Quando o que está ali vale uma versão, rode:
+1. Every change someone will notice gets a line in `CHANGELOG.md`, in the
+   **Unreleased** section, in the same commit as the change.
+2. When what is there is worth a version, run:
    ```bash
    ferramentas/lancar.sh minor
    ```
-   O script mostra de qual versão para qual vai e pede confirmação. Depois ele
-   grava o `version.txt`, transforma o "Não lançado" na seção da versão, com a
-   data, e cria o commit `Versao X.Y.Z` e a tag `vX.Y.Z`.
-3. Publique: `git push origin main vX.Y.Z`.
+   The script shows which version it goes from and to and asks for
+   confirmation. Then it writes `version.txt`, turns "Unreleased" into the
+   version's section with the date, and creates the commit `Versao X.Y.Z` and
+   the tag `vX.Y.Z`.
+3. Publish: `git push origin main vX.Y.Z`.
 
-## O que garante que a versão só anda para a frente
+## What makes sure the version only moves forward
 
-- O `lancar.sh` recusa um número que não seja maior que a última tag, recusa
-  lançar com mudanças não commitadas e recusa lançar com o "Não lançado" vazio.
-- O build (`CMakeLists.txt`) **para com erro** se o `version.txt` estiver
-  abaixo da última versão lançada.
-- O número gravado no binário diz de onde o build saiu:
-  - `0.8.0`: exatamente a versão lançada;
-  - `0.8.0+12.a1b2c3d`: 12 commits depois dela, no commit `a1b2c3d`.
+- `lancar.sh` refuses a number that is not greater than the last tag, refuses
+  to release with uncommitted changes and refuses to release with an empty
+  "Unreleased".
+- The build (`CMakeLists.txt`) **stops with an error** if `version.txt` is
+  below the last released version.
+- The number built into the binary says where the build came from:
+  - `0.8.0`: exactly the released version;
+  - `0.8.0+12.a1b2c3d`: 12 commits after it, at commit `a1b2c3d`.
 
-  É esse número que aparece em Ajustes, no console (`estado`) e no log de
-  boot. Assim, um aparelho com um build de desenvolvimento nunca se passa por
-  uma versão lançada. Mudanças ainda não commitadas não aparecem no número:
-  `+N.hash` quer dizer "construído a partir de".
+  That number appears in Settings, on the console (`status`) and in the boot
+  log, so a device with a development build never passes for a released
+  version. Uncommitted changes do not show in the number: `+N.hash` means
+  "built from".

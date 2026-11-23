@@ -16,7 +16,7 @@ static const char* TAG = "ensaio";
 
 #define N_FASES 5
 static const char* const FASE_NOME[N_FASES] = {
-  "base (como esta)", "sem Mesh internet", "sem 5V do Grove", "sem Bluetooth", "sem Wi-Fi",
+  "baseline (as is)", "no Mesh internet", "no Grove 5 V", "no Bluetooth", "no Wi-Fi",
 };
 static const int ACOMODAR_S = 120;
 
@@ -188,10 +188,10 @@ void tab5_ensaio_vigiar(void)
 void tab5_ensaio_imprimir(void)
 {
   switch (s_etapa) {
-    case E_PARADO:    printf("ensaio: parado\n"); break;
-    case E_ESPERANDO: printf("ensaio: esperando - tire o cabo e deixe a tela apagar\n"); break;
+    case E_PARADO:    printf("trial: stopped\n"); break;
+    case E_ESPERANDO: printf("trial: waiting - unplug the cable and let the screen go dark\n"); break;
     case E_FASE:
-      printf("ensaio: fase %d/%d (%s), %d s de %d validos\n", s_fase.load(), N_FASES - 1,
+      printf("trial: phase %d/%d (%s), %d s of %d valid\n", s_fase.load(), N_FASES - 1,
              FASE_NOME[s_fase], s_seg_fase, ACOMODAR_S + s_min * 60);
       break;
     case E_FIM:       printf("ensaio: terminou - ajustes devolvidos\n"); break;
@@ -201,7 +201,7 @@ void tab5_ensaio_imprimir(void)
     if (s_n[f] == 0) { continue; }
     const double v = s_soma_ma[f] / s_n[f];
     if (ant < 0) { printf("  %-20s %6.1f mA  (%d s)\n", FASE_NOME[f], v, s_n[f]); }
-    else         { printf("  %-20s %6.1f mA  (%d s)   custo do servico: %5.1f mA\n", FASE_NOME[f], v, s_n[f], ant - v); }
+    else         { printf("  %-20s %6.1f mA  (%d s)   service cost: %5.1f mA\n", FASE_NOME[f], v, s_n[f], ant - v); }
     ant = v;
   }
 }

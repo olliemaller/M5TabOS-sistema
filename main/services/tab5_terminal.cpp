@@ -303,7 +303,7 @@ bool tab5_terminal_enviar(const char* linha)
   const bool ligar = ok && !s_rodando;
   if (ligar) { s_rodando = true; }
   destravar();
-  if (!ok) { aviso("(a fila esta cheia - espere o comando que roda, ou Ctrl+C)\n"); return false; }
+  if (!ok) { aviso(tr("(a fila esta cheia - espere o comando que roda, ou Ctrl+C)\n")); return false; }
   // O kernel liga (na interface, na volta seguinte se veio de fora dela); o
   // anterior ainda saindo, ele espera a vaga e liga em seguida.
   if (ligar && !sistema_fundo_pedir(&FUNDO_TERMINAL)) { travar(); s_rodando = false; destravar(); }

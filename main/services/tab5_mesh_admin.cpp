@@ -1,5 +1,6 @@
 // Configuracao do no Meshtastic - ver o aviso grande em tab5_mesh_admin.hpp.
 #include "tab5_mesh_admin.hpp"
+#include "idioma.h"
 #include "mesh_pb.hpp"   // o codec do servico, um so para leitura e escrita
 
 #include <string.h>
@@ -112,7 +113,7 @@ void mesh_admin_guardar_secao(bool modulo, int secao, const uint8_t* b, size_t n
 }
 static void despejar_um(const char* nome, int secao, const bruto_t& b)
 {
-  if (!b.tem) { printf("  %s %d: (nao veio)\n", nome, secao); return; }
+  if (!b.tem) { printf("  %s %d: (not received)\n", nome, secao); return; }
   printf("  %s %d (%u bytes):", nome, secao, (unsigned)b.n);
   pb_leitor_t l = pb_leitor(b.b, b.n);
   pb_campo_t c;
@@ -349,8 +350,8 @@ static const char* comecar_do_bruto(pb_escritor_t* w, const bruto_t& b)
   const bool tem = b.tem;
   if (tem) { pb_w_cru(w, b.b, b.n); }
   taskEXIT_CRITICAL(&s_mux);
-  if (!tem)   { return "nao veio no dump"; }
-  if (!w->ok) { return "e grande demais para um pacote"; }
+  if (!tem)   { return tr("nao veio no dump"); }
+  if (!w->ok) { return tr("e grande demais para um pacote"); }
   return nullptr;
 }
 
@@ -405,7 +406,7 @@ bool mesh_cfg_gravar(const mesh_cfg_mudanca_t* m)
   s_motivo[0] = 0;
   if (estado() != MESH_CFG_PRONTO) {
     ESP_LOGW(TAG, "gravar recusado: sem no ou dump incompleto");
-    snprintf(s_motivo, sizeof(s_motivo), "sem o nó, ou a configuração ainda chegando");
+    snprintf(s_motivo, sizeof(s_motivo), tr("sem o nó, ou a configuração ainda chegando"));
     return false;
   }
 
@@ -448,7 +449,7 @@ bool mesh_cfg_gravar(const mesh_cfg_mudanca_t* m)
     tam[n_msgs] = admin_msg(msgs[n_msgs], sizeof(msgs[0]), c.modulo ? ADM_SET_MODULE_CONFIG : ADM_SET_CONFIG, &ws);
     if (!tam[n_msgs]) {
       ESP_LOGE(TAG, "secao grande demais para um pacote");
-      snprintf(s_motivo, sizeof(s_motivo), "configuração grande demais para um pacote");
+      snprintf(s_motivo, sizeof(s_motivo), tr("configuração grande demais para um pacote"));
       return false;
     }
     if (c.modulo && c.secao == 1) { msg_mqtt = n_msgs; }
@@ -529,7 +530,7 @@ bool mesh_cfg_gravar(const mesh_cfg_mudanca_t* m)
       return false;
     }
     if (!tab5_mesh_interno_admin(msgs[msg_mqtt], tam[msg_mqtt])) {
-      snprintf(s_motivo, sizeof(s_motivo), "o enlace com o nó recusou o envio");
+      snprintf(s_motivo, sizeof(s_motivo), tr("o enlace com o nó recusou o envio"));
       return false;
     }
     ESP_LOGI(TAG, "secao MQTT enviada sem transacao (Bluetooth) - o no grava, desliga o BLE e reinicia");
@@ -547,7 +548,7 @@ bool mesh_cfg_gravar(const mesh_cfg_mudanca_t* m)
     // Transacao aberta sem commit. O firmware NAO a expira: as mudancas ficam
     // so na RAM do no, sem gravar, ate ele reiniciar.
     ESP_LOGE(TAG, "enlace recusou no meio da transacao - o no fica sem gravar ate reiniciar");
-    snprintf(s_motivo, sizeof(s_motivo), "o enlace caiu no meio da gravação - reinicie o nó");
+    snprintf(s_motivo, sizeof(s_motivo), tr("o enlace caiu no meio da gravação - reinicie o nó"));
     return false;
   }
   ESP_LOGI(TAG, "transacao enviada (%d mensagem(ns)) - o no grava e reinicia", n_msgs);

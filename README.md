@@ -1,221 +1,247 @@
 # M5tabOS
 
-Sistema operacional de aplicativos para o **M5Stack Tab5** (ESP32-P4 + ESP32-C6),
-escrito em C++ sobre **ESP-IDF 5.5** e **FreeRTOS**, com interface própria em
+An app-based operating system for the **M5Stack Tab5** (ESP32-P4 + ESP32-C6),
+written in C++ on **ESP-IDF 5.5** and **FreeRTOS**, with its own interface on
 M5GFX.
 
-> *An app-based operating system for the M5Stack Tab5, built on ESP-IDF 5.5 and
-> FreeRTOS. Documentation and code comments are in Portuguese.*
+> This is an English fork of [cparadaa/M5TabOS-sistema](https://github.com/cparadaa/M5TabOS-sistema).
+> The interface starts in English (Portuguese is still one tap away in
+> Settings > Language), the documentation is in English, and the fork adds
+> its own fixes and features - see [CHANGELOG.md](CHANGELOG.md). Code
+> identifiers and most code comments are still in Portuguese, as upstream.
 
-Versão atual: **0.7.0** (ver [CHANGELOG.md](CHANGELOG.md)).
+Current version: see [version.txt](version.txt) and [CHANGELOG.md](CHANGELOG.md).
 
-## O que tem
+## What it has
 
-**Sistema**
-- Tela inicial com ícones, barra de status (Wi-Fi, Bluetooth, ESP-NOW,
-  bateria, avisos) e barra de navegação com a hora.
-- Compositor de tela com double buffer, sem tearing e sem piscada.
-- Componentes padrão: lista rolável, componente de conversa (balões, teclado
-  virtual, rolagem), botões e fontes suaves (Roboto em alturas nativas, com
-  acentos).
-- Toque com reconhecimento próprio, vigia de toque e diagnóstico pelo console.
-- Energia: repouso da tela, perfis por app (cada app declara o hardware que
-  usa), medição de bateria pelo INA226 embutido.
-- Cartão SD: um único gravador do sistema, em lote, para todos os apps; logs
-  diários no cartão.
-- Multitarefa: apps com parte de fundo (continuam depois de fechar a janela),
-  worker do sistema para leituras lentas, e registro de dono de cada
-  tarefa.
-- Console serial e app Terminal com os comandos de sempre do Linux (`help`)
-  e os do sistema (`help sistema`), em português e em inglês
-  (`estado` = `status`, `wifi varrer` = `wifi scan`).
+**System**
+- Home screen with icons, a status bar (Wi-Fi, Bluetooth, ESP-NOW, battery,
+  alerts) and a navigation bar with the time.
+- Double-buffered screen compositor: no tearing, no flicker.
+- Standard components: scrolling list, chat component (bubbles, on-screen
+  keyboard, scrolling), buttons and smooth fonts (Roboto at native sizes,
+  with accents).
+- Its own touch recognition, a touch watchdog and touch diagnostics on the
+  console.
+- Power: screen sleep, per-app profiles (each app declares the hardware it
+  uses), battery measured by the built-in INA226.
+- SD card: a single batched system writer for every app; daily logs on the
+  card.
+- Multitasking: apps with a background part (they keep going after the window
+  closes), a system worker for slow reads, and an owner record for every task.
+- Time zones by **region with automatic daylight saving** (Melbourne, Sydney,
+  London, New York...) or a fixed offset, and a **12/24-hour clock**
+  (Settings > Date and time, or the `timezone` console command).
+- Serial console and Terminal app with the usual Linux commands (`help`) and
+  the system ones (`help sistema`), in English and Portuguese
+  (`status` = `estado`, `wifi scan` = `wifi varrer`).
+- **PC access**: from a browser on the same Wi-Fi, with a password shown on
+  the Tab5 - Terminal, Berry script editor, Camera, Mesh, and a **screenshot**
+  of the Tab5 screen.
 
-**Rádio**
-- **Wi-Fi** pelo ESP32-C6 (esp_hosted, SDIO).
-- **Bluetooth LE**: a stack NimBLE roda no P4 e o controlador é o do C6.
-- **ESP-NOW**: roda no C6, com firmware próprio (pasta `c6/`).
-- **Meshtastic**: conversa com um nó (por exemplo o Unit C6L) **pelo cabo
-  Grove ou por Bluetooth**; pode enviar a posição do GPS para a malha.
+**Radio**
+- **Wi-Fi** through the ESP32-C6 (esp_hosted, SDIO).
+- **Bluetooth LE**: the NimBLE stack runs on the P4 and the controller is the
+  C6's.
+- **ESP-NOW**: runs on the C6, with its own firmware (folder `c6/`).
+- **Meshtastic**: talks to a node (for example the Unit C6L) **over the Grove
+  cable or Bluetooth**, or to the mesh **over the internet** (MQTT). With no
+  server chosen, the internet mode now picks the server for your region from
+  the time zone (Australia and New Zealand go to `msh/ANZ`).
 
-**Aplicativos do sistema**
+**System apps**
 
-| App | Para quê |
+| App | What for |
 |---|---|
-| Mesh | Mensagens Meshtastic: conversas, nós, estado da malha |
-| ESP-NOW | Conversa direta entre aparelhos ESP32 |
-| Câmera | Visualização ao vivo e foto em BMP no cartão |
-| Arquivos | Navega pelo cartão: texto, CSV e imagens |
-| Música | Toca MP3 e WAV da pasta `Music` (ou `Música`, `Musicas`...) do cartão, com subpastas, em segundo plano; espectro animado; miniplayer na central de avisos |
-| Energia | Bateria, consumo e gráficos do dia |
-| Tarefas | Tarefas do FreeRTOS, CPU e memória, agrupadas por dono |
-| IMU | Acelerômetro e giroscópio |
-| Ajustes | Brilho, volume, Wi-Fi, Bluetooth, ESP-NOW, Meshtastic, tela e mais |
-| Exemplo | Um cartão para cada API do sistema: o molde para escrever um app |
+| Mesh | Meshtastic messages: chats, nodes, mesh status |
+| ESP-NOW | Direct chat between ESP32 devices |
+| Camera | Live view and BMP photos on the card |
+| Files | Browse the card: text, CSV and images; a trash bin per disk |
+| Music | Plays MP3, WAV and M4A from the `Music` folder of the card, with subfolders, in the background; animated spectrum; mini-player in the notification centre |
+| Video | MJPEG and phone MP4 (H.264 + AAC) |
+| Power | Battery, consumption and daily graphs |
+| Tasks | FreeRTOS tasks, CPU and memory, grouped by owner |
+| IMU | Accelerometer and gyroscope |
+| Settings | Brightness, volume, Wi-Fi, Bluetooth, ESP-NOW, Meshtastic, display, time zone and more |
+| Example | One card for each system API: the template for writing an app |
 
-Qualquer pasta `main/app_<nome>/` vira um app na tela inicial, sem registro em
-lugar nenhum: o seu app mora ao lado destes.
+Any `main/app_<name>/` folder becomes an app on the home screen, with no
+registration anywhere: your app lives next to these.
 
 ## Hardware
 
-- **M5Stack Tab5**, qualquer uma das três telas que ele já teve
-  (ILI9881C + GT911, ST7123, ST7121). O M5GFX detecta e o sistema se ajusta;
-  as telas ST71xx ainda não foram testadas em aparelho (veja *Limitações*).
-- **Revisão do ESP32-P4**: v1.x (os Tab5 vendidos até aqui) e v3.x pedem
-  binários diferentes. O `./gravar.sh` lê a revisão do aparelho e compila o
-  certo; à mão é `idf.py build` (v1.x) ou `idf.py -B build_v3 -DM5_CHIP=v3 build`
-  (v3.x). As chaves de cada um estão em `sdkconfig.defaults.chip_v1` e `_v3`.
-- Opcional:
-  - cartão microSD em FAT32 ou exFAT;
-  - teclado do ExtPort1;
-  - GPS ou nó Meshtastic no Grove.
+- **M5Stack Tab5**, with any of the three screens it has shipped with
+  (ILI9881C + GT911, ST7123, ST7121). M5GFX detects it and the system adapts;
+  the ST71xx screens have not been tested on a device yet (see *Known
+  limitations*).
+- **ESP32-P4 revision**: v1.x (the Tab5s sold so far) and v3.x need different
+  binaries. `./gravar.sh` reads the device revision and builds the right one;
+  by hand it is `idf.py build` (v1.x) or `idf.py -B build_v3 -DM5_CHIP=v3 build`
+  (v3.x). The options for each are in `sdkconfig.defaults.chip_v1` and `_v3`.
+- Optional:
+  - microSD card in FAT32 or exFAT;
+  - ExtPort1 keyboard;
+  - GPS or Meshtastic node on Grove.
 
-## Compilar e gravar
+## Build and flash
 
-1. Instale o **ESP-IDF 5.5** ([guia oficial](https://docs.espressif.com/projects/esp-idf/en/v5.5/esp32p4/get-started/)).
-2. Prepare o terminal e compile:
+1. Install **ESP-IDF 5.5** (5.5.5 is the tested version;
+   [official guide](https://docs.espressif.com/projects/esp-idf/en/v5.5/esp32p4/get-started/)).
+2. Prepare the terminal and build:
 
    ```bash
    source ambiente.sh
    idf.py build
    ```
 
-   O `ambiente.sh` carrega `$IDF_PATH/export.sh` (padrão `~/esp/esp-idf`).
-   Para um ambiente fora do padrão, crie `ambiente.local.sh`; ele não vai para
-   o repositório.
+   `ambiente.sh` loads `$IDF_PATH/export.sh` (default `~/esp/esp-idf`) and sets
+   `ESP_IDF_VERSION=5.5`, which the Wi-Fi component needs. For a non-standard
+   setup, create `ambiente.local.sh`; it is not committed.
 
-3. Grave com o Tab5 ligado pelo USB-C:
+3. Flash with the Tab5 connected over USB-C:
 
    ```bash
    ./gravar.sh
    ```
 
-   O script acha a porta sozinho (`/dev/cu.usbmodem*` no macOS,
-   `/dev/ttyACM*` no Linux) e abre o monitor serial. Para escolher outra
-   porta: `PORTA=/dev/xxx ./gravar.sh`.
+   The script finds the port by itself (`/dev/cu.usbmodem*` on macOS,
+   `/dev/ttyACM*` on Linux) and opens the serial monitor. To pick another
+   port: `PORTA=/dev/xxx ./gravar.sh`.
 
-### Firmware do ESP32-C6 (opcional)
+### ESP32-C6 firmware (optional)
 
-**O sistema funciona com o rádio de fábrica, sem atualizar nada.** Wi-Fi,
-internet, Meshtastic pelo cabo Grove ou pela internet e todos os apps rodam
-direto. A atualização do C6 só acrescenta três coisas:
+**The system works with the factory radio, without updating anything.** Wi-Fi,
+internet, Meshtastic over Grove or the internet and every app run as they
+are. Updating the C6 only adds three things:
 
-| Recurso | Rádio de fábrica | Rádio atualizado |
+| Feature | Factory radio | Updated radio |
 |---|---|---|
-| Wi-Fi e internet | sim | sim |
-| Meshtastic pelo Grove ou pela internet | sim | sim |
-| ESP-NOW | não | sim |
-| Bluetooth (e Meshtastic por Bluetooth) | não | sim |
-| Farejo e CSI do rádio | não | sim |
+| Wi-Fi and internet | yes | yes |
+| Meshtastic over Grove or the internet | yes | yes |
+| ESP-NOW | no | yes |
+| Bluetooth (and Meshtastic over Bluetooth) | no | yes |
+| Radio sniffing and CSI | no | yes |
 
-Sem a atualização, as telas dessas funções dizem "rádio C6 de fábrica:
-atualização opcional", e o resto segue normal.
+Without the update, the screens for those features say "factory C6 radio:
+optional update", and everything else carries on.
 
-Para quem quiser os três recursos: o firmware fica na pasta `c6/` (mesma
-versão do esp_hosted do sistema, 3.0.10) e precisa de um gravador serial,
-porque o C6 não tem USB próprio.
+For those who want the three features: the firmware is in the `c6/` folder
+(the same esp_hosted version as the system, 3.0.10). The C6 has no USB of its
+own, so it is flashed through the board's programming connector with a serial
+programmer (for example the M5Stack ESP32 Downloader):
 
-O C6 não tem USB próprio. É gravado pelo conector de programação da placa,
-com um gravador serial (por exemplo, o M5Stack ESP32 Downloader):
-
-1. **Tab5 desligado**; o gravador alimenta o C6.
-2. Gravador ligado ao computador por **USB-A**. Com cabo USB-C para USB-C, o
-   gravador fica sem energia.
-3. Antes de tudo, faça um **backup do firmware de fábrica**:
+1. **Tab5 switched off**; the programmer powers the C6.
+2. Programmer connected to the computer through **USB-A**. With a USB-C to
+   USB-C cable the programmer gets no power.
+3. First of all, **back up the factory firmware**:
 
    ```bash
    esptool.py -p /dev/xxx read_flash 0 0x400000 backup_c6.bin
    ```
 
-4. Grave:
+4. Flash:
 
    ```bash
    c6/gravar.sh
    ```
 
-   O script acha a porta do gravador sozinho (`/dev/cu.usbserial-*` no macOS,
-   `/dev/ttyUSB*` no Linux). Para escolher outra: `PORTA=/dev/xxx c6/gravar.sh`.
+   The script finds the programmer's port by itself (`/dev/cu.usbserial-*` on
+   macOS, `/dev/ttyUSB*` on Linux). To pick another: `PORTA=/dev/xxx c6/gravar.sh`.
 
-5. Ligue o Tab5. No log de boot deve aparecer
+5. Switch the Tab5 on. The boot log should show
    `host=3.0.10 coprocessor=3.0.10 (match)`.
 
-Para voltar ao original, grave o backup com
-`esptool.py write_flash 0 backup_c6.bin`, ou use a ferramenta oficial da
-M5Stack.
+To go back to the original, flash the backup with
+`esptool.py write_flash 0 backup_c6.bin`, or use M5Stack's official tool.
 
-O que roda no C6 (farejo, CSI, FTM, 802.15.4), quem decide a configuração do
-Wi-Fi dele e o roteiro de verificação depois de gravar estão em
+What runs on the C6 (sniffing, CSI, FTM, 802.15.4), who decides its Wi-Fi
+configuration and the checklist after flashing are in
 [docs/RADIO_C6.md](docs/RADIO_C6.md).
 
-## Primeiro uso
+## First use
 
-Num Tab5 novo (ou gravado pelo M5Burner) o sistema abre um assistente rápido:
-idioma, fuso horário, a malha Meshtastic pela internet (o servidor da sua
-região) e o Wi-Fi. Tudo pode ser mudado depois em Ajustes. Para rever o
-assistente: comando `boasvindas` no console.
+On a new Tab5 (or one flashed with M5Burner) the system opens a short
+assistant: language, time zone (pick your region for automatic daylight
+saving), the Meshtastic mesh over the internet and Wi-Fi. Everything can be
+changed later in Settings. To see the assistant again: the `welcome` console
+command.
 
-- **Wi-Fi:** em Ajustes > Wi-Fi, toque PROCURAR REDES e escolha a rede. A
-  senha é pedida na tela e guardada **cifrada** no cartão
-  (`apps/Sistema/wifi.txt`), com uma chave derivada do chip de cada aparelho.
-  Cabem várias redes: ao ligar, o sistema conecta na conhecida de sinal mais
-  forte. Também dá para escrever o arquivo à mão (pares de linhas: rede e
-  senha, `-` para rede aberta; a senha é cifrada no boot seguinte) ou usar o
-  console: `wifi <rede> <senha>`.
-- **Ajustes:** ligue o Wi-Fi, o Bluetooth e o Grove 5V, e escolha como falar
-  com o nó Meshtastic.
-- **Meshtastic pelo Bluetooth:** em Ajustes > Meshtastic, escolha BLUETOOTH.
-  - Na primeira conexão o nó pede o **PIN**. O padrão testado é 123456, o dos
-    aparelhos sem tela.
-  - Se o nó recusar, o teclado abre sozinho para digitar o PIN que ele mostra.
+- **Wi-Fi:** in Settings > Wi-Fi, tap SEARCH NETWORKS and choose the
+  network. The password is asked for on screen and stored **encrypted** on the
+  card (`apps/Sistema/wifi.txt`), with a key derived from each device's chip.
+  Several networks fit: at power-on the system connects to the known one with
+  the strongest signal. You can also write the file by hand (pairs of lines:
+  network and password, `-` for an open network; the password is encrypted at
+  the next boot) or use the console: `wifi <network> <password>`.
+- **Settings:** turn on Wi-Fi, Bluetooth and Grove 5 V, and choose how to talk
+  to the Meshtastic node.
+- **Meshtastic over Bluetooth:** in Settings > Meshtastic, choose BLUETOOTH.
+  - On the first connection the node asks for the **PIN**. The tested default
+    is 123456, the one for devices without a screen.
+  - If the node refuses, the keyboard opens by itself to type the PIN it shows.
+- **Time zone:** Settings > Date and time. Pick a region and daylight saving
+  changes by itself; the manual offset is a fixed UTC offset in 30-minute
+  steps. The same page switches between the 24-hour and 12-hour clock. On the
+  console: `timezone list`, `timezone <n>`, `timezone 12h`.
 
-## Escrevendo apps
+## Writing apps
 
-A referência das APIs (tela, toque, tarefas, cartão, notificações, energia,
-sensores, Wi-Fi, ESP-NOW, Meshtastic, câmera, console) está em
-[docs/API.md](docs/API.md); o guia de como pensar um app, com os erros que já
-cometemos, em [docs/ESCREVENDO_APPS.md](docs/ESCREVENDO_APPS.md). Para criar um app:
+The API reference (screen, touch, tasks, card, notifications, power, sensors,
+Wi-Fi, ESP-NOW, Meshtastic, camera, console) is in [docs/API.md](docs/API.md);
+the guide to designing an app, with the mistakes already made, is in
+[docs/ESCREVENDO_APPS.md](docs/ESCREVENDO_APPS.md). To create an app:
 
-1. copie `main/app_exemplo/` para `main/app_<nome>/`;
-2. troque `APP_EXEMPLO` por `APP_<NOME>` (o nome segue a pasta);
-3. declare o perfil de energia dele e apague os cartões que não usar.
+1. copy `main/app_exemplo/` to `main/app_<name>/`;
+2. replace `APP_EXEMPLO` with `APP_<NAME>` (the name follows the folder);
+3. declare its power profile and delete the cards you do not use.
 
-Um app também pode responder a comandos do console serial
-(`app <app> <comando>`), declarando `.comandos` no `app_t`.
+An app can also answer serial console commands (`app <app> <command>`) by
+declaring `.comandos` in its `app_t`.
 
-A arquitetura do kernel está em [docs/ARQUITETURA.md](docs/ARQUITETURA.md), e a base de
-tela em [docs/COMPOSITOR.md](docs/COMPOSITOR.md).
+Every visible string goes through `tr("...")` (the key is the Portuguese
+text, gettext style); `ferramentas/idiomas.py` collects them into
+`idiomas/M5tabOS.pot` and updates `idiomas/en.po`, which is built into the
+firmware. Any other `.po` copied to `/sdcard/apps/Sistema/idiomas/` appears in
+Settings > Language at the next boot.
 
-## Estrutura
+Apps can also be written in **Berry** scripts, without compiling: see
+[docs/BERRY.md](docs/BERRY.md) and [docs/BERRY_API.md](docs/BERRY_API.md),
+and the examples in `berry_exemplos/`.
+
+The kernel architecture is in [docs/ARQUITETURA.md](docs/ARQUITETURA.md), and
+the screen base in [docs/COMPOSITOR.md](docs/COMPOSITOR.md).
+
+## Layout
 
 ```
-main/kernel/      núcleo: laço de interface, compositor, componentes (lista, conversa, teclado)
-main/hal/         hardware: tela, toque, energia, cartão, Wi-Fi, Bluetooth, GPS, câmera, IMU
-main/services/    serviços: ajustes, notificações, log, Meshtastic, ESP-NOW, registro, tocador de música
-main/app_*/       aplicativos
-c6/               firmware do coprocessador ESP32-C6 (ESP-NOW + esp_hosted)
-compartilhado/    contrato de mensagens entre o P4 e o C6
-ferramentas/      geradores (fontes, emoji, tabela de hardware) e utilitários
-components/       o Berry (só a variante berry o compila)
-berry_exemplos/   apps Berry de exemplo (copiar para apps/Berry/ no cartão)
-variantes/        o que muda em cada firmware (completa, sistema, m5burner, berry)
-testes/           testes que rodam no Mac (protobuf do Mesh, apps Berry...)
-docs/             a documentação (API, arquitetura, Berry, variantes...)
+main/kernel/      core: UI loop, compositor, components (list, chat, keyboard)
+main/hal/         hardware: screen, touch, power, card, Wi-Fi, Bluetooth, GPS, camera, IMU
+main/services/    services: settings, notifications, log, Meshtastic, ESP-NOW, time zones, music player
+main/app_*/       apps
+c6/               ESP32-C6 coprocessor firmware (ESP-NOW + esp_hosted)
+compartilhado/    message contract between the P4 and the C6
+ferramentas/      generators (fonts, emoji, hardware table) and utilities
+components/       Berry and the other bundled libraries
+berry_exemplos/   example Berry apps (copy to apps/Berry/ on the card)
+variantes/        what changes in each firmware (full, system, m5burner, berry)
+idiomas/          translations (.pot template and en.po)
+docs/             documentation (API, architecture, Berry, variants...)
 ```
 
-## Limitações conhecidas
+## Known limitations
 
-- As telas ST7123 e ST7121 e o ESP32-P4 v3.x compilam e seguem o caminho
-  conservador (repouso só apaga a luz, relógio do painel de fábrica), mas
-  ainda não foram testados num aparelho. Relatos são bem-vindos.
-- A interface e a documentação estão em português (a tradução vem depois).
-  O fuso horário é escolhido no primeiro uso e em Ajustes > Data e hora, sem
-  horário de verão automático.
-- A curva de bateria (`hal/tab5_power.hpp`) foi calibrada em uma unidade
-  (1306,8 mAh medidos). Outras baterias podem pedir recalibração.
-- O Bluetooth é só BLE: o C6 não faz Bluetooth clássico.
-- Wi-Fi e ESP-NOW dividem um rádio de um canal só. Com o roteador conectado, o
-  ESP-NOW fica no canal dele.
+- The ST7123 and ST7121 screens and the ESP32-P4 v3.x build and take the
+  conservative path (sleep only turns off the backlight, factory panel clock),
+  but have not been tested on a device yet. Reports are welcome.
+- Code identifiers, code comments and the dated analysis notes in `docs/` are
+  in Portuguese, as upstream. The serial log (`ESP_LOG`) stays in Portuguese.
+- The battery curve (`hal/tab5_power.hpp`) was calibrated on one unit
+  (1306.8 mAh measured). Other batteries may need recalibration.
+- Bluetooth is BLE only: the C6 does not do Bluetooth Classic.
+- Wi-Fi and ESP-NOW share a single-channel radio. With the router connected,
+  ESP-NOW stays on its channel.
 
-## Licença
+## Licence
 
-[MIT](LICENSE). Os componentes de terceiros têm licença própria: ver
+[MIT](LICENSE). Third-party components have their own licences: see
 [docs/TERCEIROS.md](docs/TERCEIROS.md).

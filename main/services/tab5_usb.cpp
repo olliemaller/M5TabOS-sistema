@@ -1,4 +1,5 @@
 #include "tab5_usb.hpp"
+#include "idioma.h"
 #include "tab5_volumes.hpp"
 #include "notificacao.h"
 #include "ajustes.h"
@@ -136,7 +137,7 @@ static void aparelho_chegou(uint8_t endereco)
   if (s_aparelho) { return; }   // sem hub: um so por vez
   if (usb_host_device_open(s_cliente, endereco, &s_aparelho) != ESP_OK) {
     s_aparelho = nullptr;
-    anotar_erro("um aparelho foi visto e nao abriu%s", "");
+    anotar_erro(tr("um aparelho foi visto e nao abriu%s"), "");
     return;
   }
   usb_device_info_t info = { };
@@ -151,7 +152,9 @@ static void aparelho_chegou(uint8_t endereco)
   s_est.pid = desc ? desc->idProduct : 0;
   s_est.classe = desc ? desc->bDeviceClass : 0;
   s_est.produto[0] = '\0';
-  if (info.str_desc_product) {
+  // A malformed descriptor shorter than its own header (bLength < 2) gave a
+  // negative character count.
+  if (info.str_desc_product && info.str_desc_product->bLength >= 2) {
     const usb_str_desc_t* d = info.str_desc_product;
     utf8_de_utf16(d->wData, (d->bLength - 2) / 2, s_est.produto, sizeof(s_est.produto));
   }
@@ -201,7 +204,7 @@ static void disco_chegou(uint8_t endereco)
   esp_err_t r = msc_host_install_device(endereco, &s_disco);
   if (r != ESP_OK) {
     s_disco = nullptr;
-    anotar_erro("o disco nao respondeu (%s)", esp_err_to_name(r));
+    anotar_erro(tr("o disco nao respondeu (%s)"), esp_err_to_name(r));
     ESP_LOGW(TAG, "msc_host_install_device: %s", esp_err_to_name(r));
     return;
   }
@@ -226,14 +229,14 @@ static void disco_chegou(uint8_t endereco)
   if (r != ESP_OK) {
     // NTFS (formatado no Windows), APFS/HFS+ (no Mac), ou FAT com tabela de
     // particoes GPT (o padrao do Utilitario de Disco) - o FatFs le MBR.
-    snprintf(s_est.erro, sizeof(s_est.erro), "nao montou (%s) - formate em FAT32 ou exFAT, MBR", esp_err_to_name(r));
+    snprintf(s_est.erro, sizeof(s_est.erro), tr("nao montou (%s) - formate em FAT32 ou exFAT, MBR"), esp_err_to_name(r));
   }
   s_trava.destravar();
 
   if (r != ESP_OK) {
     s_vfs = nullptr;
     ESP_LOGW(TAG, "o pendrive '%s' nao montou: %s (NTFS, Mac, ou particao GPT?)", produto, esp_err_to_name(r));
-    avisar_barra(NOTIF_ATENCAO, "Pendrive não lido: use FAT32/exFAT");
+    avisar_barra(NOTIF_ATENCAO, tr("Pendrive não lido: use FAT32/exFAT"));
     return;
   }
 
@@ -370,7 +373,7 @@ static void subir(void)
   hc.peripheral_map = 0;   // o padrao no P4 e o controlador de ALTA velocidade - o do USB-A
   esp_err_t r = usb_host_install(&hc);
   if (r != ESP_OK) {
-    anotar_erro("a pilha USB nao subiu (%s)", esp_err_to_name(r));
+    anotar_erro(tr("a pilha USB nao subiu (%s)"), esp_err_to_name(r));
     ESP_LOGE(TAG, "usb_host_install: %s", esp_err_to_name(r));
     return;
   }
@@ -388,7 +391,7 @@ static void subir(void)
   mc.callback = msc_evento;
   if (r == ESP_OK) { r = msc_host_install(&mc); }
   if (r != ESP_OK) {
-    anotar_erro("o driver de pendrive nao subiu (%s)", esp_err_to_name(r));
+    anotar_erro(tr("o driver de pendrive nao subiu (%s)"), esp_err_to_name(r));
     ESP_LOGE(TAG, "cliente/msc_host_install: %s", esp_err_to_name(r));
     return;
   }

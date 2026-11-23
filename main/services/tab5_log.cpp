@@ -277,14 +277,14 @@ void tab5_log_iniciar(void)
   const esp_reset_reason_t r = esp_reset_reason();
   const char* motivo = "outro";
   switch (r) {
-    case ESP_RST_POWERON:   motivo = "ligado agora"; break;
+    case ESP_RST_POWERON:   motivo = "powered on"; break;
     case ESP_RST_SW:        motivo = "reinicio pedido (esp_restart)"; break;
     case ESP_RST_PANIC:     motivo = "TRAVOU (panic/excecao)"; break;
-    case ESP_RST_INT_WDT:   motivo = "TRAVOU (watchdog de interrupcao)"; break;
-    case ESP_RST_TASK_WDT:  motivo = "TRAVOU (watchdog de tarefa)"; break;
+    case ESP_RST_INT_WDT:   motivo = "CRASHED (interrupt watchdog)"; break;
+    case ESP_RST_TASK_WDT:  motivo = "CRASHED (task watchdog)"; break;
     case ESP_RST_WDT:       motivo = "TRAVOU (outro watchdog)"; break;
-    case ESP_RST_BROWNOUT:  motivo = "queda de tensao"; break;
-    case ESP_RST_DEEPSLEEP: motivo = "acordou do sono profundo"; break;
+    case ESP_RST_BROWNOUT:  motivo = "brownout"; break;
+    case ESP_RST_DEEPSLEEP: motivo = "woke from deep sleep"; break;
     default: break;
   }
   // O MOTIVO CRU DO CHIP (soc_reset_reason_t, soc/reset_reasons.h) vai junto:
@@ -312,7 +312,7 @@ bool tab5_log_travamento(bool no_console)
 {
 #if CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH && CONFIG_ESP_COREDUMP_DATA_FORMAT_ELF
   if (esp_core_dump_image_check() != ESP_OK) {
-    if (no_console) { printf("nenhum travamento guardado na flash\n"); }
+    if (no_console) { printf("no crash stored in flash\n"); }
     return false;
   }
   esp_core_dump_summary_t* r = (esp_core_dump_summary_t*)heap_caps_malloc(sizeof(esp_core_dump_summary_t), MALLOC_CAP_SPIRAM);
@@ -353,7 +353,7 @@ bool tab5_log_travamento(bool no_console)
   heap_caps_free(r);
   return ok;
 #else
-  if (no_console) { printf("core dump desligado no sdkconfig\n"); }
+  if (no_console) { printf("core dump disabled in sdkconfig\n"); }
   return false;
 #endif
 }

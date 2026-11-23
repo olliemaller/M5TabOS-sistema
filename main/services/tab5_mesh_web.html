@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -102,32 +102,32 @@ td.fav { color:var(--ouro); width:20px; }
   <aside id="lado">
     <div id="topo">
       <b><span class="ponto" id="ar"></span><span id="eu">Mesh</span></b>
-      <small id="estado">conectando...</small>
+      <small id="estado">connecting...</small>
       <div id="malha"></div>
     </div>
-    <div id="abas"><button id="abaConv" class="atual">Conversas</button><button id="abaNos">Nós</button></div>
+    <div id="abas"><button id="abaConv" class="atual">Chats</button><button id="abaNos">Nodes</button></div>
     <ul id="convs"></ul>
-    <div class="rodape"><button id="novaBt">+ Nova conversa</button></div>
+    <div class="rodape"><button id="novaBt">+ New chat</button></div>
   </aside>
   <main id="principal">
     <div id="convVista" style="display:flex;flex-direction:column;flex:1;min-height:0">
       <div id="cab">
-        <div class="l1"><button id="voltar" style="display:none;margin-right:8px">&lt;</button><b id="titulo">Escolha uma conversa</b><small id="sub"></small></div>
+        <div class="l1"><button id="voltar" style="display:none;margin-right:8px">&lt;</button><b id="titulo">Pick a chat</b><small id="sub"></small></div>
         <div class="l2" id="cabInfo"></div>
       </div>
-      <div id="msgs"><div class="vazio">As conversas do Tab5 aparecem à esquerda.</div></div>
+      <div id="msgs"><div class="vazio">The Tab5 chats appear on the left.</div></div>
       <div id="msg"></div>
       <div id="escrever">
-        <textarea id="texto" rows="1" placeholder="Mensagem (Enter envia, Shift+Enter quebra a linha)" disabled></textarea>
+        <textarea id="texto" rows="1" placeholder="Message (Enter sends, Shift+Enter adds a line)" disabled></textarea>
         <span id="conta">0/200</span>
-        <button id="enviar" class="enviar" disabled>Enviar</button>
+        <button id="enviar" class="enviar" disabled>Send</button>
       </div>
     </div>
     <div id="nosVista">
       <div id="nosBarra">
-        <input id="nosBusca" class="busca" placeholder="Procurar por nome, id ou placa">
-        <label class="fraco"><input type="checkbox" id="soRadio"> só pelo rádio</label>
-        <label class="fraco"><input type="checkbox" id="soFav"> só favoritos</label>
+        <input id="nosBusca" class="busca" placeholder="Search by name, id or board">
+        <label class="fraco"><input type="checkbox" id="soRadio"> radio only</label>
+        <label class="fraco"><input type="checkbox" id="soFav"> favourites only</label>
         <span id="nosConta"></span>
       </div>
       <div id="nosTab"></div>
@@ -136,10 +136,10 @@ td.fav { color:var(--ouro); width:20px; }
 </div>
 <div id="ficha"><div class="caixa" id="fichaCaixa"></div></div>
 <div id="nova"><div class="caixa">
-  <h2>Nova conversa</h2>
-  <input id="busca" class="busca" placeholder="Procurar nó pelo nome">
+  <h2>New chat</h2>
+  <input id="busca" class="busca" placeholder="Find a node by name">
   <ul id="opcoes"></ul>
-  <div style="padding:10px 16px;text-align:right"><button id="fecharNova">Fechar</button></div>
+  <div style="padding:10px 16px;text-align:right"><button id="fecharNova">Close</button></div>
 </div></div>
 <script>
 "use strict";
@@ -152,8 +152,8 @@ let nConvMsgs = 0;
 async function pedir(metodo, url, corpo) {
   const r = await fetch(url, { method: metodo, body: corpo, cache: "no-store",
                                headers: metodo === "GET" ? {} : { "X-Tab5": "1", "Content-Type": "text/plain; charset=utf-8" } });
-  if (r.status === 503 || r.status === 403) throw new Error("o servidor do Tab5 foi desligado - ligue de novo no app Mesh");
-  if (!r.ok) throw new Error(await r.text() || ("erro " + r.status));
+  if (r.status === 503 || r.status === 403) throw new Error("the Tab5 server was turned off - turn it on again in the Mesh app");
+  if (!r.ok) throw new Error(await r.text() || ("error " + r.status));
   return r;
 }
 const chave = (c) => c.canal ? "c=1&idx=" + c.idx : "no=" + c.no;
@@ -170,25 +170,25 @@ function hora(t) {
 // "ha 5 min" - pela idade que o Tab5 calculou (nao depende do relogio do PC).
 function ha(s) {
   if (s == null || s < 0) return "";
-  if (s < 60) return "agora";
-  if (s < 3600) return "há " + Math.round(s / 60) + " min";
-  if (s < 86400) return "há " + Math.round(s / 3600) + " h";
-  return "há " + Math.round(s / 86400) + " d";
+  if (s < 60) return "now";
+  if (s < 3600) return Math.round(s / 60) + " min ago";
+  if (s < 86400) return Math.round(s / 3600) + " h ago";
+  return Math.round(s / 86400) + " d ago";
 }
 function iniciais(nome) { return (nome || "?").replace(/[^\p{L}\p{N}]/gu, "").slice(0, 2).toUpperCase() || "?"; }
-const snr = (x) => (x / 10).toFixed(1).replace(".", ",") + " dB";
+const snr = (x) => (x / 10).toFixed(1) + " dB";
 const classeSnr = (x) => x >= 0 ? "bom" : x >= -70 ? "medio" : "ruim";
-function bateria(n) { return n.bat === 101 ? "na tomada" : n.bat ? n.bat + "%" + (n.mv ? " · " + (n.mv / 1000).toFixed(2).replace(".", ",") + " V" : "") : ""; }
-function saltosTxt(n) { return n.mqtt ? "internet" : n.saltos === 255 ? "?" : n.saltos === 0 ? "direto" : n.saltos + (n.saltos === 1 ? " salto" : " saltos"); }
+function bateria(n) { return n.bat === 101 ? "plugged in" : n.bat ? n.bat + "%" + (n.mv ? " · " + (n.mv / 1000).toFixed(2) + " V" : "") : ""; }
+function saltosTxt(n) { return n.mqtt ? "internet" : n.saltos === 255 ? "?" : n.saltos === 0 ? "direct" : n.saltos + (n.saltos === 1 ? " hop" : " hops"); }
 
 // O estado de entrega de uma mensagem nossa (mesh_envio_t).
 function marca(m) {
   switch (m.envio) {
-    case 1: return "enviando…";
-    case 2: return "✓✓ entregue";
-    case 3: return "<span class='falhou'>✗ " + esc(m.erro || "falhou") + "</span>";
-    case 4: return "<span class='falhou'>! sem resposta</span>";
-    case 5: return "✓ na malha";
+    case 1: return "sending…";
+    case 2: return "✓✓ delivered";
+    case 3: return "<span class='falhou'>✗ " + esc(m.erro || "failed") + "</span>";
+    case 4: return "<span class='falhou'>! no response</span>";
+    case 5: return "✓ on the mesh";
     default: return "";
   }
 }
@@ -211,7 +211,7 @@ async function conversas() {
     li.onclick = () => abrir(c);
     ul.appendChild(li);
   }
-  if (!l.length) ul.innerHTML = "<li style='cursor:default'><small style='color:var(--apagado)'>nenhuma conversa ainda</small></li>";
+  if (!l.length) ul.innerHTML = "<li style='cursor:default'><small style='color:var(--apagado)'>no chats yet</small></li>";
   const a = l.find((c) => mesma(c, atual));
   if (a) { atual = a; $("titulo").textContent = a.nome; $("sub").textContent = a.sub || ""; }
 }
@@ -221,14 +221,14 @@ function infoConversa() {
   const el = $("cabInfo");
   if (!atual) { el.textContent = ""; return; }
   if (atual.canal) {
-    el.textContent = "canal " + atual.idx + " · " + nConvMsgs + " mensagens aqui" +
-                     (ultimo.saude && ultimo.saude.total ? " · " + ultimo.saude.online + " de " + ultimo.saude.total + " nós online" : "");
+    el.textContent = "channel " + atual.idx + " · " + nConvMsgs + " messages here" +
+                     (ultimo.saude && ultimo.saude.total ? " · " + ultimo.saude.online + " of " + ultimo.saude.total + " nodes online" : "");
     return;
   }
   const n = porNum.get(atual.no);
-  if (!n) { el.textContent = "nó " + atual.no.toString(16); return; }
-  const p = [n.id, n.hw, saltosTxt(n), n.snr10 && !n.mqtt ? "SNR " + snr(n.snr10) : "", bateria(n), n.idade >= 0 ? "visto " + ha(n.idade) : ""];
-  el.innerHTML = esc(p.filter(Boolean).join(" · ")) + " · <a id='verNo'>ficha do nó</a>";
+  if (!n) { el.textContent = "node " + atual.no.toString(16); return; }
+  const p = [n.id, n.hw, saltosTxt(n), n.snr10 && !n.mqtt ? "SNR " + snr(n.snr10) : "", bateria(n), n.idade >= 0 ? "seen " + ha(n.idade) : ""];
+  el.innerHTML = esc(p.filter(Boolean).join(" · ")) + " · <a id='verNo'>node details</a>";
   $("verNo").onclick = () => ficha(n);
 }
 
@@ -253,17 +253,17 @@ async function mensagens(rolar) {
     if (m.quando) b.title = new Date(m.quando * 1000).toLocaleString();
     if (!m.minha && atual.canal) {
       const q = document.createElement("div"); q.className = "quem"; q.textContent = m.nome;
-      q.title = "ver a ficha do nó"; q.onclick = () => { const n = porNum.get(m.de); if (n) ficha(n); };
+      q.title = "see the node details"; q.onclick = () => { const n = porNum.get(m.de); if (n) ficha(n); };
       b.appendChild(q);
     }
     b.appendChild(document.createTextNode(m.texto));
     const info = document.createElement("div"); info.className = "info";
     let extra = "";
     if (m.minha) extra = marca(m);
-    else if (m.mqtt) extra = "via internet";
+    else if (m.mqtt) extra = "via the internet";
     else {
       const p = [];
-      if (m.saltos < 255) p.push(m.saltos === 0 ? "direto" : m.saltos + (m.saltos === 1 ? " salto" : " saltos"));
+      if (m.saltos < 255) p.push(m.saltos === 0 ? "direct" : m.saltos + (m.saltos === 1 ? " hop" : " hops"));
       if (m.snr10) p.push("SNR " + snr(m.snr10));
       if (m.rssi) p.push(m.rssi + " dBm");
       extra = esc(p.join(" · "));
@@ -272,7 +272,7 @@ async function mensagens(rolar) {
     b.appendChild(info);
     caixa.appendChild(b);
   }
-  if (!l.length) caixa.innerHTML = "<div class='vazio'>Nenhuma mensagem ainda. Escreva a primeira.</div>";
+  if (!l.length) caixa.innerHTML = "<div class='vazio'>No messages yet. Write the first one.</div>";
   if (rolar || noFim) caixa.scrollTop = caixa.scrollHeight;
   infoConversa();
 }
@@ -298,7 +298,7 @@ function contar() {
 async function enviar() {
   const t = $("texto").value.trim();
   if (!atual || !t) return;
-  if (bytes(t) > LIMITE) { aviso("A mensagem passa de " + LIMITE + " bytes (o limite do Meshtastic)."); return; }
+  if (bytes(t) > LIMITE) { aviso("The message is over " + LIMITE + " bytes (the Meshtastic limit)."); return; }
   $("enviar").disabled = true;
   try {
     const r = await (await pedir("POST", "api/enviar?" + chave(atual), t)).json();
@@ -317,14 +317,14 @@ async function carregarNos() {
 
 const COLS = [
   { k: "fav",    t: "★",       v: (n) => n.fav ? 1 : 0,              h: (n) => n.fav ? "★" : "", cls: "fav" },
-  { k: "nome",   t: "Nome",    v: (n) => (n.nome || "").toLowerCase(), h: (n) => esc(n.nome) },
-  { k: "longo",  t: "Nome longo", v: (n) => (n.longo || "").toLowerCase(), h: (n) => esc(n.longo), opc: 1 },
+  { k: "nome",   t: "Name",    v: (n) => (n.nome || "").toLowerCase(), h: (n) => esc(n.nome) },
+  { k: "longo",  t: "Long name", v: (n) => (n.longo || "").toLowerCase(), h: (n) => esc(n.longo), opc: 1 },
   { k: "id",     t: "Id",      v: (n) => n.id || "",                 h: (n) => "<span class='fraco'>" + esc(n.id) + "</span>", opc: 1 },
-  { k: "hw",     t: "Placa",   v: (n) => n.hw || "",                 h: (n) => esc(n.hw), opc: 1 },
-  { k: "saltos", t: "Saltos",  v: (n) => n.mqtt ? 99 : n.saltos,    h: (n) => esc(saltosTxt(n)) },
+  { k: "hw",     t: "Board",   v: (n) => n.hw || "",                 h: (n) => esc(n.hw), opc: 1 },
+  { k: "saltos", t: "Hops",    v: (n) => n.mqtt ? 99 : n.saltos,    h: (n) => esc(saltosTxt(n)) },
   { k: "snr",    t: "SNR",     v: (n) => n.mqtt ? -9999 : n.snr10,   h: (n) => n.mqtt || !n.snr10 ? "" : "<span class='" + classeSnr(n.snr10) + "'>" + snr(n.snr10) + "</span>" },
-  { k: "bat",    t: "Bateria", v: (n) => n.bat || -1,                h: (n) => esc(n.bat === 101 ? "tomada" : n.bat ? n.bat + "%" : ""), opc: 1 },
-  { k: "visto",  t: "Visto",   v: (n) => n.idade >= 0 ? -n.idade : -1e12, h: (n) => esc(ha(n.idade)) },
+  { k: "bat",    t: "Battery", v: (n) => n.bat || -1,                h: (n) => esc(n.bat === 101 ? "mains" : n.bat ? n.bat + "%" : ""), opc: 1 },
+  { k: "visto",  t: "Seen",    v: (n) => n.idade >= 0 ? -n.idade : -1e12, h: (n) => esc(ha(n.idade)) },
 ];
 
 function desenharNos() {
@@ -333,7 +333,7 @@ function desenharNos() {
   const l = nos.filter((n) => (!soRadio || !n.mqtt) && (!soFav || n.fav) &&
                             (n.nome + " " + n.longo + " " + n.id + " " + n.hw).toLowerCase().includes(f))
                .sort((a, b) => { const x = col.v(a), y = col.v(b); return (x < y ? -1 : x > y ? 1 : 0) * (ordem.sobe ? 1 : -1); });
-  $("nosConta").textContent = l.length + " de " + nos.length + " nós";
+  $("nosConta").textContent = l.length + " of " + nos.length + " nodes";
   let h = "<table><thead><tr>";
   for (const c of COLS) h += "<th data-k='" + c.k + "' class='" + (c.opc ? "opc " : "") + (c.k === ordem.col ? "ord" + (ordem.sobe ? " sobe" : "") : "") + "'>" + c.t + "</th>";
   h += "</tr></thead><tbody>";
@@ -352,16 +352,16 @@ function desenharNos() {
 
 function ficha(n) {
   const linhas = [
-    ["Id", n.id], ["Número", n.num], ["Placa", n.hw],
-    ["Como chega", saltosTxt(n)], ["SNR", n.mqtt || !n.snr10 ? "" : snr(n.snr10)],
-    ["Bateria", bateria(n)], ["Visto", n.idade >= 0 ? ha(n.idade) + (n.visto ? " (" + new Date(n.visto * 1000).toLocaleString() + ")" : "") : ""],
-    ["Posição", n.lat ? (n.lat / 1e7).toFixed(5) + ", " + (n.lon / 1e7).toFixed(5) : ""],
+    ["Id", n.id], ["Number", n.num], ["Board", n.hw],
+    ["How it arrives", saltosTxt(n)], ["SNR", n.mqtt || !n.snr10 ? "" : snr(n.snr10)],
+    ["Battery", bateria(n)], ["Seen", n.idade >= 0 ? ha(n.idade) + (n.visto ? " (" + new Date(n.visto * 1000).toLocaleString() + ")" : "") : ""],
+    ["Position", n.lat ? (n.lat / 1e7).toFixed(5) + ", " + (n.lon / 1e7).toFixed(5) : ""],
   ].filter((l) => l[1] !== "" && l[1] != null);
   let h = "<h2>" + (n.fav ? "★ " : "") + esc(n.nome) + "</h2><div class='sub'>" + esc(n.longo) + "</div><dl>";
   for (const [k, v] of linhas) h += "<dt>" + esc(k) + "</dt><dd>" + esc(v) + "</dd>";
-  h += "</dl><div class='botoes'><button id='fMsg' class='enviar'>Mensagem direta</button>" +
-       "<button id='fFav'>" + (n.fav ? "Tirar dos favoritos" : "Favorito ★") + "</button>" +
-       (n.lat ? "<button id='fMapa'>Ver no mapa</button>" : "") + "<button id='fFechar'>Fechar</button></div>";
+  h += "</dl><div class='botoes'><button id='fMsg' class='enviar'>Direct message</button>" +
+       "<button id='fFav'>" + (n.fav ? "Remove from favourites" : "Favourite ★") + "</button>" +
+       (n.lat ? "<button id='fMapa'>See on the map</button>" : "") + "<button id='fFechar'>Close</button></div>";
   $("fichaCaixa").innerHTML = h;
   $("ficha").classList.add("aberto");
   $("fFechar").onclick = () => $("ficha").classList.remove("aberto");
@@ -388,9 +388,9 @@ async function saude() {
     const s = await (await pedir("GET", "api/saude")).json();
     ultimo.saude = s;
     const p = [s.enlace];
-    if (s.tem_metricas || s.tem_local) p.push("canal " + (s.uso_canal10 / 10).toFixed(1).replace(".", ",") + "% · TX " + (s.airtime10 / 10).toFixed(1).replace(".", ",") + "%");
+    if (s.tem_metricas || s.tem_local) p.push("channel " + (s.uso_canal10 / 10).toFixed(1) + "% · TX " + (s.airtime10 / 10).toFixed(1) + "%");
     if (s.total) p.push(s.online + "/" + s.total + " online");
-    if (s.tem_local) p.push("rx " + s.rx + " · tx " + s.tx + (s.ruins ? " · ruins " + s.ruins : ""));
+    if (s.tem_local) p.push("rx " + s.rx + " · tx " + s.tx + (s.ruins ? " · bad " + s.ruins : ""));
     $("malha").textContent = p.filter(Boolean).join(" · ");
   } catch (e) { /* o vigia mostra */ }
   setTimeout(saude, 15000);
@@ -401,7 +401,7 @@ async function vigiar() {
     const e = await (await pedir("GET", "api/estado")).json();
     $("eu").textContent = e.eu_nome || "Mesh";
     $("ar").className = "ponto" + (e.no_ar ? " ar" : "");
-    $("estado").textContent = e.no_ar ? "nó no ar" : "sem o nó (cabo, Bluetooth ou internet)";
+    $("estado").textContent = e.no_ar ? "node on air" : "no node (cable, Bluetooth or internet)";
     if (e.conv !== ultimo.conv || e.msgs !== ultimo.msgs || e.nao_lidas !== ultimo.nao_lidas) await conversas();
     if (atual && aba === "conv" && (e.msgs !== ultimo.msgs || e.envios !== ultimo.envios)) await mensagens(false);
     Object.assign(ultimo, { conv: e.conv, msgs: e.msgs, envios: e.envios, nao_lidas: e.nao_lidas });
@@ -431,17 +431,17 @@ function listarNova() {
     li.onclick = fn; ul.appendChild(li);
   };
   const cs2 = canaisNova.filter((c) => c.nome.toLowerCase().includes(f));
-  if (cs2.length) { sec("Canais"); for (const c of cs2) item("#", false, c.nome, "canal " + c.idx, () => { fecharNova(); abrir({ canal: true, idx: c.idx, no: 0, nome: c.nome, sub: "canal " + c.idx }); }); }
+  if (cs2.length) { sec("Channels"); for (const c of cs2) item("#", false, c.nome, "channel " + c.idx, () => { fecharNova(); abrir({ canal: true, idx: c.idx, no: 0, nome: c.nome, sub: "channel " + c.idx }); }); }
   const ns = nos.filter((n) => (n.nome + " " + n.longo).toLowerCase().includes(f))
                 .sort((a, b) => (b.fav - a.fav) || ((a.idade < 0 ? 1e12 : a.idade) - (b.idade < 0 ? 1e12 : b.idade))).slice(0, 80);
   if (ns.length) {
-    sec("Nós (mensagem direta)");
+    sec("Nodes (direct message)");
     for (const n of ns) {
       const sub = [n.longo !== n.nome ? n.longo : "", ha(n.idade), saltosTxt(n)].filter(Boolean).join(" · ");
       item(iniciais(n.nome), true, (n.fav ? "★ " : "") + n.nome, sub, () => { fecharNova(); abrir({ canal: false, idx: 0, no: n.num, nome: n.nome, sub: n.longo }); });
     }
   }
-  if (!cs2.length && !ns.length) sec("nada encontrado");
+  if (!cs2.length && !ns.length) sec("nothing found");
 }
 function fecharNova() { $("nova").classList.remove("aberto"); }
 

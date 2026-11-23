@@ -36,6 +36,7 @@
 //   app_config_paginas.cpp  paginas Data e hora, Acesso pelo PC, Idioma, Tela, Teclado, Grove, Sobre e USB
 
 #include "tab5_hora.hpp"
+#include "tab5_fuso.hpp"
 #include "app.h"
 #include "tab5_power.hpp"
 #include "ajustes.h"
@@ -338,13 +339,15 @@ void fuso_texto(int16_t m, char* o, size_t t)
 
 static void est_hora(char* o, size_t t)
 {
-  char f[16];
-  fuso_texto(ajustes_fuso_min(), f, sizeof(f));
+  char f[40];
   const uint32_t e = tab5_hora_epoch();
+  tab5_fuso_texto(e ? e : (uint32_t)time(nullptr), f, sizeof(f));
   if (!e) { snprintf(o, t, tr("Fuso %s  ·  relógio sem acerto"), f); return; }
   struct tm tm_;
   tab5_hora_local(e, &tm_);
-  snprintf(o, t, tr("%02d:%02d  ·  fuso %s"), tm_.tm_hour, tm_.tm_min, f);
+  char hm[8];
+  tab5_hora_hhmm(&tm_, hm, sizeof(hm));
+  snprintf(o, t, tr("%s  ·  fuso %s"), hm, f);
 }
 
 static void est_idioma(char* o, size_t t)

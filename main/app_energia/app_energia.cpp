@@ -671,7 +671,9 @@ static void desenhar_grafico1(lgfx::LovyanGFX& d, const area_t& a)
     snprintf(val, sizeof(val), formato(s_serie), (double)v->val[k]);
     if (s_24h) {
       struct tm lt; tab5_hora_local(s_dia->t0 + (uint32_t)v->t[k] * 60u, &lt);
-      snprintf(buf, sizeof(buf), "%02d:%02d   %s", lt.tm_hour, lt.tm_min, val);
+      char hm[8];
+      tab5_hora_hhmm(&lt, hm, sizeof(hm));
+      snprintf(buf, sizeof(buf), "%s   %s", hm, val);
     } else {
       const int s = v->t[k];
       if (s < 60) { snprintf(buf, sizeof(buf), tr("agora   %s"), val); }

@@ -903,8 +903,10 @@ static bool subir_pilha(void)
 static void aplicar_config(void)
 {
   wifi_config_t wc = { };
-  strncpy((char*)wc.sta.ssid,     s_ssid,  sizeof(wc.sta.ssid)     - 1);
-  strncpy((char*)wc.sta.password, s_senha, sizeof(wc.sta.password) - 1);
+  // The 802.11 fields need no terminator: a 32-character SSID and a 64-digit hex
+  // PSK fill them completely (strncpy with "- 1" silently dropped the last one).
+  memcpy(wc.sta.ssid,     s_ssid,  strnlen(s_ssid,  sizeof(wc.sta.ssid)));
+  memcpy(wc.sta.password, s_senha, strnlen(s_senha, sizeof(wc.sta.password)));
   wc.sta.listen_interval = LISTEN_INTERVAL;   // so vale em WIFI_PS_MAX_MODEM (repouso)
   esp_wifi_set_config(WIFI_IF_STA, &wc);
 }

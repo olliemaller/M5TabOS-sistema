@@ -1,6 +1,7 @@
 // A tarefa do Berry - ver berry_vm.hpp.
 
 #include "berry_vm.hpp"
+#include "idioma.h"
 #include "berry_apps.hpp"
 #include "berry_mem.h"
 extern "C" {
@@ -67,7 +68,7 @@ void berry_prazo_conferir(bvm* vm)
   if (agora <= s_prazo_us) { return; }
   s_prazo_us = agora + FOLGA_DEPOIS_US;
   // Como o be_raise deixa a mensagem: logo acima do topo, onde o pcall a pega.
-  be_pushstring(vm, "tempo_esgotado: o script passou do tempo (laco infinito?)");
+  be_pushstring(vm, "tempo_esgotado: the script ran too long (infinite loop?)");
   be_pop(vm, 1);
   be_throw(vm, BE_EXIT);
 }
@@ -193,7 +194,7 @@ static void verificar_na_tarefa(void* ctx)
 {
   verificar_t* v = (verificar_t*)ctx;
   bvm* vm = berry_vm_nova();
-  if (!vm) { snprintf(v->erro, v->tam, "sem memoria para o Berry"); return; }
+  if (!vm) { snprintf(v->erro, v->tam, tr("sem memoria para o Berry")); return; }
   if (be_loadbuffer(vm, "script", v->cod, v->n) == BE_OK) {
     v->ok = true;
   } else {
@@ -215,7 +216,7 @@ bool berry_verificar(const char* codigo, size_t n, char* erro, size_t erro_tam, 
   verificar_t v = { codigo, n, erro, erro_tam, 0, false };
   if (erro && erro_tam) { erro[0] = 0; }
   if (!berry_rodar(verificar_na_tarefa, &v, 5000)) {
-    snprintf(erro, erro_tam, "a tarefa do Berry nao respondeu");
+    snprintf(erro, erro_tam, tr("a tarefa do Berry nao respondeu"));
     return false;
   }
   if (linha) { *linha = v.linha; }

@@ -62,24 +62,24 @@ end
 
 # ---- INICIO ------------------------------------------------------------------
 def desenhar_inicio(y)
-  tela.texto("Olá do Berry!", 40, y, 5, tela.LARANJA)
+  tela.texto(idioma.escolher("Olá do Berry!", "Hello from Berry!"), 40, y, 5, tela.LARANJA)
   var h = sistema.hora()
-  tela.texto(h != "" ? h : "relógio sem acerto", 40, y + 100, 6)
+  tela.texto(h != "" ? h : idioma.escolher("relógio sem acerto", "clock not set"), 40, y + 100, 6)
   tela.texto(sistema.data(), 40, y + 170, 3, tela.CINZA_CLARO)
   var e = sistema.energia()
-  tela.texto("Bateria: " + str(e["pct"]) + "%" + (e["ma"] > 0 ? "  (carregando)" : ""), 40, y + 250, 3)
+  tela.texto(idioma.escolher("Bateria: ", "Battery: ") + str(e["pct"]) + "%" + (e["ma"] > 0 ? idioma.escolher("  (carregando)", "  (charging)") : ""), 40, y + 250, 3)
   var r = sistema.rede()
   tela.texto("Wi-Fi: " + (r["ip"] != "" ? r["ssid"] + "  " + r["ip"] : r["texto"]), 40, y + 300, 3)
-  tela.texto("Toque nas abas acima para ver mais.", 40, y + 380, 2.5, tela.CINZA_CLARO)
+  tela.texto(idioma.escolher("Toque nas abas acima para ver mais.", "Tap the tabs above to see more."), 40, y + 380, 2.5, tela.CINZA_CLARO)
 end
 
 # ---- TOQUE -------------------------------------------------------------------
 def desenhar_toque(y)
-  tela.texto("Toques: " + str(toques), 40, y, 5)
-  tela.texto("(fica salvo no cartão: feche e abra de novo)", 40, y + 70, 2.5, tela.CINZA_CLARO)
-  tela.botao(40, y + 130, 300, 100, "+1 e bip", tela.VERDE)
-  tela.botao(380, y + 130, 300, 100, "Avisar", tela.AMARELO)
-  tela.botao(40, y + 260, 300, 100, "Zerar", tela.VERMELHO)
+  tela.texto(idioma.escolher("Toques: ", "Taps: ") + str(toques), 40, y, 5)
+  tela.texto(idioma.escolher("(fica salvo no cartão: feche e abra de novo)", "(saved on the card: close and open again)"), 40, y + 70, 2.5, tela.CINZA_CLARO)
+  tela.botao(40, y + 130, 300, 100, idioma.escolher("+1 e bip", "+1 and beep"), tela.VERDE)
+  tela.botao(380, y + 130, 300, 100, idioma.escolher("Avisar", "Notify"), tela.AMARELO)
+  tela.botao(40, y + 260, 300, 100, idioma.escolher("Zerar", "Reset"), tela.VERMELHO)
 end
 
 def tocar_toque(x, y, y0)
@@ -89,7 +89,7 @@ def tocar_toque(x, y, y0)
     salvar()
   elif tela.dentro(x, y, 380, y0 + 130, 300, 100)
     # Um aviso na barra de status - toque nele (na central) abre este app.
-    sistema.avisar("Olá: " + str(toques) + " toques")
+    sistema.avisar(idioma.escolher("Olá: ", "Hello: ") + str(toques) + idioma.escolher(" toques", " taps"))
   elif tela.dentro(x, y, 40, y0 + 260, 300, 100)
     toques = 0
     salvar()
@@ -105,20 +105,20 @@ def desenhar_sensor(y)
   tela.circulo(cx, cy, 100, tela.CINZA, false)
   var g = sistema.imu()   # [x, y, z] em g, ou nil
   if g == nil
-    tela.texto("sem acelerômetro", 40, y, 3, tela.VERMELHO)
+    tela.texto(idioma.escolher("sem acelerômetro", "no accelerometer"), 40, y, 3, tela.VERMELHO)
     return
   end
   tela.circulo(cx + int(g[0] * -180), cy + int(g[1] * 180), 26, tela.VERDE)
   tela.texto(format("x %.2f   y %.2f   z %.2f", g[0], g[1], g[2]), 40, y + 500, 3)
-  tela.texto("Incline o aparelho.", 40, y, 3, tela.CINZA_CLARO)
+  tela.texto(idioma.escolher("Incline o aparelho.", "Tilt the device."), 40, y, 3, tela.CINZA_CLARO)
 end
 
 # ---- DESENHO -----------------------------------------------------------------
 # dedo(x, y, pressionado) chega a cada 20 ms com o dedo na tela.
 def desenhar_desenho(y)
-  tela.texto("Desenhe com o dedo.", 40, y, 3, tela.CINZA_CLARO)
+  tela.texto(idioma.escolher("Desenhe com o dedo.", "Draw with your finger."), 40, y, 3, tela.CINZA_CLARO)
   for p: pontos tela.circulo(p[0], p[1], 7, tela.CIANO) end
-  tela.botao(tela.largura() - 220, y - 6, 200, 70, "Limpar", tela.VERMELHO)
+  tela.botao(tela.largura() - 220, y - 6, 200, 70, idioma.escolher("Limpar", "Clear"), tela.VERMELHO)
 end
 
 def dedo(x, y, pressionado)
@@ -130,15 +130,15 @@ end
 # O modulo arquivos ve o cartao inteiro e o pendrive; o app so altera a
 # propria pasta (ver docs/BERRY.md).
 def desenhar_discos(y)
-  if size(discos) == 0 tela.texto("nenhum disco", 40, y, 3) return end
+  if size(discos) == 0 tela.texto(idioma.escolher("nenhum disco", "no disks"), 40, y, 3) return end
   for d: discos
     tela.texto(d["tipo"] + (d["nome"] != "" ? "  " + d["nome"] : ""), 40, y, 4,
                d["disponivel"] ? tela.BRANCO : tela.CINZA)
     var itens = d["disponivel"] ? arquivos.lista(d["raiz"]) : nil
-    tela.texto(itens != nil ? str(size(itens)) + " item(s) na raiz" : "indisponível", 40, y + 55, 2.5, tela.CINZA_CLARO)
+    tela.texto(itens != nil ? str(size(itens)) + idioma.escolher(" item(s) na raiz", " item(s) at the root") : idioma.escolher("indisponível", "unavailable"), 40, y + 55, 2.5, tela.CINZA_CLARO)
     y += 130
   end
-  tela.texto("Espete um pendrive: ele aparece aqui sozinho.", 40, y, 2.5, tela.CINZA_CLARO)
+  tela.texto(idioma.escolher("Espete um pendrive: ele aparece aqui sozinho.", "Plug in a flash drive: it shows up here by itself."), 40, y, 2.5, tela.CINZA_CLARO)
 end
 
 # Com "# avisos: volumes" no cabecalho, o sistema chama aviso() quando um

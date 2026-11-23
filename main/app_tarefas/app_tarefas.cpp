@@ -117,7 +117,7 @@ static void ha_quanto(char* buf, size_t n, uint32_t agora, uint32_t em)
 {
   const uint32_t d = (agora >= em) ? agora - em : 0;
   if      (d < 60)    { snprintf(buf, n, "ha %us", (unsigned)d); }
-  else if (d < 3600)  { snprintf(buf, n, "ha %um", (unsigned)(d / 60)); }
+  else if (d < 3600)  { snprintf(buf, n, tr("ha %um"), (unsigned)(d / 60)); }
   else                { snprintf(buf, n, "ha %uh%02u", (unsigned)(d / 3600), (unsigned)((d % 3600) / 60)); }
 }
 

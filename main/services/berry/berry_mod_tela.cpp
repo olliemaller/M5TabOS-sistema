@@ -2,6 +2,7 @@
 // saber se ha o fisico). Ver berry_apps.cpp (o motor) e berry_interno.hpp.
 
 #include <string.h>
+#include "idioma.h"
 #include "esp_timer.h"
 #include "tab5_ui.hpp"
 #include "tab5_tela.hpp"
@@ -77,13 +78,13 @@ static int t_camada(bvm* vm)
     else if (vaga < 0)       { vaga = i; }
   }
   if (vaga < 0 || usado > CAMADAS_MAX_PX) {
-    be_raise(vm, "tela_error", "camadas demais (no maximo 8, somando 4 telas)");
+    be_raise(vm, "tela_error", tr("camadas demais (no maximo 8, somando 4 telas)"));
     be_return_nil(vm);
   }
   auto* c = new lgfx::LGFX_Sprite();
   c->setColorDepth(lgfx::color_depth_t::rgb565_nonswapped);   // o formato da tela: colar e copia simples
   c->setPsram(true);
-  if (!c->createSprite(l, al)) { delete c; be_raise(vm, "tela_error", "sem memoria para a camada"); be_return_nil(vm); }
+  if (!c->createSprite(l, al)) { delete c; be_raise(vm, "tela_error", tr("sem memoria para a camada")); be_return_nil(vm); }
   c->fillScreen(TFT_BLACK);
   C->app->camadas[vaga] = c;
   be_pushint(vm, vaga + 1);
@@ -142,7 +143,7 @@ struct medir_prim {
 static int t_colar(bvm* vm)
 {
   if (!exige_tela(vm)) { be_return_nil(vm); }
-  if (C->alvo || !C->tela_d) { be_raise(vm, "tela_error", "colar vai para a tela: chame tela.alvo() antes"); be_return_nil(vm); }
+  if (C->alvo || !C->tela_d) { be_raise(vm, "tela_error", tr("colar vai para a tela: chame tela.alvo() antes")); be_return_nil(vm); }
   lgfx::LGFX_Sprite* c = camada_de(vm, 1);
   if (!c) { be_return_nil(vm); }
   medir_prim _m(P_COLAR);

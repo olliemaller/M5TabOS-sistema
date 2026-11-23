@@ -331,12 +331,12 @@ static void tarefa_bancada(void* p)
   //    BANCADA_MAX: um arquivo de 18 MB inteiro na PSRAM nao deixava lugar
   //    para os quadros de referencia (o player de verdade le aos poucos).
   tab5_leitor_t* lt = tab5_leitor_abrir(b->caminho);
-  if (!lt) { snprintf(r->erro, sizeof(r->erro), "nao abriu o arquivo"); goto fim; }
+  if (!lt) { snprintf(r->erro, sizeof(r->erro), "could not open the file"); goto fim; }
   n = (size_t)tab5_leitor_tamanho(lt);
   if (n > BANCADA_MAX) { n = BANCADA_MAX; }
   dados = n ? (uint8_t*)heap_caps_malloc(n, MALLOC_CAP_SPIRAM) : nullptr;
   if (!dados || tab5_leitor_ler(lt, dados, n) != (int)n) {
-    snprintf(r->erro, sizeof(r->erro), dados ? "leitura falhou" : "arquivo vazio ou grande demais");
+    snprintf(r->erro, sizeof(r->erro), dados ? "read failed" : "file empty or too big");
     tab5_leitor_fechar(lt);
     goto fim;
   }
@@ -353,7 +353,7 @@ static void tarefa_bancada(void* p)
     //    fatia do quadro seguinte (ou um SEI/SPS/PPS/AUD depois de imagem).
     const tab5_h264_cfg_t cfg = { 1280, 1280, b->onde };
     d = tab5_h264_abrir(&cfg);
-    if (!d) { snprintf(r->erro, sizeof(r->erro), "sem memoria para o decodificador"); goto fim; }
+    if (!d) { snprintf(r->erro, sizeof(r->erro), "out of memory for the decoder"); goto fim; }
     const uint8_t* fim_dados = dados + n;
     const uint8_t* q = proximo_inicio(dados, fim_dados);
     const uint8_t* au = q;
@@ -378,7 +378,7 @@ static void tarefa_bancada(void* p)
           ++r->com_erro;
           if (res == H264_DEC_UNSUPPORTED || res == H264_DEC_NO_MEMORY) {
             const char* e = tab5_h264_erro(d);
-            snprintf(r->erro, sizeof(r->erro), "%s", e ? e : "nao suportado / sem memoria");
+            snprintf(r->erro, sizeof(r->erro), "%s", e ? e : "unsupported / out of memory");
             break;
           }
         }
@@ -440,7 +440,7 @@ bool tab5_h264_bancada(const char* caminho, tab5_h264_onde_t onde, bool hash, ta
 {
   memset(r, 0, sizeof(*r));
   bancada_t b = { caminho, onde, hash, r, xSemaphoreCreateBinary() };
-  if (!b.feito) { snprintf(r->erro, sizeof(r->erro), "sem memoria"); return false; }
+  if (!b.feito) { snprintf(r->erro, sizeof(r->erro), "out of memory"); return false; }
   // A tela acesa durante a medida: em repouso o clock fica limitado (180 MHz)
   // e a bancada mediria o repouso, nao o video (que toca com a tela acesa).
   sistema_recurso_usar(RECURSO_TELA_ACESA, "h264");
@@ -448,7 +448,7 @@ bool tab5_h264_bancada(const char* caminho, tab5_h264_onde_t onde, bool hash, ta
   if (tab5_h264_criar_tarefa(tarefa_bancada, "h264_banc", 8192, &b, 4, 0, nullptr) != pdPASS) {
     vSemaphoreDelete(b.feito);
     sistema_recurso_soltar(RECURSO_TELA_ACESA, "h264");
-    snprintf(r->erro, sizeof(r->erro), "sem memoria para a tarefa");
+    snprintf(r->erro, sizeof(r->erro), "out of memory for the task");
     return false;
   }
   xSemaphoreTake(b.feito, portMAX_DELAY);

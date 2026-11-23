@@ -507,7 +507,7 @@ static void c6_sono_mostrar(void)
 {
   tab5_c6_sono_estado_t e;
   tab5_c6_sono_estado(&e);
-  static const char* const N[] = { "acordado (enlace de pe)", "DORMINDO (enlace desmontado)", "FALHOU - religue o Wi-Fi" };
+  static const char* const N[] = { "awake (link up)", "ASLEEP (link down)", "FAILED - turn Wi-Fi off and on" };
   printf(tr("enlace: %s\n"), N[e.estado]);
   printf(tr("  desmontado %lu vez(es); voltou %lu pelo P4, %lu pelo C6; %lu falha(s)\n"),
          (unsigned long)e.entradas, (unsigned long)e.pelo_p4, (unsigned long)e.pelo_c6, (unsigned long)e.falhas);
@@ -529,7 +529,7 @@ static void c6_sono_mostrar(void)
   if (e.estado != TAB5_C6_SONO_ACORDADO) { return; }
   c6_info_t in = { };
   if (!tab5_farejo_info_c6(&in, 1500)) { printf("%s", tr("  (o C6 nao respondeu ao INFO)\n")); return; }
-  static const char* const S[] = { "sem a funcao (firmware antigo)", "acordado", "dormindo" };
+  static const char* const S[] = { "not supported (old firmware)", "awake", "asleep" };
   printf(tr("  C6: %s; light sleep %lu vez(es), %lu s dormindo de %lu s no ar; %u entrada(s), %u despertar(es)\n"),
          S[in.sono_estado < 3 ? in.sono_estado : 0], (unsigned long)in.sono_n, (unsigned long)(in.sono_ms / 1000),
          (unsigned long)in.no_ar_s, (unsigned)in.sono_entradas, (unsigned)in.sono_despertares);
@@ -669,7 +669,7 @@ static void farejo_info(void)
   if (in.csi_err == ESP_FAIL) {
     printf("%s", tr("     ESP_FAIL = o WiFi do C6 nasceu com csi_enable 0 (P4 antigo?)\n"));
   }
-  static const char* const Z154[] = { "nunca ligado", "ouvindo", "dormindo" };
+  static const char* const Z154[] = { "never on", "listening", "asleep" };
   printf(tr("saida do C6: %lu mensagem(ns) descartada(s) por fila cheia\n"), (unsigned long)in.saida_perdas);
   if (in.flags & C6_INFO_F_COREDUMP) { printf("%s", tr("ATENCAO: o C6 guardou um retrato de travamento (coredump)\n")); }
   if (in.flags & C6_INFO_F_EM_PROVA) { printf("%s", tr("imagem do C6 EM PROVA: ainda nao confirmada pelo P4\n")); }
@@ -894,8 +894,8 @@ void c_radio(int argc, char** argv)
                  "  o proprio ESP-IDF desliga). 'farejo info' mostra a revisao deste C6.\n"));
         }
       } else {
-        static const char* const ST[] = { "sucesso", "o outro lado nao fala FTM", "recusado",
-                                          "sem resposta", "falhou", "sem medida valida", "encerrado" };
+        static const char* const ST[] = { "success", "the peer does not speak FTM", "refused",
+                                          "no response", "failed", "no valid measurement", "ended" };
         printf(tr("sessao feita, status %u (%s)%s\n"), (unsigned)r.status,
                r.status < 7 ? ST[r.status] : "?",
                ap.ftm_responder ? "" : tr(" - o roteador nao anuncia FTM responder"));

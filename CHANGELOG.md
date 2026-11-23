@@ -1,11 +1,60 @@
-# Mudanças
+# Changes
 
-O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
-e as versões seguem [SemVer](https://semver.org/lang/pt-BR/). A versão do
-firmware mora em `version.txt`. As regras de qual número subir, e como
-lançar uma versão (`ferramentas/lancar.sh`), estão em `docs/VERSIONAMENTO.md`.
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and versions follow [SemVer](https://semver.org/). The firmware version lives
+in `version.txt`. Which number to bump, and how to release a version
+(`ferramentas/lancar.sh`), is in `docs/VERSIONAMENTO.md`. Entries up to 0.9.1
+come from upstream and are in Portuguese.
 
-## [Não lançado]
+## [Unreleased]
+
+### Added
+- **English by default**: a new Tab5 (or one whose language was never chosen)
+  starts in English. Portuguese stays in Settings > Language. About 160 more
+  interface, notification, error and console texts now go through `tr()` and
+  have English in `idiomas/en.po` (SSH, flash-drive mode, USB-A drive, file
+  copy errors, Meshtastic Bluetooth pairing, battery, Berry errors, Mesh
+  delivery errors and more); developer diagnostics on the console are in
+  English.
+- **English web pages**: the PC portal, Terminal, Berry editor, Camera and
+  Mesh pages, and the new-script template.
+- **Time-zone regions with automatic daylight saving** (`services/tab5_fuso`):
+  Settings > Date and time and the welcome assistant pick a region
+  (Melbourne/Sydney/Canberra/Hobart, Adelaide, Brisbane, Darwin, Perth,
+  Auckland, Tokyo, India, Kathmandu, Europe, London, the US zones and more),
+  and the clock changes for summer time by itself. Times of old messages use
+  the offset in force at that moment. The manual fixed offset stays as
+  region 0.
+- **12-hour clock** option (Settings > Date and time): `9:05pm` in the status
+  bar, home, lock screen, chats, Power graphs and Berry's `sistema.hora_de`.
+- Console command **`timezone`** (`fuso`): `timezone list`, `timezone <n>`,
+  `timezone manual <minutes>`, `timezone 12h|24h`.
+- Berry: `ajustes.relogio_12h()`; `ajustes.fuso()` now returns the offset in
+  force (daylight saving included).
+- **Screenshot from the PC**: the portal Overview has a "Screenshot of the
+  Tab5" button (`/api/tela.bmp`, streamed, no 1.8 MB buffer).
+- `display photo` (`tela foto`) without a name saves a dated file instead of
+  overwriting `tela.bmp`.
+- Meshtastic internet mode, **Automatic** server: picks the server and topic
+  root from the time zone (Australia/New Zealand `msh/ANZ`, Europe
+  `msh/EU_868`, North America `msh/US`, Japan, India; Brazil keeps Mesh
+  Brasil) instead of always Mesh Brasil, and shows which in its name.
+- README and the docs MESHTASTIC, BERRY_API, VARIANTES, VERSIONAMENTO and
+  TERCEIROS in English.
+
+### Fixed
+- Wi-Fi: a 32-character SSID or a 64-digit hex key was cut by one character
+  before going to the C6 (`strncpy` with `- 1` on fields that need no
+  terminator), so those networks never connected.
+- Mesh: truncated protobuf fields (telemetry, positions, node info) could
+  store uninitialised stack values; they now read as 0.
+- Mini-player: a track title longer than the buffer counted as "changed" on
+  every update, redrawing the notification centre endlessly while it played.
+- Languages: a `.po` without a `Language:` header leaked its memory; date
+  formats longer than 95 characters after the placeholder were cut.
+- GPS: the last field of an NMEA sentence without a `*hh` checksum came back
+  empty.
+- USB-A: a malformed product string descriptor (length under 2) is ignored.
 
 ## [0.9.1] - 2026-11-15
 

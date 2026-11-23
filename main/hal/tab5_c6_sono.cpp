@@ -1,4 +1,5 @@
 #include "tab5_c6_sono.hpp"
+#include "idioma.h"
 #include "tab5_wifi.hpp"
 #include "tab5_ble.hpp"
 #include "tab5_farejo.hpp"   // tab5_farejo_info_c6 - o INFO diz se o C6 sabe dormir
@@ -474,15 +475,15 @@ static bool preparar(void)
 bool tab5_c6_sono_dormir(char* motivo, size_t tam)
 {
   auto nao = [&](const char* m) { if (motivo && tam) { snprintf(motivo, tam, "%s", m); } return false; };
-  if (!preparar()) { return nao("sem memoria"); }
-  if (!tab5_wifi_c6_enlace()) { return nao("o enlace com o C6 nao esta de pe"); }
-  if (tab5_ble_estado() != TAB5_BLE_DESLIGADO) { return nao("o Bluetooth esta ligado (a pilha BLE fala com o C6 pelo enlace)"); }
+  if (!preparar()) { return nao(tr("sem memoria")); }
+  if (!tab5_wifi_c6_enlace()) { return nao(tr("o enlace com o C6 nao esta de pe")); }
+  if (tab5_ble_estado() != TAB5_BLE_DESLIGADO) { return nao(tr("o Bluetooth esta ligado (a pilha BLE fala com o C6 pelo enlace)")); }
   c6_info_t in = { };
-  if (!tab5_farejo_info_c6(&in, 1500)) { return nao("o C6 nao respondeu ao INFO"); }
-  if (in.sono_estado != C6_SONO_ACORDADO) { return nao("o firmware do C6 nao sabe dormir (grave o c6-5)"); }
+  if (!tab5_farejo_info_c6(&in, 1500)) { return nao(tr("o C6 nao respondeu ao INFO")); }
+  if (in.sono_estado != C6_SONO_ACORDADO) { return nao(tr("o firmware do C6 nao sabe dormir (grave o c6-5)")); }
 
   xSemaphoreTake(s_trava, portMAX_DELAY);
-  if (s_estado.load() != TAB5_C6_SONO_ACORDADO) { xSemaphoreGive(s_trava); return nao("o enlace ja esta desmontado"); }
+  if (s_estado.load() != TAB5_C6_SONO_ACORDADO) { xSemaphoreGive(s_trava); return nao(tr("o enlace ja esta desmontado")); }
   // Primeiro o aviso (pela interrupcao do SDIO): o C6 desmonta o escravo dele
   // na tarefa do esp_hosted. Depois o nosso lado. O C6 so arma o despertar
   // pelo CMD 500 ms depois - os comandos que o desmontar daqui ainda passa
@@ -510,7 +511,7 @@ bool tab5_c6_sono_dormir(char* motivo, size_t tam)
     s_desmontando = false;
     tab5_sd_controlador_soltar();
     xSemaphoreGive(s_trava);
-    return nao("o aviso ao C6 nao saiu");
+    return nao(tr("o aviso ao C6 nao saiu"));
   }
   vTaskDelay(pdMS_TO_TICKS(30));
   // A sdio_read estaciona antes do deinit (ver __wrap_eh_host_port_sdio_wait_slave_intr).

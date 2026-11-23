@@ -440,6 +440,17 @@ static const comando_t COMANDOS[] = {
     N_("O assistente so abre sozinho num aparelho que nunca rodou o sistema (ou\n"
     "gravado pelo M5Burner). Isto e para testar. Concluir marca como feito."),
     c_boasvindas },
+  { "fuso", "tz", G_SISTEMA,
+    N_("fuso horario: a regiao (com horario de verao), o fuso manual e o relogio 12/24 h"),
+    N_("fuso\tregiao, deslocamento agora e a hora\n"
+    "fuso lista\tas regioes, com o numero de cada uma\n"
+    "fuso <n>\tescolhe a regiao n (0 = manual)\n"
+    "fuso manual <minutos>\tdeslocamento fixo, ex. 600 = UTC+10\n"
+    "fuso 12h|24h\to formato do relogio"),
+    N_("O mesmo que Ajustes > Data e hora. Com uma regiao, o horario de verao muda\n"
+    "sozinho. So a hora mostrada muda: o relogio interno e os registros ficam em UTC."),
+    c_fuso,
+    N_("fuso 1\tMelbourne, Sydney (AEST/AEDT)\nfuso 12h\trelogio de 12 horas") },
 #if M5_COM_BERRY
   { "berry", "", G_SISTEMA,
     N_("roda codigo Berry (o interpretador de script)"),
@@ -506,7 +517,7 @@ static const comando_t COMANDOS[] = {
     N_("painel: quadros, piscada azul, relogio e prioridade"),
     N_("tela\testado do painel e da janela de medida\n"
     "tela medir\tzera a janela; use o aparelho e rode 'tela'\n"
-    "tela foto [nome]\tgrava a tela em apps/Console/<nome>.bmp\n"
+    "tela foto [nome]\tgrava a tela em apps/Console/<nome>.bmp (sem nome: com data e hora)\n"
     "tela banco\tcompara os motores de copia (PPA, DMA2D, CPU)\n"
     "tela relogio <mhz>\ttroca o relogio de pixel e grava (80 = fabrica)\n"
     "tela prioridade alta|padrao\tprioridade da tela no barramento AXI\n"
@@ -937,7 +948,7 @@ static const par_t CMD_EN[] = {
   { "receber", "receive" },      { "farejo", "sniff" },         { "busca", "search" },
   { "foto", "photo" },           { "concorrencia", "concurrency" }, { "simulacao", "simulation" },
   { "redes", "networks" },       { "nos", "nodes" },            { "enviar", "send" },
-  { "mem", "memory" },
+  { "mem", "memory" },          { "fuso", "timezone" },
 };
 
 static const par_t SUB_EN[] = {

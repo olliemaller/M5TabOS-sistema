@@ -206,7 +206,7 @@ static esp_err_t responder_quadro(httpd_req_t* req, const tamanho_t& t, const ch
     ESP_LOGW(TAG, "quadro %dx%d falhou (%s)", t.l, t.a, !ok ? "a camera nao entregou" : "jpeg");
     httpd_resp_set_status(req, "503 Service Unavailable");
     httpd_resp_set_hdr(req, "Retry-After", "1");
-    return httpd_resp_sendstr(req, "a camera nao entregou o quadro");
+    return httpd_resp_sendstr(req, "the camera did not deliver a frame");
   }
   httpd_resp_set_type(req, "image/jpeg");
   httpd_resp_set_hdr(req, "Cache-Control", "no-store");

@@ -55,10 +55,9 @@ void tab5_hora_ao_saltar(tab5_hora_salto_cb cb);
 // -------------------------------------------------------------------------
 // FUSO.
 // -------------------------------------------------------------------------
-// ESCOLHIDO PELA PESSOA (ajustes_fuso_min: assistente de boas-vindas e
-// Ajustes > Tela), padrao UTC-3. Sem horario de verao: um deslocamento fixo.
-// Se um dia precisar variar por estacao, e AQUI que entra a logica - nao
-// espalhada pelos apps.
+// CHOSEN BY THE USER: a region with its daylight-saving rule
+// (services/tab5_fuso, ajustes_fuso_zona) or a fixed offset (ajustes_fuso_min),
+// in the welcome assistant and Settings > Date and time.
 //
 // SO AFETA EXIBICAO. O RTC, a sincronizacao e os logs continuam em UTC PURO
 // de proposito - e o unico jeito de comparar carimbo de tempo entre nos da
@@ -86,6 +85,10 @@ static inline uint32_t tab5_hora_epoch(void)
 // formato de gmtime_r() (que e o que faz por baixo, so que sobre o epoch ja
 // deslocado).
 void tab5_hora_local(uint32_t epoch_utc, struct tm* out);
+
+// HH:MM AS THE USER LIKES IT: "21:05", or "9:05pm" with the 12-hour clock
+// (Settings > Date and time). Fits in 8 bytes either way.
+void tab5_hora_hhmm(const struct tm* t, char* out, size_t n);
 
 // NOME DE ARQUIVO DO DIA: "<prefixo>AAAA-MM-DD<sufixo>", no dia LOCAL - o dia
 // de quem usa. Todo arquivo diario do sistema (log, energia, monitor) usa

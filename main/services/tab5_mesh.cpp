@@ -276,7 +276,7 @@ static void gravar_desfecho(uint32_t id, uint8_t estado, uint8_t erro)
 // marcado transport_mechanism = MQTT. Ele prova que o pacote chegou ao
 // servidor, nao que algum radio o ouviu. Contado como OUVIDO, uma direta para
 // um no DESLIGADO ganhava o check cinza na hora e, como OUVIDO nao desce, o
-// "tentou demais" que o radio manda depois era engolido: o X so aparecia com
+// tr("tentou demais") que o radio manda depois era engolido: o X so aparecia com
 // a internet desligada. O proprio firmware ja ignora esse ACK para parar as
 // retransmissoes (ReliableRouter::sniffReceived); aqui ele tambem nao muda a
 // marca de uma direta. Na difusao continua valendo ENTREGUE - quem esta no
@@ -342,21 +342,21 @@ const char* mesh_erro_nome(uint8_t erro)
   // cresce a cada versao do firmware e o resto cai no "?".
   switch (erro) {
     case 0:   return "ok";
-    case 1:   return "sem rota";
-    case 2:   return "recusado";
-    case 3:   return "sem resposta";
-    case 4:   return "sem interface";
-    case 5:   return "tentou demais";
-    case 6:   return "canal errado";
-    case 7:   return "grande demais";
-    case 8:   return "ninguém respondeu";
-    case 9:   return "limite de transmissão";
-    case 32:  return "pedido inválido";
-    case 33:  return "sem autorização";
-    case 34:  return "falha de chave";
-    case 35:  return "chave desconhecida";
-    case 38:  return "rápido demais";
-    case MESH_ERRO_FILA: return "fila do rádio cheia";
+    case 1:   return tr("sem rota");
+    case 2:   return tr("recusado");
+    case 3:   return tr("sem resposta");
+    case 4:   return tr("sem interface");
+    case 5:   return tr("tentou demais");
+    case 6:   return tr("canal errado");
+    case 7:   return tr("grande demais");
+    case 8:   return tr("ninguém respondeu");
+    case 9:   return tr("limite de transmissão");
+    case 32:  return tr("pedido inválido");
+    case 33:  return tr("sem autorização");
+    case 34:  return tr("falha de chave");
+    case 35:  return tr("chave desconhecida");
+    case 38:  return tr("rápido demais");
+    case MESH_ERRO_FILA: return tr("fila do rádio cheia");
     default:  return "?";
   }
 }
@@ -612,7 +612,7 @@ static bool pode_sair(uint32_t para)
 // DOIS SEGUNDOS ENTRE TEXTOS. O firmware descarta o texto que chega do
 // cliente menos de 2 s depois do anterior (PhoneAPI, rate limit da porta TEXT,
 // da 2.5 ate a atual): na 2.7 sem erro nenhum - a mensagem ficava "enviando" e
-// virava "sem resposta". A fila espera o que falta. Chamada pela tarefa do
+// virava tr("sem resposta"). A fila espera o que falta. Chamada pela tarefa do
 // servico, sem trava.
 static void laco_envios(void)
 {
@@ -656,7 +656,7 @@ bool tab5_mesh_enviar(uint32_t para, uint8_t canal, const char* texto)
   // indistinguivel de um sistema quebrado, e foi assim que ficou o tempo todo.
   //
   // Mandar e o certo: se o radio nao estiver mesmo la, o queueStatus nao vem, o
-  // ACK nao vem, e o prazo de 60s marca a mensagem como "sem resposta" na
+  // ACK nao vem, e o prazo de 60s marca a mensagem como tr("sem resposta") na
   // propria tela. Isso e informacao; o silencio nao era.
   if (!tab5_mesh_no_ar()) {
     ESP_LOGW(TAG, "enlace sem quadro recente - enviando assim mesmo");
@@ -1242,9 +1242,9 @@ void tab5_mesh_rastro(bool ligado) { s_rastro = ligado; }
 void tab5_mesh_grove_diag(char* out, size_t tam)
 {
   snprintf(out, tam,
-           "Grove: recebidos %lu bytes em %lu quadros bons, %lu bytes fora de quadro, %lu grandes demais\n"
-           "       enviados %lu bytes em %lu quadros | ultimo quadro do no ha %lu ms\n"
-           "UART:  estouro de FIFO %lu, buffer cheio %lu, erro de quadro %lu, paridade %lu, break %lu\n",
+           "Grove: received %lu bytes in %lu good frames, %lu bytes outside frames, %lu oversized\n"
+           "       sent %lu bytes in %lu frames | last frame from node %lu ms ago\n"
+           "UART:  FIFO overflow %lu, buffer full %lu, frame error %lu, parity %lu, break %lu\n",
            (unsigned long)s_g.rx_bytes, (unsigned long)s_c_quadros, (unsigned long)s_g.fora_de_quadro,
            (unsigned long)s_g.grandes, (unsigned long)s_g.tx_bytes, (unsigned long)s_g.tx_quadros,
            (unsigned long)(s_ultimo_quadro_ms ? tab5_agora_ms() - s_ultimo_quadro_ms : 0),
@@ -1277,7 +1277,7 @@ const char* tab5_mesh_proxy_estado(void)
   if (!mesh_mqtt_conectado())                    { return N_("conectando ao servidor"); }
   uint32_t sobe, desce, perde;
   mesh_mqtt_proxy_contadores(&sobe, &desce, &perde);
-  snprintf(d, sizeof(d), "conectado (%lu/%lu)", (unsigned long)sobe, (unsigned long)desce);
+  snprintf(d, sizeof(d), tr("conectado (%lu/%lu)"), (unsigned long)sobe, (unsigned long)desce);
   return d;
 }
 

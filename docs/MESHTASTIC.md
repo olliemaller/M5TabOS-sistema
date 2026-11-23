@@ -1,159 +1,181 @@
-# Integração com o Meshtastic
+# Meshtastic integration
 
-Mapa do que o protocolo do Meshtastic oferece a um cliente (o papel do Tab5
-diante do nó) e do que o M5tabOS usa ou pode usar. Conferido contra os
-`.pb.h` gerados do firmware (`src/mesh/generated/meshtastic/`) e o
+A map of what the Meshtastic protocol offers a client (the Tab5's role towards
+the node) and of what M5tabOS uses or could use. Checked against the
+generated `.pb.h` files of the firmware (`src/mesh/generated/meshtastic/`) and
 `AdminModule.cpp`.
 
-## O teto de nós do rádio
+## The radio's node ceiling
 
-O número de nós que um rádio guarda é **constante de compilação do firmware**
-(`MAX_NUM_NODES`, `src/mesh/mesh-pb-constants.h`), não configuração:
+How many nodes a radio keeps is a **firmware compile-time constant**
+(`MAX_NUM_NODES`, `src/mesh/mesh-pb-constants.h`), not a setting:
 
-| Firmware | ESP32-S3 (Heltec V3, T-Beam S3) | ESP32 genérico, C3, **C6 (Unit C6L)**, nRF52840 |
+| Firmware | ESP32-S3 (Heltec V3, T-Beam S3) | Generic ESP32, C3, **C6 (Unit C6L)**, nRF52840 |
 |---|---|---|
-| até 2.7.x | 100 / 200 / 250 conforme a flash (4 / 8 / 16 MB) | **100** |
-| 2.8.0+ | igual | **120** + "warm tier" (identidade e chave dos despejados) |
+| up to 2.7.x | 100 / 200 / 250 depending on flash (4 / 8 / 16 MB) | **100** |
+| 2.8.0+ | the same | **120** + a "warm tier" (identity and key of evicted nodes) |
 
-Um Heltec V3 com 8 MB de flash guarda 200, e o Unit C6L guarda 100: os mesmos
-nós ouvidos e listas de tamanho diferente. O "nós online/total" do `LocalStats`
-é a visão do rádio e para no teto dele. Atualizar o C6L para a 2.8 sobe o teto
-para 120; mais do que isso, só fora do rádio.
+A Heltec V3 with 8 MB of flash keeps 200 and the Unit C6L keeps 100: the same
+nodes heard, lists of different sizes. The "nodes online/total" of
+`LocalStats` is the radio's view and stops at its ceiling. Updating the C6L to
+2.8 raises the ceiling to 120; beyond that, only outside the radio.
 
-**Fora do rádio é onde o Tab5 ganha.** A tabela do serviço (256 vagas, PSRAM)
-aprende também pelos pacotes ao vivo (NODEINFO, POSITION, TELEMETRY, texto), não
-só pelo dump. Com uma NodeDB própria no cartão (todos os campos, não só o
-nome), o Tab5 passa a lembrar mais nós do que o rádio consegue guardar.
-`MyNodeInfo.nodedb_count` (campo 15) diz quantos o rádio tem, para mostrar os
-dois números lado a lado.
+**Outside the radio is where the Tab5 wins.** The service's table (256 slots,
+PSRAM) also learns from live packets (NODEINFO, POSITION, TELEMETRY, text),
+not only from the dump. With its own NodeDB on the card (every field, not just
+the name), the Tab5 remembers more nodes than the radio can keep.
+`MyNodeInfo.nodedb_count` (field 15) says how many the radio has, to show both
+numbers side by side.
 
-## Como o cliente fala com o nó
+## How the client talks to the node
 
-- **FromRadio** (do nó para nós): `1 id, 2 packet, 3 my_info, 4 node_info,
+- **FromRadio** (node to us): `1 id, 2 packet, 3 my_info, 4 node_info,
   5 config, 6 log_record, 7 config_complete_id, 8 rebooted, 9 moduleConfig,
   10 channel, 11 queueStatus, 13 metadata, 14 mqttClientProxyMessage,
   15 fileInfo, 16 clientNotification, 17 deviceuiConfig, 19 region_presets`.
-- **ToRadio** (de nós para o nó): `1 packet, 3 want_config_id, 4 disconnect,
+- **ToRadio** (us to the node): `1 packet, 3 want_config_id, 4 disconnect,
   7 heartbeat`.
-- **Administração** é um `MeshPacket` comum: destino = o próprio nó, porta
-  `ADMIN_APP` (6), payload = `AdminMessage`. Sem `from` (= 0), o firmware o
-  trata como admin LOCAL de um cliente conectado e **não pede chave de
-  sessão** (`AdminModule.cpp`, ramo `mp.from == 0`). A chave (`session_passkey`)
-  só é exigida para administrar um nó REMOTO.
+- **Administration** is an ordinary `MeshPacket`: destination = the node
+  itself, port `ADMIN_APP` (6), payload = `AdminMessage`. Without `from`
+  (= 0), the firmware treats it as LOCAL admin from a connected client and
+  **does not ask for a session key** (`AdminModule.cpp`, the `mp.from == 0`
+  branch). The key (`session_passkey`) is only required to administer a
+  REMOTE node.
 
-## AdminMessage - o que dá para fazer
+## AdminMessage - what can be done
 
-| Campo | Operação | Observação |
+| Field | Operation | Notes |
 |---|---|---|
-| 1/2 | `get_channel_request` / resposta | um canal por pedido |
-| 3/4 | `get_owner_request` / resposta (User) | |
-| 5/6 | `get_config_request` (tipo) / resposta | o dump já traz todas |
-| 7/8 | `get_module_config_request` / resposta | idem |
-| 12/13 | `get_device_metadata` | firmware, capacidades, hw |
-| 32 | `set_owner` (User) | nome longo/curto, `is_licensed`, `is_unmessagable` |
-| 33 | `set_channel` (Channel) | nome, PSK, papel, uplink/downlink MQTT, precisão de posição |
-| 34 | `set_config` (Config) | **substitui a SEÇÃO inteira** (ver abaixo) |
-| 35 | `set_module_config` | idem, por módulo |
-| 38 | `remove_by_nodenum` | tira um nó da NodeDB do rádio |
-| 39/40 | `set/remove_favorite_node` | **em uso** (estrela) |
-| 41/42 | `set/remove_fixed_position` | posição fixa - pode vir do GPS do Tab5 |
-| 43 | `set_time_only` | acerta o relógio do nó |
-| 47/48 | `set/remove_ignored_node` | bloquear um nó |
-| 49 | `toggle_muted_node` | silenciar um nó |
-| 64/65 | `begin/commit_edit_settings` | transação: várias mudanças, uma gravação |
-| 97 | `reboot_seconds` | reiniciar |
-| 98 | `shutdown_seconds` | desligar |
+| 1/2 | `get_channel_request` / response | one channel per request |
+| 3/4 | `get_owner_request` / response (User) | |
+| 5/6 | `get_config_request` (type) / response | the dump already brings them all |
+| 7/8 | `get_module_config_request` / response | likewise |
+| 12/13 | `get_device_metadata` | firmware, capabilities, hardware |
+| 32 | `set_owner` (User) | long/short name, `is_licensed`, `is_unmessagable` |
+| 33 | `set_channel` (Channel) | name, PSK, role, MQTT uplink/downlink, position precision |
+| 34 | `set_config` (Config) | **replaces the WHOLE section** (see below) |
+| 35 | `set_module_config` | likewise, per module |
+| 38 | `remove_by_nodenum` | removes a node from the radio's NodeDB |
+| 39/40 | `set/remove_favorite_node` | **in use** (star) |
+| 41/42 | `set/remove_fixed_position` | fixed position - can come from the Tab5 GPS |
+| 43 | `set_time_only` | sets the node's clock |
+| 47/48 | `set/remove_ignored_node` | block a node |
+| 49 | `toggle_muted_node` | mute a node |
+| 64/65 | `begin/commit_edit_settings` | transaction: several changes, one write |
+| 97 | `reboot_seconds` | reboot |
+| 98 | `shutdown_seconds` | shut down |
 | 99 / 94 | `factory_reset_config` / `factory_reset_device` | |
-| 100 | `nodedb_reset` | esvaziar a NodeDB do rádio |
+| 100 | `nodedb_reset` | empty the radio's NodeDB |
 
-### Mudar configuração sem modelar o protobuf inteiro
+### Changing settings without modelling the whole protobuf
 
-`set_config` grava a seção inteira (`config.lora = c.payload_variant.lora`):
-mandar só o campo alterado zera os outros. A saída que mantém o parser
-pequeno do serviço:
+`set_config` writes the whole section (`config.lora = c.payload_variant.lora`):
+sending only the changed field zeroes the others. The way out that keeps the
+service's parser small:
 
-1. Guardar os **bytes crus** de cada seção recebida no dump (FromRadio 5 e 9).
-2. Para alterar, mandar os bytes guardados **mais** o campo novo no fim. Em
-   protobuf, campo escalar repetido vale a última ocorrência; o nanopb do
-   firmware decodifica assim. Não vale para campo `repeated` (ex.:
-   `ignore_incoming`), que acumularia.
-3. Envolver em `begin_edit_settings` … `commit_edit_settings`. O firmware
-   grava e, se a seção exigir, **reinicia sozinho**; o `rebooted` (FromRadio 8)
-   avisa, e o serviço já pede a configuração de novo.
+1. Keep the **raw bytes** of each section received in the dump (FromRadio 5
+   and 9).
+2. To change something, send the stored bytes **plus** the new field at the
+   end. In protobuf, a repeated scalar field takes its last occurrence; the
+   firmware's nanopb decodes it that way. This does not work for `repeated`
+   fields (e.g. `ignore_incoming`), which would accumulate.
+3. Wrap it in `begin_edit_settings` … `commit_edit_settings`. The firmware
+   writes and, if the section needs it, **reboots by itself**; `rebooted`
+   (FromRadio 8) tells us, and the service asks for the configuration again.
 
-### Seções e os campos que interessam
+### Sections and the fields that matter
 
 - **device** (Config 1): `role` (CLIENT, CLIENT_MUTE, ROUTER, REPEATER,
   TRACKER, SENSOR, CLIENT_HIDDEN, ROUTER_LATE, CLIENT_BASE…),
   `rebroadcast_mode`, `node_info_broadcast_secs`, `tzdef`,
   `led_heartbeat_disabled`.
 - **position** (2): `position_broadcast_secs`, `smart_enabled`,
-  `fixed_position`, `gps_mode` (**deve ficar NOT_PRESENT no C6L ligado ao
-  Grove**: o GPS toma os mesmos pinos da serial), `broadcast_smart_minimum_*`.
+  `fixed_position`, `gps_mode` (**must stay NOT_PRESENT on a C6L on Grove**:
+  the GPS takes the same pins as the serial link), `broadcast_smart_minimum_*`.
 - **power** (3): `is_power_saving`, `ls_secs`, `min_wake_secs`.
 - **network** (4): `wifi_enabled`, `wifi_ssid`, `wifi_psk`, `ntp_server` -
-  o Wi-Fi do próprio C6L, que alimenta o MQTT dele.
-- **display** (5): tela do C6L (`screen_on_secs`, `flip_screen`, `units`).
-- **lora** (6): `region` (BR_902 = 26), `modem_preset` (LONG_FAST = 0 …),
-  `hop_limit`, `tx_enabled`, `tx_power`, `channel_num`,
+  the C6L's own Wi-Fi, which feeds its MQTT.
+- **display** (5): the C6L screen (`screen_on_secs`, `flip_screen`, `units`).
+- **lora** (6): `region` (ANZ = 6, BR_902 = 26), `modem_preset`
+  (LONG_FAST = 0 …), `hop_limit`, `tx_enabled`, `tx_power`, `channel_num`,
   `sx126x_rx_boosted_gain`, `ignore_mqtt`, `config_ok_to_mqtt`.
-- **bluetooth** (7): `enabled`, `mode` (PIN aleatório/fixo/sem), `fixed_pin`.
-- **security** (8): chaves, `admin_key` (até 3), `serial_enabled`,
-  `admin_channel_enabled`. **Não mexer** sem saber: trava o nó para fora.
+- **bluetooth** (7): `enabled`, `mode` (random/fixed/no PIN), `fixed_pin`.
+- **security** (8): keys, `admin_key` (up to 3), `serial_enabled`,
+  `admin_channel_enabled`. **Do not touch** without knowing: it locks you out
+  of the node.
 
 ModuleConfig: `1 mqtt, 2 serial, 3 external_notification, 4 store_forward,
 5 range_test, 6 telemetry, 7 canned_message, 9 remote_hardware,
 10 neighbor_info, 11 ambient_lighting, 12 detection_sensor, 13 paxcounter,
-14 statusmessage, 15 traffic_management, 17 mesh_beacon`. Os úteis aqui:
-**mqtt** (ligar, servidor, uplink/downlink por canal, mapa), **telemetry**
-(intervalos), **neighbor_info**, **store_forward**, **range_test**.
+14 statusmessage, 15 traffic_management, 17 mesh_beacon`. The useful ones
+here: **mqtt** (on, server, per-channel uplink/downlink, map), **telemetry**
+(intervals), **neighbor_info**, **store_forward**, **range_test**.
 
-**Serial (ModuleConfig 2) é a corda que nos prende ao nó**: mudar `mode`,
-pinos ou baud derruba o enlace do Grove. Fica de fora da edição.
+**Serial (ModuleConfig 2) is the rope that ties us to the node**: changing
+`mode`, pins or baud drops the Grove link. It stays out of editing.
 
-## Portas de aplicação
+## Application ports
 
-Em uso: `1 TEXT, 3 POSITION, 4 NODEINFO, 5 ROUTING, 6 ADMIN, 67 TELEMETRY`.
-Úteis para integrar: `8 WAYPOINT` (pontos no mapa), `70 TRACEROUTE` (a rota
-até um nó, salto a salto, com SNR de cada um), `71 NEIGHBORINFO` (vizinhos
-diretos de cada nó - o grafo da malha), `65 STORE_FORWARD` (histórico
-guardado por um roteador), `66 RANGE_TEST`, `73 MAP_REPORT`,
-`12 KEY_VERIFICATION`.
+In use: `1 TEXT, 3 POSITION, 4 NODEINFO, 5 ROUTING, 6 ADMIN, 67 TELEMETRY`.
+Useful to integrate: `8 WAYPOINT` (map points), `70 TRACEROUTE` (the route to
+a node, hop by hop, with the SNR of each), `71 NEIGHBORINFO` (each node's
+direct neighbours - the mesh graph), `65 STORE_FORWARD` (history kept by a
+router), `66 RANGE_TEST`, `73 MAP_REPORT`, `12 KEY_VERIFICATION`.
 
-## Outras mensagens que o nó manda e hoje se perdem
+## Other messages the node sends that are lost today
 
-- `metadata` (13): já lido só o firmware; traz também `hasWifi`,
+- `metadata` (13): only the firmware is read; it also carries `hasWifi`,
   `hasBluetooth`, `role`, `hw_model`, `hasPKC`, `excluded_modules`.
-- `my_info` (3): só o número; traz `reboot_count`, `nodedb_count`,
+- `my_info` (3): only the number; it carries `reboot_count`, `nodedb_count`,
   `pio_env`, `firmware_edition`.
-- `clientNotification` (16): avisos do firmware para o usuário ("favoritos
-  cheios", chave duplicada, chave fraca). Deveriam virar notificação na barra.
-- `log_record` (6): o log do nó, para diagnóstico.
-- `NodeInfo` 10–13: `is_favorite` (em uso), `is_ignored`,
+- `clientNotification` (16): firmware notices for the user ("favourites
+  full", duplicate key, weak key). They should become status-bar notifications.
+- `log_record` (6): the node's log, for diagnostics.
+- `NodeInfo` 10–13: `is_favorite` (in use), `is_ignored`,
   `is_key_manually_verified`, `is_muted`.
 
-## O que já está implementado
+## What is already implemented
 
-- Fases 1, 2 e 5 abaixo: `services/tab5_mesh_admin.{hpp,cpp}` e a página "Nó"
-  do app Mesh; NodeDB do Tab5 em `nodedb.bin`.
-- Conferido nas versões 2.5, 2.7 e atual do firmware: números de campo,
-  dispensa de chave no admin local e reinício no `commit_edit_settings`.
-- `testes/teste_mesh_admin.py` prova a montagem com os protobufs oficiais.
+- Phases 1, 2 and 5 below: `services/tab5_mesh_admin.{hpp,cpp}` and the
+  "Node" page of the Mesh app; the Tab5's NodeDB in `nodedb.bin`.
+- Checked against firmware 2.5, 2.7 and current: field numbers, no key for
+  local admin, and the reboot on `commit_edit_settings`.
+- `testes/teste_mesh_admin.py` proves the encoding with the official
+  protobufs.
 
-## Roteiro proposto
+## Internet mode (MQTT) and the automatic server
 
-1. **Ver o nó** (só leitura, sem risco): guardar Config/ModuleConfig/
-   metadata/my_info do dump; página "Nó" com firmware, hardware, região,
-   preset, papel, saltos, potência, MQTT, Bluetooth, posição; nós do rádio
-   (`nodedb_count`) ao lado dos do Tab5; `clientNotification` vira aviso.
-2. **Ajustes seguros**, um toque e o nó grava e reinicia: nome longo/curto,
-   papel, `hop_limit`, `tx_power`, intervalos de posição/NodeInfo/telemetria,
-   MQTT (ligar, uplink/downlink), Bluetooth (ligar, PIN fixo), posição fixa
-   vinda do GPS do Tab5, acertar a hora do nó.
-3. **Ajustes de alto impacto**, com confirmação: região, preset do modem,
-   canais (criar, renomear, PSK, papel, apagar), reiniciar, desligar,
-   esvaziar a NodeDB, tirar/ignorar/silenciar um nó.
-4. **Malha**: traceroute a partir do cartão do nó, vizinhos (NeighborInfo),
-   waypoints, teste de alcance.
-5. **NodeDB própria no cartão**: todos os campos de todo nó visto, além do
-   teto do rádio.
+With no node, the Tab5 talks to the mesh over Wi-Fi through an MQTT server
+(Settings > Meshtastic > Internet). The list of servers is the user's own.
+When the choice is **Automatic** and the node has not taught one, the server
+and topic root now come from the time zone (`padrao_regional` in
+`services/tab5_mesh_mqtt.cpp`):
+
+| Time zone | Server | Root |
+|---|---|---|
+| UTC-3 (Brazil) | `platform.meshbrasil.com` | `meshdev` (the original default) |
+| UTC+9:30 to UTC+13 (Australia, New Zealand), and the Perth region | `mqtt.meshtastic.org` | `msh/ANZ` |
+| UTC+9 | `mqtt.meshtastic.org` | `msh/JP` |
+| UTC+5:30 | `mqtt.meshtastic.org` | `msh/IN` |
+| UTC-1 to UTC+3 (Europe) | `mqtt.meshtastic.org` | `msh/EU_868` |
+| UTC-10 to UTC-3:30 (North America) | `mqtt.meshtastic.org` | `msh/US` |
+| anything else | `mqtt.meshtastic.org` | `msh` |
+
+## Proposed roadmap
+
+1. **See the node** (read only, no risk): keep Config/ModuleConfig/
+   metadata/my_info from the dump; a "Node" page with firmware, hardware,
+   region, preset, role, hops, power, MQTT, Bluetooth, position; the radio's
+   nodes (`nodedb_count`) next to the Tab5's; `clientNotification` becomes a
+   notice.
+2. **Safe settings**, one tap and the node writes and reboots: long/short
+   name, role, `hop_limit`, `tx_power`, position/NodeInfo/telemetry intervals,
+   MQTT (on, uplink/downlink), Bluetooth (on, fixed PIN), fixed position from
+   the Tab5 GPS, setting the node's time.
+3. **High-impact settings**, with confirmation: region, modem preset,
+   channels (create, rename, PSK, role, delete), reboot, shut down, empty the
+   NodeDB, remove/ignore/mute a node.
+4. **Mesh**: traceroute from the node card, neighbours (NeighborInfo),
+   waypoints, range test.
+5. **Own NodeDB on the card**: every field of every node seen, beyond the
+   radio's ceiling.

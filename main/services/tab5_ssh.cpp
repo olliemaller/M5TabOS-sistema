@@ -1,5 +1,6 @@
 // SSH (cliente) - ver tab5_ssh.hpp.
 #include "tab5_ssh.hpp"
+#include "idioma.h"
 
 #include <stdio.h>
 #include <stdarg.h>
@@ -204,7 +205,7 @@ static bool impressao_de(LIBSSH2_SESSION* ses, char* fp, size_t n)
 
 int tab5_ssh_rodar(const tab5_ssh_t* s, char* erro, size_t erro_n)
 {
-  if (!garantir_libssh2()) { snprintf(erro, erro_n, "o libssh2 nao iniciou"); return -1; }
+  if (!garantir_libssh2()) { snprintf(erro, erro_n, tr("o libssh2 nao iniciou")); return -1; }
   const int porta = s->porta > 0 ? s->porta : 22;
   const bool shell = !s->comando || !s->comando[0];
   int codigo = -1;
@@ -213,7 +214,7 @@ int tab5_ssh_rodar(const tab5_ssh_t* s, char* erro, size_t erro_n)
   uint32_t ms = 0;
   const int sock = tab5_rede_conectar(s->host, porta, 8000, &ms);
   if (sock < 0) {
-    snprintf(erro, erro_n, sock == -1 ? "%s nao resolveu" : "%s:%d nao conectou (%s)", s->host, porta,
+    snprintf(erro, erro_n, sock == -1 ? tr("%s nao resolveu") : tr("%s:%d nao conectou (%s)"), s->host, porta,
              sock == -1 ? "" : strerror(-sock));
     return -1;
   }
@@ -224,16 +225,16 @@ int tab5_ssh_rodar(const tab5_ssh_t* s, char* erro, size_t erro_n)
   ctx_t* c = (ctx_t*)heap_caps_calloc(1, sizeof(ctx_t), MALLOC_CAP_SPIRAM);
   LIBSSH2_SESSION* ses = c ? libssh2_session_init_ex(alocar, soltar, realocar, c) : nullptr;
   LIBSSH2_CHANNEL* ch = nullptr;
-  if (!ses) { snprintf(erro, erro_n, "sem memoria"); goto fim; }
+  if (!ses) { snprintf(erro, erro_n, tr("sem memoria")); goto fim; }
   c->s = s;
   libssh2_session_set_blocking(ses, 1);
   libssh2_session_set_timeout(ses, 15000);
 
-  dizer(s, "conectado a %s:%d (%lu ms)\n", s->host, porta, (unsigned long)ms);
+  dizer(s, tr("conectado a %s:%d (%lu ms)\n"), s->host, porta, (unsigned long)ms);
   if (libssh2_session_handshake(ses, sock) != 0) {
     char* m = nullptr;
     libssh2_session_last_error(ses, &m, nullptr, 0);
-    snprintf(erro, erro_n, "o aperto de mao falhou: %s", m ? m : "?");
+    snprintf(erro, erro_n, tr("o aperto de mao falhou: %s"), m ? m : "?");
     goto fim;
   }
   {
@@ -246,17 +247,17 @@ int tab5_ssh_rodar(const tab5_ssh_t* s, char* erro, size_t erro_n)
       snprintf(chave, sizeof(chave), "%s:%d", s->host, porta);
       const int kh = kh_conferir(chave, fp, antes, sizeof(antes));
       if (kh < 0) {
-        dizer(s, "ATENCAO: a chave deste servidor MUDOU.\n  guardada: %s\n  agora:    %s\n"
+        dizer(s, tr("ATENCAO: a chave deste servidor MUDOU.\n  guardada: %s\n  agora:    %s\n"
                  "Pode ser outro aparelho no lugar do servidor. Se ele foi reinstalado,\n"
-                 "esqueca a antiga com: ssh esquecer %s:%d\n", antes, fp, s->host, porta);
-        snprintf(erro, erro_n, "chave do servidor diferente da guardada - nao conectei");
+                 "esqueca a antiga com: ssh esquecer %s:%d\n"), antes, fp, s->host, porta);
+        snprintf(erro, erro_n, tr("chave do servidor diferente da guardada - nao conectei"));
         goto fim;
       }
       if (kh == 0) {
         kh_guardar(chave, fp);
-        dizer(s, "servidor novo - chave guardada: %s\n", fp);
+        dizer(s, tr("servidor novo - chave guardada: %s\n"), fp);
       } else {
-        dizer(s, "chave do servidor confere (%s)\n", fp);
+        dizer(s, tr("chave do servidor confere (%s)\n"), fp);
       }
     }
   }
@@ -265,29 +266,29 @@ int tab5_ssh_rodar(const tab5_ssh_t* s, char* erro, size_t erro_n)
   {
     const char* metodos = libssh2_userauth_list(ses, s->usuario, (unsigned int)strlen(s->usuario));
     if (!metodos && !libssh2_userauth_authenticated(ses)) {
-      snprintf(erro, erro_n, "o servidor nao disse como autenticar");
+      snprintf(erro, erro_n, tr("o servidor nao disse como autenticar"));
       goto fim;
     }
     const bool por_senha = metodos && strstr(metodos, "password");
     const bool por_kbd   = metodos && strstr(metodos, "keyboard-interactive");
     if (metodos && !por_senha && !por_kbd) {
-      snprintf(erro, erro_n, "o servidor so aceita: %s (senha nao)", metodos);
+      snprintf(erro, erro_n, tr("o servidor so aceita: %s (senha nao)"), metodos);
       goto fim;
     }
     char pergunta[96];
-    snprintf(pergunta, sizeof(pergunta), "senha de %s@%s: ", s->usuario, s->host);
+    snprintf(pergunta, sizeof(pergunta), tr("senha de %s@%s: "), s->usuario, s->host);
     for (int tent = 0; metodos && tent < 3 && !libssh2_userauth_authenticated(ses); ++tent) {
       if (!pedir(s, pergunta, c->senha, sizeof(c->senha), true, 120000)) {
-        snprintf(erro, erro_n, "sem senha");
+        snprintf(erro, erro_n, tr("sem senha"));
         goto fim;
       }
       const int r = por_senha ? libssh2_userauth_password(ses, s->usuario, c->senha)
                               : libssh2_userauth_keyboard_interactive(ses, s->usuario, kbd);
       memset(c->senha, 0, sizeof(c->senha));
-      if (r != 0) { dizer(s, "senha recusada\n"); }
+      if (r != 0) { dizer(s, tr("senha recusada\n")); }
     }
     if (!libssh2_userauth_authenticated(ses)) {
-      if (!erro[0]) { snprintf(erro, erro_n, "nao autenticou"); }
+      if (!erro[0]) { snprintf(erro, erro_n, tr("nao autenticou")); }
       goto fim;
     }
   }
@@ -297,10 +298,10 @@ int tab5_ssh_rodar(const tab5_ssh_t* s, char* erro, size_t erro_n)
   if (shell) {
     // "dumb": o outro lado nao manda cor nem desenha tela - linha a linha.
     if (libssh2_channel_request_pty(ch, "dumb") != 0 || libssh2_channel_shell(ch) != 0) {
-      snprintf(erro, erro_n, "o servidor nao abriu o shell");
+      snprintf(erro, erro_n, tr("o servidor nao abriu o shell"));
       goto fim;
     }
-    dizer(s, "shell linha a linha ('exit' sai; nano/top/vim nao funcionam aqui)\n");
+    dizer(s, tr("shell linha a linha ('exit' sai; nano/top/vim nao funcionam aqui)\n"));
   } else if (libssh2_channel_exec(ch, s->comando) != 0) {
     snprintf(erro, erro_n, "o servidor recusou o comando");
     goto fim;
@@ -447,37 +448,37 @@ static void corpo_sessao(void*)
   char* buf = nullptr;
   int sock = -1;
   uint32_t ms = 0;
-  if (!garantir_libssh2()) { snprintf(erro, sizeof(erro), "o libssh2 nao iniciou"); goto fim; }
+  if (!garantir_libssh2()) { snprintf(erro, sizeof(erro), tr("o libssh2 nao iniciou")); goto fim; }
   sock = tab5_rede_conectar(host, porta, 8000, &ms);
-  if (sock < 0) { snprintf(erro, sizeof(erro), sock == -1 ? "%s nao resolveu" : "%s nao conectou", host); goto fim; }
+  if (sock < 0) { snprintf(erro, sizeof(erro), sock == -1 ? tr("%s nao resolveu") : tr("%s nao conectou"), host); goto fim; }
   {
     struct timeval tv = { 15, 0 };
     setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
   }
   c = (ctx_t*)heap_caps_calloc(1, sizeof(ctx_t), MALLOC_CAP_SPIRAM);
   ses = c ? libssh2_session_init_ex(alocar, soltar, realocar, c) : nullptr;
-  if (!ses) { snprintf(erro, sizeof(erro), "sem memoria"); goto fim; }
+  if (!ses) { snprintf(erro, sizeof(erro), tr("sem memoria")); goto fim; }
   libssh2_session_set_blocking(ses, 1);
   libssh2_session_set_timeout(ses, 15000);
-  if (libssh2_session_handshake(ses, sock) != 0) { snprintf(erro, sizeof(erro), "o aperto de mao falhou"); goto fim; }
+  if (libssh2_session_handshake(ses, sock) != 0) { snprintf(erro, sizeof(erro), tr("o aperto de mao falhou")); goto fim; }
 
   // O SERVIDOR E QUEM DIZ SER? Mesmo known_hosts do comando ssh.
   {
     char fp[64], chave[96], antes[64] = "";
-    if (!impressao_de(ses, fp, sizeof(fp))) { snprintf(erro, sizeof(erro), "o servidor nao mostrou a chave"); goto fim; }
+    if (!impressao_de(ses, fp, sizeof(fp))) { snprintf(erro, sizeof(erro), tr("o servidor nao mostrou a chave")); goto fim; }
     snprintf(chave, sizeof(chave), "%s:%d", host, porta);
     trava_s();
     snprintf(s_info.impressao, sizeof(s_info.impressao), "%s", fp);
     solta_s();
     const int kh = kh_conferir(chave, fp, antes, sizeof(antes));
     if (kh < 0) {
-      snprintf(erro, sizeof(erro), "a chave do servidor MUDOU (guardada %.20s...) - nao conectei", antes);
+      snprintf(erro, sizeof(erro), tr("a chave do servidor MUDOU (guardada %.20s...) - nao conectei"), antes);
       goto fim;
     }
     if (kh == 0) {
       s_aceitou = -1;
       mudar(TAB5_SSH_CONFIRMAR, "servidor novo: confira a impressao digital");
-      if (!esperar_resposta(false) || s_aceitou.load() != 1) { snprintf(erro, sizeof(erro), "impressao digital nao aceita"); goto fim; }
+      if (!esperar_resposta(false) || s_aceitou.load() != 1) { snprintf(erro, sizeof(erro), tr("impressao digital nao aceita")); goto fim; }
       kh_guardar(chave, fp);
     }
   }
@@ -490,33 +491,33 @@ static void corpo_sessao(void*)
     if (metodos && !por_senha && !por_kbd) { snprintf(erro, sizeof(erro), "o servidor so aceita: %.60s", metodos); goto fim; }
     for (int tent = 0; metodos && tent < 3 && !libssh2_userauth_authenticated(ses); ++tent) {
       s_tem_senha = false;
-      mudar(TAB5_SSH_SENHA, tent ? "senha recusada - tente de novo" : "");
-      if (!esperar_resposta(true)) { snprintf(erro, sizeof(erro), "sem senha"); goto fim; }
+      mudar(TAB5_SSH_SENHA, tent ? tr("senha recusada - tente de novo") : "");
+      if (!esperar_resposta(true)) { snprintf(erro, sizeof(erro), tr("sem senha")); goto fim; }
       trava_s();
       snprintf(c->senha, sizeof(c->senha), "%s", s_senha_dada);
       memset(s_senha_dada, 0, sizeof(s_senha_dada));
       solta_s();
-      mudar(TAB5_SSH_CONECTANDO, "conferindo a senha...");
+      mudar(TAB5_SSH_CONECTANDO, tr("conferindo a senha..."));
       const int r = por_senha ? libssh2_userauth_password(ses, usuario, c->senha)
                               : libssh2_userauth_keyboard_interactive(ses, usuario, kbd);
       memset(c->senha, 0, sizeof(c->senha));
       (void)r;
     }
-    if (!libssh2_userauth_authenticated(ses)) { snprintf(erro, sizeof(erro), "nao autenticou"); goto fim; }
+    if (!libssh2_userauth_authenticated(ses)) { snprintf(erro, sizeof(erro), tr("nao autenticou")); goto fim; }
   }
 
   // O TERMINAL DE VERDADE: xterm-256color no tamanho de quem abriu.
   ch = libssh2_channel_open_session(ses);
   if (!ch || libssh2_channel_request_pty_ex(ch, "xterm-256color", 14, nullptr, 0, cols, lin, 0, 0) != 0
       || libssh2_channel_shell(ch) != 0) {
-    snprintf(erro, sizeof(erro), "o servidor nao abriu o terminal");
+    snprintf(erro, sizeof(erro), tr("o servidor nao abriu o terminal"));
     goto fim;
   }
   {
     struct VTermBuilder b = {};
     b.rows = lin; b.cols = cols; b.allocator = &VT_ALOCADOR;
     VTerm* vt = vterm_build(&b);
-    if (!vt) { snprintf(erro, sizeof(erro), "sem memoria para a tela"); goto fim; }
+    if (!vt) { snprintf(erro, sizeof(erro), tr("sem memoria para a tela")); goto fim; }
     vterm_set_utf8(vt, 1);
     VTermScreen* vs = vterm_obtain_screen(vt);
     vterm_screen_set_callbacks(vs, &VT_TELA, nullptr);
@@ -529,7 +530,7 @@ static void corpo_sessao(void*)
     solta_s();
   }
   buf = (char*)heap_caps_malloc(2048, MALLOC_CAP_SPIRAM);
-  if (!buf) { snprintf(erro, sizeof(erro), "sem memoria"); goto fim; }
+  if (!buf) { snprintf(erro, sizeof(erro), tr("sem memoria")); goto fim; }
   mudar(TAB5_SSH_ABERTA, "");
 
   // O LACO: sem bloquear - o que chega vai a tela e aos assinantes; o que
@@ -625,7 +626,7 @@ bool tab5_ssh_sessao_abrir(const char* usuario, const char* host, int porta, int
   s_tem_senha = false;
   xStreamBufferReset(s_entrada);
   if (!pool_criar(nullptr, corpo_sessao, nullptr, "ssh", 6144, 3, DONO_SERVICO, "SSH")) {
-    mudar(TAB5_SSH_FIM, "sem tarefa para a sessao");
+    mudar(TAB5_SSH_FIM, tr("sem tarefa para a sessao"));
     return false;
   }
   sistema_avisar(AVISO_SSH);

@@ -106,6 +106,14 @@ void nmea_campo(const char *sentence, int indice, char *out, size_t out_tam)
         }
         p++;
     }
+    // The last field of a sentence without a "*hh" checksum ends at the end of
+    // the string (or at CR/LF): it used to come back empty.
+    if (atual == indice) {
+        size_t len = strcspn(inicio, "\r\n");
+        if (len >= out_tam) { len = out_tam - 1; }
+        memcpy(out, inicio, len);
+        out[len] = '\0';
+    }
 }
 
 // $GPGSV,3,1,11,10,63,137,42,07,61,098,45,...*7F

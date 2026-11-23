@@ -4,6 +4,7 @@
 // app_config_interno.hpp.
 
 #include "tab5_hora.hpp"
+#include "tab5_fuso.hpp"
 #include "app.h"
 #include "tab5_power.hpp"
 #include "ajustes.h"
@@ -30,37 +31,70 @@ static const int PASSO_TELA_S = 5;
 extern "C" const char* const m5tabos_compilado;
 
 // ---- Data e hora (fuso) -------------------------------------------------------
+// Layout shared by the drawing and the touch: region row, then manual offset row.
+static const int HORA_Y_REGIAO = CONTEUDO_Y + 84 + 84;   // label of the region row
+static const int HORA_Y_MANUAL = HORA_Y_REGIAO + 34 + BTN_A + 56;
+static const int HORA_Y_12H    = HORA_Y_MANUAL + 34 + BTN_A + 24;   // 12/24-hour switch
+
 void pag_hora(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
 {
-  char agora[48], fuso[16], assin[80];
+  char agora[48], fuso[16], efetivo[40], assin[160];
   snprintf(agora, sizeof(agora), "%s", tr("relógio sem acerto"));
   fuso_texto(ajustes_fuso_min(), fuso, sizeof(fuso));
   const uint32_t e = tab5_hora_epoch();
+  tab5_fuso_texto(e ? e : (uint32_t)time(nullptr), efetivo, sizeof(efetivo));
+  const int zona = ajustes_fuso_zona();
   if (e) {
     struct tm t;
     tab5_hora_local(e, &t);
-    snprintf(agora, sizeof(agora), "%02d/%02d/%04d  %02d:%02d", t.tm_mday, t.tm_mon + 1, t.tm_year + 1900, t.tm_hour, t.tm_min);
+    char hm[8];
+    tab5_hora_hhmm(&t, hm, sizeof(hm));
+    snprintf(agora, sizeof(agora), "%02d/%02d/%04d  %s", t.tm_mday, t.tm_mon + 1, t.tm_year + 1900, hm);
   }
-  snprintf(assin, sizeof(assin), "hora|%s|%s|%s", agora, fuso, tab5_hora_fonte());
+  snprintf(assin, sizeof(assin), "hora|%s|%s|%s|%d|%s|%d", agora, fuso, tab5_hora_fonte(), zona, efetivo, ajustes_relogio_12h());
   if (!pintura_mudou_s(&s_cfg_p, s_assin, sizeof(s_assin), assin) && !tudo) { return; }
   conteudo_limpo(d, a);
   int y = CONTEUDO_Y;
   y = info(d, a, y, tr("Agora (hora local)"), agora);
   y = info(d, a, y, tr("Acertado por"), tab5_hora_fonte());
-  tab5_escrever(d, tr("Fuso horário (passos de 30 min)"), a.x + MARGEM, a.y + y, 22, false, cor_sub(d), TEMA_FUNDO);
-  y += 34;
-  menos_mais(d, a, y, fuso);
-  y += BTN_A + 24;
+  // Region: offset AND daylight-saving rule (services/tab5_fuso).
+  tab5_escrever(d, tr("Região (horário de verão automático)"), a.x + MARGEM, a.y + HORA_Y_REGIAO, 22, false, cor_sub(d), TEMA_FUNDO);
+  menos_mais(d, a, HORA_Y_REGIAO + 34, zona == TAB5_FUSO_MANUAL ? fuso : efetivo);
+  tab5_escrever(d, tab5_fuso_nome(zona), a.x + MARGEM, a.y + HORA_Y_REGIAO + 34 + BTN_A + 10, 24, false,
+                zona == TAB5_FUSO_MANUAL ? cor_sub(d) : TEMA_DESTAQUE, TEMA_FUNDO);
+  // Manual offset: any tap here goes back to the fixed offset.
+  tab5_escrever(d, tr("Fuso manual (passos de 30 min)"), a.x + MARGEM, a.y + HORA_Y_MANUAL, 22, false, cor_sub(d), TEMA_FUNDO);
+  menos_mais(d, a, HORA_Y_MANUAL + 34, fuso);
+  tab5_botao(d, a.x + MARGEM, a.y + HORA_Y_12H, a.largura - 2 * MARGEM, BTN_A,
+             ajustes_relogio_12h() ? tr("Relógio de 12 horas (am/pm) - toque para 24 h")
+                                   : tr("Relógio de 24 horas - toque para 12 h (am/pm)"),
+             TEMA_SUPERFICIE_ALTA, TEMA_TEXTO);
+  fim(a.y + HORA_Y_12H + BTN_A);
+  y = HORA_Y_12H + BTN_A + 20;
   paragrafo(d, a.x + MARGEM, a.y + y, a.largura - 2 * MARGEM,
-            tr("O fuso só muda a hora mostrada. Sem horário de verão: onde há verão, ajuste "
-            "aqui na troca. O relógio interno, os registros e a malha continuam em UTC."));
+            tr("Escolha a sua região e o horário de verão muda sozinho; o fuso manual é um "
+            "deslocamento fixo. Só a hora mostrada muda: o relógio interno, os registros e a malha continuam em UTC."));
 }
 
 void toque_hora(int tx, int ty)
 {
-  const int y = CONTEUDO_Y + 84 + 84 + 34;
-  const int s = menos_mais_toque(tx, ty, y);
+  const int sr = menos_mais_toque(tx, ty, HORA_Y_REGIAO + 34);
+  if (sr) {
+    const int n = tab5_fuso_n();
+    const int z = ((int)ajustes_fuso_zona() + sr + n) % n;
+    ajustes_definir_fuso_zona((uint8_t)z);
+    if (z != TAB5_FUSO_MANUAL) { ajustes_definir_fuso_min((int16_t)tab5_fuso_padrao_min(z)); }
+    sistema_pedir_redesenho();
+    return;
+  }
+  if (tab5_dentro(tx, ty, MARGEM, HORA_Y_12H, area_pagina().largura - 2 * MARGEM, BTN_A)) {
+    ajustes_definir_relogio_12h(!ajustes_relogio_12h());
+    sistema_pedir_redesenho();
+    return;
+  }
+  const int s = menos_mais_toque(tx, ty, HORA_Y_MANUAL + 34);
   if (s) {
+    ajustes_definir_fuso_zona(TAB5_FUSO_MANUAL);
     ajustes_definir_fuso_min((int16_t)(ajustes_fuso_min() + s * 30));
     sistema_pedir_redesenho();
   }

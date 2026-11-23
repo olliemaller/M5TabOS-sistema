@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -57,19 +57,19 @@ button.rodar { background:#5f8a1e; }
     <h1>Scripts · apps/Berry</h1>
     <ul id="lista"></ul>
     <div class="rodape">
-      <button id="novo">+ Novo</button>
-      <button id="reler" title="Ler a lista de novo">Atualizar</button>
+      <button id="novo">+ New</button>
+      <button id="reler" title="Reload the list">Refresh</button>
     </div>
   </aside>
   <main id="principal">
     <div id="barra">
       <span id="arq">—</span>
-      <button id="salvar" title="Ctrl+S" disabled>Salvar</button>
-      <button id="verificar" class="verificar" title="Compila sem rodar" disabled>Verificar</button>
-      <button id="rodar" class="rodar" title="Ctrl+Enter: salva, verifica e abre no Tab5" disabled>Rodar</button>
+      <button id="salvar" title="Ctrl+S" disabled>Save</button>
+      <button id="verificar" class="verificar" title="Compile without running" disabled>Check</button>
+      <button id="rodar" class="rodar" title="Ctrl+Enter: save, check and open on the Tab5" disabled>Run</button>
     </div>
     <div id="msg"></div>
-    <div id="area"><textarea id="texto" spellcheck="false" hidden></textarea><div id="vazio">Escolha um script à esquerda, ou + Novo</div></div>
+    <div id="area"><textarea id="texto" spellcheck="false" hidden></textarea><div id="vazio">Pick a script on the left, or + New</div></div>
   </main>
 </div>
 <script>
@@ -149,8 +149,8 @@ async function pedir(metodo, url, corpo, ficar) {
   const r = await fetch(url, { method: metodo, body: corpo, cache: "no-store", keepalive: !!ficar,
                                headers: metodo === "GET" ? {} : { "X-Tab5": "1", "Content-Type": "text/plain; charset=utf-8" } });
   if (r.status === 413) throw new Error(await r.text());
-  if (r.status === 503 || r.status === 403) throw new Error("o servidor do Tab5 foi desligado (" + (await r.text()) + ")");
-  if (!r.ok) throw new Error(await r.text() || ("erro " + r.status));
+  if (r.status === 503 || r.status === 403) throw new Error("the Tab5 server was turned off (" + (await r.text()) + ")");
+  if (!r.ok) throw new Error(await r.text() || ("error " + r.status));
   return r;
 }
 const q = (arq) => "?arq=" + encodeURIComponent(arq);
@@ -169,13 +169,13 @@ async function listar() {
       li.onclick = () => abrir(s.nome);
       ul.appendChild(li);
     }
-    if (!l.length) ul.innerHTML = "<li><small>nenhum script ainda</small></li>";
+    if (!l.length) ul.innerHTML = "<li><small>no scripts yet</small></li>";
     return l;
   } catch (e) { mensagem(e.message, true); return []; }
 }
 
 // Trocar de script: grava o atual antes (nao pergunta - salvar e o padrao).
-async function largar() { return !mudou || await salvar(true) || confirm("Não salvou " + atual + ". Descartar as mudanças?"); }
+async function largar() { return !mudou || await salvar(true) || confirm(atual + " was not saved. Discard the changes?"); }
 
 async function abrir(nome) {
   if (nome === atual || !(await largar())) return;
@@ -190,7 +190,7 @@ async function abrir(nome) {
 function grande() {
   const n = bytes(txt.pegar());
   if (n <= LIMITE) return false;
-  mensagem("O script tem " + n + " bytes; o limite é " + LIMITE + " (o editor do Tab5 não abriria).", true);
+  mensagem("The script is " + n + " bytes; the limit is " + LIMITE + " (the Tab5 editor would not open it).", true);
   return true;
 }
 
@@ -206,7 +206,7 @@ async function salvar(auto, ficar) {
     // So limpa o "mudou" se ninguem digitou enquanto gravava.
     if (arq === atual && texto === txt.pegar()) { mudou = false; $("arq").textContent = atual; }
     else if (mudou) { relogio = setTimeout(() => salvar(true), AUTO_MS); }
-    mensagem(auto === true ? "salvo automaticamente " + new Date().toLocaleTimeString() : "salvo");
+    mensagem(auto === true ? "saved automatically " + new Date().toLocaleTimeString() : "saved");
     if (auto !== true) listar();
     return true;
   } catch (e) { mensagem(e.message, true); return false; }
@@ -216,12 +216,12 @@ async function salvar(auto, ficar) {
 function mostrar(r, pronto) {
   txt.erro(r.ok ? 0 : r.linha);
   if (r.ok) mensagem(pronto);
-  else mensagem((r.linha > 0 ? "linha " + r.linha + ": " : "") + r.erro, true);
+  else mensagem((r.linha > 0 ? "line " + r.linha + ": " : "") + r.erro, true);
 }
 
 async function verificar() {
   if (!atual) return;
-  try { mostrar(await (await pedir("POST", "api/verificar", txt.pegar())).json(), "verificado: sem erros de sintaxe"); }
+  try { mostrar(await (await pedir("POST", "api/verificar", txt.pegar())).json(), "checked: no syntax errors"); }
   catch (e) { mensagem(e.message, true); }
 }
 
@@ -231,7 +231,7 @@ async function rodar() {
   try {
     const r = await (await pedir("POST", "api/rodar" + q(atual), txt.pegar())).json();
     mudou = false; $("arq").textContent = atual;
-    mostrar(r, r.aberto ? "salvo e aberto no Tab5" : "salvo - o app novo aparece na tela inicial do Tab5 (toque nele para rodar)");
+    mostrar(r, r.aberto ? "saved and opened on the Tab5" : "saved - the new app appears on the Tab5 home screen (tap it to run)");
     listar();
   } catch (e) { mensagem(e.message, true); }
 }
@@ -240,31 +240,31 @@ const MODELO = (nome) =>
 `# nome: ${nome}
 # cor: 0x07FF
 #
-# O que fica fora das funcoes roda uma vez, ao abrir.
-# Funcoes: docs/BERRY_API.md
+# Code outside the functions runs once, when the app opens.
+# Functions: docs/BERRY_API.md
 
-var toques = 0
+var taps = 0
 
 def desenhar(tudo)
-  tela.texto("Ola!", 40, 40, 40)
-  tela.texto("toques: " + str(toques), 40, 120)
+  tela.texto("Hello!", 40, 40, 40)
+  tela.texto("taps: " + str(taps), 40, 120)
 end
 
 def tocar(x, y)
-  toques += 1
+  taps += 1
   sistema.redesenhar()
 end
 `;
 
 async function novo() {
   if (!(await largar())) return;
-  let nome = prompt("Nome do script (sem .be):", "novo");
+  let nome = prompt("Script name (without .be):", "new");
   if (!nome) return;
   nome = nome.trim().replace(/\.be$/i, "");
-  if (!/^[A-Za-z0-9 _.-]+$/.test(nome) || nome.startsWith(".")) { mensagem("Use letras sem acento, números, espaço, _ ou -.", true); return; }
+  if (!/^[A-Za-z0-9 _.-]+$/.test(nome) || nome.startsWith(".")) { mensagem("Use plain letters, digits, space, _ or -.", true); return; }
   const arq = nome + ".be";
   const l = await listar();
-  if (l.some((s) => s.nome.toLowerCase() === arq.toLowerCase())) { mensagem(arq + " já existe.", true); return; }
+  if (l.some((s) => s.nome.toLowerCase() === arq.toLowerCase())) { mensagem(arq + " already exists.", true); return; }
   atual = arq; txt.por(MODELO(nome)); txt.erro(0); botoes(true);
   mudou = true; $("arq").textContent = arq + "  •";
   await salvar();
@@ -287,7 +287,7 @@ window.addEventListener("beforeunload", (e) => {
   salvar(true, true);
   e.preventDefault(); e.returnValue = "";
 });
-if (!ed) mensagem("Sem internet no PC: o editor com cores não carregou, a caixa de texto simples funciona igual.", true);
+if (!ed) mensagem("No internet on the PC: the colour editor did not load; the plain text box works the same.", true);
 listar();
 </script>
 </body>

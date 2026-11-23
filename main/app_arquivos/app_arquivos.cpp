@@ -1433,7 +1433,7 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
     trilha_de(s_pasta, trilha, sizeof(trilha));
     if (s_selecionando)       { snprintf(linha, sizeof(linha), tr("%d selecionado(s) - toque para marcar"), s_n_sel); }
     else if (!s_gravavel)     { snprintf(linha, sizeof(linha), tr("%s  (só leitura)"), trilha); }
-    else if (s_n_achados > s_n_itens) { snprintf(linha, sizeof(linha), "%s  ·  %d de %d", trilha, s_n_itens, s_n_achados); }
+    else if (s_n_achados > s_n_itens) { snprintf(linha, sizeof(linha), tr("%s  ·  %d de %d"), trilha, s_n_itens, s_n_achados); }
     else                      { snprintf(linha, sizeof(linha), tr("%s  ·  segure um item para selecionar"), trilha); }
   } else if (s_nivel == NIVEL_LIXEIRA) {
     char peso[16];

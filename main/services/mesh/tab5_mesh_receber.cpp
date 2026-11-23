@@ -30,11 +30,11 @@ static void ler_metrics(pb_leitor_t l, mesh_no_t* no, bool nosso)
 {
   int n, t;
   while (pb_proximo_campo(&l, &n, &t)) {
-    if      (n == 1 && t == 0) { uint64_t v; pb_varint(&l, &v); if (no) no->bateria = (uint8_t)v; }
-    else if (n == 2 && t == 5) { float f; pb_float(&l, &f); if (no) no->tensao = f; }
-    else if (n == 3 && t == 5) { float f; pb_float(&l, &f); if (nosso) s_saude.uso_canal = f; }
-    else if (n == 4 && t == 5) { float f; pb_float(&l, &f); if (nosso) s_saude.airtime_tx = f; }
-    else if (n == 5 && t == 0) { uint64_t v; pb_varint(&l, &v); if (nosso) s_saude.uptime_s = (uint32_t)v; }
+    if      (n == 1 && t == 0) { uint64_t v = 0; pb_varint(&l, &v); if (no) no->bateria = (uint8_t)v; }
+    else if (n == 2 && t == 5) { float f = 0; pb_float(&l, &f); if (no) no->tensao = f; }
+    else if (n == 3 && t == 5) { float f = 0; pb_float(&l, &f); if (nosso) s_saude.uso_canal = f; }
+    else if (n == 4 && t == 5) { float f = 0; pb_float(&l, &f); if (nosso) s_saude.airtime_tx = f; }
+    else if (n == 5 && t == 0) { uint64_t v = 0; pb_varint(&l, &v); if (nosso) s_saude.uptime_s = (uint32_t)v; }
     else if (!pb_pular(&l, t)) { break; }
   }
   if (nosso) { s_saude.tem_metricas = true; }
@@ -49,15 +49,15 @@ static void ler_local_stats(pb_leitor_t l)
 {
   int n, t;
   while (pb_proximo_campo(&l, &n, &t)) {
-    if      (n == 1 && t == 0) { uint64_t v; pb_varint(&l,&v); s_saude.uptime_s   = (uint32_t)v; }
-    else if (n == 2 && t == 5) { float f; pb_float(&l,&f);     s_saude.uso_canal  = f; }
-    else if (n == 3 && t == 5) { float f; pb_float(&l,&f);     s_saude.airtime_tx = f; }
-    else if (n == 4 && t == 0) { uint64_t v; pb_varint(&l,&v); s_saude.pkt_tx      = (uint32_t)v; }
-    else if (n == 5 && t == 0) { uint64_t v; pb_varint(&l,&v); s_saude.pkt_rx      = (uint32_t)v; }
-    else if (n == 6 && t == 0) { uint64_t v; pb_varint(&l,&v); s_saude.pkt_ruins   = (uint32_t)v; }
-    else if (n == 7 && t == 0) { uint64_t v; pb_varint(&l,&v); s_saude.nos_online = (uint16_t)v; }
-    else if (n == 8 && t == 0) { uint64_t v; pb_varint(&l,&v); s_saude.nos_total  = (uint16_t)v; }
-    else if (n == 9 && t == 0) { uint64_t v; pb_varint(&l,&v); s_saude.pkt_repetidos = (uint32_t)v; }
+    if      (n == 1 && t == 0) { uint64_t v = 0; pb_varint(&l,&v); s_saude.uptime_s   = (uint32_t)v; }
+    else if (n == 2 && t == 5) { float f = 0; pb_float(&l,&f);     s_saude.uso_canal  = f; }
+    else if (n == 3 && t == 5) { float f = 0; pb_float(&l,&f);     s_saude.airtime_tx = f; }
+    else if (n == 4 && t == 0) { uint64_t v = 0; pb_varint(&l,&v); s_saude.pkt_tx      = (uint32_t)v; }
+    else if (n == 5 && t == 0) { uint64_t v = 0; pb_varint(&l,&v); s_saude.pkt_rx      = (uint32_t)v; }
+    else if (n == 6 && t == 0) { uint64_t v = 0; pb_varint(&l,&v); s_saude.pkt_ruins   = (uint32_t)v; }
+    else if (n == 7 && t == 0) { uint64_t v = 0; pb_varint(&l,&v); s_saude.nos_online = (uint16_t)v; }
+    else if (n == 8 && t == 0) { uint64_t v = 0; pb_varint(&l,&v); s_saude.nos_total  = (uint16_t)v; }
+    else if (n == 9 && t == 0) { uint64_t v = 0; pb_varint(&l,&v); s_saude.pkt_repetidos = (uint32_t)v; }
     else if (!pb_pular(&l, t)) { break; }
   }
   s_saude.tem_local = true;
@@ -106,7 +106,7 @@ static void ler_user(pb_leitor_t l, mesh_no_t* no)
       if (k == 6) { memcpy(no->mac, l.p, 6); no->tem_mac = true; }
       l.p += (size_t)k;
     }
-    else if (n == 5 && t == 0) { uint64_t v; pb_varint(&l,&v); no->hw = (uint8_t)v; }
+    else if (n == 5 && t == 0) { uint64_t v = 0; pb_varint(&l,&v); no->hw = (uint8_t)v; }
     else if (!pb_pular(&l, t)) { break; }
   }
 }
@@ -116,8 +116,8 @@ static void ler_position(pb_leitor_t l, mesh_no_t* no)
 {
   int n, t;
   while (pb_proximo_campo(&l, &n, &t)) {
-    if      (n == 1 && t == 5) { uint32_t v; pb_fixo32(&l, &v); no->lat_i = (int32_t)v; no->tem_pos = true; }
-    else if (n == 2 && t == 5) { uint32_t v; pb_fixo32(&l, &v); no->lon_i = (int32_t)v; }
+    if      (n == 1 && t == 5) { uint32_t v = 0; if (!pb_fixo32(&l, &v)) { break; } no->lat_i = (int32_t)v; no->tem_pos = true; }
+    else if (n == 2 && t == 5) { uint32_t v = 0; if (!pb_fixo32(&l, &v)) { break; } no->lon_i = (int32_t)v; }
     else if (!pb_pular(&l, t)) { break; }
   }
 }
@@ -131,7 +131,7 @@ static void ler_node_info(pb_leitor_t l)
   int n, t;
   while (pb_proximo_campo(&l, &n, &t)) {
     if (n == 1 && t == 0) {
-      uint64_t v; pb_varint(&l, &v); num = (uint32_t)v;
+      uint64_t v = 0; pb_varint(&l, &v); num = (uint32_t)v;
       no = achar_no(num);
       if (!no) { return; }
     }
@@ -151,9 +151,9 @@ static void ler_node_info(pb_leitor_t l)
     // via_mqtt: o no chegou pela INTERNET, nao pelo radio. Muda o significado
     // de tudo que se ve dele - o SNR nao e dele, e nao da para alcanca-lo por
     // RF. Merece aparecer na lista.
-    else if (n == 8 && t == 0) { uint64_t v; pb_varint(&l,&v); no->via_mqtt = (v != 0); }
-    else if (n == 9 && t == 0) { uint64_t v; pb_varint(&l,&v); no->saltos = (uint8_t)v; }
-    else if (n == 10 && t == 0) { uint64_t v; pb_varint(&l,&v); fav_radio = (v != 0); }
+    else if (n == 8 && t == 0) { uint64_t v = 0; pb_varint(&l,&v); no->via_mqtt = (v != 0); }
+    else if (n == 9 && t == 0) { uint64_t v = 0; pb_varint(&l,&v); no->saltos = (uint8_t)v; }
+    else if (n == 10 && t == 0) { uint64_t v = 0; pb_varint(&l,&v); fav_radio = (v != 0); }
     else if (!pb_pular(&l, t)) { break; }
   }
 
@@ -353,14 +353,14 @@ static void ler_data(pb_leitor_t l, uint32_t de, uint32_t para, uint8_t canal,
   const uint8_t* pay = nullptr; size_t pay_n = 0;
   int n, t;
   while (pb_proximo_campo(&l, &n, &t)) {
-    if      (n == 1 && t == 0) { uint64_t v; pb_varint(&l,&v); porta = (int)v; }
+    if      (n == 1 && t == 0) { uint64_t v = 0; pb_varint(&l,&v); porta = (int)v; }
     else if (n == 2 && t == 2) {
       uint64_t k; if (!pb_varint(&l,&k)) break;
       if (k > pb_restam(&l)) break;              // ver pb_restam(): somar no ponteiro estoura
       pay = l.p; pay_n = (size_t)k; l.p += (size_t)k;
     }
     else if (n == 6 && t == 5) { pb_fixo32(&l, &pedido); }   // request_id
-    else if (n == 9 && t == 0) { uint64_t v; pb_varint(&l,&v); bitfield = (int)v; }
+    else if (n == 9 && t == 0) { uint64_t v = 0; pb_varint(&l,&v); bitfield = (int)v; }
     else if (!pb_pular(&l, t)) { break; }
   }
   // O CARIMBO DO REMETENTE (bit 0 = OK_TO_MQTT, ver MESH_CFG_OK_MQTT): sem ele,
@@ -385,7 +385,7 @@ static void ler_data(pb_leitor_t l, uint32_t de, uint32_t para, uint8_t canal,
       pb_leitor_t rl = { pay, pay + pay_n };
       int rn, rt;
       while (pb_proximo_campo(&rl, &rn, &rt)) {
-        if (rn == 3 && rt == 0) { uint64_t v; pb_varint(&rl,&v); erro = (int)v; }
+        if (rn == 3 && rt == 0) { uint64_t v = 0; pb_varint(&rl,&v); erro = (int)v; }
         else if (!pb_pular(&rl, rt)) { break; }
       }
     }
@@ -483,20 +483,20 @@ static void ler_packet(pb_leitor_t l)
   while (pb_proximo_campo(&l, &n, &t)) {
     if      (n == 1 && t == 5) { pb_fixo32(&l, &de); }
     else if (n == 2 && t == 5) { pb_fixo32(&l, &para); }
-    else if (n == 3 && t == 0) { uint64_t v; pb_varint(&l,&v); canal = (uint8_t)v; }
+    else if (n == 3 && t == 0) { uint64_t v = 0; pb_varint(&l,&v); canal = (uint8_t)v; }
     else if (n == 6 && t == 5) { pb_fixo32(&l, &id); }       // id do pacote
     else if (n == 7 && t == 5) { pb_fixo32(&l, &quando); }
     else if (n == 8 && t == 5) { pb_float(&l, &snr); }
-    else if (n == 9 && t == 0) { uint64_t v; pb_varint(&l,&v); hop_limit = (uint32_t)v; }
-    else if (n == 12 && t == 0){ uint64_t v; pb_varint(&l,&v); rssi = (int32_t)v; }
+    else if (n == 9 && t == 0) { uint64_t v = 0; pb_varint(&l,&v); hop_limit = (uint32_t)v; }
+    else if (n == 12 && t == 0){ uint64_t v = 0; pb_varint(&l,&v); rssi = (int32_t)v; }
     // CAMPOS 14 E 15, conferidos contra o mesh.pb.h do firmware do C6L
     // via_mqtt = 14, hop_start = 15. Ate aqui eram lidos 13 e 14
     // - o 13 e o 'delayed' (obsoleto, sempre 0) e o 14 era o via_mqtt tomado
     // por hop_start. Resultado: MQTT nunca era reconhecido pelo pacote e o
     // numero de saltos saia errado ou "--" (dai o fallback pelo NodeInfo).
-    else if (n == 14 && t == 0){ uint64_t v; pb_varint(&l,&v); via_mqtt = (v != 0); }
-    else if (n == 15 && t == 0){ uint64_t v; pb_varint(&l,&v); hop_start = (uint32_t)v; }
-    else if (n == 21 && t == 0){ uint64_t v; pb_varint(&l,&v); transp_mqtt = (v == 5); }
+    else if (n == 14 && t == 0){ uint64_t v = 0; pb_varint(&l,&v); via_mqtt = (v != 0); }
+    else if (n == 15 && t == 0){ uint64_t v = 0; pb_varint(&l,&v); hop_start = (uint32_t)v; }
+    else if (n == 21 && t == 0){ uint64_t v = 0; pb_varint(&l,&v); transp_mqtt = (v == 5); }
     else if (n == 4 && t == 2) { if (!pb_sub(&l, &dados)) break; }
     else if (!pb_pular(&l, t)) { break; }
   }
@@ -590,7 +590,7 @@ void ler_from_radio(const uint8_t* buf, size_t n)
       int n2, t2;
       while (pb_proximo_campo(&s, &n2, &t2)) {
         if (n2 == 1 && t2 == 0) {
-          uint64_t v; pb_varint(&s,&v);
+          uint64_t v = 0; pb_varint(&s,&v);
           const uint32_t novo = (uint32_t)v;
           // So escreve quando MUDA: a NVS tem ciclos de escrita finitos e o
           // my_info chega a cada apresentacao.
@@ -598,7 +598,7 @@ void ler_from_radio(const uint8_t* buf, size_t n)
           s_meu_num = novo;
         }
         else if (n2 == 8 && t2 == 0) {   // reboot_count: o diario de reinicios compara com o anterior
-          uint64_t v; pb_varint(&s, &v);
+          uint64_t v = 0; pb_varint(&s, &v);
           // s_ultimo_quadro_ms ainda e o do quadro ANTERIOR (so atualiza depois
           // de ler_from_radio): zero = primeiro contato desta sessao.
           mesh_diario_contador((uint32_t)v, s_saude.uptime_s, s_ultimo_quadro_ms != 0, mesh_admin_gravando());
@@ -617,11 +617,11 @@ void ler_from_radio(const uint8_t* buf, size_t n)
       int32_t res = 0; uint32_t pid = 0;
       int n2, t2;
       while (pb_proximo_campo(&s, &n2, &t2)) {
-        if      (n2 == 1 && t2 == 0) { uint64_t v; pb_varint(&s,&v); res = (int32_t)v; }
+        if      (n2 == 1 && t2 == 0) { uint64_t v = 0; pb_varint(&s,&v); res = (int32_t)v; }
         // mesh_packet_id e UINT32 (varint), nao fixed32 - conferido no
         // mesh.pb.h. Lido como fixed32 ele nunca casava, e a
         // recusa da queue do radio nunca marcava o envio como falho.
-        else if (n2 == 4 && t2 == 0) { uint64_t v; pb_varint(&s, &v); pid = (uint32_t)v; }
+        else if (n2 == 4 && t2 == 0) { uint64_t v = 0; pb_varint(&s, &v); pid = (uint32_t)v; }
         else if (!pb_pular(&s, t2)) { break; }
       }
       if (pid != 0 && res != 0) { marcar_envio(pid, MESH_ERRO_FILA, s_meu_num); }
@@ -633,7 +633,7 @@ void ler_from_radio(const uint8_t* buf, size_t n)
     // configuracao. Nao ha nada a fazer alem de registrar, mas registrar
     // importa: sem esta linha no log nao da para distinguir "o dump nunca
     // terminou" de "terminou e nao chega mensagem", e o conserto e outro.
-    uint64_t v;
+    uint64_t v = 0;
     if (pb_varint(&l, &v)) {
       s_config_ok_ms = tab5_agora_ms();   // a hora ao vivo conta daqui (ver marcar_hora_viva)
       // A configuracao dos canais chegou inteira: s_canais_sujos ja esta de
@@ -645,7 +645,7 @@ void ler_from_radio(const uint8_t* buf, size_t n)
     }
   }
   else if (f == 8 && t == 0) {           // rebooted
-    uint64_t v;
+    uint64_t v = 0;
     if (pb_varint(&l, &v) && v != 0) {
       // TENSAO DO BARRAMENTO NO INSTANTE DO REINICIO
       // ("tem como saber se os 5V do Grove estao chegando?"). Nao medimos o
@@ -683,7 +683,7 @@ void ler_from_radio(const uint8_t* buf, size_t n)
         if (n2 != 6) { continue; }
         int n3, t3;
         while (pb_proximo_campo(&sec, &n3, &t3)) {
-          if (n3 == 7 && t3 == 0) { uint64_t v; pb_varint(&sec, &v); mesh_mqtt_aprender_regiao((int)v); }
+          if (n3 == 7 && t3 == 0) { uint64_t v = 0; pb_varint(&sec, &v); mesh_mqtt_aprender_regiao((int)v); }
           else if (!pb_pular(&sec, t3)) { break; }
         }
       }
@@ -702,9 +702,9 @@ void ler_from_radio(const uint8_t* buf, size_t n)
         bool mqtt_lig = false, tls = false, proxy = false;   // proto3: ausente = false
         int n3, t3;
         while (pb_proximo_campo(&sec, &n3, &t3)) {
-          if      (n3 == 1 && t3 == 0) { uint64_t v; pb_varint(&sec, &v); mqtt_lig = (v != 0); }
-          else if (n3 == 7 && t3 == 0) { uint64_t v; pb_varint(&sec, &v); tls = (v != 0); }
-          else if (n3 == 9 && t3 == 0) { uint64_t v; pb_varint(&sec, &v); proxy = (v != 0); }
+          if      (n3 == 1 && t3 == 0) { uint64_t v = 0; pb_varint(&sec, &v); mqtt_lig = (v != 0); }
+          else if (n3 == 7 && t3 == 0) { uint64_t v = 0; pb_varint(&sec, &v); tls = (v != 0); }
+          else if (n3 == 9 && t3 == 0) { uint64_t v = 0; pb_varint(&sec, &v); proxy = (v != 0); }
           else if (n3 == 2 && t3 == 2) { pb_texto(&sec, end,  sizeof(end)); }
           else if (n3 == 3 && t3 == 2) { pb_texto(&sec, usr,  sizeof(usr)); }
           else if (n3 == 4 && t3 == 2) { pb_texto(&sec, pwd,  sizeof(pwd)); }
@@ -738,16 +738,16 @@ void ler_from_radio(const uint8_t* buf, size_t n)
       size_t  n_psk = 0;
       int n2, t2;
       while (pb_proximo_campo(&s, &n2, &t2)) {
-        if      (n2 == 1 && t2 == 0) { uint64_t v; pb_varint(&s,&v); idx = (int)v; }
-        else if (n2 == 3 && t2 == 0) { uint64_t v; pb_varint(&s,&v); papel = (int)v; }
+        if      (n2 == 1 && t2 == 0) { uint64_t v = 0; pb_varint(&s,&v); idx = (int)v; }
+        else if (n2 == 3 && t2 == 0) { uint64_t v = 0; pb_varint(&s,&v); papel = (int)v; }
         else if (n2 == 2 && t2 == 2) {           // ChannelSettings: 2=psk 3=name
           pb_leitor_t cs;
           if (pb_sub(&s,&cs)) {
             int n3, t3;
             while (pb_proximo_campo(&cs, &n3, &t3)) {
               if (n3 == 3 && t3 == 2) { pb_texto(&cs, nome, sizeof(nome)); }
-              else if (n3 == 6 && t3 == 0) { uint64_t v; pb_varint(&cs, &v); downlink = (v != 0); }   // o proxy assina
-              else if (n3 == 5 && t3 == 0) { uint64_t v; pb_varint(&cs, &v); uplink = (v != 0); }     // so para o diagnostico
+              else if (n3 == 6 && t3 == 0) { uint64_t v = 0; pb_varint(&cs, &v); downlink = (v != 0); }   // o proxy assina
+              else if (n3 == 5 && t3 == 0) { uint64_t v = 0; pb_varint(&cs, &v); uplink = (v != 0); }     // so para o diagnostico
               else if (n3 == 2 && t3 == 2) {   // psk: a chave, para o modo internet
                 uint64_t k;
                 if (!pb_varint(&cs, &k) || k > pb_restam(&cs)) { break; }
@@ -788,7 +788,7 @@ void ler_from_radio(const uint8_t* buf, size_t n)
           if (!pb_varint(&s, &k) || k > pb_restam(&s)) { break; }
           dado = s.p; n_dado = (size_t)k; s.p += (size_t)k;
         }
-        else if (n2 == 4 && t2 == 0) { uint64_t v; pb_varint(&s, &v); retido = (v != 0); }
+        else if (n2 == 4 && t2 == 0) { uint64_t v = 0; pb_varint(&s, &v); retido = (v != 0); }
         else if (!pb_pular(&s, t2)) { break; }
       }
       if (mesh_mqtt_em_proxy() && topico[0] && dado) { mesh_mqtt_proxy_publicar(topico, dado, n_dado, retido); }

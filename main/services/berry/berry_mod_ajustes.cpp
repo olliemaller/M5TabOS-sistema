@@ -4,6 +4,7 @@
 // aparelho. Ver berry_apps.cpp (o motor) e berry_interno.hpp.
 
 #include "ajustes.h"
+#include "tab5_hora.hpp"
 #include "berry_interno.hpp"
 
 // brilho([pct]) - o brilho da tela, 0..100 (o minimo do sistema segue valendo:
@@ -51,15 +52,23 @@ static int aj_casa(bvm* vm)
   be_return(vm);
 }
 
-// fuso() - o fuso horario em minutos a partir do UTC (-180 = UTC-3), so leitura.
+// fuso() - the time-zone offset in effect NOW, in minutes from UTC (-180 =
+// UTC-3; daylight saving included when a region is chosen), read only.
 static int aj_fuso(bvm* vm)
 {
-  be_pushint(vm, ajustes_fuso_min());
+  be_pushint(vm, tab5_hora_fuso_s() / 60);
+  be_return(vm);
+}
+
+// relogio_12h() - true when the user wants the 12-hour clock (9:05pm), read only.
+static int aj_relogio_12h(bvm* vm)
+{
+  be_pushbool(vm, ajustes_relogio_12h());
   be_return(vm);
 }
 
 const membro_t BERRY_MOD_AJUSTES[] = {
   { "brilho", aj_brilho }, { "volume", berry_volume }, { "tela_segundos", aj_tela_segundos },
-  { "casa", aj_casa }, { "fuso", aj_fuso },
+  { "casa", aj_casa }, { "fuso", aj_fuso }, { "relogio_12h", aj_relogio_12h },
   { nullptr },
 };

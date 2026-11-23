@@ -2,6 +2,7 @@
 // de reproducao, a parte de fundo e a troca da fila. O resto mora em
 // tab5_musica_*.cpp (ver tab5_musica_interno.hpp).
 #include "tab5_musica_interno.hpp"
+#include "idioma.h"
 #include "app.h"
 #include "midia.h"
 #include "ajustes.h"
@@ -270,7 +271,7 @@ static void laco_musica(fundo_t* f)
   uint32_t gen = s_fila_gen.load();
   segurar_discos(&seg);
   if (!seg.cartao && !seg.pendrive) {
-    erro_laco(discos_da_fila().pendrive ? "o pendrive não está conectado" : "sem cartão SD");
+    erro_laco(discos_da_fila().pendrive ? tr("o pendrive não está conectado") : tr("sem cartão SD"));
     return;
   }
   midia_assumir(g_fundo_musica.nome, s_app_dono, &CONTROLES);

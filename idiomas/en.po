@@ -250,6 +250,18 @@ msgstr "welcome\topens now, as on a new device"
 msgid "O assistente so abre sozinho num aparelho que nunca rodou o sistema (ou\ngravado pelo M5Burner). Isto e para testar. Concluir marca como feito."
 msgstr "The wizard only opens by itself on a device that never ran the system (or\nflashed by M5Burner). This is for testing. Finishing marks it as done."
 
+msgid "fuso horario: a regiao (com horario de verao), o fuso manual e o relogio 12/24 h"
+msgstr "time zone: the region (with daylight saving), the manual offset and the 12/24-hour clock"
+
+msgid "fuso\tregiao, deslocamento agora e a hora\nfuso lista\tas regioes, com o numero de cada uma\nfuso <n>\tescolhe a regiao n (0 = manual)\nfuso manual <minutos>\tdeslocamento fixo, ex. 600 = UTC+10\nfuso 12h|24h\to formato do relogio"
+msgstr "timezone\tregion, current offset and the time\ntimezone list\tthe regions, with the number of each\ntimezone <n>\tpick region n (0 = manual)\ntimezone manual <minutes>\tfixed offset, e.g. 600 = UTC+10\ntimezone 12h|24h\tthe clock format"
+
+msgid "O mesmo que Ajustes > Data e hora. Com uma regiao, o horario de verao muda\nsozinho. So a hora mostrada muda: o relogio interno e os registros ficam em UTC."
+msgstr "The same as Settings > Date and time. With a region, daylight saving changes\nby itself. Only the time shown changes: the internal clock and the logs stay in UTC."
+
+msgid "fuso 1\tMelbourne, Sydney (AEST/AEDT)\nfuso 12h\trelogio de 12 horas"
+msgstr "timezone 1\tMelbourne, Sydney (AEST/AEDT)\ntimezone 12h\t12-hour clock"
+
 msgid "roda codigo Berry (o interpretador de script)"
 msgstr "runs Berry code (the script interpreter)"
 
@@ -301,8 +313,8 @@ msgstr "files cp /usb/Rock /sdcard/Música\tcopies the flash drive folder to Mus
 msgid "painel: quadros, piscada azul, relogio e prioridade"
 msgstr "panel: frames, blue flicker, clock and priority"
 
-msgid "tela\testado do painel e da janela de medida\ntela medir\tzera a janela; use o aparelho e rode 'tela'\ntela foto [nome]\tgrava a tela em apps/Console/<nome>.bmp\ntela banco\tcompara os motores de copia (PPA, DMA2D, CPU)\ntela relogio <mhz>\ttroca o relogio de pixel e grava (80 = fabrica)\ntela prioridade alta|padrao\tprioridade da tela no barramento AXI\ntela rolar cpu|dma\tquem faz a copia da rolagem\ntela irqs\tlista as interrupcoes (nucleo, nivel, fonte)\ntela atrasar <ms> [critica] [nucleo] [vezes]\tprova: segura um nucleo; a tela pisca?"
-msgstr "display\tpanel status and the measurement window\ndisplay measure\tresets the window; use the device and run 'display'\ndisplay photo [name]\tsaves the screen to apps/Console/<name>.bmp\ndisplay bench\tcompares the copy engines (PPA, DMA2D, CPU)\ndisplay clock <mhz>\tchanges the pixel clock and saves it (80 = factory)\ndisplay priority high|default\tdisplay priority on the AXI bus\ndisplay scroll cpu|dma\twho does the scroll copy\nscreen irqs\tlists the interrupts (core, level, source)\nscreen atrasar <ms> [critica] [core] [times]\ttest: holds a core; does the screen flash?"
+msgid "tela\testado do painel e da janela de medida\ntela medir\tzera a janela; use o aparelho e rode 'tela'\ntela foto [nome]\tgrava a tela em apps/Console/<nome>.bmp (sem nome: com data e hora)\ntela banco\tcompara os motores de copia (PPA, DMA2D, CPU)\ntela relogio <mhz>\ttroca o relogio de pixel e grava (80 = fabrica)\ntela prioridade alta|padrao\tprioridade da tela no barramento AXI\ntela rolar cpu|dma\tquem faz a copia da rolagem\ntela irqs\tlista as interrupcoes (nucleo, nivel, fonte)\ntela atrasar <ms> [critica] [nucleo] [vezes]\tprova: segura um nucleo; a tela pisca?"
+msgstr "display\tpanel status and the measurement window\ndisplay measure\tresets the window; use the device and run 'display'\ndisplay photo [name]\tsaves the screen to apps/Console/<name>.bmp (no name: dated)\ndisplay bench\tcompares the copy engines (PPA, DMA2D, CPU)\ndisplay clock <mhz>\tchanges the pixel clock and saves it (80 = factory)\ndisplay priority high|default\tdisplay priority on the AXI bus\ndisplay scroll cpu|dma\twho does the scroll copy\nscreen irqs\tlists the interrupts (core, level, source)\nscreen atrasar <ms> [critica] [core] [times]\ttest: holds a core; does the screen flash?"
 
 msgid "Para investigar piscada e fluidez. 'underrun' acima de zero = o painel\nficou sem dado a tempo, que e a piscada azul. Palavra nao reconhecida nao\naltera nada."
 msgstr "To investigate flicker and smoothness. 'underrun' above zero = the panel\nran out of data in time, which is the blue flicker. An unrecognized word\nchanges nothing."
@@ -755,79 +767,79 @@ msgid "simulacao iniciar\tdepois abra apps de verdade e compare"
 msgstr "simulation start\tthen open real apps and compare"
 
 msgid "M5tabOS %s - %s\n\n"
-msgstr ""
+msgstr "M5tabOS %s - %s\n\n"
 
 msgid "terminal"
-msgstr ""
+msgstr "terminal"
 
 msgid "THE USUAL COMMANDS (as in Linux)"
 msgstr ""
 
 msgid "OS COMANDOS DE SEMPRE (como no Linux)"
-msgstr ""
+msgstr "THE USUAL COMMANDS (as in Linux)"
 
 msgid "MORE"
 msgstr ""
 
 msgid "MAIS"
-msgstr ""
+msgstr "MORE"
 
 msgid "help system"
 msgstr ""
 
 msgid "help sistema"
-msgstr ""
+msgstr "help system"
 
 msgid "M5tabOS commands: display, card, network, Mesh, power..."
 msgstr ""
 
 msgid "os comandos do M5tabOS: tela, cartao, rede, Mesh, energia..."
-msgstr ""
+msgstr "M5tabOS commands: display, card, network, Mesh, power..."
 
 msgid "app commands"
 msgstr ""
 
 msgid "os comandos dos apps"
-msgstr ""
+msgstr "app commands"
 
 msgid "help <command>"
 msgstr ""
 
 msgid "help <comando>"
-msgstr ""
+msgstr "help <command>"
 
 msgid "what it is for, with examples"
 msgstr ""
 
 msgid "para que serve, com exemplos"
-msgstr ""
+msgstr "what it is for, with examples"
 
 msgid "help all"
 msgstr ""
 
 msgid "help tudo"
-msgstr ""
+msgstr "help all"
 
 msgid "everything, explained"
 msgstr ""
 
 msgid "tudo, explicado"
-msgstr ""
+msgstr "everything, explained"
 
 msgid "Case does not matter."
 msgstr ""
 
 msgid "Maiusculas tanto faz."
-msgstr ""
+msgstr "Case does not matter."
 
 msgid "M5tabOS %s - %s\n"
-msgstr ""
+msgstr "M5tabOS %s - %s\n"
 
 msgid "\nconsole pronto - digite help\nm5tab> "
 msgstr "\nconsole ready - type help\nm5tab>"
 
 msgid "m5tab> "
-msgstr ""
+msgstr "m5tab> "
 
 msgid "%lu h %02lu min"
 msgstr "%lu h %02lu min"
@@ -1087,6 +1099,9 @@ msgstr "%d selected - tap to mark"
 msgid "%s  (só leitura)"
 msgstr "%s  (read only)"
 
+msgid "%s  ·  %d de %d"
+msgstr "%s  ·  %d of %d"
+
 msgid "%s  ·  segure um item para selecionar"
 msgstr "%s  ·  hold an item to select"
 
@@ -1153,9 +1168,6 @@ msgstr "copy"
 msgid "Caminho longo demais."
 msgstr "Path too long."
 
-msgid "Azimutal"
-msgstr "Azimuthal"
-
 msgid "iniciando a câmera..."
 msgstr "starting the camera..."
 
@@ -1176,9 +1188,6 @@ msgstr "FAILED"
 
 msgid "Camera"
 msgstr "Camera"
-
-msgid "CreazySnake"
-msgstr "CreazySnake"
 
 msgid "Wi-Fi"
 msgstr "Wi-Fi"
@@ -1240,8 +1249,8 @@ msgstr "SYSTEM"
 msgid "Fuso %s  ·  relógio sem acerto"
 msgstr "Time zone %s  ·  clock not set"
 
-msgid "%02d:%02d  ·  fuso %s"
-msgstr "%02d:%02d  ·  zone %s"
+msgid "%s  ·  fuso %s"
+msgstr "%s  ·  zone %s"
 
 msgid "Conectado a %s"
 msgstr "Connected to %s"
@@ -1357,11 +1366,20 @@ msgstr "Now (local time)"
 msgid "Acertado por"
 msgstr "Set by"
 
-msgid "Fuso horário (passos de 30 min)"
-msgstr "Time zone (30 min steps)"
+msgid "Região (horário de verão automático)"
+msgstr "Region (automatic daylight saving)"
 
-msgid "O fuso só muda a hora mostrada. Sem horário de verão: onde há verão, ajuste aqui na troca. O relógio interno, os registros e a malha continuam em UTC."
-msgstr "The time zone only changes the time shown. No daylight saving time: where there is one, adjust it here when it changes. The internal clock, the records and the mesh stay in UTC."
+msgid "Fuso manual (passos de 30 min)"
+msgstr "Manual offset (30-min steps)"
+
+msgid "Relógio de 12 horas (am/pm) - toque para 24 h"
+msgstr "12-hour clock (am/pm) - tap for 24 h"
+
+msgid "Relógio de 24 horas - toque para 12 h (am/pm)"
+msgstr "24-hour clock - tap for 12 h (am/pm)"
+
+msgid "Escolha a sua região e o horário de verão muda sozinho; o fuso manual é um deslocamento fixo. Só a hora mostrada muda: o relógio interno, os registros e a malha continuam em UTC."
+msgstr "Pick your region and daylight saving changes by itself; the manual offset is fixed. Only the time shown changes: the internal clock, the logs and the mesh stay in UTC."
 
 msgid "No navegador do PC (mesma rede Wi-Fi)"
 msgstr "In the PC's browser (same Wi-Fi network)"
@@ -2236,6 +2254,9 @@ msgstr "search"
 msgid "canais"
 msgstr "channels"
 
+msgid "%d de %d"
+msgstr "%d of %d"
+
 msgid "%d nos"
 msgstr "%d nodes"
 
@@ -2283,6 +2304,9 @@ msgstr "plugged in"
 
 msgid "não ouvido nesta sessão"
 msgstr "not heard in this session"
+
+msgid "há %s"
+msgstr "%s ago"
 
 msgid "FAVORITO"
 msgstr "FAVORITE"
@@ -2586,6 +2610,9 @@ msgstr "node Bluetooth"
 
 msgid " (em uso pelo Tab5)"
 msgstr " (in use by the Tab5)"
+
+msgid "Wi-Fi do nó"
+msgstr "Node Wi-Fi"
 
 msgid "ligar em %s"
 msgstr "turn on at %s"
@@ -2953,6 +2980,9 @@ msgstr "Unknown artist"
 msgid "na Biblioteca"
 msgstr "in the Library"
 
+msgid "%s%s%d de %d  ·  %s%s"
+msgstr "%s%s%d of %d  ·  %s%s"
+
 msgid "  ·  pausado"
 msgstr "  ·  paused"
 
@@ -3085,9 +3115,6 @@ msgstr "Not copied"
 msgid "Notas"
 msgstr "Notes"
 
-msgid "Radar"
-msgstr "Radar"
-
 msgid "SERVIÇOS"
 msgstr "SERVICES"
 
@@ -3096,6 +3123,9 @@ msgstr "OPEN APP"
 
 msgid "APPS EM FUNDO"
 msgstr "BACKGROUND APPS"
+
+msgid "ha %um"
+msgstr "%um ago"
 
 msgid "monitor ainda sem a primeira amostra..."
 msgstr "monitor has no sample yet..."
@@ -3210,9 +3240,6 @@ msgstr "Accept"
 
 msgid "senha de %s@%s"
 msgstr "password for %s@%s"
-
-msgid "Trilha"
-msgstr "Trail"
 
 msgid "Vídeos"
 msgstr "Videos"
@@ -3667,6 +3694,12 @@ msgstr "extra routing after confirmed: %lu (does not change the state, only show
 msgid "\n%d mensagem(ns), %d nao lida(s):\n"
 msgstr "\n%d message(s), %d unread:\n"
 
+msgid " [sem resposta]"
+msgstr " [no response]"
+
+msgid " [FALHOU: %s]"
+msgstr " [FAILED: %s]"
+
 msgid "  de %08lX (snr %.1f, %s): %s%s\n"
 msgstr "  from %08lX (snr %.1f, %s): %s%s\n"
 
@@ -3776,10 +3809,10 @@ msgid "\n'help wifi' mostra como varrer, gravar, conectar e esquecer redes\n"
 msgstr "\n'help wifi' shows how to scan, save, connect and forget networks\n"
 
 msgid "ligando o Wi-Fi - confira com 'wifi' em alguns segundos\n"
-msgstr ""
+msgstr "turning Wi-Fi on - check with 'wifi' in a few seconds\n"
 
 msgid "desligando o Wi-Fi\n"
-msgstr ""
+msgstr "turning Wi-Fi off\n"
 
 msgid "o WiFi ainda nao foi ligado neste boot - ligue em Ajustes e tente de novo\n"
 msgstr "Wi-Fi has not been turned on this boot - turn it on in Settings and try again\n"
@@ -3971,19 +4004,19 @@ msgid "nao saiu\n"
 msgstr "did not leave\n"
 
 msgid "%d: nao dormiu: %s\n"
-msgstr ""
+msgstr "%d: did not sleep: %s\n"
 
 msgid "%d: o enlace NAO voltou - parando\n"
-msgstr ""
+msgstr "%d: the link did NOT come back - stopping\n"
 
 msgid "%d/%d ok - controlador SDMMC: %s, %d slot(s)\n"
-msgstr ""
+msgstr "%d/%d ok - SDMMC controller: %s, %d slot(s)\n"
 
 msgid "DESLIGADO"
-msgstr ""
+msgstr "OFF"
 
 msgid "laco: %d ok, %d recusado(s), %d falha(s)\n"
-msgstr ""
+msgstr "loop: %d ok, %d refused, %d failed\n"
 
 msgid "o C6 nao respondeu (firmware antigo?)\n"
 msgstr "the C6 did not answer (old firmware?)\n"
@@ -4370,7 +4403,7 @@ msgid "pilha livre"
 msgstr "free stack"
 
 msgid "onde"
-msgstr ""
+msgstr "where"
 
 msgid "dono"
 msgstr "owner"
@@ -4804,6 +4837,15 @@ msgstr "'%s' now at %s (%d)\n"
 msgid "abrindo o assistente de boas-vindas\n"
 msgstr "opening the welcome wizard\n"
 
+msgid ", com horário de verão"
+msgstr ", with daylight saving"
+
+msgid "região inválida - 'fuso lista' mostra as regiões\n"
+msgstr "invalid region - 'timezone list' shows the regions\n"
+
+msgid "região: %s\nagora: %s  %s  (relógio de %s)\n"
+msgstr "region: %s\nnow: %s  %s  (%s clock)\n"
+
 msgid "sem memoria para o Berry (orcamento cheio - ver 'berry mem')\n"
 msgstr "no memory for Berry (budget full - see 'berry mem')\n"
 
@@ -5188,6 +5230,27 @@ msgstr "failed (the C6 did not provide Bluetooth)"
 msgid "desligando"
 msgstr "turning off"
 
+msgid "sem memoria"
+msgstr "out of memory"
+
+msgid "o enlace com o C6 nao esta de pe"
+msgstr "the link to the C6 is not up"
+
+msgid "o Bluetooth esta ligado (a pilha BLE fala com o C6 pelo enlace)"
+msgstr "Bluetooth is on (the BLE stack talks to the C6 over the link)"
+
+msgid "o C6 nao respondeu ao INFO"
+msgstr "the C6 did not answer INFO"
+
+msgid "o firmware do C6 nao sabe dormir (grave o c6-5)"
+msgstr "the C6 firmware cannot sleep (flash c6-5)"
+
+msgid "o enlace ja esta desmontado"
+msgstr "the link is already down"
+
+msgid "o aviso ao C6 nao saiu"
+msgstr "the notice to the C6 was not sent"
+
 msgid "servico Meshtastic"
 msgstr "Meshtastic service"
 
@@ -5205,6 +5268,9 @@ msgstr "unknown"
 
 msgid "nada"
 msgstr "nothing"
+
+msgid "nao consegui abrir a UART a %d\n"
+msgstr "could not open the UART at %d\n"
 
 msgid "no computador (USB)"
 msgstr "on the computer (USB)"
@@ -5227,9 +5293,6 @@ msgstr "failed"
 msgid "C6 nao responde"
 msgstr "C6 does not respond"
 
-msgid "[ conectado ]"
-msgstr "[ connected ]"
-
 msgid "CONCLUIR"
 msgstr "FINISH"
 
@@ -5245,20 +5308,14 @@ msgstr "The time shown by the bar and the apps."
 msgid "+30 min"
 msgstr "+30 min"
 
-msgid "Agora: %02d:%02d"
-msgstr "Now: %02d:%02d"
+msgid "Agora: %s"
+msgstr "Now: %s"
 
 msgid "A hora certa chega pelo Wi-Fi, GPS ou malha."
 msgstr "The correct time comes from Wi-Fi, GPS or the mesh."
 
-msgid "Brasília: UTC-3   Lisboa: UTC+0   Madri: UTC+1"
-msgstr "Brasília: UTC-3   London: UTC+0   Madrid: UTC+1"
-
-msgid "Nova York: UTC-5   Tóquio: UTC+9"
-msgstr "New York: UTC-5   Tokyo: UTC+9"
-
-msgid "(sem horário de verão: ajuste na troca)"
-msgstr "(no daylight saving: adjust when it changes)"
+msgid "Ou escolha a sua região (horário de verão automático):"
+msgstr "Or pick your region (automatic daylight saving):"
 
 msgid "Meshtastic pela internet"
 msgstr "Meshtastic over the internet"
@@ -5289,6 +5346,9 @@ msgstr "Settings > Wi-Fi > SCAN NETWORKS."
 
 msgid "Boas-vindas"
 msgstr "Welcome"
+
+msgid "[ conectado ]"
+msgstr "[ connected ]"
 
 msgid "HOJE"
 msgstr "TODAY"
@@ -5488,6 +5548,21 @@ msgstr "space"
 msgid "BUSCAR"
 msgstr "SEARCH"
 
+msgid "sem memoria para o Berry (%u KB de %u KB em uso)"
+msgstr "out of memory for Berry (%u KB of %u KB in use)"
+
+msgid "sistema.fundo(true) sem a funcao fundo() no script"
+msgstr "sistema.fundo(true) without a fundo() function in the script"
+
+msgid "O script parou com um erro:"
+msgstr "The script stopped with an error:"
+
+msgid "sem memoria para o Berry"
+msgstr "out of memory for Berry"
+
+msgid "a tarefa do Berry nao respondeu"
+msgstr "the Berry task did not respond"
+
 msgid "domingo"
 msgstr "Sunday"
 
@@ -5551,6 +5626,12 @@ msgstr "{dia}, {mes} {n}"
 msgid "Esvaziando a lixeira"
 msgstr "Emptying the trash"
 
+msgid "%s: %d arquivo(s)"
+msgstr "%s: %d file(s)"
+
+msgid "Movido"
+msgstr "Moved"
+
 msgid "Mover falhou"
 msgstr "Move failed"
 
@@ -5581,8 +5662,113 @@ msgstr "a folder cannot go inside itself"
 msgid "o disco recusou"
 msgstr "the disk refused"
 
+msgid "não abriu %s"
+msgstr "could not open %s"
+
+msgid "não criou %s no destino"
+msgstr "could not create %s at the destination"
+
+msgid "o disco saiu no meio (%s)"
+msgstr "the disk was removed mid-way (%s)"
+
+msgid "erro lendo %s"
+msgstr "error reading %s"
+
+msgid "erro gravando %s (disco cheio?)"
+msgstr "error writing %s (disk full?)"
+
+msgid "erro fechando %s"
+msgstr "error closing %s"
+
+msgid "não criou a pasta %s"
+msgstr "could not create the folder %s"
+
+msgid "não abriu a pasta %s"
+msgstr "could not open the folder %s"
+
+msgid "não cabe: precisa de %s"
+msgstr "does not fit: needs %s"
+
+msgid "não existe mais: %s"
+msgstr "no longer exists: %s"
+
+msgid "não moveu %s"
+msgstr "could not move %s"
+
 msgid "Lixeira: %s, %s"
 msgstr "Trash: %s, %s"
+
+msgid "%d%% - ligue na tomada"
+msgstr "%d%% - plug in the charger"
+
+msgid "Bateria vazia"
+msgstr "Battery empty"
+
+msgid "desligando - ligue na tomada"
+msgstr "shutting down - plug in the charger"
+
+msgid "desligando (bateria vazia)"
+msgstr "shutting down (battery empty)"
+
+msgid "aviso de %d%% publicado; desliga em 0%%"
+msgstr "%d%% warning shown; shuts down at 0%%"
+
+msgid "%d de %02X%02X"
+msgstr "%d from %02X%02X"
+
+msgid "canal %u - sem WiFi"
+msgstr "channel %u - no Wi-Fi"
+
+msgid "Manual (deslocamento fixo)"
+msgstr "Manual (fixed offset)"
+
+msgid " (verão)"
+msgstr " (summer time)"
+
+msgid "sem rota"
+msgstr "no route"
+
+msgid "recusado"
+msgstr "refused"
+
+msgid "sem resposta"
+msgstr "no response"
+
+msgid "sem interface"
+msgstr "no interface"
+
+msgid "tentou demais"
+msgstr "too many retries"
+
+msgid "canal errado"
+msgstr "wrong channel"
+
+msgid "grande demais"
+msgstr "too large"
+
+msgid "ninguém respondeu"
+msgstr "nobody answered"
+
+msgid "limite de transmissão"
+msgstr "duty-cycle limit"
+
+msgid "pedido inválido"
+msgstr "bad request"
+
+msgid "sem autorização"
+msgstr "not authorised"
+
+msgid "falha de chave"
+msgstr "key failure"
+
+msgid "chave desconhecida"
+msgstr "unknown key"
+
+msgid "rápido demais"
+msgstr "too fast"
+
+msgid "fila do rádio cheia"
+msgstr "radio queue full"
 
 msgid "cabo Grove, conversando"
 msgstr "Grove cable, talking"
@@ -5617,8 +5803,65 @@ msgstr "will connect"
 msgid "conectando ao servidor"
 msgstr "connecting to the server"
 
+msgid "conectado (%lu/%lu)"
+msgstr "connected (%lu/%lu)"
+
+msgid "nao veio no dump"
+msgstr "was not in the dump"
+
+msgid "e grande demais para um pacote"
+msgstr "is too big for one packet"
+
+msgid "sem o nó, ou a configuração ainda chegando"
+msgstr "no node, or the configuration is still arriving"
+
+msgid "configuração grande demais para um pacote"
+msgstr "configuration too big for one packet"
+
+msgid "o enlace com o nó recusou o envio"
+msgstr "the link to the node refused the send"
+
+msgid "o enlace caiu no meio da gravação - reinicie o nó"
+msgstr "the link dropped mid-write - restart the node"
+
+msgid "digite o PIN que o nó mostra"
+msgstr "type the PIN the node shows"
+
 msgid "PIN do Meshtastic"
 msgstr "Meshtastic PIN"
+
+msgid "procurando %s"
+msgstr "looking for %s"
+
+msgid "procurando um no Meshtastic"
+msgstr "looking for a Meshtastic node"
+
+msgid "pareando com %s"
+msgstr "pairing with %s"
+
+msgid "tentando outro modo de pareamento - o no vai mostrar outro PIN"
+msgstr "trying another pairing mode - the node will show another PIN"
+
+msgid "o nó mostra o PIN na tela - tentando de novo"
+msgstr "the node shows the PIN on its screen - trying again"
+
+msgid "PIN recusado - toque no nó para tentar"
+msgstr "PIN refused - tap the node to retry"
+
+msgid "conectado a %s"
+msgstr "connected to %s"
+
+msgid "Bluetooth falhou"
+msgstr "Bluetooth failed"
+
+msgid "esperando o Bluetooth"
+msgstr "waiting for Bluetooth"
+
+msgid "nenhum Meshtastic por perto"
+msgstr "no Meshtastic node nearby"
+
+msgid "conexão caiu - reconectando"
+msgstr "connection dropped - reconnecting"
 
 msgid "ponto de partida (primeira leitura)"
 msgstr "starting point (first reading)"
@@ -5641,8 +5884,152 @@ msgstr "Tab5 battery low at that moment - check the power"
 msgid "sem indício do lado do Tab5: falha do próprio nó (firmware ou energia do módulo)"
 msgstr "no sign on the Tab5 side: failure of the node itself (firmware or module power)"
 
+msgid "Automático"
+msgstr "Automatic"
+
+msgid "o pendrive não está conectado"
+msgstr "the flash drive is not connected"
+
+msgid "sem cartão SD"
+msgstr "no SD card"
+
+msgid "não toca: %s"
+msgstr "cannot play: %s"
+
+msgid "um app aberto esta usando o cartao"
+msgstr "an open app is using the card"
+
+msgid "cartao em uso por um servico alem do prazo"
+msgstr "card held by a service for too long"
+
+msgid "sem cartao, ou ele nao respondeu"
+msgstr "no card, or it did not respond"
+
+msgid "o USB nao subiu"
+msgstr "USB did not start"
+
+msgid "nenhum (ligou, ou nunca tentou)"
+msgstr "none (it started, or never tried)"
+
+msgid "Memória do pendrive cheia"
+msgstr "Flash drive memory full"
+
+msgid "Cartão falhou no pendrive"
+msgstr "Card failed in flash drive mode"
+
+msgid "%u arquivo(s) em .tab5"
+msgstr "%u file(s) in .tab5"
+
+msgid "Gravações esperando cartão"
+msgstr "Writes waiting for the card"
+
+msgid "Computador no USB: toque"
+msgstr "Computer on USB: tap"
+
+msgid "o libssh2 nao iniciou"
+msgstr "libssh2 did not start"
+
+msgid "%s nao resolveu"
+msgstr "%s did not resolve"
+
+msgid "%s:%d nao conectou (%s)"
+msgstr "%s:%d did not connect (%s)"
+
+msgid "conectado a %s:%d (%lu ms)\n"
+msgstr "connected to %s:%d (%lu ms)\n"
+
+msgid "o aperto de mao falhou: %s"
+msgstr "the handshake failed: %s"
+
+msgid "ATENCAO: a chave deste servidor MUDOU.\n  guardada: %s\n  agora:    %s\nPode ser outro aparelho no lugar do servidor. Se ele foi reinstalado,\nesqueca a antiga com: ssh esquecer %s:%d\n"
+msgstr "WARNING: this server's key has CHANGED.\n  stored:   %s\n  now:      %s\nIt may be another machine in the server's place. If it was reinstalled,\nforget the old one with: ssh forget %s:%d\n"
+
+msgid "chave do servidor diferente da guardada - nao conectei"
+msgstr "server key differs from the stored one - not connected"
+
+msgid "servidor novo - chave guardada: %s\n"
+msgstr "new server - key stored: %s\n"
+
+msgid "chave do servidor confere (%s)\n"
+msgstr "server key matches (%s)\n"
+
+msgid "o servidor nao disse como autenticar"
+msgstr "the server did not say how to authenticate"
+
+msgid "o servidor so aceita: %s (senha nao)"
+msgstr "the server only accepts: %s (not password)"
+
+msgid "senha de %s@%s: "
+msgstr "password for %s@%s: "
+
+msgid "sem senha"
+msgstr "no password"
+
+msgid "senha recusada\n"
+msgstr "password refused\n"
+
+msgid "nao autenticou"
+msgstr "not authenticated"
+
+msgid "o servidor nao abriu o shell"
+msgstr "the server did not open a shell"
+
+msgid "shell linha a linha ('exit' sai; nano/top/vim nao funcionam aqui)\n"
+msgstr "line-by-line shell ('exit' quits; nano/top/vim do not work here)\n"
+
+msgid "%s nao conectou"
+msgstr "%s did not connect"
+
+msgid "o aperto de mao falhou"
+msgstr "the handshake failed"
+
+msgid "o servidor nao mostrou a chave"
+msgstr "the server did not show its key"
+
+msgid "a chave do servidor MUDOU (guardada %.20s...) - nao conectei"
+msgstr "the server key CHANGED (stored %.20s...) - not connected"
+
+msgid "impressao digital nao aceita"
+msgstr "fingerprint not accepted"
+
+msgid "senha recusada - tente de novo"
+msgstr "password refused - try again"
+
+msgid "conferindo a senha..."
+msgstr "checking the password..."
+
+msgid "o servidor nao abriu o terminal"
+msgstr "the server did not open a terminal"
+
+msgid "sem memoria para a tela"
+msgstr "out of memory for the screen"
+
+msgid "sem tarefa para a sessao"
+msgstr "no task for the session"
+
 msgid "'help' lista os comandos; Ctrl+C para o que roda."
 msgstr "'help' lists the commands; Ctrl+C stops what is running."
+
+msgid "(a fila esta cheia - espere o comando que roda, ou Ctrl+C)\n"
+msgstr "(the queue is full - wait for the running command, or press Ctrl+C)\n"
+
+msgid "um aparelho foi visto e nao abriu%s"
+msgstr "a device was seen but did not open%s"
+
+msgid "o disco nao respondeu (%s)"
+msgstr "the disk did not respond (%s)"
+
+msgid "nao montou (%s) - formate em FAT32 ou exFAT, MBR"
+msgstr "did not mount (%s) - format as FAT32 or exFAT, MBR"
+
+msgid "Pendrive não lido: use FAT32/exFAT"
+msgstr "Flash drive not read: use FAT32/exFAT"
+
+msgid "a pilha USB nao subiu (%s)"
+msgstr "the USB stack did not start (%s)"
+
+msgid "o driver de pendrive nao subiu (%s)"
+msgstr "the flash drive driver did not start (%s)"
 
 msgid "não é um AVI"
 msgstr "not an AVI file"
@@ -5694,6 +6081,93 @@ msgstr "SD card"
 
 msgid "Pendrive"
 msgstr "USB drive"
+
+msgid "camera.foto(nome): so o nome, sem pasta nem extensao"
+msgstr "camera.foto(name): just the name, no folder or extension"
+
+msgid "o preview so funciona com o app em pe"
+msgstr "the preview only works with the app in the foreground"
+
+msgid "a camera nao ligou (ver o log)"
+msgstr "the camera did not start (see the log)"
+
+msgid "nome de arquivo invalido (so o nome, sem pasta)"
+msgstr "invalid file name (just the name, no folder)"
+
+msgid "arquivos so dentro de um app"
+msgstr "files only inside an app"
+
+msgid "caminho invalido: relativo a pasta do app (\"sub/x.txt\"), sem .."
+msgstr "invalid path: relative to the app folder (\"sub/x.txt\"), no .."
+
+msgid "sem cartao"
+msgstr "no SD card"
+
+msgid "apagar(caminho): o que apagar?"
+msgstr "apagar(path): delete what?"
+
+msgid "radio C6 de fabrica: ESP-NOW pede atualizacao (opcional)"
+msgstr "factory C6 radio: ESP-NOW needs an update (optional)"
+
+msgid "ligue o Wi-Fi em Ajustes (o C6 so tem energia com ele)"
+msgstr "turn Wi-Fi on in Settings (the C6 is only powered with it)"
+
+msgid "radio parado - ligue o Wi-Fi ou fixe um canal em Ajustes"
+msgstr "radio stopped - turn Wi-Fi on or fix a channel in Settings"
+
+msgid "camadas demais (no maximo 8, somando 4 telas)"
+msgstr "too many layers (at most 8, totalling 4 screens)"
+
+msgid "sem memoria para a camada"
+msgstr "out of memory for the layer"
+
+msgid "colar vai para a tela: chame tela.alvo() antes"
+msgstr "paste goes to the screen: call tela.alvo() first"
+
+msgid "canal primário"
+msgstr "primary channel"
+
+msgid "canal %u"
+msgstr "channel %u"
+
+msgid "%d no canal"
+msgstr "%d in the channel"
+
+#~ msgid "tela\testado do painel e da janela de medida\ntela medir\tzera a janela; use o aparelho e rode 'tela'\ntela foto [nome]\tgrava a tela em apps/Console/<nome>.bmp\ntela banco\tcompara os motores de copia (PPA, DMA2D, CPU)\ntela relogio <mhz>\ttroca o relogio de pixel e grava (80 = fabrica)\ntela prioridade alta|padrao\tprioridade da tela no barramento AXI\ntela rolar cpu|dma\tquem faz a copia da rolagem\ntela irqs\tlista as interrupcoes (nucleo, nivel, fonte)\ntela atrasar <ms> [critica] [nucleo] [vezes]\tprova: segura um nucleo; a tela pisca?"
+#~ msgstr "display\tpanel status and the measurement window\ndisplay measure\tresets the window; use the device and run 'display'\ndisplay photo [name]\tsaves the screen to apps/Console/<name>.bmp\ndisplay bench\tcompares the copy engines (PPA, DMA2D, CPU)\ndisplay clock <mhz>\tchanges the pixel clock and saves it (80 = factory)\ndisplay priority high|default\tdisplay priority on the AXI bus\ndisplay scroll cpu|dma\twho does the scroll copy\nscreen irqs\tlists the interrupts (core, level, source)\nscreen atrasar <ms> [critica] [core] [times]\ttest: holds a core; does the screen flash?"
+
+#~ msgid "Azimutal"
+#~ msgstr "Azimuthal"
+
+#~ msgid "CreazySnake"
+#~ msgstr "CreazySnake"
+
+#~ msgid "%02d:%02d  ·  fuso %s"
+#~ msgstr "%02d:%02d  ·  zone %s"
+
+#~ msgid "Fuso horário (passos de 30 min)"
+#~ msgstr "Time zone (30 min steps)"
+
+#~ msgid "O fuso só muda a hora mostrada. Sem horário de verão: onde há verão, ajuste aqui na troca. O relógio interno, os registros e a malha continuam em UTC."
+#~ msgstr "The time zone only changes the time shown. No daylight saving time: where there is one, adjust it here when it changes. The internal clock, the records and the mesh stay in UTC."
+
+#~ msgid "Radar"
+#~ msgstr "Radar"
+
+#~ msgid "Trilha"
+#~ msgstr "Trail"
+
+#~ msgid "Agora: %02d:%02d"
+#~ msgstr "Now: %02d:%02d"
+
+#~ msgid "Brasília: UTC-3   Lisboa: UTC+0   Madri: UTC+1"
+#~ msgstr "Brasília: UTC-3   London: UTC+0   Madrid: UTC+1"
+
+#~ msgid "Nova York: UTC-5   Tóquio: UTC+9"
+#~ msgstr "New York: UTC-5   Tokyo: UTC+9"
+
+#~ msgid "(sem horário de verão: ajuste na troca)"
+#~ msgstr "(no daylight saving: adjust when it changes)"
 
 #~ msgid "nao abriu (o caminho termina em .avi?)\n"
 #~ msgstr "did not open (does the path end in .avi?)\n"

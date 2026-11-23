@@ -2,6 +2,7 @@
 // motor) e berry_interno.hpp.
 
 #include <dirent.h>
+#include "idioma.h"
 #include <stdio.h>
 #include <string.h>
 #include "esp_heap_caps.h"
@@ -81,7 +82,7 @@ static int cam_foto(bvm* vm)
   if (!so_janela(vm, "a camera")) { be_return_nil(vm); }
   const char* nome = be_top(vm) >= 1 ? arg_txt(vm, 1) : "";
   if (strchr(nome, '/') || strchr(nome, '\\') || strstr(nome, "..") || strlen(nome) > 32) {
-    be_raise(vm, "camera_error", "camera.foto(nome): so o nome, sem pasta nem extensao");
+    be_raise(vm, "camera_error", tr("camera.foto(nome): so o nome, sem pasta nem extensao"));
     be_return_nil(vm);
   }
   const int e = s_cam.foto_estado;
@@ -118,13 +119,13 @@ static bool cam_subir(void)
 {
   superficie_t sup;
   if (!sistema_superficie(s_cam.r, &sup)) {
-    snprintf(s_cam.erro, sizeof(s_cam.erro), "o preview so funciona com o app em pe");
+    snprintf(s_cam.erro, sizeof(s_cam.erro), tr("o preview so funciona com o app em pe"));
     return false;
   }
   // Quem usa a camera e o app Berry aberto (aparece nos recursos com o nome dele).
   snprintf(s_cam_quem, sizeof(s_cam_quem), "%s", sistema_app_atual() ? sistema_app_atual() : "Berry");
   if (!tab5_camera_iniciar(s_cam_quem)) {
-    snprintf(s_cam.erro, sizeof(s_cam.erro), "a camera nao ligou (ver o log)");
+    snprintf(s_cam.erro, sizeof(s_cam.erro), tr("a camera nao ligou (ver o log)"));
     return false;
   }
   const tab5_cam_destino_t d = { sup.buf, sup.bytes, sup.pic_l, sup.pic_a, sup.x, sup.y,

@@ -116,7 +116,7 @@ typedef struct {
 static esp_err_t nos(httpd_req_t* req)
 {
   no_txt_t* t = (no_txt_t*)heap_caps_malloc(sizeof(no_txt_t), MALLOC_CAP_SPIRAM);
-  if (!t) { return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "sem memoria"); }
+  if (!t) { return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "out of memory"); }
   comecar_json(req);
   pedaco(req, "[");
   const int n = tab5_mesh_num_nos();
@@ -169,7 +169,7 @@ static esp_err_t saude(httpd_req_t* req)
 static esp_err_t favorito(httpd_req_t* req)
 {
   char v[16];
-  if (!tab5_web_param(req, "no", v, sizeof(v))) { return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "falta o no"); }
+  if (!tab5_web_param(req, "no", v, sizeof(v))) { return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "missing node"); }
   const uint32_t no = (uint32_t)strtoul(v, nullptr, 10);
   const bool sim = tab5_web_param(req, "sim", v, sizeof(v)) && v[0] == '1';
   tab5_mesh_definir_favorito(no, sim);
@@ -192,7 +192,7 @@ static esp_err_t msgs(httpd_req_t* req)
   if (!conversa_do_pedido(req, &canal, &idx, &no)) { return ESP_OK; }
   mesh_msg_t* m = (mesh_msg_t*)heap_caps_malloc(MSGS_MAX * sizeof(mesh_msg_t), MALLOC_CAP_SPIRAM);
   msg_txt_t* t = (msg_txt_t*)heap_caps_malloc(sizeof(msg_txt_t), MALLOC_CAP_SPIRAM);
-  if (!m || !t) { heap_caps_free(m); heap_caps_free(t); return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "sem memoria"); }
+  if (!m || !t) { heap_caps_free(m); heap_caps_free(t); return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "out of memory"); }
   const int n = tab5_mesh_historico_de(canal, idx, no, m, MSGS_MAX);
   // Lida no PC = lida (como abrir a conversa no app).
   const int vis = tab5_mesh_conversa_indice(canal, idx, no);
@@ -232,12 +232,12 @@ static esp_err_t enviar(httpd_req_t* req)
   char texto[MESH_PAYLOAD_MAX + 1];
   const int n = tab5_web_corpo(req, texto, sizeof(texto));
   if (n < 0) { return ESP_OK; }   // grande demais: ja respondeu 413
-  if (n == 0) { return tab5_web_json(req, "{\"ok\":false,\"erro\":\"mensagem vazia\"}"); }
-  if (!tab5_mesh_servico_ativo()) { return tab5_web_json(req, "{\"ok\":false,\"erro\":\"o Mesh esta desligado no Tab5\"}"); }
+  if (n == 0) { return tab5_web_json(req, "{\"ok\":false,\"erro\":\"empty message\"}"); }
+  if (!tab5_mesh_servico_ativo()) { return tab5_web_json(req, "{\"ok\":false,\"erro\":\"Mesh is off on the Tab5\"}"); }
   // A conversa aparece na coluna (a direta com quem ainda nao falou, o canal escondido).
   if (canal) { tab5_mesh_conversa_do_canal(idx); } else { tab5_mesh_conversa_com(no); }
   const bool ok = tab5_mesh_enviar(canal ? 0xFFFFFFFFu : no, canal ? idx : 0, texto);
-  return tab5_web_json(req, ok ? "{\"ok\":true,\"erro\":\"\"}" : "{\"ok\":false,\"erro\":\"o no nao respondeu (enlace mudo)\"}");
+  return tab5_web_json(req, ok ? "{\"ok\":true,\"erro\":\"\"}" : "{\"ok\":false,\"erro\":\"the node did not answer (link silent)\"}");
 }
 
 static const tab5_web_rota_t ROTAS[] = {

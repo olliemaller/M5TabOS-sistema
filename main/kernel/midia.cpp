@@ -46,7 +46,10 @@ void midia_publicar(const char* titulo, bool tocando, uint32_t pos_ms, uint32_t 
   bool mudou = false;
   taskENTER_CRITICAL(&s_mux);
   if (s_info.ativa) {
-    if (titulo && strncmp(titulo, s_info.titulo, MIDIA_TITULO) != 0) {
+    // Compare only what fits: a title longer than the buffer is stored truncated,
+    // and comparing the full MIDIA_TITULO bytes saw a "change" on every call
+    // (endless redraws of the mini-player while a long-titled track played).
+    if (titulo && strncmp(titulo, s_info.titulo, MIDIA_TITULO - 1) != 0) {
       strncpy(s_info.titulo, titulo, MIDIA_TITULO - 1);
       s_info.titulo[MIDIA_TITULO - 1] = '\0';
       ++s_versao; mudou = true;

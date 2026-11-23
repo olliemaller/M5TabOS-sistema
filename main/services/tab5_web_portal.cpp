@@ -58,7 +58,7 @@ static esp_err_t pagina(httpd_req_t* req)
 static esp_err_t sistema(httpd_req_t* req)
 {
   char* out = (char*)heap_caps_malloc(SISTEMA_MAX, MALLOC_CAP_SPIRAM);
-  if (!out) { httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "sem memoria"); return ESP_FAIL; }
+  if (!out) { httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "out of memory"); return ESP_FAIL; }
   tab5_rede_ip_t eu = {};
   tab5_rede_ip(&eu);
   const tab5_medida_t m = tab5_power_ultima();
@@ -102,14 +102,46 @@ static esp_err_t abrir(httpd_req_t* req)
   char nome[32], pasta[24];
   if (!tab5_web_param(req, "app", nome, sizeof(nome)) || !app_do_pc(nome)) {
     httpd_resp_set_status(req, "404 Not Found");
-    return tab5_web_json(req, "{\"ok\":false,\"msg\":\"esse app nao abre no PC\"}");
+    return tab5_web_json(req, "{\"ok\":false,\"msg\":\"that app does not open on the PC\"}");
   }
   if (!tab5_web_abrir_app(nome) || !tab5_web_pasta(nome, pasta, sizeof(pasta))) {
-    return tab5_web_json(req, "{\"ok\":false,\"msg\":\"o Tab5 nao conseguiu abrir (sem vaga?)\"}");
+    return tab5_web_json(req, "{\"ok\":false,\"msg\":\"the Tab5 could not open it (no free slot?)\"}");
   }
   char js[64];
   snprintf(js, sizeof(js), "{\"ok\":true,\"pasta\":\"%s\"}", pasta);
   return tab5_web_json(req, js);
+}
+
+// SCREENSHOT: the Tab5 screen as it is now, as a .bmp the browser shows
+// (Overview > Screenshot). Streamed in bands of rows, so no 1.8 MB buffer:
+// the header says top-down (negative height) and each band goes out as read.
+// readRect gives LovyanGFX byte order (swapped), undone per pixel.
+static esp_err_t tela(httpd_req_t* req)
+{
+  static const int FAIXA = 16;
+  const int w = M5.Display.width(), h = M5.Display.height();
+  uint16_t* px = (uint16_t*)heap_caps_malloc((size_t)w * FAIXA * 2, MALLOC_CAP_SPIRAM);
+  if (!px) { return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "out of memory"); }
+  uint8_t cab[66] = { 0 };
+  auto u32 = [&](int o, uint32_t v) { cab[o] = v; cab[o + 1] = v >> 8; cab[o + 2] = v >> 16; cab[o + 3] = v >> 24; };
+  const uint32_t dados = (uint32_t)w * h * 2;   // 720 * 2 is a multiple of 4: no row padding
+  cab[0] = 'B'; cab[1] = 'M';
+  u32(2, sizeof(cab) + dados); u32(10, sizeof(cab)); u32(14, 40); u32(18, (uint32_t)w); u32(22, (uint32_t)(-h));
+  cab[26] = 1; cab[28] = 16; u32(30, 3); u32(34, dados);
+  u32(54, 0xF800); u32(58, 0x07E0); u32(62, 0x001F);
+  httpd_resp_set_type(req, "image/bmp");
+  httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+  httpd_resp_set_hdr(req, "Content-Disposition", "inline; filename=\"tab5-screen.bmp\"");
+  esp_err_t r = httpd_resp_send_chunk(req, (const char*)cab, sizeof(cab));
+  for (int y = 0; y < h && r == ESP_OK; y += FAIXA) {
+    const int a = (h - y) < FAIXA ? (h - y) : FAIXA;
+    M5.Display.readRect(0, y, w, a, px);
+    for (int i = 0; i < w * a; ++i) { px[i] = (uint16_t)((px[i] << 8) | (px[i] >> 8)); }
+    r = httpd_resp_send_chunk(req, (const char*)px, (size_t)w * a * 2);
+  }
+  heap_caps_free(px);
+  if (r == ESP_OK) { r = httpd_resp_send_chunk(req, nullptr, 0); }
+  return r;
 }
 
 static esp_err_t desligar(httpd_req_t* req)
@@ -124,6 +156,7 @@ static const tab5_web_rota_t ROTAS[] = {
   { "/api/sistema",  HTTP_GET,  sistema,  false, nullptr },
   { "/api/abrir",    HTTP_POST, abrir,    false, nullptr },
   { "/api/desligar", HTTP_POST, desligar, false, nullptr },
+  { "/api/tela.bmp", HTTP_GET,  tela,     false, nullptr },
 };
 
 const tab5_web_rota_t* tab5_web_portal_rotas(int* n)

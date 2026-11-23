@@ -2,6 +2,7 @@
 // do cartao, o salto para um ponto e a decodificacao de um bloco de PCM.
 // Ver tab5_musica_interno.hpp.
 #include "tab5_musica_interno.hpp"
+#include "idioma.h"
 
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -360,7 +361,7 @@ bool musica_abrir_item(int pos)
   g_musica_est.kbps = 0;
   g_musica_est.pos_ms = 0;
   g_musica_est.dur_ms = g_musica_hz ? (uint32_t)(g_musica_total_quadros * 1000u / g_musica_hz) : 0;
-  if (!ok) { snprintf(g_musica_est.erro, sizeof(g_musica_est.erro), "não toca: %s", titulo); }
+  if (!ok) { snprintf(g_musica_est.erro, sizeof(g_musica_est.erro), tr("não toca: %s"), titulo); }
   else     { g_musica_est.erro[0] = '\0'; }
   g_musica_trava.destravar();
 

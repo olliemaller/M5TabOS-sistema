@@ -53,7 +53,7 @@ git rev-parse -q --verify "refs/tags/v$nova" >/dev/null && falha "a tag v$nova j
 
 # O "Nao lancado" precisa ter alguma linha de conteudo antes da proxima secao.
 # ([^]]* e nao [aã]: o awk do macOS le byte a byte, e "ã" sao dois bytes.)
-conteudo=$(awk '/^## \[N[^]]*o lan[^]]*ado\]/{dentro=1; next} /^## \[/{dentro=0} dentro && NF' CHANGELOG.md | wc -l | tr -d ' ')
+conteudo=$(awk '/^## \[(N[^]]*o lan[^]]*ado|Unreleased)\]/{dentro=1; next} /^## \[/{dentro=0} dentro && NF' CHANGELOG.md | wc -l | tr -d ' ')
 [ "$conteudo" -gt 0 ] || falha "o \"Nao lancado\" do CHANGELOG.md esta vazio - escreva o que esta versao traz."
 
 ramo=$(git rev-parse --abbrev-ref HEAD)
@@ -67,7 +67,7 @@ read -r -p "Confirma? [s/N] " ok
 hoje=$(date +%Y-%m-%d)
 printf '%s\n' "$nova" > version.txt
 awk -v v="$nova" -v d="$hoje" '
-  !feito && /^## \[N[^]]*o lan[^]]*ado\]/ { print; print ""; print "## [" v "] - " d; feito=1; next }
+  !feito && /^## \[(N[^]]*o lan[^]]*ado|Unreleased)\]/ { print; print ""; print "## [" v "] - " d; feito=1; next }
   { print }' CHANGELOG.md > CHANGELOG.md.novo
 mv CHANGELOG.md.novo CHANGELOG.md
 

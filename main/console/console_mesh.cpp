@@ -2,6 +2,7 @@
 // (Partido de console.cpp; a tabela COMANDOS e a ajuda continuam la.)
 
 #include "freertos/FreeRTOS.h"
+#include "idioma.h"
 #include "sdkconfig.h"
 #include "tab5_mesh_mqtt.hpp"   // mesh_mqtt_no_resumo
 #include "tab5_mesh_admin.hpp"  // mesh_cfg_ler (Wi-Fi do no)
@@ -209,8 +210,8 @@ static void mesh_completo(void)
     switch (ms.envio) {
       case MESH_ENVIANDO:     snprintf(marca, sizeof(marca), " [enviando]"); break;
       case MESH_ENTREGUE:     snprintf(marca, sizeof(marca), " [entregue]"); break;
-      case MESH_SEM_RESPOSTA: snprintf(marca, sizeof(marca), " [sem resposta]"); break;
-      case MESH_FALHOU:       snprintf(marca, sizeof(marca), " [FALHOU: %s]",
+      case MESH_SEM_RESPOSTA: snprintf(marca, sizeof(marca), tr(" [sem resposta]")); break;
+      case MESH_FALHOU:       snprintf(marca, sizeof(marca), tr(" [FALHOU: %s]"),
                                        mesh_erro_nome(ms.erro)); break;
       default: break;
     }

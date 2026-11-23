@@ -9,6 +9,9 @@
 #include "tab5_bateria.hpp"
 #include "tab5_ensaio.hpp"
 #include "tab5_hora.hpp"   // tab5_agora_ms
+#include "tab5_fuso.hpp"
+#include <stdlib.h>
+#include <time.h>
 #include "freertos/FreeRTOS.h"
 #include "sdkconfig.h"
 #include "tab5_pendrive.hpp"
@@ -399,7 +402,7 @@ static void cmd_teto_cpu(int mhz)
 {
   if (mhz <= 0) {
     printf("uso: energia teto <mhz>   (ex: energia teto 180)\n"
-           "combine com 'tela relogio <mhz>' primeiro, se for testar os dois juntos\n"
+           "combine with 'display clock <mhz>' first if testing both together\n"
            "valores validos nesta placa: " TAB5_CPU_DEGRAUS "\n");
     return;
   }
@@ -869,6 +872,37 @@ void c_boasvindas(int, char**)
   ajustes_definir_config_inicial(false);
   sistema_simular_abrir(&APP_BOAS_VINDAS);
   printf("%s", tr("abrindo o assistente de boas-vindas\n"));
+}
+
+// fuso: the time-zone region (with daylight saving), the manual offset and
+// the 12/24-hour clock - the same as Settings > Date and time.
+void c_fuso(int argc, char** argv)
+{
+  if (argc >= 2 && (eh(argv[1], "12h") || eh(argv[1], "24h"))) {
+    ajustes_definir_relogio_12h(eh(argv[1], "12h"));
+  } else if (argc >= 2 && eh(argv[1], "lista")) {
+    for (int i = 0; i < tab5_fuso_n(); ++i) {
+      const int m = tab5_fuso_padrao_min(i);
+      printf("  %2d  %s%s  (UTC%c%d:%02d%s)\n", i, i == ajustes_fuso_zona() ? "* " : "", tab5_fuso_nome(i),
+             m < 0 ? '-' : '+', abs(m) / 60, abs(m) % 60, tab5_fuso_tem_verao(i) ? tr(", com horário de verão") : "");
+    }
+    return;
+  } else if (argc >= 3 && eh(argv[1], "manual")) {
+    ajustes_definir_fuso_zona(TAB5_FUSO_MANUAL);
+    ajustes_definir_fuso_min((int16_t)atoi(argv[2]));
+  } else if (argc >= 2) {
+    char* fim = nullptr;
+    const long z = strtol(argv[1], &fim, 10);
+    if (!fim || *fim || z < 0 || z >= tab5_fuso_n()) { printf("%s", tr("região inválida - 'fuso lista' mostra as regiões\n")); return; }
+    ajustes_definir_fuso_zona((uint8_t)z);
+    if (z != TAB5_FUSO_MANUAL) { ajustes_definir_fuso_min((int16_t)tab5_fuso_padrao_min((int)z)); }
+  }
+  char f[40], hm[8] = "--:--";
+  const uint32_t e = tab5_hora_epoch();
+  tab5_fuso_texto(e ? e : (uint32_t)time(nullptr), f, sizeof(f));
+  if (e) { struct tm t; tab5_hora_local(e, &t); tab5_hora_hhmm(&t, hm, sizeof(hm)); }
+  printf(tr("região: %s\nagora: %s  %s  (relógio de %s)\n"), tab5_fuso_nome(ajustes_fuso_zona()), hm, f,
+         ajustes_relogio_12h() ? "12 h" : "24 h");
 }
 
 #if M5_COM_BERRY

@@ -1,88 +1,88 @@
-# Variantes: um sistema, mais de um binário
+# Variants: one system, more than one binary
 
-O M5tabOS é **um só código** que gera mais de um firmware. O núcleo (kernel,
-compositor, serviços, HAL, console) existe uma vez: uma correção feita nele vale
-para todas as variantes, porque é o mesmo arquivo. As variantes mudam só **o que
-entra** no binário - nunca o código do sistema.
+M5tabOS is **one code base** that produces more than one firmware. The core
+(kernel, compositor, services, HAL, console) exists once: a fix made there
+applies to every variant, because it is the same file. Variants only change
+**what goes into** the binary - never the system code.
 
-| variante | o que tem | para quê | grava com |
+| variant | what it has | what for | flash with |
 |---|---|---|---|
-| **completa** (padrão) | todos os apps em C, inclusive os pessoais e de laboratório | o seu dia a dia | `./gravar.sh` |
-| **sistema** | só os apps do sistema | a base pública (a cópia do GitHub, `ferramentas/publicar.sh`) | `./gravar.sh sistema` |
-| **m5burner** | uma cópia da **berry**: os apps do sistema + Berry, com o app de exemplo `Ola.be` instalado no primeiro boot | o firmware do M5Burner (`ferramentas/m5burner.sh`), cru: gravar apaga os ajustes | `./gravar.sh m5burner` |
-| **berry** | os apps do sistema + apps em [Berry](BERRY.md) (`.be` no cartão, sem compilar) | instalar apps sem compilar | `./gravar.sh berry` |
+| **completa** (full, default) | every C app, including personal and lab ones | everyday use | `./gravar.sh` |
+| **sistema** | only the system apps | the public base (the GitHub copy, `ferramentas/publicar.sh`) | `./gravar.sh sistema` |
+| **m5burner** | a copy of **berry**: the system apps + Berry, with the example app `Ola.be` installed at first boot | the M5Burner firmware (`ferramentas/m5burner.sh`), raw: flashing erases the settings | `./gravar.sh m5burner` |
+| **berry** | the system apps + apps in [Berry](BERRY.md) (`.be` on the card, no compiling) | installing apps without compiling | `./gravar.sh berry` |
 
-**Sem decorar comando:** `./gravar.sh` sem nada (ou o botão **Gravar** do
-VSCode) pergunta qual variante gravar - Enter repete a última. Para o resto
-(compilar todas, M5Burner, lançar versão, publicar no GitHub), o menu
-`ferramentas/menu.sh`: dois cliques em **`M5tabOS.command`** no Finder, ou o
-botão **Menu** do VSCode.
+**No commands to memorise:** `./gravar.sh` with nothing (or the VS Code
+**Gravar** button) asks which variant to flash - Enter repeats the last one.
+For everything else (build them all, M5Burner, release a version, publish to
+GitHub) there is the menu `ferramentas/menu.sh`: double-click
+**`M5tabOS.command`** in the Finder, or the VS Code **Menu** button.
 
-Cada uma compila na sua pasta: `build/` (completa), `build_<variante>/`, e
-`_v3` no fim para o P4 v3.x. Onde cada uma vai parar (GitHub, M5Burner) e o CI
-que compila todas a cada push: [GITLAB.md](GITLAB.md).
+Each one builds in its own folder: `build/` (full), `build_<variant>/`, and
+`_v3` at the end for the P4 v3.x.
 
-A versão gravada diz qual é: `0.8.0` e `0.8.0-berry` (em Ajustes, no console e
-no log de boot).
+The flashed version says which it is: `0.8.0` and `0.8.0-berry` (in Settings,
+on the console and in the boot log).
 
-## Como uma variante é feita
+## How a variant is made
 
-Um arquivo em `variantes/<nome>.cmake` com quatro linhas:
+A file `variantes/<name>.cmake` with four lines:
 
 ```cmake
-set(M5_BERRY ON)                 # o Berry entra no binário?
-set(M5_SO_SISTEMA ON)            # só os apps do sistema (os pessoais ficam de fora sozinhos)?
-set(M5_SEM_APPS_VARIANTE "")     # e mais estes apps de fora ("cobra;radar")
-set(M5_VARIANTE_ROTULO "berry")  # o sufixo da versão ("" = nenhum)
+set(M5_BERRY ON)                 # does Berry go into the binary?
+set(M5_SO_SISTEMA ON)            # only the system apps (personal ones are left out by themselves)?
+set(M5_SEM_APPS_VARIANTE "")     # and these apps left out too ("cobra;radar")
+set(M5_VARIANTE_ROTULO "berry")  # the version suffix ("" = none)
 ```
 
-O resto é automático:
+The rest is automatic:
 
-- `M5_BERRY OFF`: o componente `components/berry` nem é compilado, os fontes
-  `main/services/berry_*` saem do build, e o símbolo `M5_COM_BERRY` vale 0.
-- Os apps de fora (os de `M5_SEM_APPS_VARIANTE` e, com `M5_SO_SISTEMA`, todo
-  app que não está na lista `m5_apps_sistema` do `main/CMakeLists.txt`) saem
-  dos fontes **e** da lista de apps - a pasta continua no repositório, para as
-  outras variantes.
-- Cada variante compila na sua pasta (`build_<variante>/`, `_v3` para o P4 v3),
-  com o `sdkconfig` dentro dela.
+- `M5_BERRY OFF`: the `components/berry` component is not even built, the
+  `main/services/berry_*` sources leave the build, and `M5_COM_BERRY` is 0.
+- Left-out apps (those in `M5_SEM_APPS_VARIANTE` and, with `M5_SO_SISTEMA`,
+  every app not in the `m5_apps_sistema` list in `main/CMakeLists.txt`) leave
+  the sources **and** the app list - the folder stays in the repository for
+  the other variants.
+- Each variant builds in its own folder (`build_<variant>/`, `_v3` for the
+  P4 v3), with its `sdkconfig` inside.
 
-## A fronteira: o núcleo não sabe que o Berry existe
+## The boundary: the core does not know Berry exists
 
-O Berry se liga ao sistema por **um ponto de extensão genérico**, os "apps de
-fora" (`kernel/app.h`):
+Berry plugs into the system through **one generic extension point**, the
+"outside apps" (`kernel/app.h`):
 
 ```c
-void sistema_apps_de_fora_iniciar(void);   // boot: registra os apps do cartão
-bool sistema_apps_de_fora_atender(void);   // home: aplica uma releitura
-void sistema_apps_de_fora_reler(void);     // o cartão mudou (pendrive)
+void sistema_apps_de_fora_iniciar(void);   // boot: register the apps on the card
+bool sistema_apps_de_fora_atender(void);   // home: apply a reload
+void sistema_apps_de_fora_reler(void);     // the card changed (flash-drive mode)
 ```
 
-Quem implementa é **um arquivo só**, `main/services/apps_de_fora.cpp`: na
-variante berry ele chama os apps Berry; na completa as três funções não fazem
-nada. O `core.cpp` e o `tab5_pendrive.cpp` chamam essas funções e mais nada.
-O comando `berry` do console é o único outro trecho com `#if M5_COM_BERRY`.
+**One file** implements them, `main/services/apps_de_fora.cpp`: in the berry
+variant it calls the Berry apps; in the full variant the three functions do
+nothing. `core.cpp` and `tab5_pendrive.cpp` call these functions and nothing
+else. The console's `berry` command is the only other piece with
+`#if M5_COM_BERRY`.
 
-**A regra para não deixar as variantes se separarem:** o que é do sistema vai
-para o núcleo, nunca para dentro de `services/berry_*`. Uma melhoria descoberta
-por causa do Berry (o texto mais rápido, o colar direto na tela, a serial que
-volta depois do pendrive) é do sistema - e todas as variantes ganham.
+**The rule that keeps variants from drifting apart:** whatever belongs to the
+system goes into the core, never inside `services/berry_*`. An improvement
+found because of Berry (faster text, pasting straight to the screen, the
+serial port coming back after flash-drive mode) belongs to the system - and
+every variant gets it.
 
-## A regra de ouro: todo commit compila todas
+## The golden rule: every commit builds them all
 
 ```bash
 ferramentas/compilar_tudo.sh
 ```
 
-Compila cada variante (com `v3`, também as do P4 v3.x) e confere os apps Berry
-de exemplo (`testes/checar_be.sh`). No GitLab, o pipeline faz o mesmo a cada
-push. Um commit só está pronto quando **tudo
-compilou**. Uma mudança no núcleo que quebra uma variante quebra o sistema.
+Builds every variant (with `v3`, also the P4 v3.x ones) and checks the example
+Berry apps (`testes/checar_be.sh`). A commit is only ready when **everything
+built**. A core change that breaks one variant breaks the system.
 
-## Uma variante nova
+## A new variant
 
-1. Criar `variantes/<nome>.cmake` (copie um dos que existem).
-2. `ferramentas/compilar_tudo.sh` passa a compilá-la sozinho.
-3. Se ela liga uma peça opcional nova (como o Berry), a peça se pluga por um
-   ponto de extensão do núcleo, como os apps de fora - nunca com `#if` espalhado
-   pelo kernel.
+1. Create `variantes/<name>.cmake` (copy an existing one).
+2. `ferramentas/compilar_tudo.sh` starts building it by itself.
+3. If it turns on a new optional piece (like Berry), the piece plugs in
+   through a core extension point, like the outside apps - never with `#if`
+   scattered through the kernel.

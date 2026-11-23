@@ -1,347 +1,357 @@
-# Referência rápida das APIs Berry do M5tabOS
+# M5tabOS Berry API quick reference
 
-Tudo o que um app em Berry pode chamar, numa página. A explicação de cada
-parte, com exemplos, está em [BERRY.md](BERRY.md); os apps de exemplo estão
-em [`berry_exemplos/`](../berry_exemplos) (o [`Mostruario.be`](../berry_exemplos/Mostruario.be)
-usa toda a API).
+Everything a Berry app can call, on one page. The explanation of each part,
+with examples, is in [BERRY.md](BERRY.md); the example apps are in
+[`berry_exemplos/`](../berry_exemplos) ([`Mostruario.be`](../berry_exemplos/Mostruario.be)
+uses the whole API).
 
-Esta lista é tirada das tabelas de registro dos módulos
+The API names are Portuguese, as in the system (`tela` = screen, `cartao` =
+card, `desenhar` = draw, `tocar` = tap); the meaning of each is given here.
+
+This list is taken from the modules' registration tables
 (`berry_modulos_registrar`, [`main/services/berry_apps.cpp`](../main/services/berry_apps.cpp);
-cada módulo mora em [`main/services/berry/`](../main/services/berry)).
-Função nova num módulo tem que entrar nos dois lugares: aqui e no BERRY.md.
+each module lives in [`main/services/berry/`](../main/services/berry)).
+A new function in a module has to go in both places: here and in BERRY.md.
 
-## Aprender a linguagem Berry
+## Learning the Berry language
 
-| Onde | O quê |
+| Where | What |
 |---|---|
-| <https://berry.readthedocs.io> | **Manual oficial** da linguagem: tipos, `var`, `def`, `class`, `for`, `try`, listas, mapas, módulos padrão |
-| <https://github.com/berry-lang/berry> | O código-fonte e o README com a sintaxe em uma página |
-| <https://tasmota.github.io/docs/Berry/> | Introdução prática e exemplos (do projeto Tasmota). **Atenção:** os módulos de hardware de lá (`gpio`, `wire`, `tasmota`, `lv`...) **não existem** aqui - no M5tabOS o hardware é pelos módulos desta página |
+| <https://berry.readthedocs.io> | The language's **official manual**: types, `var`, `def`, `class`, `for`, `try`, lists, maps, standard modules |
+| <https://github.com/berry-lang/berry> | The source code and the README with the syntax on one page |
+| <https://tasmota.github.io/docs/Berry/> | A practical introduction with examples (from the Tasmota project). **Note:** the hardware modules there (`gpio`, `wire`, `tasmota`, `lv`...) **do not exist** here - on M5tabOS the hardware goes through the modules on this page |
 
-### A linguagem em 20 linhas
+### The language in 20 lines
 
 ```berry
-var n = 0                       # variável (inteiro 32 bits, real é float)
-var nome = "Tab5"               # texto (UTF-8)
-var l = [1, 2, 3]               # lista:  l.push(4)  l[0]  size(l)
-var m = {"a": 1, "b": 2}        # mapa:   m["c"] = 3  m.contains("a")  m.keys()
+var n = 0                       # variable (32-bit integer; real is float)
+var name = "Tab5"               # text (UTF-8)
+var l = [1, 2, 3]               # list:  l.push(4)  l[0]  size(l)
+var m = {"a": 1, "b": 2}        # map:   m["c"] = 3  m.contains("a")  m.keys()
 
-def dobro(x) return x * 2 end   # função (declare ANTES de quem a chama)
+def double(x) return x * 2 end  # function (declare it BEFORE whoever calls it)
 
-if n > 0 print("positivo")
+if n > 0 print("positive")
 elif n == 0 print("zero")
-else print("negativo") end
+else print("negative") end
 
-for i: 0 .. 9 n += i end        # 0 a 9, inclusive
-for x: l print(x) end           # cada item da lista
+for i: 0 .. 9 n += i end        # 0 to 9, inclusive
+for x: l print(x) end           # each list item
 while n > 0 n -= 1 end
 
-var s = format("%d itens, %.1f%%", 3, 12.5)   # como o printf
+var s = format("%d items, %.1f%%", 3, 12.5)   # like printf
 try
-  var v = json.load(cartao.ler("dados.json"))
+  var v = json.load(cartao.ler("data.json"))
 except .. as e, msg
-  print("erro: " + msg)
+  print("error: " + msg)
 end
 
-class Ponto var x, y def init(x, y) self.x = x self.y = y end end
+class Point var x, y def init(x, y) self.x = x self.y = y end end
 ```
 
-## As funções que o sistema chama no seu script
+## The functions the system calls in your script
 
-Todas opcionais. Defina só as que usar.
+All optional. Define only the ones you use.
 
-| Função | Quando |
+| Function | When |
 |---|---|
-| `abrir()` | o app abriu |
-| `desenhar(tudo)` | hora de pintar (`tudo` = a área chegou limpa) |
-| `tocar(x, y)` | um toque (clique) |
-| `dedo(x, y, pressionado)` | o dedo na tela, a cada 20 ms; `false` quando solta |
-| `tecla(texto, codigo)` | tecla do teclado físico ou virtual |
-| `aviso(nome)` | chegou algo de um serviço pedido em `# avisos:` |
-| `fechar()` | a janela vai fechar |
-| `fundo()` | a parte de fundo (com `sistema.fundo(true)`) |
+| `abrir()` | the app opened |
+| `desenhar(tudo)` | time to paint (`tudo` = the area arrived cleared) |
+| `tocar(x, y)` | a tap (click) |
+| `dedo(x, y, pressionado)` | the finger on the screen, every 20 ms; `false` when lifted |
+| `tecla(texto, codigo)` | a key from the physical or on-screen keyboard |
+| `aviso(nome)` | something arrived from a service asked for in `# avisos:` |
+| `fechar()` | the window is about to close |
+| `fundo()` | the background part (with `sistema.fundo(true)`) |
 
-**Cabeçalho do arquivo** (comentários no topo):
-`# nome:` · `# cor: 0x07E0` · `# periodo: ms` · `# avisos: espnow, mesh, gps, volumes, arquivos` ·
-`# orientacao: em_pe | deitado | girar | fixo` - com o teclado físico encaixado
-todo app fica deitado, menos `fixo` (sempre em pé: quem usa `camera`)
+**File header** (comments at the top):
+`# nome:` (name) · `# cor: 0x07E0` (colour) · `# periodo: ms` (period) ·
+`# avisos: espnow, mesh, gps, volumes, arquivos` (notices) ·
+`# orientacao: em_pe | deitado | girar | fixo` (portrait | landscape | rotate | fixed) -
+with the physical keyboard attached every app goes landscape, except `fixo`
+(always portrait: the ones that use `camera`)
 
-## `tela` - desenho
+## `tela` - drawing
 
-Só dentro de `desenhar()` (ou com `tela.alvo(camada)`). Coordenadas da área do app.
+Only inside `desenhar()` (or with `tela.alvo(layer)`). Coordinates of the app area.
 
-| Função | Devolve |
+| Function | Returns |
 |---|---|
-| `tela.largura()` · `tela.altura()` | int (px) |
-| `tela.limpar([cor])` | - |
-| `tela.texto(txt, x, y [, tam [, cor [, alinhamento]]])` | - |
-| `tela.medir(txt [, tam])` | int (largura em px) |
-| `tela.cortar(txt, largura [, tam])` | texto cortado com `...` |
-| `tela.retangulo(x, y, l, a, cor [, cheio])` | - |
-| `tela.arredondado(x, y, l, a, raio, cor [, cheio])` | - |
-| `tela.circulo(x, y, r, cor [, cheio])` | - |
-| `tela.triangulo(x0, y0, x1, y1, x2, y2, cor [, cheio])` | - |
-| `tela.linha(x0, y0, x1, y1, cor)` | - |
+| `tela.largura()` · `tela.altura()` | int (px): width · height |
+| `tela.limpar([cor])` | - (clear) |
+| `tela.texto(txt, x, y [, tam [, cor [, alinhamento]]])` | - (text, size, colour, alignment) |
+| `tela.medir(txt [, tam])` | int (width in px) |
+| `tela.cortar(txt, largura [, tam])` | the text cut with `...` |
+| `tela.retangulo(x, y, l, a, cor [, cheio])` | - (rectangle, filled) |
+| `tela.arredondado(x, y, l, a, raio, cor [, cheio])` | - (rounded rectangle) |
+| `tela.circulo(x, y, r, cor [, cheio])` | - (circle) |
+| `tela.triangulo(x0, y0, x1, y1, x2, y2, cor [, cheio])` | - (triangle) |
+| `tela.linha(x0, y0, x1, y1, cor)` | - (line) |
 | `tela.pixel(x, y, cor)` | - |
-| `tela.botao(x, y, l, a, txt [, cor])` | - |
-| `tela.dentro(x, y, rx, ry, rl, ra)` | bool (vale fora do `desenhar`) |
-| `tela.cor(r, g, b)` | int (cor RGB565) |
-| `tela.camada(l, a)` | camada (imagem guardada, até 8 por app) |
-| `tela.alvo(c)` · `tela.alvo()` | desenhar na camada / de volta na tela |
-| `tela.colar(c, x, y [, rx, ry, rl, ra])` | - |
-| `tela.liberar(c)` | - |
+| `tela.botao(x, y, l, a, txt [, cor])` | - (button) |
+| `tela.dentro(x, y, rx, ry, rl, ra)` | bool: is the point inside (works outside `desenhar` too) |
+| `tela.cor(r, g, b)` | int (RGB565 colour) |
+| `tela.camada(l, a)` | layer (a stored image, up to 8 per app) |
+| `tela.alvo(c)` · `tela.alvo()` | draw into the layer / back to the screen |
+| `tela.colar(c, x, y [, rx, ry, rl, ra])` | - (paste a layer) |
+| `tela.liberar(c)` | - (free a layer) |
 
-Constantes: `tela.ESQUERDA` `CENTRO` `DIREITA` · `tela.PRETO` `BRANCO` `VERMELHO`
-`VERDE` `AZUL` `AMARELO` `CIANO` `LARANJA` `CINZA` `CINZA_CLARO` `ROXO` `ROSA`
+Constants: `tela.ESQUERDA` `CENTRO` `DIREITA` (left, centre, right) · `tela.PRETO`
+`BRANCO` `VERMELHO` `VERDE` `AZUL` `AMARELO` `CIANO` `LARANJA` `CINZA`
+`CINZA_CLARO` `ROXO` `ROSA` (black, white, red, green, blue, yellow, cyan,
+orange, grey, light grey, purple, pink)
 
-## `sistema` - tempo, energia, sensores, avisos
+## `sistema` - time, power, sensors, notices
 
-| Função | Devolve |
+| Function | Returns |
 |---|---|
-| `sistema.redesenhar()` | - |
-| `sistema.periodo([ms])` | int (o período atual) |
+| `sistema.redesenhar()` | - (ask for a redraw) |
+| `sistema.periodo([ms])` | int (the current period) |
 | `sistema.acumular([sim])` | bool |
-| `sistema.dt()` | real (s desde o quadro anterior) |
-| `sistema.ms()` · `sistema.us()` | int (desde o boot) |
-| `sistema.agora()` | int (epoch UTC, 0 sem relógio) |
-| `sistema.hora()` · `sistema.data()` | `"14:05:09"` · `"14/10/2026"` (ou `""`) |
-| `sistema.hora_de(epoch)` | `"14:05"` |
+| `sistema.dt()` | real (s since the previous frame) |
+| `sistema.ms()` · `sistema.us()` | int (since boot) |
+| `sistema.agora()` | int (UTC epoch, 0 with no clock) |
+| `sistema.hora()` · `sistema.data()` | `"14:05:09"` · `"14/10/2026"` (or `""`) |
+| `sistema.hora_de(epoch)` | `"14:05"` (or `"2:05pm"` with the 12-hour clock), in the local time zone with daylight saving |
 | `sistema.bateria()` | int (%) |
 | `sistema.energia()` | `{"pct", "volts", "ma"}` |
-| `sistema.imu()` · `sistema.giro()` | `[x, y, z]` (g · graus/s) ou `nil` |
-| `sistema.repouso()` | bool (tela apagada) |
-| `sistema.recursos()` | `[{"recurso", "quem", "s"}]` - o que o sistema está usando e por quem (a câmera que o script ligou aparece com o nome dele) |
-| `sistema.gps()` | `{"fix", "lat", "lon", "alt", "sats"}` ou `nil` |
-| `sistema.wifi()` | texto |
+| `sistema.imu()` · `sistema.giro()` | `[x, y, z]` (g · degrees/s) or `nil` |
+| `sistema.repouso()` | bool (screen off) |
+| `sistema.recursos()` | `[{"recurso", "quem", "s"}]` - what the system is using and for whom (a camera the script turned on shows its name) |
+| `sistema.gps()` | `{"fix", "lat", "lon", "alt", "sats"}` or `nil` |
+| `sistema.wifi()` | text |
 | `sistema.rede()` | `{"ssid", "ip", "rssi", "texto"}` |
-| `sistema.bip(hz, ms)` | - |
-| `sistema.avisar(txt [, nivel])` · `sistema.avisar()` | põe / tira aviso na barra. `nivel`: `"info"` (nada exige a pessoa), `"atencao"` (o padrão) ou `"urgente"` (exige ação); outro texto vale `"atencao"` |
-| `sistema.acordado(sim)` | - (tela não apaga) |
-| `sistema.log(txt)` | - (log serial) |
-| `sistema.fundo(sim [, ms])` · `sistema.fundo()` | liga/desliga · bool |
-| `sistema.fundo_estado(txt [, n])` | - (texto da pastilha) |
+| `sistema.bip(hz, ms)` | - (beep) |
+| `sistema.avisar(txt [, nivel])` · `sistema.avisar()` | puts / removes a status-bar notice. `nivel`: `"info"` (nothing needs the user), `"atencao"` (attention, the default) or `"urgente"` (needs action); any other text counts as `"atencao"` |
+| `sistema.acordado(sim)` | - (the screen does not turn off) |
+| `sistema.log(txt)` | - (serial log) |
+| `sistema.fundo(sim [, ms])` · `sistema.fundo()` | on/off · bool (background part) |
+| `sistema.fundo_estado(txt [, n])` | - (the text of the background chip) |
 | `sistema.memoria()` | `{"app", "berry", "orcamento"}` (bytes) |
 
-## `teclado`
+## `teclado` - keyboard
 
-| Função | Devolve |
+| Function | Returns |
 |---|---|
-| `teclado.abrir([tipo])` · `teclado.fechar()` | - (tipo do campo: `"texto"` (padrão), `"ascii"`, `"senha"`, `"numero"`, `"busca"`, `"paragrafo"`, `"codigo"`, `"comando"`) |
-| `teclado.aberto()` · `teclado.fisico()` | bool |
+| `teclado.abrir([tipo])` · `teclado.fechar()` | - (field type: `"texto"` (default), `"ascii"`, `"senha"` (password), `"numero"`, `"busca"` (search), `"paragrafo"`, `"codigo"` (code), `"comando"`) |
+| `teclado.aberto()` · `teclado.fisico()` | bool (open · physical keyboard attached) |
 
-Constantes: `teclado.ENTER` `APAGAR` `ESC` `TAB` `ESQUERDA` `DIREITA` `CIMA` `BAIXO` `DEL`
+Constants: `teclado.ENTER` `APAGAR` (backspace) `ESC` `TAB` `ESQUERDA` `DIREITA` `CIMA` `BAIXO` (arrows) `DEL`
 
-## `cartao` - arquivos do app
+## `cartao` - the app's files
 
-Só a pasta do app: `/sdcard/apps/Berry/<nome do app>/`. Só nome de arquivo, sem pasta.
+Only the app's folder: `/sdcard/apps/Berry/<app name>/`. File name only, no folder.
 
-| Função | Devolve |
+| Function | Returns |
 |---|---|
-| `cartao.ler(nome)` | texto (até 64 KB) ou `nil` |
-| `cartao.gravar(nome, texto)` | bool |
-| `cartao.anexar(nome, texto)` | bool |
-| `cartao.existe(nome)` | bool |
-| `cartao.lista()` | lista de nomes |
+| `cartao.ler(nome)` | text (up to 64 KB) or `nil` (read) |
+| `cartao.gravar(nome, texto)` | bool (write) |
+| `cartao.anexar(nome, texto)` | bool (append) |
+| `cartao.existe(nome)` | bool (exists) |
+| `cartao.lista()` | list of names |
 
-## `arquivos` - os discos (vê tudo, altera só a própria pasta)
+## `arquivos` - the disks (sees everything, changes only its own folder)
 
-Fora da pasta do app: só listar e **copiar para dentro**. Dentro: tudo.
+Outside the app folder: only list and **copy in**. Inside: everything.
 
-| Função | Devolve |
+| Function | Returns |
 |---|---|
 | `arquivos.volumes()` | `[{"raiz", "tipo", "nome", "disponivel"}]` |
-| `arquivos.pasta()` | o caminho da pasta do app |
-| `arquivos.lista(pasta [, filtro])` | `[{"nome", "tipo", "pasta", "bytes", "data", "caminho"}]` ou `nil` |
-| `arquivos.copiar(origem_ou_lista [, subpasta])` | `true` (começou) ou o texto do motivo |
+| `arquivos.pasta()` | the path of the app folder |
+| `arquivos.lista(pasta [, filtro])` | `[{"nome", "tipo", "pasta", "bytes", "data", "caminho"}]` or `nil` |
+| `arquivos.copiar(origem_ou_lista [, subpasta])` | `true` (started) or the text of the reason |
 | `arquivos.estado()` | `{"fase", "pct", "itens", "feitos", "atual", "erro", "meu"}` |
 | `arquivos.cancelar()` | - |
-| `arquivos.ler(caminho)` | texto (até 64 KB) - só na pasta do app |
-| `arquivos.apagar(c)` · `renomear(c, nome)` · `criar_pasta(nome)` | bool - só na pasta do app |
+| `arquivos.ler(caminho)` | text (up to 64 KB) - only in the app folder |
+| `arquivos.apagar(c)` · `renomear(c, nome)` · `criar_pasta(nome)` | bool (delete · rename · make folder) - only in the app folder |
 
-## `musica` - o tocador do sistema
+## `musica` - the system music player
 
-| Função | Devolve |
+| Function | Returns |
 |---|---|
-| `musica.pasta()` | nome da pasta de música ou `nil` |
-| `musica.pendrive()` | nome do pendrive no USB-A ou `nil` |
-| `musica.lista([sub])` | `[{"nome", "titulo", "pasta", "caminho"}]` ou `nil` |
-| `musica.tocar(sub, i)` | bool |
-| `musica.pausar()` · `proxima()` · `anterior()` · `parar()` | - |
-| `musica.ir_para(ms)` | - |
+| `musica.pasta()` | name of the music folder or `nil` |
+| `musica.pendrive()` | name of the USB-A flash drive or `nil` |
+| `musica.lista([sub])` | `[{"nome", "titulo", "pasta", "caminho"}]` or `nil` |
+| `musica.tocar(sub, i)` | bool (play) |
+| `musica.pausar()` · `proxima()` · `anterior()` · `parar()` | - (pause · next · previous · stop) |
+| `musica.ir_para(ms)` | - (seek) |
 | `musica.estado()` | `{"ativo", "tocando", "titulo", "artista", "album", "pos", "dur", "idx", "n", "pasta", "playlist", "caminho", "aleatorio", "repetir", "erro", "kbps", "hz"}` |
-| `musica.espectro()` | lista de `musica.FAIXAS` (32) valores 0..255, ou `nil` |
+| `musica.espectro()` | a list of `musica.FAIXAS` (32) values 0..255, or `nil` |
 | `musica.volume([v])` | int 0..100 |
 | `musica.cor([c])` | int |
-| `musica.aleatorio([b])` | bool |
-| `musica.repetir([r])` | int (0 não, 1 fila, 2 a mesma) |
+| `musica.aleatorio([b])` | bool (shuffle) |
+| `musica.repetir([r])` | int (0 no, 1 queue, 2 the same track) |
 | `musica.playlists()` | `[{"nome", "id"}]` |
-| `musica.playlist(id)` | `[{"caminho", "titulo"}]` ou `nil` |
-| `musica.playlist_criar(nome)` | id ou `nil` |
+| `musica.playlist(id)` | `[{"caminho", "titulo"}]` or `nil` |
+| `musica.playlist_criar(nome)` | id or `nil` |
 | `musica.playlist_apagar(id)` | bool |
-| `musica.playlist_por(id, caminho)` · `playlist_tirar(id, caminho)` | bool |
+| `musica.playlist_por(id, caminho)` · `playlist_tirar(id, caminho)` | bool (add · remove) |
 | `musica.playlist_tocar(id [, i])` | bool |
-| `musica.capa()` | caminho do JPEG/PNG ou `nil` |
+| `musica.capa()` | path of the JPEG/PNG cover or `nil` |
 | `musica.duracao(caminho)` | int (ms) |
 
-Caminhos: relativos à pasta de música (`"Rock/x.mp3"`) ou absolutos num disco (`"/usb/Rock/x.mp3"`).
+Paths: relative to the music folder (`"Rock/x.mp3"`) or absolute on a disk (`"/usb/Rock/x.mp3"`).
 
-## `idioma` - o idioma da interface
+## `idioma` - the interface language
 
-Quem escolhe é a pessoa, em Ajustes > Idioma; o app só lê.
+The user chooses it, in Settings > Language; the app only reads it.
 
-| Função | Devolve |
+| Function | Returns |
 |---|---|
-| `idioma.atual()` | o código: `"pt"`, `"en"`, `"fr"`... |
-| `idioma.nome()` | o nome no próprio idioma: `"Português"`, `"English"`... |
-| `idioma.tr(texto)` | a frase do sistema no idioma atual (`"Cancelar"` → `"Cancel"`); sem tradução, a mesma |
-| `idioma.escolher(pt, en)` | a frase do app: `pt` em português, `en` em qualquer outro idioma |
+| `idioma.atual()` | the code: `"en"`, `"pt"`, `"fr"`... |
+| `idioma.nome()` | the name in the language itself: `"English"`, `"Português"`... |
+| `idioma.tr(texto)` | the system phrase in the current language (`"Cancelar"` → `"Cancel"`); without a translation, the same |
+| `idioma.escolher(pt, en)` | the app's phrase: `pt` in Portuguese, `en` in any other language |
 
 ```berry
 tela.botao(20, 20, 300, 80, idioma.escolher("Começar", "Start"), tela.VERDE)
 ```
 
-## `transferencia` - copiar e colar texto
+## `transferencia` - copy and paste text
 
-A mesma área de transferência do sistema: o que se copia no Mesh, no ESP-NOW
-ou nas Notas aparece aqui, e o contrário. Um texto só, até 4 KB.
+The same clipboard as the system: what is copied in Mesh, ESP-NOW or Notes
+appears here, and the other way round. One text, up to 4 KB.
 
-| Função | Devolve |
+| Function | Returns |
 |---|---|
-| `transferencia.copiar(texto)` | `true` se guardou |
-| `transferencia.colar()` | o texto copiado (`""` = vazia) |
+| `transferencia.copiar(texto)` | `true` if stored |
+| `transferencia.colar()` | the copied text (`""` = empty) |
 
-## `rede` - internet (HTTP e HTTPS)
+## `rede` - internet (HTTP and HTTPS)
 
-O script **nunca espera a rede**: `rede.pedir()` só começa o pedido e volta na hora;
-o download roda em segundo plano. Olhe `rede.estado()` no `desenhar()` (o app é
-redesenhado quando o pedido termina) e leia `rede.resposta()` quando estiver pronto.
-Um pedido por vez no aparelho inteiro, e a resposta é só de quem pediu.
-Ao fechar o app, o pedido é cancelado e a resposta não lida é descartada.
+The script **never waits for the network**: `rede.pedir()` only starts the
+request and returns at once; the download runs in the background. Look at
+`rede.estado()` in `desenhar()` (the app is redrawn when the request ends)
+and read `rede.resposta()` when it is ready. One request at a time on the
+whole device, and the answer is only for whoever asked. When the app closes,
+the request is cancelled and an unread answer is thrown away.
 
-| Função | Devolve |
+| Function | Returns |
 |---|---|
-| `rede.ip()` | `{"conectado", "ip", "mascara", "gateway", "dns1", "dns2", "ipv6", "mac", "nome"}` ou `nil` sem interface de Wi-Fi |
-| `rede.pedir(url [, max_bytes])` | bool - `true` = começou. `url` começa com `http://` ou `https://` (até 255 letras; segue redirecionamentos). `max_bytes`: padrão 64 KB, no máximo 256 KB (o que passar é cortado). `false` = já há um pedido em curso (de qualquer app), há uma resposta não lida de OUTRO app, ou URL inválida. Uma resposta não lida do próprio app é descartada |
-| `rede.estado()` | `"parado"`, `"baixando"`, `"pronto"` ou `"erro"` |
-| `rede.resposta()` | `{"status", "texto", "tipo", "final", "ms", "erro"}` quando `"pronto"` ou `"erro"`, e **libera** o resultado (o estado volta a `"parado"`); `nil` se não há resposta. `status` 0 = não conectou (`erro` diz por quê); `tipo` = Content-Type; `final` = a URL depois dos redirecionamentos |
-| `rede.cancelar()` | - (desiste do pedido, ou joga fora a resposta não lida) |
-| `rede.codificar(texto)` | o texto pronto para uma URL (`"a b&c"` → `"a+b%26c"`) |
+| `rede.ip()` | `{"conectado", "ip", "mascara", "gateway", "dns1", "dns2", "ipv6", "mac", "nome"}` or `nil` with no Wi-Fi interface |
+| `rede.pedir(url [, max_bytes])` | bool - `true` = started. `url` starts with `http://` or `https://` (up to 255 characters; redirects are followed). `max_bytes`: 64 KB by default, at most 256 KB (anything beyond is cut). `false` = a request is already running (from any app), there is an unread answer from ANOTHER app, or the URL is invalid. An unread answer of the app itself is discarded |
+| `rede.estado()` | `"parado"` (idle), `"baixando"` (downloading), `"pronto"` (ready) or `"erro"` |
+| `rede.resposta()` | `{"status", "texto", "tipo", "final", "ms", "erro"}` when `"pronto"` or `"erro"`, and **frees** the result (the state goes back to `"parado"`); `nil` with no answer. `status` 0 = did not connect (`erro` says why); `tipo` = Content-Type; `final` = the URL after redirects |
+| `rede.cancelar()` | - (gives up the request, or throws away the unread answer) |
+| `rede.codificar(texto)` | the text ready for a URL (`"a b&c"` → `"a+b%26c"`) |
 
 ```berry
-# nome: Clima
+# nome: Weather
 var temp = ""
 
-def tocar(x, y)                      # um toque começa o pedido
-  var q = rede.codificar("Sao Paulo")
-  if !rede.pedir("https://wttr.in/" + q + "?format=3") temp = "ocupado" end
+def tocar(x, y)                      # a tap starts the request
+  var q = rede.codificar("Melbourne")
+  if !rede.pedir("https://wttr.in/" + q + "?format=3") temp = "busy" end
 end
 
 def desenhar(tudo)
   var e = rede.estado()
   if e == "baixando"
-    temp = "buscando..."
+    temp = "fetching..."
   elif e == "pronto" || e == "erro"
-    var r = rede.resposta()          # lê e libera
+    var r = rede.resposta()          # reads and frees
     temp = e == "pronto" ? r["texto"] : r["erro"]
   end
   tela.texto(temp, 20, 20, 3, tela.BRANCO)
 end
 ```
 
-## `ajustes` - as preferências da pessoa
+## `ajustes` - the user's preferences
 
-Brilho e volume o script pode mudar (é o que a barra de cima faz); o resto é só leitura.
+The script may change brightness and volume (as the top bar does); the rest is read only.
 
-| Função | Devolve |
+| Function | Returns |
 |---|---|
-| `ajustes.brilho([pct])` | int 0..100 - com argumento aplica na hora e grava. Na escala do olho, a mesma da barra de Ajustes; 0 não apaga a tela (há um mínimo) |
-| `ajustes.volume([pct])` | int 0..100 - o mesmo de `musica.volume` |
-| `ajustes.tela_segundos()` | int - segundos sem toque até a tela apagar |
-| `ajustes.casa()` | `[lat, lon]` ou `nil` se a pessoa não configurou |
-| `ajustes.fuso()` | int - minutos a partir do UTC (`-180` = UTC-3) |
+| `ajustes.brilho([pct])` | int 0..100 - with an argument, applies at once and saves. On the eye's scale, the same as the Settings bar; 0 does not turn the screen off (there is a minimum) |
+| `ajustes.volume([pct])` | int 0..100 - the same as `musica.volume` |
+| `ajustes.tela_segundos()` | int - seconds without a touch until the screen turns off |
+| `ajustes.casa()` | `[lat, lon]` or `nil` if the user has not set a home |
+| `ajustes.fuso()` | int - minutes from UTC in effect now, daylight saving included (`600` = UTC+10) |
+| `ajustes.relogio_12h()` | bool - the user wants the 12-hour clock |
 
 ## `camera`
 
-| Função | Devolve |
+| Function | Returns |
 |---|---|
-| `camera.ligar([y [, altura]])` · `camera.desligar()` | bool · - |
+| `camera.ligar([y [, altura]])` · `camera.desligar()` | bool · - (on · off) |
 | `camera.ligada()` | bool |
-| `camera.faixa()` | `[y, altura]` ou `nil` |
-| `camera.erro()` | texto |
-| `camera.foto([nome])` | bool (grava `.bmp` na pasta do app) |
+| `camera.faixa()` | `[y, altura]` or `nil` |
+| `camera.erro()` | text |
+| `camera.foto([nome])` | bool (saves a `.bmp` in the app folder) |
 | `camera.foto_estado()` | `""`, `"capturando"`, `"gravando"`, `"ok"`, `"falhou"` |
-| `camera.ultima()` | nome do último arquivo |
+| `camera.ultima()` | name of the last file |
 
 ## `espnow`
 
-| Função | Devolve |
+| Function | Returns |
 |---|---|
 | `espnow.estado()` | `{"codigo", "texto"}` |
 | `espnow.pronto()` | bool |
-| `espnow.enviar(texto)` | bool |
-| `espnow.enviar_para(mac, texto)` | bool - direto para um MAC (`"AA:BB:CC:DD:EE:01"`) |
-| `espnow.enviar_todos(texto [, mac])` | bool - em todos os canais (1 a 13); sem `mac`, difusão. O Wi-Fi cai por alguns segundos e volta sozinho |
+| `espnow.enviar(texto)` | bool (send) |
+| `espnow.enviar_para(mac, texto)` | bool - straight to a MAC (`"AA:BB:CC:DD:EE:01"`) |
+| `espnow.enviar_todos(texto [, mac])` | bool - on every channel (1 to 13); without `mac`, broadcast. Wi-Fi drops for a few seconds and comes back by itself |
 | `espnow.n()` · `espnow.msg(i)` | int · `{"texto", "minha", "quando", "de", "envio", "espressif"}` |
-| `espnow.total()` | int (sobe a cada mensagem) |
+| `espnow.total()` | int (goes up with each message) |
 | `espnow.janela(sim)` | - |
-| `espnow.nao_lidas()` · `espnow.marcar_lidas()` | int · - |
+| `espnow.nao_lidas()` · `espnow.marcar_lidas()` | int · - (unread · mark read) |
 | `espnow.canal()` · `canal_fixo()` · `fixar_canal(c)` | int |
-| `espnow.mac()` · `vistos()` · `ultimo()` | texto · int · int (ms) |
+| `espnow.mac()` · `vistos()` · `ultimo()` | text · int · int (ms) |
 
-## `mesh` (Meshtastic, leitura e mensagem direta)
+## `mesh` (Meshtastic, reading and direct messages)
 
-| Função | Devolve |
+| Function | Returns |
 |---|---|
 | `mesh.estado()` | `{"ativo", "no_ar", "nos", "nao_lidas"}` |
 | `mesh.n_msgs()` · `mesh.msg(i)` | int · `{"de", "nome", "texto", "quando", "canal", "direta", "snr", "mqtt", "minha"}` |
 | `mesh.total()` | int |
 | `mesh.n_nos()` · `mesh.no(i)` | int · `{"num", "id", "nome", "curto", "snr", "idade", "bateria", "saltos", "mqtt", "favorito"[, "lat", "lon"]}` |
-| `mesh.meu()` | int (nosso nó) |
-| `mesh.enviar(numero, texto)` | bool - mensagem **direta** para um nó (o `num` de `mesh.no(i)`); `true` = entrou na fila de envio |
+| `mesh.meu()` | int (our node) |
+| `mesh.enviar(numero, texto)` | bool - a **direct** message to one node (the `num` of `mesh.no(i)`); `true` = it joined the send queue |
 
-`mesh.enviar` tem limites, porque um script não sai falando num canal público:
-só mensagem direta para **um** nó (nunca difusão), recusa (`false`) o número `0`,
-o `0xFFFFFFFF` (difusão) e o próprio nó, texto vazio ou com mais de 200 bytes,
-e aceita **no máximo uma a cada 10 s no aparelho inteiro** (somando todos os apps).
+`mesh.enviar` has limits, so a script cannot go chatting on a public channel:
+only a direct message to **one** node (never broadcast); it refuses (`false`)
+the number `0`, `0xFFFFFFFF` (broadcast) and our own node, empty text or text
+over 200 bytes, and allows **at most one every 10 s on the whole device**
+(across all apps).
 
-O inteiro do Berry aqui tem 32 bits com sinal: número de nó acima de
-2147483647 aparece **negativo** em `mesh.no(i)["num"]` e `mesh.meu()` (a
-difusão `0xFFFFFFFF` é `-1`). Use o número como veio; escrito por extenso
-(`4294967295`) o Berry o corta para 2147483647, que é outro nó.
+The Berry integer here is 32-bit signed: a node number above 2147483647 shows
+up **negative** in `mesh.no(i)["num"]` and `mesh.meu()` (broadcast
+`0xFFFFFFFF` is `-1`). Use the number as it came; written out
+(`4294967295`) Berry cuts it to 2147483647, which is another node.
 
-## `gnss` - satélites do GPS no Grove
+## `gnss` - GPS satellites on Grove
 
-| Função | Devolve |
+| Function | Returns |
 |---|---|
 | `gnss.ligar()` · `desligar()` · `ligado()` | bool |
-| `gnss.satelites()` | `[{"sis", "prn", "elev", "azim", "snr", "pos", "idade"}]` ou `nil` |
-| `gnss.versao()` | int (muda a cada rodada) |
+| `gnss.satelites()` | `[{"sis", "prn", "elev", "azim", "snr", "pos", "idade"}]` or `nil` |
+| `gnss.versao()` | int (changes every round) |
 | `gnss.tempo()` | `{"valida", "fix", "ano", "mes", "dia", "hora", "min", "seg"}` (UTC) |
 
-## Biblioteca padrão do Berry disponível
+## Berry standard library available
 
-| Módulo / função | Para quê |
+| Module / function | What for |
 |---|---|
-| `print`, `str`, `int`, `real`, `bool`, `number`, `size`, `type`, `classname`, `isinstance`, `format`, `assert`, `compile` | funções de base |
+| `print`, `str`, `int`, `real`, `bool`, `number`, `size`, `type`, `classname`, `isinstance`, `format`, `assert`, `compile` | base functions |
 | `import string` | `format`, `find`, `split`, `replace`, `count`, `toupper`, `tolower`, `startswith`, `endswith`, `byte`, `char`, `hex`, `tr`, `escape` |
 | `import math` | `sin` `cos` `tan` `atan2` `sqrt` `pow` `exp` `log` `log10` `abs` `floor` `ceil` `round` `min` `max` `deg` `rad` `rand` `srand` `pi` ... |
-| `import json` | `json.load(texto)` · `json.dump(valor)` |
+| `import json` | `json.load(text)` · `json.dump(value)` |
 | `import time` | `time.time()` · `time.dump(t)` · `time.clock()` |
-| `import global` | ler/criar variáveis globais por nome |
+| `import global` | read/create global variables by name |
 | `import gc` | `gc.collect()` · `gc.allocated()` |
-| `import strict` | obriga declarar variáveis com `var` |
+| `import strict` | forces variables to be declared with `var` |
 
-Listas: `push` `pop` `insert` `remove` `find` `size` `resize` `clear` `concat` `reverse` `copy` `keys`.
-Mapas: `find` `contains` `insert` `remove` `size` `keys`.
+Lists: `push` `pop` `insert` `remove` `find` `size` `resize` `clear` `concat` `reverse` `copy` `keys`.
+Maps: `find` `contains` `insert` `remove` `size` `keys`.
 
-**Não existem aqui:** `open()`, `load("arquivo")`, `save()` (arquivo só pelo
-módulo `cartao`) e o módulo `os`. Não use `input()`: não há quem digite no
-console de um app (ele devolve `""`). Também não há o módulo `introspect`,
-nem `bytes` apontando para um endereço (`bytes(ptr, n)`).
+**Not available here:** `open()`, `load("file")`, `save()` (files only through
+the `cartao` module) and the `os` module. Do not use `input()`: nobody types
+on an app's console (it returns `""`). There is no `introspect` module either,
+nor `bytes` pointing at an address (`bytes(ptr, n)`).
 
-## Limites
+## Limits
 
-- Memória: todas as máquinas Berry somam no máximo **4 MB**; passou, `memory_error`.
-- Tempo: **2 s** por evento, **5 s** para abrir, **200 ms** por `fundo()`; passou, `tempo_esgotado` (não é pego por `try/except`).
-- Até 16 apps em `apps/Berry/`, 8 camadas por app.
-- Conferir no Mac antes de copiar: `testes/checar_be.sh MeuApp.be`.
+- Memory: all Berry machines together get at most **4 MB**; beyond that, `memory_error`.
+- Time: **2 s** per event, **5 s** to open, **200 ms** per `fundo()`; beyond that, `tempo_esgotado` (timeout; not caught by `try/except`).
+- Up to 16 apps in `apps/Berry/`, 8 layers per app.
+- Check on a computer before copying: `testes/checar_be.sh MyApp.be`.

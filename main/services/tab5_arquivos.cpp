@@ -365,7 +365,7 @@ static void publicar(bool forcar)
         notif_publicar(s_notif, 1, NOTIF_ESTADO, t.mover ? tr("Movendo: limpando a origem") : tr("Esvaziando a lixeira"));
         break;
       case TAB5_ARQ_FEITO:
-        snprintf(r, sizeof(r), "%s: %d arquivo(s)", t.mover ? "Movido" : "Copiado", t.itens_feitos);
+        snprintf(r, sizeof(r), tr("%s: %d arquivo(s)"), t.mover ? tr("Movido") : tr("Copiado"), t.itens_feitos);
         notif_publicar(s_notif, 1, NOTIF_INFO, r);
         break;
       case TAB5_ARQ_FALHOU:
@@ -733,24 +733,24 @@ static bool copiar_arquivo(job_t* j)
   const char* nome = nome_de(j->a);
   passo(0, false, nome);
   const int fa = open(j->a, O_RDONLY);
-  if (fa < 0) { anotar_erro("não abriu %s", nome); return false; }
+  if (fa < 0) { anotar_erro(tr("não abriu %s"), nome); return false; }
   const int fb = open(j->b, O_WRONLY | O_CREAT | O_TRUNC, 0664);
-  if (fb < 0) { close(fa); anotar_erro("não criou %s no destino", nome); return false; }
+  if (fb < 0) { close(fa); anotar_erro(tr("não criou %s no destino"), nome); return false; }
   bool ok = true;
   for (;;) {
     if (s_cancelar.load()) { ok = false; break; }
     if (!tab5_volume_disponivel(j->a) || !tab5_volume_disponivel(j->b)) {
-      anotar_erro("o disco saiu no meio (%s)", nome);
+      anotar_erro(tr("o disco saiu no meio (%s)"), nome);
       ok = false;
       break;
     }
     const ssize_t r = read(fa, j->buf, BLOCO);
-    if (r < 0) { anotar_erro("erro lendo %s", nome); ok = false; break; }
+    if (r < 0) { anotar_erro(tr("erro lendo %s"), nome); ok = false; break; }
     if (r == 0) { break; }
     ssize_t w = 0;
     while (w < r) {
       const ssize_t k = write(fb, j->buf + w, (size_t)(r - w));
-      if (k <= 0) { anotar_erro("erro gravando %s (disco cheio?)", nome); ok = false; break; }
+      if (k <= 0) { anotar_erro(tr("erro gravando %s (disco cheio?)"), nome); ok = false; break; }
       w += k;
     }
     if (!ok) { break; }
@@ -759,7 +759,7 @@ static bool copiar_arquivo(job_t* j)
     vTaskDelay(1);
   }
   close(fa);
-  if (close(fb) != 0 && ok) { anotar_erro("erro fechando %s", nome); ok = false; }
+  if (close(fb) != 0 && ok) { anotar_erro(tr("erro fechando %s"), nome); ok = false; }
   if (!ok) { unlink(j->b); return false; }   // nada de arquivo pela metade
   passo(0, true, nullptr);
   return true;
@@ -769,10 +769,10 @@ static bool copiar_arquivo(job_t* j)
 static bool copiar_item(job_t* j, int prof)
 {
   if (!eh_pasta(j->a)) { return copiar_arquivo(j); }
-  if (mkdir(j->b, 0775) != 0 && errno != EEXIST) { anotar_erro("não criou a pasta %s", nome_de(j->b)); return false; }
+  if (mkdir(j->b, 0775) != 0 && errno != EEXIST) { anotar_erro(tr("não criou a pasta %s"), nome_de(j->b)); return false; }
   if (prof >= PROFUNDIDADE) { ESP_LOGW(TAG, "funda demais, pulada: %s", j->a); return true; }
   DIR* d = opendir(j->a);
-  if (!d) { anotar_erro("não abriu a pasta %s", nome_de(j->a)); return false; }
+  if (!d) { anotar_erro(tr("não abriu a pasta %s"), nome_de(j->a)); return false; }
   const size_t la = strlen(j->a), lb = strlen(j->b);
   bool ok = true;
   struct dirent* e;
@@ -854,7 +854,7 @@ static tab5_arq_fase_t executar_copia(job_t* j)
     if (esp_vfs_fat_info(raiz_de(j->destino), &total, &livre) == ESP_OK && livre < bytes + FOLGA_ESPACO) {
       char d[64];
       snprintf(d, sizeof(d), "%.1f MB, livres %.1f MB", bytes / 1048576.0, livre / 1048576.0);
-      anotar_erro("não cabe: precisa de %s", d);
+      anotar_erro(tr("não cabe: precisa de %s"), d);
       return TAB5_ARQ_FALHOU;
     }
   }
@@ -870,13 +870,13 @@ static tab5_arq_fase_t executar_copia(job_t* j)
   for (int i = 0; i < j->n; ++i) {
     if (s_cancelar.load()) { return TAB5_ARQ_CANCELADO; }
     const char* orig = j->origens[i];
-    if (!existe(orig)) { anotar_erro("não existe mais: %s", nome_de(orig)); return TAB5_ARQ_FALHOU; }
+    if (!existe(orig)) { anotar_erro(tr("não existe mais: %s"), nome_de(orig)); return TAB5_ARQ_FALHOU; }
     if (!nome_livre(j->destino, nome_de(orig), eh_pasta(orig), j->b, sizeof(j->b))) {
       anotar_erro("nomes repetidos demais: %s", nome_de(orig));
       return TAB5_ARQ_FALHOU;
     }
     if (so_renomear) {
-      if (rename(orig, j->b) != 0) { anotar_erro("não moveu %s", nome_de(orig)); return TAB5_ARQ_FALHOU; }
+      if (rename(orig, j->b) != 0) { anotar_erro(tr("não moveu %s"), nome_de(orig)); return TAB5_ARQ_FALHOU; }
       passo(0, true, nome_de(orig));
       continue;
     }

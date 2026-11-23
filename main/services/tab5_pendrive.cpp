@@ -1,4 +1,5 @@
 #include "tab5_pendrive.hpp"
+#include "idioma.h"
 
 #include <string.h>
 #include "esp_log.h"
@@ -201,7 +202,7 @@ static const uint8_t DESC_CONFIG[] = {
 // exigente com isso. Sai do MAC do proprio aparelho: unico e sempre o mesmo,
 // entao o computador reconhece o Tab5 de uma vez para a outra.
 static char s_serie[13] = "000000000000";
-static const char* const TEXTOS[] = { "", "M5Stack", "M5tabOS cartao SD", s_serie };
+static const char* const TEXTOS[] = { "", "M5Stack", "M5tabOS SD card", s_serie };
 
 extern "C" const uint8_t* tud_descriptor_device_cb(void) { return (const uint8_t*)&DESC_APARELHO; }
 extern "C" const uint8_t* tud_descriptor_configuration_cb(uint8_t) { return DESC_CONFIG; }
@@ -338,7 +339,7 @@ static void inquiry_contar(void) { ++s_n_inquiry; }
 static void inquiry_textos(uint8_t vendor[8], uint8_t produto[16], uint8_t rev[4])
 {
   memset(vendor, ' ', 8);   memcpy(vendor, "M5Stack", 7);
-  memset(produto, ' ', 16); memcpy(produto, "Tab5 cartao SD", 14);
+  memset(produto, ' ', 16); memcpy(produto, "Tab5 SD card", 12);
   memset(rev, ' ', 4);      memcpy(rev, "1.0", 3);
 }
 
@@ -833,12 +834,12 @@ static void avisar(int quantidade, notif_nivel_t nivel, const char* txt)
 const char* tab5_pendrive_motivo_texto(tab5_pendrive_motivo_t m)
 {
   switch (m) {
-    case PENDRIVE_RECUSA_APP:        return "um app aberto esta usando o cartao";
-    case PENDRIVE_RECUSA_EM_USO:     return "cartao em uso por um servico alem do prazo";
-    case PENDRIVE_RECUSA_SEM_CARTAO: return "sem cartao, ou ele nao respondeu";
+    case PENDRIVE_RECUSA_APP:        return tr("um app aberto esta usando o cartao");
+    case PENDRIVE_RECUSA_EM_USO:     return tr("cartao em uso por um servico alem do prazo");
+    case PENDRIVE_RECUSA_SEM_CARTAO: return tr("sem cartao, ou ele nao respondeu");
     case PENDRIVE_RECUSA_SEM_DIARIO: return "falta a particao reserva (diario)";
-    case PENDRIVE_RECUSA_USB:        return "o USB nao subiu";
-    case PENDRIVE_OK:                return "nenhum (ligou, ou nunca tentou)";
+    case PENDRIVE_RECUSA_USB:        return tr("o USB nao subiu");
+    case PENDRIVE_OK:                return tr("nenhum (ligou, ou nunca tentou)");
     default:                         return "?";
   }
 }
@@ -1061,7 +1062,7 @@ static void vTaskSessao(void*)
                     || (rr.diario_total && (uint64_t)rr.diario_usado * 10 >= (uint64_t)rr.diario_total * 9);
     if (cheio != avisou_cheio) {
       avisou_cheio = cheio;
-      if (cheio) { avisar(1, NOTIF_ATENCAO, "Memória do pendrive cheia"); }
+      if (cheio) { avisar(1, NOTIF_ATENCAO, tr("Memória do pendrive cheia")); }
       else       { avisar(1, NOTIF_INFO, "Cartão no computador"); }
     }
     // BARRAMENTO PARADO ha mais de BARRAMENTO_PARADO_US: cabo puxado sem
@@ -1126,15 +1127,15 @@ static void vTaskSessao(void*)
   tab5_sd_resumo_t r;
   tab5_sd_resumo(&r);
   if (cartao_falhou_sessao) {
-    avisar(1, NOTIF_ATENCAO, "Cartão falhou no pendrive");   // fica ate a pessoa ver em Ajustes > USB
+    avisar(1, NOTIF_ATENCAO, tr("Cartão falhou no pendrive"));   // fica ate a pessoa ver em Ajustes > USB
     s_resultado_aviso = true;
   } else if (r.conflitos) {
     char t[NOTIF_RESUMO];
-    snprintf(t, sizeof(t), "%u arquivo(s) em .tab5", (unsigned)r.conflitos);
+    snprintf(t, sizeof(t), tr("%u arquivo(s) em .tab5"), (unsigned)r.conflitos);
     avisar((int)r.conflitos, NOTIF_ATENCAO, t);   // fica ate a pessoa ver em Ajustes > USB
     s_resultado_aviso = true;
   } else if (r.no_diario) {
-    avisar((int)r.no_diario, NOTIF_ATENCAO, "Gravações esperando cartão");   // cabe em NOTIF_RESUMO
+    avisar((int)r.no_diario, NOTIF_ATENCAO, tr("Gravações esperando cartão"));   // cabe em NOTIF_RESUMO
     s_resultado_aviso = true;
   } else {
     avisar(0, NOTIF_INFO, nullptr);
@@ -1258,7 +1259,7 @@ static void vigiar(void*)
         tab5_pendrive_iniciar();
       } else {
         s_oferta = true;
-        avisar(1, NOTIF_INFO, "Computador no USB: toque");
+        avisar(1, NOTIF_INFO, tr("Computador no USB: toque"));
       }
     }
   } else {

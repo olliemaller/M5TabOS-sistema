@@ -398,7 +398,7 @@ static void balao_desenhar(lgfx::LovyanGFX& d, int i, int x0, int y, int larg, v
     struct tm t;
     tab5_hora_local(b->quando, &t);
     char hora[8];
-    snprintf(hora, sizeof(hora), "%02d:%02d", t.tm_hour, t.tm_min);
+    tab5_hora_hhmm(&t, hora, sizeof(hora));
     const int hy = y + b->ba;
     d.fillRect(x0, hy, larg, HORA_A, fundo(d));
     tab5_texto(d, TAM_HORA);

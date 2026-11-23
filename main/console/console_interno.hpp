@@ -59,6 +59,7 @@ void c_video(int argc, char** argv);
 void c_fundo(int argc, char** argv);
 void c_log(int argc, char** argv);
 void c_boasvindas(int, char**);
+void c_fuso(int, char**);
 #if M5_COM_BERRY
 void c_berry(int argc, char** argv);
 #endif

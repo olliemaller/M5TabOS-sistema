@@ -755,7 +755,7 @@ void hora_agora(char* out, size_t n)
   if (!t) { snprintf(out, n, "--:--"); return; }
   struct tm lt;
   tab5_hora_local(t, &lt);
-  snprintf(out, n, "%02d:%02d", lt.tm_hour, lt.tm_min);
+  tab5_hora_hhmm(&lt, out, n);
 }
 
 // A TEMPERATURA DO P4 NA FAIXA DE BAIXO (a hora subiu para a barra de cima).

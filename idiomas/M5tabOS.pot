@@ -333,6 +333,22 @@ msgid "O assistente so abre sozinho num aparelho que nunca rodou o sistema (ou\n
 msgstr ""
 
 #: main/console.cpp
+msgid "fuso horario: a regiao (com horario de verao), o fuso manual e o relogio 12/24 h"
+msgstr ""
+
+#: main/console.cpp
+msgid "fuso\tregiao, deslocamento agora e a hora\nfuso lista\tas regioes, com o numero de cada uma\nfuso <n>\tescolhe a regiao n (0 = manual)\nfuso manual <minutos>\tdeslocamento fixo, ex. 600 = UTC+10\nfuso 12h|24h\to formato do relogio"
+msgstr ""
+
+#: main/console.cpp
+msgid "O mesmo que Ajustes > Data e hora. Com uma regiao, o horario de verao muda\nsozinho. So a hora mostrada muda: o relogio interno e os registros ficam em UTC."
+msgstr ""
+
+#: main/console.cpp
+msgid "fuso 1\tMelbourne, Sydney (AEST/AEDT)\nfuso 12h\trelogio de 12 horas"
+msgstr ""
+
+#: main/console.cpp
 msgid "roda codigo Berry (o interpretador de script)"
 msgstr ""
 
@@ -401,7 +417,7 @@ msgid "painel: quadros, piscada azul, relogio e prioridade"
 msgstr ""
 
 #: main/console.cpp
-msgid "tela\testado do painel e da janela de medida\ntela medir\tzera a janela; use o aparelho e rode 'tela'\ntela foto [nome]\tgrava a tela em apps/Console/<nome>.bmp\ntela banco\tcompara os motores de copia (PPA, DMA2D, CPU)\ntela relogio <mhz>\ttroca o relogio de pixel e grava (80 = fabrica)\ntela prioridade alta|padrao\tprioridade da tela no barramento AXI\ntela rolar cpu|dma\tquem faz a copia da rolagem\ntela irqs\tlista as interrupcoes (nucleo, nivel, fonte)\ntela atrasar <ms> [critica] [nucleo] [vezes]\tprova: segura um nucleo; a tela pisca?"
+msgid "tela\testado do painel e da janela de medida\ntela medir\tzera a janela; use o aparelho e rode 'tela'\ntela foto [nome]\tgrava a tela em apps/Console/<nome>.bmp (sem nome: com data e hora)\ntela banco\tcompara os motores de copia (PPA, DMA2D, CPU)\ntela relogio <mhz>\ttroca o relogio de pixel e grava (80 = fabrica)\ntela prioridade alta|padrao\tprioridade da tela no barramento AXI\ntela rolar cpu|dma\tquem faz a copia da rolagem\ntela irqs\tlista as interrupcoes (nucleo, nivel, fonte)\ntela atrasar <ms> [critica] [nucleo] [vezes]\tprova: segura um nucleo; a tela pisca?"
 msgstr ""
 
 #: main/console.cpp
@@ -1449,6 +1465,10 @@ msgid "%s  (só leitura)"
 msgstr ""
 
 #: main/app_arquivos/app_arquivos.cpp
+msgid "%s  ·  %d de %d"
+msgstr ""
+
+#: main/app_arquivos/app_arquivos.cpp
 msgid "%s  ·  segure um item para selecionar"
 msgstr ""
 
@@ -1536,10 +1556,6 @@ msgstr ""
 msgid "Caminho longo demais."
 msgstr ""
 
-#: main/app_azimutal/app_azimutal.cpp main/app_azimutal/azimutal_fundo.cpp
-msgid "Azimutal"
-msgstr ""
-
 #: main/app_camera/app_camera.cpp
 msgid "iniciando a câmera..."
 msgstr ""
@@ -1566,10 +1582,6 @@ msgstr ""
 
 #: main/app_camera/app_camera.cpp
 msgid "Camera"
-msgstr ""
-
-#: main/app_cobra/app_cobra.cpp
-msgid "CreazySnake"
 msgstr ""
 
 #: main/app_config/app_config.cpp main/kernel/boas_vindas.cpp
@@ -1653,7 +1665,7 @@ msgid "Fuso %s  ·  relógio sem acerto"
 msgstr ""
 
 #: main/app_config/app_config.cpp
-msgid "%02d:%02d  ·  fuso %s"
+msgid "%s  ·  fuso %s"
 msgstr ""
 
 #: main/app_config/app_config.cpp
@@ -1809,11 +1821,23 @@ msgid "Acertado por"
 msgstr ""
 
 #: main/app_config/app_config_paginas.cpp
-msgid "Fuso horário (passos de 30 min)"
+msgid "Região (horário de verão automático)"
 msgstr ""
 
 #: main/app_config/app_config_paginas.cpp
-msgid "O fuso só muda a hora mostrada. Sem horário de verão: onde há verão, ajuste aqui na troca. O relógio interno, os registros e a malha continuam em UTC."
+msgid "Fuso manual (passos de 30 min)"
+msgstr ""
+
+#: main/app_config/app_config_paginas.cpp
+msgid "Relógio de 12 horas (am/pm) - toque para 24 h"
+msgstr ""
+
+#: main/app_config/app_config_paginas.cpp
+msgid "Relógio de 24 horas - toque para 12 h (am/pm)"
+msgstr ""
+
+#: main/app_config/app_config_paginas.cpp
+msgid "Escolha a sua região e o horário de verão muda sozinho; o fuso manual é um deslocamento fixo. Só a hora mostrada muda: o relógio interno, os registros e a malha continuam em UTC."
 msgstr ""
 
 #: main/app_config/app_config_paginas.cpp
@@ -2712,7 +2736,7 @@ msgstr ""
 msgid "ligue o Wi-Fi em Ajustes (o C6 só tem energia com ele)"
 msgstr ""
 
-#: main/app_espnow/app_espnow.cpp
+#: main/app_espnow/app_espnow.cpp main/services/berry/berry_mod_radio.cpp
 msgid "ligando o ESP-NOW..."
 msgstr ""
 
@@ -2981,6 +3005,10 @@ msgid "canais"
 msgstr ""
 
 #: main/app_mesh/app_mesh_desenho.cpp
+msgid "%d de %d"
+msgstr ""
+
+#: main/app_mesh/app_mesh_desenho.cpp
 msgid "%d nos"
 msgstr ""
 
@@ -3042,6 +3070,10 @@ msgstr ""
 
 #: main/app_mesh/app_mesh_desenho.cpp
 msgid "não ouvido nesta sessão"
+msgstr ""
+
+#: main/app_mesh/app_mesh_desenho.cpp
+msgid "há %s"
 msgstr ""
 
 #: main/app_mesh/app_mesh_desenho.cpp
@@ -3446,6 +3478,10 @@ msgstr ""
 
 #: main/app_mesh/app_mesh_no.cpp
 msgid " (em uso pelo Tab5)"
+msgstr ""
+
+#: main/app_mesh/app_mesh_no.cpp
+msgid "Wi-Fi do nó"
 msgstr ""
 
 #: main/app_mesh/app_mesh_no.cpp
@@ -3937,6 +3973,10 @@ msgid "na Biblioteca"
 msgstr ""
 
 #: main/app_musica/app_musica.cpp
+msgid "%s%s%d de %d  ·  %s%s"
+msgstr ""
+
+#: main/app_musica/app_musica.cpp
 msgid "  ·  pausado"
 msgstr ""
 
@@ -4100,7 +4140,7 @@ msgstr ""
 msgid "< Notas"
 msgstr ""
 
-#: main/app_notas/app_notas.cpp main/kernel/conversa.cpp main/kernel/editor.cpp
+#: main/app_notas/app_notas.cpp main/kernel/conversa.cpp main/kernel/editor.cpp main/services/tab5_arquivos.cpp
 msgid "Copiado"
 msgstr ""
 
@@ -4110,10 +4150,6 @@ msgstr ""
 
 #: main/app_notas/app_notas.cpp
 msgid "Notas"
-msgstr ""
-
-#: main/app_radar/app_radar.cpp
-msgid "Radar"
 msgstr ""
 
 #: main/app_tarefas/app_tarefas.cpp
@@ -4126,6 +4162,10 @@ msgstr ""
 
 #: main/app_tarefas/app_tarefas.cpp
 msgid "APPS EM FUNDO"
+msgstr ""
+
+#: main/app_tarefas/app_tarefas.cpp
+msgid "ha %um"
 msgstr ""
 
 #: main/app_tarefas/app_tarefas.cpp
@@ -4278,10 +4318,6 @@ msgstr ""
 
 #: main/app_terminal/terminal_ssh.cpp
 msgid "senha de %s@%s"
-msgstr ""
-
-#: main/app_trilha/app_trilha.cpp
-msgid "Trilha"
 msgstr ""
 
 #: main/app_video/app_video.cpp
@@ -4886,6 +4922,14 @@ msgstr ""
 
 #: main/console/console_mesh.cpp
 msgid "\n%d mensagem(ns), %d nao lida(s):\n"
+msgstr ""
+
+#: main/console/console_mesh.cpp
+msgid " [sem resposta]"
+msgstr ""
+
+#: main/console/console_mesh.cpp
+msgid " [FALHOU: %s]"
 msgstr ""
 
 #: main/console/console_mesh.cpp
@@ -6405,6 +6449,18 @@ msgid "abrindo o assistente de boas-vindas\n"
 msgstr ""
 
 #: main/console/console_sistema.cpp
+msgid ", com horário de verão"
+msgstr ""
+
+#: main/console/console_sistema.cpp
+msgid "região inválida - 'fuso lista' mostra as regiões\n"
+msgstr ""
+
+#: main/console/console_sistema.cpp
+msgid "região: %s\nagora: %s  %s  (relógio de %s)\n"
+msgstr ""
+
+#: main/console/console_sistema.cpp
 msgid "sem memoria para o Berry (orcamento cheio - ver 'berry mem')\n"
 msgstr ""
 
@@ -6916,6 +6972,34 @@ msgstr ""
 msgid "desligando"
 msgstr ""
 
+#: main/hal/tab5_c6_sono.cpp main/services/tab5_ssh.cpp main/services/berry/berry_mod_rede.cpp
+msgid "sem memoria"
+msgstr ""
+
+#: main/hal/tab5_c6_sono.cpp
+msgid "o enlace com o C6 nao esta de pe"
+msgstr ""
+
+#: main/hal/tab5_c6_sono.cpp
+msgid "o Bluetooth esta ligado (a pilha BLE fala com o C6 pelo enlace)"
+msgstr ""
+
+#: main/hal/tab5_c6_sono.cpp
+msgid "o C6 nao respondeu ao INFO"
+msgstr ""
+
+#: main/hal/tab5_c6_sono.cpp
+msgid "o firmware do C6 nao sabe dormir (grave o c6-5)"
+msgstr ""
+
+#: main/hal/tab5_c6_sono.cpp
+msgid "o enlace ja esta desmontado"
+msgstr ""
+
+#: main/hal/tab5_c6_sono.cpp
+msgid "o aviso ao C6 nao saiu"
+msgstr ""
+
 #: main/hal/tab5_grove.cpp
 msgid "servico Meshtastic"
 msgstr ""
@@ -6938,6 +7022,10 @@ msgstr ""
 
 #: main/hal/tab5_grove.cpp
 msgid "nada"
+msgstr ""
+
+#: main/hal/tab5_grove.cpp
+msgid "nao consegui abrir a UART a %d\n"
 msgstr ""
 
 #: main/hal/tab5_sd.cpp
@@ -6968,10 +7056,6 @@ msgstr ""
 msgid "C6 nao responde"
 msgstr ""
 
-#: main/kernel/abertura.cpp
-msgid "[ conectado ]"
-msgstr ""
-
 #: main/kernel/boas_vindas.cpp
 msgid "CONCLUIR"
 msgstr ""
@@ -6993,7 +7077,7 @@ msgid "+30 min"
 msgstr ""
 
 #: main/kernel/boas_vindas.cpp
-msgid "Agora: %02d:%02d"
+msgid "Agora: %s"
 msgstr ""
 
 #: main/kernel/boas_vindas.cpp
@@ -7001,15 +7085,7 @@ msgid "A hora certa chega pelo Wi-Fi, GPS ou malha."
 msgstr ""
 
 #: main/kernel/boas_vindas.cpp
-msgid "Brasília: UTC-3   Lisboa: UTC+0   Madri: UTC+1"
-msgstr ""
-
-#: main/kernel/boas_vindas.cpp
-msgid "Nova York: UTC-5   Tóquio: UTC+9"
-msgstr ""
-
-#: main/kernel/boas_vindas.cpp
-msgid "(sem horário de verão: ajuste na troca)"
+msgid "Ou escolha a sua região (horário de verão automático):"
 msgstr ""
 
 #: main/kernel/boas_vindas.cpp
@@ -7050,6 +7126,10 @@ msgstr ""
 
 #: main/kernel/boas_vindas.cpp
 msgid "Boas-vindas"
+msgstr ""
+
+#: main/kernel/boot_anim.cpp
+msgid "[ conectado ]"
 msgstr ""
 
 #: main/kernel/conversa.cpp
@@ -7316,6 +7396,26 @@ msgstr ""
 msgid "BUSCAR"
 msgstr ""
 
+#: main/services/berry_apps.cpp
+msgid "sem memoria para o Berry (%u KB de %u KB em uso)"
+msgstr ""
+
+#: main/services/berry_apps.cpp
+msgid "sistema.fundo(true) sem a funcao fundo() no script"
+msgstr ""
+
+#: main/services/berry_apps.cpp
+msgid "O script parou com um erro:"
+msgstr ""
+
+#: main/services/berry_vm.cpp
+msgid "sem memoria para o Berry"
+msgstr ""
+
+#: main/services/berry_vm.cpp
+msgid "a tarefa do Berry nao respondeu"
+msgstr ""
+
 #: main/services/idioma.cpp
 msgid "domingo"
 msgstr ""
@@ -7401,6 +7501,14 @@ msgid "Esvaziando a lixeira"
 msgstr ""
 
 #: main/services/tab5_arquivos.cpp
+msgid "%s: %d arquivo(s)"
+msgstr ""
+
+#: main/services/tab5_arquivos.cpp
+msgid "Movido"
+msgstr ""
+
+#: main/services/tab5_arquivos.cpp
 msgid "Mover falhou"
 msgstr ""
 
@@ -7441,7 +7549,147 @@ msgid "o disco recusou"
 msgstr ""
 
 #: main/services/tab5_arquivos.cpp
+msgid "não abriu %s"
+msgstr ""
+
+#: main/services/tab5_arquivos.cpp
+msgid "não criou %s no destino"
+msgstr ""
+
+#: main/services/tab5_arquivos.cpp
+msgid "o disco saiu no meio (%s)"
+msgstr ""
+
+#: main/services/tab5_arquivos.cpp
+msgid "erro lendo %s"
+msgstr ""
+
+#: main/services/tab5_arquivos.cpp
+msgid "erro gravando %s (disco cheio?)"
+msgstr ""
+
+#: main/services/tab5_arquivos.cpp
+msgid "erro fechando %s"
+msgstr ""
+
+#: main/services/tab5_arquivos.cpp
+msgid "não criou a pasta %s"
+msgstr ""
+
+#: main/services/tab5_arquivos.cpp
+msgid "não abriu a pasta %s"
+msgstr ""
+
+#: main/services/tab5_arquivos.cpp
+msgid "não cabe: precisa de %s"
+msgstr ""
+
+#: main/services/tab5_arquivos.cpp
+msgid "não existe mais: %s"
+msgstr ""
+
+#: main/services/tab5_arquivos.cpp
+msgid "não moveu %s"
+msgstr ""
+
+#: main/services/tab5_arquivos.cpp
 msgid "Lixeira: %s, %s"
+msgstr ""
+
+#: main/services/tab5_bateria.cpp
+msgid "%d%% - ligue na tomada"
+msgstr ""
+
+#: main/services/tab5_bateria.cpp
+msgid "Bateria vazia"
+msgstr ""
+
+#: main/services/tab5_bateria.cpp
+msgid "desligando - ligue na tomada"
+msgstr ""
+
+#: main/services/tab5_bateria.cpp
+msgid "desligando (bateria vazia)"
+msgstr ""
+
+#: main/services/tab5_bateria.cpp
+msgid "aviso de %d%% publicado; desliga em 0%%"
+msgstr ""
+
+#: main/services/tab5_espnow.cpp
+msgid "%d de %02X%02X"
+msgstr ""
+
+#: main/services/tab5_espnow.cpp
+msgid "canal %u - sem WiFi"
+msgstr ""
+
+#: main/services/tab5_fuso.cpp
+msgid "Manual (deslocamento fixo)"
+msgstr ""
+
+#: main/services/tab5_fuso.cpp
+msgid " (verão)"
+msgstr ""
+
+#: main/services/tab5_mesh.cpp
+msgid "sem rota"
+msgstr ""
+
+#: main/services/tab5_mesh.cpp
+msgid "recusado"
+msgstr ""
+
+#: main/services/tab5_mesh.cpp
+msgid "sem resposta"
+msgstr ""
+
+#: main/services/tab5_mesh.cpp
+msgid "sem interface"
+msgstr ""
+
+#: main/services/tab5_mesh.cpp
+msgid "tentou demais"
+msgstr ""
+
+#: main/services/tab5_mesh.cpp
+msgid "canal errado"
+msgstr ""
+
+#: main/services/tab5_mesh.cpp
+msgid "grande demais"
+msgstr ""
+
+#: main/services/tab5_mesh.cpp
+msgid "ninguém respondeu"
+msgstr ""
+
+#: main/services/tab5_mesh.cpp
+msgid "limite de transmissão"
+msgstr ""
+
+#: main/services/tab5_mesh.cpp
+msgid "pedido inválido"
+msgstr ""
+
+#: main/services/tab5_mesh.cpp
+msgid "sem autorização"
+msgstr ""
+
+#: main/services/tab5_mesh.cpp
+msgid "falha de chave"
+msgstr ""
+
+#: main/services/tab5_mesh.cpp
+msgid "chave desconhecida"
+msgstr ""
+
+#: main/services/tab5_mesh.cpp
+msgid "rápido demais"
+msgstr ""
+
+#: main/services/tab5_mesh.cpp
+msgid "fila do rádio cheia"
 msgstr ""
 
 #: main/services/tab5_mesh.cpp
@@ -7488,8 +7736,84 @@ msgstr ""
 msgid "conectando ao servidor"
 msgstr ""
 
+#: main/services/tab5_mesh.cpp
+msgid "conectado (%lu/%lu)"
+msgstr ""
+
+#: main/services/tab5_mesh_admin.cpp
+msgid "nao veio no dump"
+msgstr ""
+
+#: main/services/tab5_mesh_admin.cpp
+msgid "e grande demais para um pacote"
+msgstr ""
+
+#: main/services/tab5_mesh_admin.cpp
+msgid "sem o nó, ou a configuração ainda chegando"
+msgstr ""
+
+#: main/services/tab5_mesh_admin.cpp
+msgid "configuração grande demais para um pacote"
+msgstr ""
+
+#: main/services/tab5_mesh_admin.cpp
+msgid "o enlace com o nó recusou o envio"
+msgstr ""
+
+#: main/services/tab5_mesh_admin.cpp
+msgid "o enlace caiu no meio da gravação - reinicie o nó"
+msgstr ""
+
+#: main/services/tab5_mesh_ble.cpp
+msgid "digite o PIN que o nó mostra"
+msgstr ""
+
 #: main/services/tab5_mesh_ble.cpp
 msgid "PIN do Meshtastic"
+msgstr ""
+
+#: main/services/tab5_mesh_ble.cpp
+msgid "procurando %s"
+msgstr ""
+
+#: main/services/tab5_mesh_ble.cpp
+msgid "procurando um no Meshtastic"
+msgstr ""
+
+#: main/services/tab5_mesh_ble.cpp
+msgid "pareando com %s"
+msgstr ""
+
+#: main/services/tab5_mesh_ble.cpp
+msgid "tentando outro modo de pareamento - o no vai mostrar outro PIN"
+msgstr ""
+
+#: main/services/tab5_mesh_ble.cpp
+msgid "o nó mostra o PIN na tela - tentando de novo"
+msgstr ""
+
+#: main/services/tab5_mesh_ble.cpp
+msgid "PIN recusado - toque no nó para tentar"
+msgstr ""
+
+#: main/services/tab5_mesh_ble.cpp
+msgid "conectado a %s"
+msgstr ""
+
+#: main/services/tab5_mesh_ble.cpp
+msgid "Bluetooth falhou"
+msgstr ""
+
+#: main/services/tab5_mesh_ble.cpp
+msgid "esperando o Bluetooth"
+msgstr ""
+
+#: main/services/tab5_mesh_ble.cpp
+msgid "nenhum Meshtastic por perto"
+msgstr ""
+
+#: main/services/tab5_mesh_ble.cpp
+msgid "conexão caiu - reconectando"
 msgstr ""
 
 #: main/services/tab5_mesh_diario.cpp
@@ -7520,8 +7844,200 @@ msgstr ""
 msgid "sem indício do lado do Tab5: falha do próprio nó (firmware ou energia do módulo)"
 msgstr ""
 
+#: main/services/tab5_mesh_mqtt.cpp
+msgid "Automático"
+msgstr ""
+
+#: main/services/tab5_musica.cpp
+msgid "o pendrive não está conectado"
+msgstr ""
+
+#: main/services/tab5_musica.cpp
+msgid "sem cartão SD"
+msgstr ""
+
+#: main/services/tab5_musica_decod.cpp
+msgid "não toca: %s"
+msgstr ""
+
+#: main/services/tab5_pendrive.cpp
+msgid "um app aberto esta usando o cartao"
+msgstr ""
+
+#: main/services/tab5_pendrive.cpp
+msgid "cartao em uso por um servico alem do prazo"
+msgstr ""
+
+#: main/services/tab5_pendrive.cpp
+msgid "sem cartao, ou ele nao respondeu"
+msgstr ""
+
+#: main/services/tab5_pendrive.cpp
+msgid "o USB nao subiu"
+msgstr ""
+
+#: main/services/tab5_pendrive.cpp
+msgid "nenhum (ligou, ou nunca tentou)"
+msgstr ""
+
+#: main/services/tab5_pendrive.cpp
+msgid "Memória do pendrive cheia"
+msgstr ""
+
+#: main/services/tab5_pendrive.cpp
+msgid "Cartão falhou no pendrive"
+msgstr ""
+
+#: main/services/tab5_pendrive.cpp
+msgid "%u arquivo(s) em .tab5"
+msgstr ""
+
+#: main/services/tab5_pendrive.cpp
+msgid "Gravações esperando cartão"
+msgstr ""
+
+#: main/services/tab5_pendrive.cpp
+msgid "Computador no USB: toque"
+msgstr ""
+
+#: main/services/tab5_ssh.cpp
+msgid "o libssh2 nao iniciou"
+msgstr ""
+
+#: main/services/tab5_ssh.cpp
+msgid "%s nao resolveu"
+msgstr ""
+
+#: main/services/tab5_ssh.cpp
+msgid "%s:%d nao conectou (%s)"
+msgstr ""
+
+#: main/services/tab5_ssh.cpp
+msgid "conectado a %s:%d (%lu ms)\n"
+msgstr ""
+
+#: main/services/tab5_ssh.cpp
+msgid "o aperto de mao falhou: %s"
+msgstr ""
+
+#: main/services/tab5_ssh.cpp
+msgid "ATENCAO: a chave deste servidor MUDOU.\n  guardada: %s\n  agora:    %s\nPode ser outro aparelho no lugar do servidor. Se ele foi reinstalado,\nesqueca a antiga com: ssh esquecer %s:%d\n"
+msgstr ""
+
+#: main/services/tab5_ssh.cpp
+msgid "chave do servidor diferente da guardada - nao conectei"
+msgstr ""
+
+#: main/services/tab5_ssh.cpp
+msgid "servidor novo - chave guardada: %s\n"
+msgstr ""
+
+#: main/services/tab5_ssh.cpp
+msgid "chave do servidor confere (%s)\n"
+msgstr ""
+
+#: main/services/tab5_ssh.cpp
+msgid "o servidor nao disse como autenticar"
+msgstr ""
+
+#: main/services/tab5_ssh.cpp
+msgid "o servidor so aceita: %s (senha nao)"
+msgstr ""
+
+#: main/services/tab5_ssh.cpp
+msgid "senha de %s@%s: "
+msgstr ""
+
+#: main/services/tab5_ssh.cpp
+msgid "sem senha"
+msgstr ""
+
+#: main/services/tab5_ssh.cpp
+msgid "senha recusada\n"
+msgstr ""
+
+#: main/services/tab5_ssh.cpp
+msgid "nao autenticou"
+msgstr ""
+
+#: main/services/tab5_ssh.cpp
+msgid "o servidor nao abriu o shell"
+msgstr ""
+
+#: main/services/tab5_ssh.cpp
+msgid "shell linha a linha ('exit' sai; nano/top/vim nao funcionam aqui)\n"
+msgstr ""
+
+#: main/services/tab5_ssh.cpp
+msgid "%s nao conectou"
+msgstr ""
+
+#: main/services/tab5_ssh.cpp
+msgid "o aperto de mao falhou"
+msgstr ""
+
+#: main/services/tab5_ssh.cpp
+msgid "o servidor nao mostrou a chave"
+msgstr ""
+
+#: main/services/tab5_ssh.cpp
+msgid "a chave do servidor MUDOU (guardada %.20s...) - nao conectei"
+msgstr ""
+
+#: main/services/tab5_ssh.cpp
+msgid "impressao digital nao aceita"
+msgstr ""
+
+#: main/services/tab5_ssh.cpp
+msgid "senha recusada - tente de novo"
+msgstr ""
+
+#: main/services/tab5_ssh.cpp
+msgid "conferindo a senha..."
+msgstr ""
+
+#: main/services/tab5_ssh.cpp
+msgid "o servidor nao abriu o terminal"
+msgstr ""
+
+#: main/services/tab5_ssh.cpp
+msgid "sem memoria para a tela"
+msgstr ""
+
+#: main/services/tab5_ssh.cpp
+msgid "sem tarefa para a sessao"
+msgstr ""
+
 #: main/services/tab5_terminal.cpp
 msgid "'help' lista os comandos; Ctrl+C para o que roda."
+msgstr ""
+
+#: main/services/tab5_terminal.cpp
+msgid "(a fila esta cheia - espere o comando que roda, ou Ctrl+C)\n"
+msgstr ""
+
+#: main/services/tab5_usb.cpp
+msgid "um aparelho foi visto e nao abriu%s"
+msgstr ""
+
+#: main/services/tab5_usb.cpp
+msgid "o disco nao respondeu (%s)"
+msgstr ""
+
+#: main/services/tab5_usb.cpp
+msgid "nao montou (%s) - formate em FAT32 ou exFAT, MBR"
+msgstr ""
+
+#: main/services/tab5_usb.cpp
+msgid "Pendrive não lido: use FAT32/exFAT"
+msgstr ""
+
+#: main/services/tab5_usb.cpp
+msgid "a pilha USB nao subiu (%s)"
+msgstr ""
+
+#: main/services/tab5_usb.cpp
+msgid "o driver de pendrive nao subiu (%s)"
 msgstr ""
 
 #: main/services/tab5_video.cpp
@@ -7590,4 +8106,72 @@ msgstr ""
 
 #: main/services/tab5_volumes.cpp
 msgid "Pendrive"
+msgstr ""
+
+#: main/services/berry/berry_mod_camera.cpp
+msgid "camera.foto(nome): so o nome, sem pasta nem extensao"
+msgstr ""
+
+#: main/services/berry/berry_mod_camera.cpp
+msgid "o preview so funciona com o app em pe"
+msgstr ""
+
+#: main/services/berry/berry_mod_camera.cpp
+msgid "a camera nao ligou (ver o log)"
+msgstr ""
+
+#: main/services/berry/berry_mod_cartao.cpp
+msgid "nome de arquivo invalido (so o nome, sem pasta)"
+msgstr ""
+
+#: main/services/berry/berry_mod_cartao.cpp
+msgid "arquivos so dentro de um app"
+msgstr ""
+
+#: main/services/berry/berry_mod_cartao.cpp
+msgid "caminho invalido: relativo a pasta do app (\"sub/x.txt\"), sem .."
+msgstr ""
+
+#: main/services/berry/berry_mod_cartao.cpp
+msgid "sem cartao"
+msgstr ""
+
+#: main/services/berry/berry_mod_cartao.cpp
+msgid "apagar(caminho): o que apagar?"
+msgstr ""
+
+#: main/services/berry/berry_mod_radio.cpp
+msgid "radio C6 de fabrica: ESP-NOW pede atualizacao (opcional)"
+msgstr ""
+
+#: main/services/berry/berry_mod_radio.cpp
+msgid "ligue o Wi-Fi em Ajustes (o C6 so tem energia com ele)"
+msgstr ""
+
+#: main/services/berry/berry_mod_radio.cpp
+msgid "radio parado - ligue o Wi-Fi ou fixe um canal em Ajustes"
+msgstr ""
+
+#: main/services/berry/berry_mod_tela.cpp
+msgid "camadas demais (no maximo 8, somando 4 telas)"
+msgstr ""
+
+#: main/services/berry/berry_mod_tela.cpp
+msgid "sem memoria para a camada"
+msgstr ""
+
+#: main/services/berry/berry_mod_tela.cpp
+msgid "colar vai para a tela: chame tela.alvo() antes"
+msgstr ""
+
+#: main/services/mesh/tab5_mesh_conversas.cpp
+msgid "canal primário"
+msgstr ""
+
+#: main/services/mesh/tab5_mesh_conversas.cpp
+msgid "canal %u"
+msgstr ""
+
+#: main/services/mesh/tab5_mesh_conversas.cpp
+msgid "%d no canal"
 msgstr ""

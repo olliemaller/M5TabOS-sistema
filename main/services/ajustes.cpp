@@ -54,7 +54,7 @@ static bool     s_mesh_internet = true;
 static bool     s_bluetooth = false;
 static uint8_t  s_parede    = AJUSTES_PAREDE_SORTEIO;
 static bool     s_bloqueio  = false;   // tela de bloqueio ao acordar (desligada de fabrica)
-static char     s_idioma[8] = "pt";    // o codigo do idioma (services/idioma.h)
+static char     s_idioma[8] = "en";    // interface language code (services/idioma.h); English out of the box
 static bool     s_pendrive  = false;   // abrir o Pendrive ao ligar num computador (desligado de fabrica)
 static uint8_t  s_lixeira_dias = 0;    // limpar a lixeira sozinho: 0 = nunca (padrao), N = itens com mais de N dias
 // Escala do giroscopio em partes por milhao (1000000 = 1,0), por eixo: i32 da
@@ -62,6 +62,8 @@ static uint8_t  s_lixeira_dias = 0;    // limpar a lixeira sozinho: 0 = nunca (p
 static int32_t  s_giro_esc_ppm[3] = { 1000000, 1000000, 1000000 };
 static bool     s_config_ini = false;   // ver ajustes_config_inicial (lido no boot)
 static int16_t  s_fuso_min   = -180;    // UTC-3
+static bool     s_relogio_12h = false;  // 12-hour clock (9:05pm) instead of 24-hour
+static uint8_t  s_fuso_zona  = 0;       // time-zone region with daylight saving (services/tab5_fuso); 0 = manual
 static uint8_t  s_mqtt_srv   = AJUSTES_MQTT_AUTOMATICO;
 #define GIRO_ESC_MIN_PPM  900000
 #define GIRO_ESC_MAX_PPM 1100000
@@ -121,6 +123,8 @@ static const ajuste_t AJUSTES[] = {
   BOOL_("bluetooth", s_bluetooth),
   U8_("mqtt_srv", s_mqtt_srv, 0, 255),
   { "fuso_min", &s_fuso_min, AJ_I16, AJUSTES_FUSO_MIN_MIN, AJUSTES_FUSO_MAX_MIN },
+  U8_("fuso_zona", s_fuso_zona, 0, 254),
+  BOOL_("relog_12h", s_relogio_12h),
   BOOL_("config_ini", s_config_ini),
   BOOL_("bloqueio", s_bloqueio),
   BOOL_("pendrive", s_pendrive),
@@ -633,7 +637,7 @@ const char* ajustes_idioma(void) { return s_idioma; }
 
 void ajustes_definir_idioma(const char* codigo)
 {
-  snprintf(s_idioma, sizeof(s_idioma), "%s", codigo ? codigo : "pt");
+  snprintf(s_idioma, sizeof(s_idioma), "%s", codigo ? codigo : "en");
   marcar(s_idioma);
 }
 
@@ -707,6 +711,24 @@ void ajustes_definir_fuso_min(int16_t minutos)
   s_fuso_min = minutos;
   marcar(&s_fuso_min);
   ESP_LOGI(TAG, "fuso: UTC%+d:%02d", minutos / 60, abs(minutos) % 60);
+}
+
+bool ajustes_relogio_12h(void) { return s_relogio_12h; }
+
+void ajustes_definir_relogio_12h(bool sim)
+{
+  s_relogio_12h = sim;
+  marcar(&s_relogio_12h);
+}
+
+uint8_t ajustes_fuso_zona(void) { return s_fuso_zona; }
+
+void ajustes_definir_fuso_zona(uint8_t zona)
+{
+  if (zona == s_fuso_zona) { return; }
+  s_fuso_zona = zona;
+  marcar(&s_fuso_zona);
+  ESP_LOGI(TAG, "time-zone region: %u", (unsigned)zona);
 }
 
 uint8_t ajustes_mqtt_servidor(void) { return s_mqtt_srv; }
@@ -793,7 +815,7 @@ static void mq_migrar(void)
             nova = (uint8_t)s_mq_n; break;
     case 3: mq_por("Meshtastic Europa", "mqtt.meshtastic.org", "meshdev", "large4cats", "msh/EU_868");
             nova = (uint8_t)s_mq_n; break;
-    case 4: mq_por("Meshtastic Austrália", "mqtt.meshtastic.org", "meshdev", "large4cats", "msh/ANZ");
+    case 4: mq_por("Meshtastic Australia", "mqtt.meshtastic.org", "meshdev", "large4cats", "msh/ANZ");
             nova = (uint8_t)s_mq_n; break;
     default: break;
   }
@@ -806,7 +828,7 @@ static void mq_migrar(void)
     t = sizeof(hex);
     if (nvs_get_str(h, "mqtt_p_pwd", hex, &t) != ESP_OK || !tab5_wifi_decifrar_texto(hex, pwd, sizeof(pwd))) { pwd[0] = 0; }
     if (srv[0]) {
-      mq_por("Servidor próprio", srv, usr, pwd, raiz[0] ? raiz : "msh");
+      mq_por("Own server", srv, usr, pwd, raiz[0] ? raiz : "msh");
       if (s_mqtt_srv == 255) { nova = (uint8_t)s_mq_n; }
     }
     memset(pwd, 0, sizeof(pwd));

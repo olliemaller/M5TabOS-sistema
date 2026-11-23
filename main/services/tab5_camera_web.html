@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Tab5 · Câmera</title>
+<title>Tab5 · Camera</title>
 <!-- A CAMERA DO TAB5 AO VIVO (services/tab5_camera_web). Quadro a quadro: a
      pagina pede o proximo JPEG assim que o anterior chega - o servidor do
      Tab5 tem uma tarefa so, e entre um quadro e outro os outros apps
@@ -36,15 +36,15 @@ button.ativo { background:#2c6fb0; }
 <body>
 <div id="tudo">
   <div id="barra">
-    <b><span class="ponto" id="ponto"></span>Câmera</b>
-    <span id="estado">ligando a câmera...</span>
-    <button id="tamBt" title="480×640 ou 720×960">Normal</button>
-    <button id="pausaBt">Pausar</button>
-    <button id="fotoBt" title="Baixa o quadro inteiro do sensor, 1200×1600">Foto</button>
+    <b><span class="ponto" id="ponto"></span>Camera</b>
+    <span id="estado">starting the camera...</span>
+    <button id="tamBt" title="480×640 or 720×960">Normal</button>
+    <button id="pausaBt">Pause</button>
+    <button id="fotoBt" title="Downloads the full sensor frame, 1200×1600">Photo</button>
   </div>
   <div id="palco">
     <canvas id="video" hidden></canvas>
-    <div id="aviso">ligando a câmera do Tab5...</div>
+    <div id="aviso">starting the Tab5 camera...</div>
   </div>
 </div>
 <script>
@@ -75,7 +75,7 @@ async function proximo() {
   if (!rodando || document.hidden) return;
   try {
     const r = await fetch("quadro.jpg" + (alta ? "?alta=1" : ""), { cache: "no-store" });
-    if (!r.ok) throw new Error(r.status === 503 ? "a câmera não entregou o quadro" : "erro " + r.status);
+    if (!r.ok) throw new Error(r.status === 503 ? "the camera did not deliver a frame" : "error " + r.status);
     const b = await r.blob();
     desenhar(await createImageBitmap(b));
     tela.hidden = false;
@@ -85,7 +85,7 @@ async function proximo() {
   } catch (e) {
     ++falhas;
     $("ponto").className = "ponto meio";
-    mostrarAviso(falhas > 3 ? "Sem quadro do Tab5 (" + e.message + ") - tentando de novo..." : "", falhas > 3);
+    mostrarAviso(falhas > 3 ? "No frame from the Tab5 (" + e.message + ") - retrying..." : "", falhas > 3);
     await new Promise((ok) => setTimeout(ok, Math.min(500 * falhas, 3000)));
   }
   proximo();
@@ -96,24 +96,24 @@ setInterval(() => {
   const s = (performance.now() - desde) / 1000;
   if (rodando && !document.hidden && quadros) {
     $("ponto").className = "ponto on";
-    $("estado").textContent = (quadros / s).toFixed(1) + " quadros/s · " + Math.round(bytes / quadros / 1024) + " KB cada · " +
+    $("estado").textContent = (quadros / s).toFixed(1) + " frames/s · " + Math.round(bytes / quadros / 1024) + " KB each · " +
                               tela.width + "×" + tela.height;
   } else if (!rodando) {
     $("ponto").className = "ponto";
-    $("estado").textContent = "pausado - a câmera do Tab5 desliga em 5 s";
+    $("estado").textContent = "paused - the Tab5 camera turns off in 5 s";
   }
   quadros = 0; bytes = 0; desde = performance.now();
 }, 1000);
 
 $("pausaBt").onclick = () => {
   rodando = !rodando;
-  $("pausaBt").textContent = rodando ? "Pausar" : "Continuar";
+  $("pausaBt").textContent = rodando ? "Pause" : "Resume";
   $("pausaBt").className = rodando ? "" : "ativo";
   if (rodando) proximo();
 };
 $("tamBt").onclick = () => {
   alta = !alta;
-  $("tamBt").textContent = alta ? "Alta" : "Normal";
+  $("tamBt").textContent = alta ? "High" : "Normal";
   $("tamBt").className = alta ? "ativo" : "";
 };
 $("fotoBt").onclick = () => {

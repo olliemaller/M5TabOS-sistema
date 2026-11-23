@@ -105,9 +105,14 @@ static bool carregar(const char* po, size_t tam, lingua_t* l)
   }
   qsort(pares, k, sizeof(par_t), comparar);
   if (!l->nome[0]) { snprintf(l->nome, sizeof(l->nome), "%s", l->codigo); }
+  if (!l->codigo[0]) {   // no "Language:" header: nothing will keep these, so free them
+    heap_caps_free(pares);
+    heap_caps_free(t);
+    return false;
+  }
   l->pares = pares;
   l->n = k;
-  return l->codigo[0] != 0;
+  return true;
 }
 
 // Entra na lista; o mesmo codigo de novo (en.po no cartao) substitui.
@@ -183,7 +188,7 @@ static void trocar(char* out, size_t n, const char* nome, const char* valor)
 {
   char* p = strstr(out, nome);
   if (!p) { return; }
-  char resto[96];
+  char resto[160];   // what follows the placeholder (96 cut long translated date formats)
   snprintf(resto, sizeof(resto), "%s", p + strlen(nome));
   snprintf(p, n - (size_t)(p - out), "%s%s", valor, resto);
 }

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -77,30 +77,31 @@ h1 { font-size:22px; margin:0 0 4px; } h2 { font-size:15px; margin:28px 0 12px; 
     <div id="itens"></div>
     <div id="rodape">
       <span id="ipTxt">—</span>
-      <button id="desligar" title="Fecha todos os apps no PC e desliga o servidor do Tab5">Desligar acesso pelo PC</button>
+      <button id="desligar" title="Closes every app on the PC and turns off the Tab5 web server">Turn off PC access</button>
     </div>
   </nav>
   <main>
     <div id="aviso"></div>
     <div id="vistas">
       <div class="vista rolar" id="geral">
-        <h1>Visão geral</h1>
-        <p class="sub" id="geralSub">lendo o Tab5...</p>
+        <h1>Overview</h1>
+        <p class="sub" id="geralSub">reading the Tab5...</p>
         <div class="grade" style="margin-top:20px">
-          <div class="cartao"><div class="rot">Bateria</div><div class="val" id="bPct">—</div><div class="det" id="bDet"></div><div class="barra"><i id="bBarra" style="width:0"></i></div></div>
-          <div class="cartao"><div class="rot">Rede</div><div class="val" id="rSsid" style="font-size:20px">—</div><div class="det" id="rDet"></div></div>
-          <div class="cartao"><div class="rot">Memória interna</div><div class="val" id="mInt">—</div><div class="det" id="mIntDet"></div><div class="barra"><i id="mIntBarra" style="width:0"></i></div></div>
+          <div class="cartao"><div class="rot">Battery</div><div class="val" id="bPct">—</div><div class="det" id="bDet"></div><div class="barra"><i id="bBarra" style="width:0"></i></div></div>
+          <div class="cartao"><div class="rot">Network</div><div class="val" id="rSsid" style="font-size:20px">—</div><div class="det" id="rDet"></div></div>
+          <div class="cartao"><div class="rot">Internal memory</div><div class="val" id="mInt">—</div><div class="det" id="mIntDet"></div><div class="barra"><i id="mIntBarra" style="width:0"></i></div></div>
           <div class="cartao"><div class="rot">PSRAM</div><div class="val" id="mPs">—</div><div class="det" id="mPsDet"></div><div class="barra"><i id="mPsBarra" style="width:0"></i></div></div>
-          <div class="cartao"><div class="rot">Ligado há</div><div class="val" id="sLig">—</div><div class="det" id="sDet"></div></div>
+          <div class="cartao"><div class="rot">Uptime</div><div class="val" id="sLig">—</div><div class="det" id="sDet"></div></div>
         </div>
-        <h2>Apps no PC</h2>
+        <p style="margin-top:16px"><button class="prim" id="foto" title="The Tab5 screen as it is right now">Screenshot of the Tab5</button></p>
+        <h2>Apps on the PC</h2>
         <div class="grade" id="apps"></div>
         <p class="sub" style="margin-top:24px;font-size:13px" id="rodapeGeral"></p>
       </div>
       <div class="vista" id="fechado"><div class="centro"><div class="cartao">
         <h1 id="fNome"></h1>
-        <p id="fTxt">Este app não está aberto no PC agora.</p>
-        <button class="prim" id="fAbrir">Abrir</button>
+        <p id="fTxt">This app is not open on the PC right now.</p>
+        <button class="prim" id="fAbrir">Open</button>
         <p id="fErro" style="color:var(--erro);min-height:20px"></p>
       </div></div></div>
     </div>
@@ -112,13 +113,13 @@ const $ = (id) => document.getElementById(id);
 const POST = { method: "POST", headers: { "X-Tab5": "1" } };
 // O que cada app faz e o icone (o portal so conhece os nomes; app novo cai no generico).
 const SOBRE = {
-  Terminal: ["Os comandos do Tab5 e o SSH, com o teclado do PC.",
+  Terminal: ["The Tab5 commands and SSH, with the PC keyboard.",
              '<path d="M4 6l5 5-5 5M11 17h8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'],
-  Editor:   ["Os scripts Berry do cartão: editar, verificar e rodar no Tab5.",
+  Editor:   ["The Berry scripts on the card: edit, check and run them on the Tab5.",
              '<path d="M8 6l-5 6 5 6M16 6l5 6-5 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'],
-  Camera:   ["A câmera do Tab5 ao vivo, e a foto em resolução cheia para baixar.",
+  Camera:   ["The Tab5 camera live, and full-resolution photos to download.",
              '<path d="M4 8h3l2-2h6l2 2h3v10H4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.2" fill="none" stroke="currentColor" stroke-width="2"/>'],
-  Mesh:     ["Conversas, nós e mapa da rede Meshtastic.",
+  Mesh:     ["Chats, nodes and the map of the Meshtastic network.",
              '<circle cx="5" cy="12" r="2.2" fill="currentColor"/><circle cx="19" cy="6" r="2.2" fill="currentColor"/><circle cx="19" cy="18" r="2.2" fill="currentColor"/><path d="M7 11l10-4M7 13l10 4M19 8v8" stroke="currentColor" stroke-width="1.6"/>'],
 };
 const GERAL_IC = '<rect x="3" y="3" width="7" height="7" rx="1.5" fill="currentColor"/><rect x="14" y="3" width="7" height="7" rx="1.5" fill="currentColor" opacity=".6"/><rect x="3" y="14" width="7" height="7" rx="1.5" fill="currentColor" opacity=".6"/><rect x="14" y="14" width="7" height="7" rx="1.5" fill="currentColor" opacity=".6"/>';
@@ -149,7 +150,7 @@ function pintar() {
     a.innerHTML = svg(ic) + "<span>" + esc(rot) + "</span>" + (on === undefined ? "" : '<i class="ponto' + (on ? " on" : "") + '"></i>');
     itens.appendChild(a);
   };
-  item("geral", "Visão geral", GERAL_IC);
+  item("geral", "Overview", GERAL_IC);
   if (sis.apps.length) { const s = document.createElement("div"); s.className = "sep"; s.textContent = "Apps"; itens.appendChild(s); }
   for (const a of sis.apps) item(a.nome, a.nome, sobre(a.nome)[1], a.aberto);
 
@@ -157,19 +158,19 @@ function pintar() {
   $("bPct").textContent = b.pct >= 0 ? b.pct + "%" : "—";
   $("bBarra").style.width = Math.max(0, b.pct) + "%";
   $("bBarra").style.background = b.pct >= 0 && b.pct <= 15 ? "var(--erro)" : "var(--verde)";
-  $("bDet").textContent = b.volts.toFixed(2) + " V · " + (b.mA > 20 ? "carregando " : b.mA < -5 ? "gastando " : "") + Math.abs(b.mA) + " mA";
+  $("bDet").textContent = b.volts.toFixed(2) + " V · " + (b.mA > 20 ? "charging " : b.mA < -5 ? "drawing " : "") + Math.abs(b.mA) + " mA";
   $("rSsid").textContent = sis.ssid || "—";
   $("rDet").textContent = sis.ip;
   const mem = (pre, livre, total) => {
-    $(pre).textContent = kb(livre) + " livres";
-    $(pre + "Det").textContent = "de " + kb(total);
+    $(pre).textContent = kb(livre) + " free";
+    $(pre + "Det").textContent = "of " + kb(total);
     $(pre + "Barra").style.width = Math.round(100 * (total - livre) / total) + "%";
   };
   mem("mInt", sis.mem.interna_livre, sis.mem.interna_total);
   mem("mPs", sis.mem.psram_livre, sis.mem.psram_total);
   $("sLig").textContent = tempo(sis.ligado_s);
-  $("sDet").textContent = "CPU a " + sis.cpu_mhz + " MHz · M5tabOS " + sis.versao;
-  $("geralSub").textContent = sis.nome + " na rede " + (sis.ssid || "Wi-Fi") + ". O que mudar no Tab5 aparece aqui sozinho.";
+  $("sDet").textContent = "CPU at " + sis.cpu_mhz + " MHz · M5tabOS " + sis.versao;
+  $("geralSub").textContent = sis.nome + " on the " + (sis.ssid || "Wi-Fi") + " network. Changes on the Tab5 show up here by themselves.";
 
   const g = $("apps");
   g.innerHTML = "";
@@ -179,12 +180,12 @@ function pintar() {
     c.className = "cartao app";
     c.innerHTML = '<div class="topo"><div class="ic">' + svg(ic) + "</div><b>" + esc(a.nome) + "</b></div><p>" + esc(txt) + "</p>" +
       '<div class="topo"><span class="est" style="flex:1"><i class="ponto' + (a.aberto ? " on" : "") + '"></i>' +
-      (a.aberto ? "aberto no PC" : "fechado") + '</span><button class="prim">' + (a.aberto ? "Entrar" : "Abrir") + "</button></div>";
+      (a.aberto ? "open on the PC" : "closed") + '</span><button class="prim">' + (a.aberto ? "Enter" : "Open") + "</button></div>";
     c.querySelector("button").onclick = () => (a.aberto ? (location.hash = a.nome) : abrir(a.nome));
     g.appendChild(c);
   }
-  if (!sis.apps.length) g.innerHTML = '<p class="sub">Nenhum app desta variante tem página no PC.</p>';
-  $("rodapeGeral").textContent = "Cada app fecha sozinho depois de " + sis.ocioso_min + " minutos sem uso; o Tab5 mostra na barra o que está aberto.";
+  if (!sis.apps.length) g.innerHTML = '<p class="sub">No app in this firmware variant has a PC page.</p>';
+  $("rodapeGeral").textContent = "Each app closes by itself after " + sis.ocioso_min + " minutes unused; the Tab5 status bar shows what is open.";
 }
 
 // ---- o que aparece no meio ---------------------------------------------------------
@@ -229,12 +230,12 @@ async function abrir(nome) {
   $("fAbrir").disabled = true;
   try {
     const r = await (await fetch("/api/abrir?app=" + encodeURIComponent(nome), POST)).json();
-    if (!r.ok) { $("fErro").textContent = r.msg || "não abriu"; location.hash = nome; return; }
+    if (!r.ok) { $("fErro").textContent = r.msg || "did not open"; location.hash = nome; return; }
     await ler();
     location.hash = nome;
     mostrar();
   } catch (e) {
-    $("fErro").textContent = "sem resposta do Tab5";
+    $("fErro").textContent = "no answer from the Tab5";
   } finally {
     $("fAbrir").disabled = false;
   }
@@ -253,16 +254,17 @@ async function ler() {
     }
     mostrar();
   } catch (e) {
-    $("aviso").textContent = "Sem resposta do Tab5 - o acesso pelo PC pode ter sido desligado no aparelho, ou ele saiu da rede.";
+    $("aviso").textContent = "No answer from the Tab5 - PC access may have been turned off on the device, or it left the network.";
     $("aviso").classList.add("on");
   }
 }
 
 $("fAbrir").onclick = () => abrir(atual);
+$("foto").onclick = () => window.open("/api/tela.bmp?t=" + Date.now(), "_blank", "noopener");
 $("desligar").onclick = async () => {
-  if (!confirm("Desligar o acesso pelo PC? Todos os apps fecham aqui; para voltar, ligue de novo no Tab5.")) return;
+  if (!confirm("Turn off PC access? Every app closes here; to come back, turn it on again on the Tab5.")) return;
   try { await fetch("/api/desligar", POST); } catch (e) {}
-  document.body.innerHTML = '<div class="centro"><div class="cartao"><h1>Desligado</h1><p>O Tab5 fechou o acesso pelo PC. Para voltar: Ajustes &rsaquo; Acesso pelo PC no aparelho, ou <code>web ligar</code> no Terminal.</p></div></div>';
+  document.body.innerHTML = '<div class="centro"><div class="cartao"><h1>Turned off</h1><p>The Tab5 closed PC access. To come back: Settings &rsaquo; PC access on the device, or <code>web on</code> in the Terminal.</p></div></div>';
 };
 window.addEventListener("hashchange", mostrar);
 ler();

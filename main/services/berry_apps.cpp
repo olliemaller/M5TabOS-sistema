@@ -17,6 +17,7 @@
 //   berry_mod_tema.cpp     tema (as cores e medidas do tema central)
 
 #include "tab5_arquivos.hpp"
+#include "idioma.h"
 #include "berry_apps.hpp"
 #include "berry_vm.hpp"
 #include "berry_mem.h"
@@ -173,7 +174,7 @@ static void trabalho(void* arg)
       a->pasta[0] = 0;
       a->vm = berry_vm_nova();
       if (!a->vm) {
-        snprintf(erro, et, "sem memoria para o Berry (%u KB de %u KB em uso)",
+        snprintf(erro, et, tr("sem memoria para o Berry (%u KB de %u KB em uso)"),
                  (unsigned)(berry_mem_usada() / 1024), (unsigned)(BERRY_ORCAMENTO / 1024));
         break;
       }
@@ -265,7 +266,7 @@ static void fundo_aplicar(berry_app_t* a)
   a->fundo_pedido = FP_NADA;
   if (ped == FP_LIGAR && !sistema_fundo_ativo(&a->fundo_def)) {
     if (!(a->funcs & F_FUNDO)) {
-      snprintf(a->erro, sizeof(a->erro), "sistema.fundo(true) sem a funcao fundo() no script");
+      snprintf(a->erro, sizeof(a->erro), tr("sistema.fundo(true) sem a funcao fundo() no script"));
       return;
     }
     a->fundo_sair = false;
@@ -317,7 +318,7 @@ static void desenhar_erro(lgfx::LovyanGFX& d, const area_t& a, const berry_app_t
   tab5_texto(d, 3.0f);
   d.setTextDatum(top_left);
   d.setTextColor(TFT_RED);
-  d.drawString("O script parou com um erro:", a.x + 24, a.y + 40);
+  d.drawString(tr("O script parou com um erro:"), a.x + 24, a.y + 40);
   tab5_fonte_corpo(d);
   tab5_texto(d, 2.4f);
   d.setTextColor(TFT_WHITE);
@@ -804,7 +805,7 @@ void berry_apps_tempos(bool zerar)
 {
   berry_medida_t m;
   berry_medida(&m, zerar);
-  printf("entrega a tarefa do Berry: %lu vezes, media %lu us, pior %lu us\n",
+  printf("Berry task hand-off: %lu times, average %lu us, worst %lu us\n",
          (unsigned long)m.entregas,
          (unsigned long)(m.entregas ? m.espera_soma_us / m.entregas : 0),
          (unsigned long)m.espera_max_us);
@@ -821,7 +822,7 @@ void berry_apps_tempos(bool zerar)
     uint64_t prim_us = 0;
     for (int i = 0; i < P_N; ++i) { prim_us += s_prim[i].soma_us; }
     const uint64_t q = d.n;
-    printf("\npor quadro (media de %lu): desenhar %lu us = desenho %lu us + script Berry %lu us\n",
+    printf("\nper frame (average of %lu): draw %lu us = drawing %lu us + Berry script %lu us\n",
            (unsigned long)d.n, (unsigned long)(d.soma_us / q), (unsigned long)(prim_us / q),
            (unsigned long)((d.soma_us > prim_us ? d.soma_us - prim_us : 0) / q));
     printf("%-12s %10s %10s %10s %10s\n", "tela.", "chamadas/q", "us/quadro", "us/chamada", "pior us");

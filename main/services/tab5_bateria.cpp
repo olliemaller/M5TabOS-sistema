@@ -1,4 +1,5 @@
 #include "tab5_bateria.hpp"
+#include "idioma.h"
 #include "tab5_hora.hpp"   // tab5_passou_s
 #include "tab5_power.hpp"
 #include "tab5_sd.hpp"
@@ -80,7 +81,7 @@ static void publicar(int nivel, int pct)
   if (nivel == 0) { notif_limpar(s_notif); return; }
   char r[NOTIF_RESUMO];
   if (nivel == 5) { snprintf(r, sizeof(r), "%d%% - desliga em 0%%", pct); }
-  else            { snprintf(r, sizeof(r), "%d%% - ligue na tomada", pct); }
+  else            { snprintf(r, sizeof(r), tr("%d%% - ligue na tomada"), pct); }
   notif_publicar(s_notif, 1, nivel == 20 ? NOTIF_ATENCAO : NOTIF_URGENTE, r);
   ESP_LOGW(TAG, "aviso: %s", r);
 }
@@ -111,8 +112,8 @@ static void comecar_desligamento(const tab5_medida_t& m, float aberto)
     M5.Display.fillScreen(TFT_BLACK);
     M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
     M5.Display.setTextDatum(middle_center);
-    M5.Display.drawString("Bateria vazia", M5.Display.width() / 2, M5.Display.height() / 2 - 30);
-    M5.Display.drawString("desligando - ligue na tomada", M5.Display.width() / 2, M5.Display.height() / 2 + 30);
+    M5.Display.drawString(tr("Bateria vazia"), M5.Display.width() / 2, M5.Display.height() / 2 - 30);
+    M5.Display.drawString(tr("desligando - ligue na tomada"), M5.Display.width() / 2, M5.Display.height() / 2 + 30);
     M5.Display.setTextDatum(top_left);
   }
   if (!sistema_trabalho_solto(gravar_tudo, nullptr)) { s_gravou = true; }
@@ -179,8 +180,8 @@ void tab5_bateria_vigiar(void)
 
 void tab5_bateria_resumo(char* out, size_t tam)
 {
-  if (s_desligando)      { snprintf(out, tam, "desligando (bateria vazia)"); }
+  if (s_desligando)      { snprintf(out, tam, tr("desligando (bateria vazia)")); }
   else if (s_critico > 0) { snprintf(out, tam, "critico ha %d s (desliga em %d s)", s_critico, CONFIRMAR_S); }
-  else if (s_nivel > 0)  { snprintf(out, tam, "aviso de %d%% publicado; desliga em 0%%", s_nivel); }
+  else if (s_nivel > 0)  { snprintf(out, tam, tr("aviso de %d%% publicado; desliga em 0%%"), s_nivel); }
   else                   { snprintf(out, tam, "ok (avisa em 20/10/5%%, desliga em 0%%)"); }
 }

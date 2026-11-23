@@ -385,7 +385,7 @@ static void linha_cfg(int i, char* rot, size_t tamr, char* val, size_t tv, bool*
       }
       break;
     case RC_WIFI: {
-      snprintf(rot, tamr, "Wi-Fi do nó");
+      snprintf(rot, tamr, tr("Wi-Fi do nó"));
       if (s_mud.wifi_ssid[0]) { *pend = true; snprintf(val, tv, tr("ligar em %s"), s_mud.wifi_ssid); }
       else if (s_mud.wifi_muda) { *pend = true; snprintf(val, tv, "%s", s_mud.wifi_liga ? tr("ligar") : tr("desligar")); }
       else if (!s_cfg.wifi_conhecido) { snprintf(val, tv, "-"); }
@@ -946,7 +946,7 @@ static void desenhar_redes(lgfx::LovyanGFX& d, const area_t& a, int x0, int larg
   tab5_texto(d, 3.6f);
   d.setTextDatum(middle_left);
   d.setTextColor(TEMA_TEXTO, TEMA_FUNDO);
-  d.drawString("Wi-Fi do nó", x0 + 250, a.y + 40);
+  d.drawString(tr("Wi-Fi do nó"), x0 + 250, a.y + 40);
 
   // Linha do interruptor.
   const bool liga = wf_liga_visivel();
@@ -954,7 +954,7 @@ static void desenhar_redes(lgfx::LovyanGFX& d, const area_t& a, int x0, int larg
   icone_cfg(d, RC_WIFI, x0 + 50, a.y + WF_TOG_Y + WF_TOG_H / 2, pode ? TEMA_DESTAQUE : TEMA_TEXTO_3);
   tab5_texto(d, 3.6f);
   d.setTextColor(TEMA_TEXTO, TEMA_FUNDO);
-  d.drawString("Wi-Fi do nó", x0 + 96, a.y + WF_TOG_Y + 30);
+  d.drawString(tr("Wi-Fi do nó"), x0 + 96, a.y + WF_TOG_Y + 30);
   tab5_texto(d, 2.8f);
   char sub[96];
   uint16_t csub = TEMA_TEXTO_3;

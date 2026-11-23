@@ -126,7 +126,7 @@ static int ao_gap(struct ble_gap_event* ev, void*)
           // Espera quem digitar (mesh_ble_digitar_pin): nada e injetado aqui.
           s_pin_conn = ev->passkey.conn_handle;
           s_pin_esperando = true;
-          estado("digite o PIN que o nó mostra");
+          estado(tr("digite o PIN que o nó mostra"));
           if (s_notif >= 0) { notif_publicar(s_notif, 1, NOTIF_ATENCAO, tr("PIN do Meshtastic")); }
           ESP_LOGI(TAG, "o no pediu o PIN - esperando o usuario (Ajustes > Meshtastic)");
           break;
@@ -274,7 +274,7 @@ static bool achar_no(ble_addr_t* alvo)
   uint8_t quer[6];
   const bool tem_salvo = tab5_ble_endereco_ler(salvo, quer);
 
-  estado(tem_salvo ? "procurando %s" : "procurando um no Meshtastic", salvo);
+  estado(tem_salvo ? tr("procurando %s") : tr("procurando um no Meshtastic"), salvo);
   // Se a tela ja esta varrendo, aproveitamos a varredura dela.
   // 8 s: com o Wi-Fi conectado o C6 divide o radio, e a busca ouve menos.
   if (!tab5_ble_varrendo() && !tab5_ble_varrer(8000)) { return false; }
@@ -337,7 +337,7 @@ static int conectar(const ble_addr_t* alvo)
 
   // Pareamento. Ja vinculado: so retoma a cifra, sem PIN. Sem vinculo: o no
   // pede o PIN (ver PASSKEY_ACTION).
-  estado("pareando com %s", s_nome);
+  estado(tr("pareando com %s"), s_nome);
   s_pin_pedido = false;
   xSemaphoreTake(s_op, 0);
   rc = ble_gap_security_initiate(s_conn);
@@ -359,7 +359,7 @@ static int conectar(const ble_addr_t* alvo)
       ESP_LOGW(TAG, "verificacao final do pareamento seguro falhou (%d) - tentando o pareamento legado", rc);
       ble_hs_cfg.sm_sc = 0;
       s_pin_interativo = true;
-      estado("tentando outro modo de pareamento - o no vai mostrar outro PIN");
+      estado(tr("tentando outro modo de pareamento - o no vai mostrar outro PIN"));
       return -1;
     }
     // O PIN SALVO FOI RECUSADO: o no mostra um PIN novo a cada pareamento.
@@ -369,7 +369,7 @@ static int conectar(const ble_addr_t* alvo)
       ajustes_definir_mesh_pin_na_tela(true);
       ajustes_definir_mesh_pin(123456);   // o salvo estava errado: volta ao padrao
       s_pin_interativo = true;
-      estado("o nó mostra o PIN na tela - tentando de novo");
+      estado(tr("o nó mostra o PIN na tela - tentando de novo"));
       return -1;
     }
     if (s_pin_pedido) {
@@ -378,7 +378,7 @@ static int conectar(const ble_addr_t* alvo)
       // hora, e so comeca quando o usuario pedir (mesh_ble_tentar_de_novo, que
       // o ENVIAR do PIN em Ajustes > Meshtastic chama).
       ESP_LOGW(TAG, "pareamento recusado (%d) - PIN errado ou prazo vencido", rc);
-      estado("PIN recusado - toque no nó para tentar");
+      estado(tr("PIN recusado - toque no nó para tentar"));
       s_pin_interativo = true;
       return 2;
     }
@@ -423,7 +423,7 @@ static int conectar(const ble_addr_t* alvo)
   // Deste no em diante e este no: guarda para reconectar direto.
   ajustes_definir_mesh_ble_endereco(s_end);
   ESP_LOGI(TAG, "conectado a %s (%s)", s_nome, s_end);
-  estado("conectado a %s", s_nome);
+  estado(tr("conectado a %s"), s_nome);
   s_conectado = true;
   s_conectou_agora = true;
   return 0;
@@ -444,14 +444,14 @@ static void vTaskMeshBle(void*)
     }
 
     if (!tab5_ble_pronto()) {
-      estado(tab5_ble_estado() == TAB5_BLE_FALHOU ? "Bluetooth falhou" : "esperando o Bluetooth");
+      estado(tab5_ble_estado() == TAB5_BLE_FALHOU ? tr("Bluetooth falhou") : tr("esperando o Bluetooth"));
       espera = 1000;
       continue;
     }
 
     ble_addr_t alvo;
     if (!achar_no(&alvo)) {
-      estado("nenhum Meshtastic por perto");
+      estado(tr("nenhum Meshtastic por perto"));
       espera = 4000;
       continue;
     }
@@ -485,7 +485,7 @@ static void vTaskMeshBle(void*)
       }
     }
     s_conectado = false;
-    if (!parada_pedida(&s_parada)) { estado("conexão caiu - reconectando"); espera = 2000; }
+    if (!parada_pedida(&s_parada)) { estado(tr("conexão caiu - reconectando")); espera = 2000; }
   }
 
   if (conexao_viva()) {

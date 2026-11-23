@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -62,16 +62,16 @@ button.verde { background:#2c6fb0; } button.verm { background:#8a2f2f; }
 <div id="tudo">
   <div id="barra">
     <b><span class="ponto" id="ponto"></span>Terminal</b>
-    <span id="estado">conectando ao Tab5...</span>
-    <button id="pararBt" class="verm oculto" title="Ctrl+C">Parar</button>
-    <button id="limparBt" title="Ctrl+L">Limpar</button>
-    <button id="fecharBt" class="verm oculto" title="ssh fechar">Encerrar SSH</button>
+    <span id="estado">connecting to the Tab5...</span>
+    <button id="pararBt" class="verm oculto" title="Ctrl+C">Stop</button>
+    <button id="limparBt" title="Ctrl+L">Clear</button>
+    <button id="fecharBt" class="verm oculto" title="ssh close">End SSH</button>
   </div>
 
   <div id="cmd">
     <div id="saida"></div>
     <div id="linha"><span id="prompt"></span><input id="entrada" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="comando"></div>
-    <div id="dica"><code>help</code> lista os comandos · <code>ssh usuario@servidor</code> abre outra máquina aqui · ↑ ↓ histórico · Ctrl+C para · Ctrl+L limpa</div>
+    <div id="dica"><code>help</code> lists the commands · <code>ssh user@server</code> opens another machine here · ↑ ↓ history · Ctrl+C stops · Ctrl+L clears</div>
   </div>
 
   <div id="ssh" class="oculto">
@@ -81,19 +81,19 @@ button.verde { background:#2c6fb0; } button.verm { background:#8a2f2f; }
 </div>
 
 <div class="caixa-fundo" id="confirmar"><div class="caixa">
-  <h2>Servidor novo</h2>
-  <p>É a primeira conexão com <b id="kHost"></b>. Confira se a impressão digital é a do servidor
-     (nele: <span style="font-family:var(--mono)">ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</span>).</p>
+  <h2>New server</h2>
+  <p>This is the first connection to <b id="kHost"></b>. Check that the fingerprint is the server's
+     (on it: <span style="font-family:var(--mono)">ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</span>).</p>
   <code id="kImp"></code>
-  <div class="botoes"><button id="kNao">Recusar</button><button id="kSim" class="verde">Aceitar e guardar</button></div>
+  <div class="botoes"><button id="kNao">Refuse</button><button id="kSim" class="verde">Accept and store</button></div>
 </div></div>
 
 <div class="caixa-fundo" id="senha"><div class="caixa">
-  <h2>Senha</h2>
+  <h2>Password</h2>
   <p id="sQuem"></p>
   <input id="sTxt" type="password" autocomplete="current-password">
   <div class="erro" id="sErro"></div>
-  <div class="botoes"><button id="sCancelar">Cancelar</button><button id="sIr" class="verde">Entrar</button></div>
+  <div class="botoes"><button id="sCancelar">Cancel</button><button id="sIr" class="verde">Log in</button></div>
 </div></div>
 
 <script>
@@ -149,7 +149,7 @@ async function enviar(linha) {
   mudou_em = Date.now();   // a resposta vem a seguir: o ritmo rapido
   try {
     const r = await (await fetch("api/enviar", POST(linha))).json();
-    if (!r.ok) $("saida").appendChild(linhaEl(2, "(" + (r.msg || "não foi") + ")"));
+    if (!r.ok) $("saida").appendChild(linhaEl(2, "(" + (r.msg || "not sent") + ")"));
   } catch (e) {}
   lerConsole();
 }
@@ -260,19 +260,19 @@ function estado(e) {
     if (antes !== ES.ABERTA) { fit.fit(); reclamar(); term.focus(); }
   }
   // Terminou: a razao fica na saida dos comandos, como fica na tela do Tab5.
-  if (e.estado === ES.FIM && ativa(antes)) $("saida").appendChild(linhaEl(2, "[ssh " + quem + ": " + (e.msg || "fim") + "]"));
+  if (e.estado === ES.FIM && ativa(antes)) $("saida").appendChild(linhaEl(2, "[ssh " + quem + ": " + (e.msg || "ended") + "]"));
 }
 
 function pintarEstado() {
   const e = sess, quem = e.u && e.h ? e.u + "@" + e.h : "";
   if (!ws || ws.readyState !== 1) {
     $("ponto").className = "ponto";
-    $("estado").textContent = "sem conexão com o Tab5 - tentando de novo...";
+    $("estado").textContent = "no connection to the Tab5 - retrying...";
     return;
   }
-  const txt = { [ES.CONECTANDO]: "conectando a " + quem + "...", [ES.CONFIRMAR]: quem + ": servidor novo, confira",
-                [ES.SENHA]: quem + ": senha", [ES.ABERTA]: quem + " · " + e.c + "×" + e.l }[e.estado];
-  $("estado").textContent = txt || "comandos do Tab5 · a mesma sessão da tela do aparelho";
+  const txt = { [ES.CONECTANDO]: "connecting to " + quem + "...", [ES.CONFIRMAR]: quem + ": new server, please check",
+                [ES.SENHA]: quem + ": password", [ES.ABERTA]: quem + " · " + e.c + "×" + e.l }[e.estado];
+  $("estado").textContent = txt || "Tab5 commands · the same session as the device screen";
   $("ponto").className = "ponto" + (e.estado === ES.ABERTA || !ativa(e.estado) ? " on" : " meio");
 }
 
@@ -301,7 +301,7 @@ $("kNao").onclick = () => mandar({ t: "confirmar", sim: false });
 $("sIr").onclick = () => { mandar({ t: "senha", s: $("sTxt").value }); $("sTxt").value = ""; abrirCaixa("senha", false); };
 $("sTxt").addEventListener("keydown", (e) => { if (e.key === "Enter") $("sIr").onclick(); });
 $("sCancelar").onclick = () => mandar({ t: "fechar" });
-$("fecharBt").onclick = () => { if (confirm("Encerrar a sessão SSH (no Tab5 também)?")) mandar({ t: "fechar" }); };
+$("fecharBt").onclick = () => { if (confirm("End the SSH session (on the Tab5 too)?")) mandar({ t: "fechar" }); };
 
 // O RITMO: 300 ms enquanto um comando roda ou a saida acabou de mudar (ela
 // aparece andando); parado ha 3 s, 1 s; com o SSH na frente ou a aba
